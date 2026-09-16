@@ -1443,6 +1443,53 @@ class Storage:
             fallback_event="cpu_local",
         )
 
+    def assistance_fallback_for_match(self, match_id: str) -> dict:
+        from .workbench.assistance import events_as_query_rows, providers_disabled_fallback
+
+        self.get_match(match_id)
+        try:
+            events = self.load_events(match_id)
+        except FileNotFoundError:
+            events = []
+        try:
+            metrics = self.match_metrics_for_match(match_id)["metrics"]
+        except FileNotFoundError:
+            metrics = []
+        return providers_disabled_fallback(
+            metrics=metrics,
+            events=events_as_query_rows(events, match_id=match_id),
+        )
+
+    def quality_timeline_for_match(self, match_id: str) -> dict:
+        match = self.get_match(match_id)
+        items: list[dict] = []
+        try:
+            players = self.player_observations_for_match(match_id)
+        except FileNotFoundError:
+            players = {"totalsWithheld": True, "reasonCodes": ["IDENTITY_DISCONTINUITY"]}
+        if players.get("totalsWithheld") or "IDENTITY_DISCONTINUITY" in list(players.get("reasonCodes") or []):
+            items.append({"id": "identity", "label": "identity switches", "impact": "high", "accepted": False})
+        setup = self.assess_stored_match_setup(match_id)
+        preview = self.preview_landmark_for_match(match_id)
+        if not setup.get("certified") or preview.get("measured") is False:
+            items.append({"id": "calibration", "label": "calibration drift", "impact": "high", "accepted": False})
+        if match.config.myTeamCluster is None:
+            items.append({"id": "team", "label": "incorrect team selection", "impact": "high", "accepted": False})
+        try:
+            ownership = self.classify_match_ownership(match_id)
+        except FileNotFoundError:
+            ownership = {"mode": "unknown"}
+        if ownership.get("mode") == "unknown":
+            items.append(
+                {
+                    "id": "possession",
+                    "label": "ambiguous possession around a shot",
+                    "impact": "high",
+                    "accepted": False,
+                }
+            )
+        return {"items": items, "reviewFirst": True, "accepted": False, "measured": False}
+
     def load_raw_rows(self, match_id: str) -> list[dict]:
         payload = self._read_json(self._match_dir(match_id) / "raw_rows.json")
         return [dict(item) for item in payload]

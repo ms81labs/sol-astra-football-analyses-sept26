@@ -325,3 +325,34 @@ export async function fetchLandmarkPreview(matchId: string) {
   }
   return response.json() as Promise<LandmarkPreview>;
 }
+
+export interface QualityTimelinePayload {
+  reviewFirst: boolean;
+  accepted: boolean;
+  measured: boolean;
+  items: Array<{ id: string; label: string; impact: string; accepted?: boolean }>;
+}
+
+export async function fetchQualityTimeline(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/quality`);
+  if (!response.ok) {
+    throw new Error(`Failed to load quality timeline: ${response.status}`);
+  }
+  return response.json() as Promise<QualityTimelinePayload>;
+}
+
+export interface AssistanceSnapshot {
+  providersEnabled: boolean;
+  reviewOperational: boolean;
+  metricsOperational: boolean;
+  templateReportOperational: boolean;
+  route: string;
+}
+
+export async function fetchAssistance() {
+  const response = await fetch('/api/assistance');
+  if (!response.ok) {
+    throw new Error(`Failed to load assistance state: ${response.status}`);
+  }
+  return response.json() as Promise<AssistanceSnapshot>;
+}

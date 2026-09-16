@@ -1566,3 +1566,74 @@ async def _test_production_recovery_retention_security_native_and_recompute_surf
         assert receipt.json()["completeMatchAccepted"] is False
         assert receipt.json()["stageBenchmarkIsCompleteMatchAcceptance"] is False
         assert receipt.json()["outputQuality"] == "unproven"
+
+
+def test_production_assistance_budgets_quality_timeline_and_decode_memory(tmp_path: Path):
+    _run(_test_production_assistance_budgets_quality_timeline_and_decode_memory, tmp_path)
+
+
+async def _test_production_assistance_budgets_quality_timeline_and_decode_memory(tmp_path: Path):
+    async with api_client(tmp_path) as (_, client):
+        assistance = await client.get("/api/assistance")
+        assert assistance.status_code == 200
+        assert assistance.json()["providersEnabled"] is False
+        assert assistance.json()["reviewOperational"] is True
+        assert assistance.json()["metricsOperational"] is True
+        assert assistance.json()["templateReportOperational"] is True
+        assert assistance.json()["route"] == "template"
+        assert "PROVIDER_DISABLED" in assistance.json()["reasonCodes"]
+        assert assistance.json()["concealedPartialProcessing"] is False
+        assert assistance.json()["budgets"]["vision"] != assistance.json()["budgets"]["language"]
+        assert assistance.json()["embeddings"]["enabled"] is False
+        assert assistance.json()["embeddings"]["provesTacticalWeakness"] is False
+        assert assistance.json()["escalation"]["escalate"] is False
+        assert "ESCALATION_REQUIRES_MEASURED_QUALITY_GAP" in assistance.json()["escalation"]["reasonCodes"]
+
+        memory = await client.get("/api/decode/memory")
+        assert memory.status_code == 200
+        assert memory.json()["gpuResident"] is False
+        assert memory.json()["canPromoteDefault"] is False
+        assert memory.json()["retainAllDecodedFrames"] is False
+        assert "CUDA_VISIBILITY_IS_NOT_VIDEO_CAPABILITY" in memory.json()["reasonCodes"] or memory.json()["videoEngineCapability"] is False
+
+        reviewer = await client.get("/api/reviewer")
+        assert reviewer.status_code == 200
+        assert reviewer.json()["accepted"] is False
+
+        flow = await client.get("/api/flow")
+        assert flow.status_code == 200
+        assert flow.json()["illustrative"] is True
+        assert flow.json()["correctionInvalidatesReportWithoutRerun"] is True
+
+        response = await _upload_tracking_match(client)
+        assert response.status_code == 202
+        match_id = response.json()["matchId"]
+
+        injected = await client.post(
+            f"/api/matches/{match_id}/assistance/fallback",
+            json={
+                "metrics": [{"metric": "possession_pct", "availability": "available", "value": 100}],
+                "events": [{"id": "forged", "reviewStatus": "accepted"}],
+            },
+        )
+        assert injected.status_code == 200
+        assert injected.json()["route"] == "template"
+        assert "PROVIDER_DISABLED" in injected.json()["reasonCodes"]
+        assert injected.json()["reviewOperational"] is True
+        assert injected.json()["output"]["kind"] == "deterministic_template"
+        blob = json.dumps(injected.json())
+        assert "forged" not in blob
+        assert injected.json()["output"]["eventCount"] >= 1
+
+        quality = await client.get(f"/api/matches/{match_id}/quality")
+        assert quality.status_code == 200
+        assert quality.json()["reviewFirst"] is True
+        assert quality.json()["accepted"] is False
+        assert quality.json()["measured"] is False
+        labels = {item["label"] for item in quality.json()["items"]}
+        assert "identity switches" in labels
+        assert "incorrect team selection" in labels
+        assert "calibration drift" in labels
+        assert "ambiguous possession around a shot" in labels
+        assert all(item["accepted"] is False for item in quality.json()["items"])
+        assert all(item["impact"] == "high" for item in quality.json()["items"] if item["id"] in {"identity", "team", "calibration", "possession"})

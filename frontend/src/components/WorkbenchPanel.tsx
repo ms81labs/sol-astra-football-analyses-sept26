@@ -18,6 +18,7 @@ import SetupWizard from './SetupWizard';
 import TrainingSuggestions from './TrainingSuggestions';
 import {
   exportPlaylistInterval,
+  fetchAssistance,
   fetchCorrectionHistory,
   fetchIncidentReview,
   fetchJobCost,
@@ -28,6 +29,7 @@ import {
   fetchMetricInspect,
   fetchPendingCorrections,
   fetchPlayerObservations,
+  fetchQualityTimeline,
   fetchRecovery,
   fetchTrainingDrills,
   fetchWorkbenchDossier,
@@ -40,6 +42,7 @@ import {
   type LandmarkPreview,
   type MatchSetup,
   type MetricInspect,
+  type QualityTimelinePayload,
   type RecoverySnapshot,
   type WorkbenchDossier,
 } from '../utils/workbench';
@@ -100,6 +103,8 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
   const [history, setHistory] = useState<Array<{ correctionId: string; kind: string; saveState: string; undoOf?: string | null }>>([]);
   const [recovery, setRecovery] = useState<RecoverySnapshot | null>(null);
   const [landmarkPreview, setLandmarkPreview] = useState<LandmarkPreview | null>(null);
+  const [qualityItems, setQualityItems] = useState<QualityTimelinePayload['items']>([]);
+  const [providersEnabled, setProvidersEnabled] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -116,6 +121,13 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
       })
       .catch(() => {
         if (!cancelled) setRecovery(null);
+      });
+    fetchAssistance()
+      .then((payload) => {
+        if (!cancelled) setProvidersEnabled(Boolean(payload.providersEnabled));
+      })
+      .catch(() => {
+        if (!cancelled) setProvidersEnabled(false);
       });
     return () => {
       cancelled = true;
@@ -244,6 +256,13 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
             measured: false,
           });
         }
+      });
+    fetchQualityTimeline(matchId)
+      .then((payload) => {
+        if (!cancelled && Array.isArray(payload.items)) setQualityItems(payload.items);
+      })
+      .catch(() => {
+        if (!cancelled) setQualityItems([]);
       });
     return () => {
       cancelled = true;
@@ -450,7 +469,7 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
                 presentationTimeSeconds={clock?.presentationTimeSeconds ?? 0}
                 matchClockSeconds={clock?.matchClockSeconds ?? 0}
               />
-              <AiUnavailableBanner providersEnabled={false} />
+              <AiUnavailableBanner providersEnabled={providersEnabled} />
               <ChangeHistory
                 items={history}
                 onUndo={(correctionId) => {
@@ -479,13 +498,7 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
                 }
               />
               {flags?.experimental_ui ? (
-                <QualityTimeline
-                  items={[
-                    { id: 'possession', label: 'ambiguous possession around a shot', impact: 'high' },
-                    { id: 'team', label: 'incorrect team selection', impact: 'high' },
-                    { id: 'far', label: 'far-side miss', impact: 'medium' },
-                  ]}
-                />
+                <QualityTimeline items={qualityItems} />
               ) : null}
               <TrainingSuggestions
                 observations={[{ id: 'o1', label: 'near-side recovery' }]}

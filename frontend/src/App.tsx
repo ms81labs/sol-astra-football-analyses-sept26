@@ -47,7 +47,7 @@ import { buildUploadConfig, createEmptyPointInputs } from './utils/uploadConfig'
 import { getUploadFailureGuidance } from './utils/uploadErrors';
 import { findNearestFrameIndex } from './utils/videoSync';
 import { applyReviewShortcut, type ReviewAction } from './utils/reviewShortcuts';
-import { fetchIncidentReview, fetchRecovery, requestAccessDeletion, submitMatchCorrection, undoMatchCorrection } from './utils/workbench';
+import { fetchAssistance, fetchIncidentReview, fetchQualityTimeline, fetchRecovery, fetchWorkbenchDossier, requestAccessDeletion, submitMatchCorrection, undoMatchCorrection } from './utils/workbench';
 import { windowedTimelineProps } from './utils/windowedTimeline';
 import { splitScores } from './utils/quantities';
 
@@ -193,6 +193,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
   useEffect(() => {
     if (!activeMatch?.id) {
       setStoredIncident(null);
+      setQualityItems([]);
       return;
     }
     let cancelled = false;
@@ -208,6 +209,14 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
       })
       .catch(() => {
         if (!cancelled) setStoredIncident(null);
+      });
+    fetchQualityTimeline(activeMatch.id)
+      .then((payload) => {
+        if (cancelled || !Array.isArray(payload.items)) return;
+        setQualityItems(payload.items);
+      })
+      .catch(() => {
+        if (!cancelled) setQualityItems([]);
       });
     return () => {
       cancelled = true;
@@ -233,6 +242,28 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
       cancelled = true;
     };
   }, []);
+  useEffect(() => {
+    let cancelled = false;
+    fetchWorkbenchDossier()
+      .then((payload) => {
+        if (!cancelled && payload.release?.deploymentBoundary) {
+          setDeploymentBoundary(payload.release.deploymentBoundary);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setDeploymentBoundary('loopback');
+      });
+    fetchAssistance()
+      .then((payload) => {
+        if (!cancelled) setProvidersEnabled(Boolean(payload.providersEnabled));
+      })
+      .catch(() => {
+        if (!cancelled) setProvidersEnabled(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const matchData = useMemo(() => activeMatch?.data || [], [activeMatch]);
   const totalFrameCount = activeMatch?.frameCount ?? matchData.length;
   const timelineWindow = useMemo(
@@ -251,6 +282,9 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
     unresolvedIncidents: Array<{ id: string; title: string }>;
     recoveryObjectivesDefined: boolean;
   }>({ controllerRecorded: false, unresolvedIncidents: [], recoveryObjectivesDefined: false });
+  const [deploymentBoundary, setDeploymentBoundary] = useState('loopback');
+  const [providersEnabled, setProvidersEnabled] = useState(false);
+  const [qualityItems, setQualityItems] = useState<Array<{ id: string; label: string; impact: string }>>([]);
   const correctionVersionRef = useRef(0);
   const matchStats = activeMatch?.stats || null;
   const matchBenchmark = activeMatch?.benchmark || null;
@@ -1142,10 +1176,10 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
             />
           </div>
           <div className="mb-3 shrink-0">
-            <AiUnavailableBanner providersEnabled={false} />
+            <AiUnavailableBanner providersEnabled={providersEnabled} />
           </div>
           <div className="mb-3 shrink-0">
-            <LoopbackBanner deploymentBoundary="loopback" />
+            <LoopbackBanner deploymentBoundary={deploymentBoundary} />
           </div>
           <div className="mb-3 shrink-0">
             <RecoveryPanel
@@ -1198,14 +1232,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
             />
           </div>
           <div className="mb-3 shrink-0">
-            <QualityTimeline
-              items={[
-                { id: 'team', label: 'incorrect team selection', impact: 'high' },
-                { id: 'calibration', label: 'calibration drift', impact: 'high' },
-                { id: 'identity', label: 'identity switches', impact: 'high' },
-                { id: 'possession', label: 'ambiguous possession around a shot', impact: 'high' },
-              ]}
-            />
+            <QualityTimeline items={qualityItems} />
           </div>
           <div className="mb-3 flex-1 overflow-y-auto">
             <AnnotationList

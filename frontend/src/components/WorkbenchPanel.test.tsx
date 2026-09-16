@@ -179,6 +179,17 @@ it('shows the quality timeline only when experimental UI is enabled', async () =
         embeddings_search: false,
       }), { status: 200 });
     }
+    if (url.endsWith('/api/matches/m1/quality')) {
+      return new Response(JSON.stringify({
+        reviewFirst: true,
+        accepted: false,
+        measured: false,
+        items: [
+          { id: 'team', label: 'incorrect team selection', impact: 'high', accepted: false },
+          { id: 'possession', label: 'ambiguous possession around a shot', impact: 'high', accepted: false },
+        ],
+      }), { status: 200 });
+    }
     return new Response(JSON.stringify({ query: { unanswerable: true, reason: 'x', eventFamily: 'pass' }, results: [] }), { status: 200 });
   }));
 

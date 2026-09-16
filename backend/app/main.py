@@ -63,6 +63,13 @@ from .workbench.access import (
 )
 from .workbench.admission import admit_camera, admit_media
 from .workbench.artifacts import secrets_in_artifacts
+from .workbench.assistance import (
+    dual_budgets,
+    embeddings_retrieve,
+    escalation_requires_quality_gap,
+    providers_disabled_fallback,
+)
+from .workbench.media import decode_memory_policy
 from .workbench.contracts import SourceClockIdentity
 from .workbench.costs import credit_allocation, decimal_gb_to_gib, match_cost, scale_scenario
 from .workbench.decisions import architecture_decisions
@@ -95,7 +102,7 @@ from .workbench.research import execute_track, research_lane
 from .workbench.retention import PROTECTED, may_delete
 from .workbench.review import correction_api_payload, playlist_export_interval
 from .workbench.rights import rights_register
-from .workbench.risks import risk_register
+from .workbench.risks import independent_reviewer, risk_register, worked_match_flow
 from .workbench.rollback import rollback_release
 from .workbench.roster import model_roster
 from .workbench.routes import create_workbench_router
@@ -1389,6 +1396,35 @@ def create_app(
             "egress": egress_policy(destination="https://evil.example", authorised_hosts=frozenset()),
         }
 
+    @app.get("/api/assistance")
+    def get_assistance() -> dict:
+        fallback = providers_disabled_fallback(metrics=[], events=[])
+        return {
+            **fallback,
+            "providersEnabled": False,
+            "budgets": dual_budgets(vision=2.0, language=0.1),
+            "embeddings": embeddings_retrieve("", passages=[]),
+            "escalation": escalation_requires_quality_gap(model_uncertain=True, measured_gap=False),
+        }
+
+    @app.get("/api/decode/memory")
+    def get_decode_memory() -> dict:
+        gpu = probe_gpu()
+        return decode_memory_policy(
+            mode="offline",
+            hardware_decode_ok=False,
+            cuda_visible=gpu.available,
+            video_engine_capability=False,
+        )
+
+    @app.get("/api/reviewer")
+    def get_reviewer() -> dict:
+        return independent_reviewer(developer="unrecorded", reviewer="unrecorded", inspected_held_out=False)
+
+    @app.get("/api/flow")
+    def get_worked_flow() -> dict:
+        return worked_match_flow()
+
     @app.post("/api/search")
     def post_typed_search(payload: dict | None = None) -> dict:
         body = payload or {}
@@ -1691,6 +1727,18 @@ def create_app(
     @app.get("/api/matches/{match_id}/promotion")
     def get_match_promotion(match: MatchRecord = Depends(require_match)) -> dict:
         return storage.promotion_receipt_for_match(match.id)
+
+    @app.post("/api/matches/{match_id}/assistance/fallback")
+    def post_match_assistance_fallback(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+        del payload
+        try:
+            return storage.assistance_fallback_for_match(match.id)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="Analytics not ready") from exc
+
+    @app.get("/api/matches/{match_id}/quality")
+    def get_match_quality(match: MatchRecord = Depends(require_match)) -> dict:
+        return storage.quality_timeline_for_match(match.id)
 
     @app.post("/api/matches/{match_id}/assistance/report")
     def post_match_assistance_report(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
