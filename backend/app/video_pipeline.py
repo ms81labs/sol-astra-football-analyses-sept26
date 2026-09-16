@@ -7,7 +7,7 @@ from .schemas import MatchConfig
 from .workbench.cache import cache_identity, recompute_plan
 from .workbench.geometry import ground_contact_point, project_to_pitch
 from .workbench.media import FrameSource, OpenCvFrameSource, SamplingAudit, four_rates_receipt, vid_stride_policy
-from .workbench.perception import DetectorAdapter, PreprocessorAdapter
+from .workbench.perception import Detection, DetectorAdapter, PreprocessorAdapter, TrackerAdapter
 
 # Exposed at module level so tests can patch this name directly.
 from backend.run_guerilla import TARGET_FPS, process_video as _process_video_impl
@@ -87,6 +87,7 @@ def process_video_input(
     rows = payload.get("rows")
     if isinstance(rows, list):
         payload["rows"] = project_detected_rows(rows)
+        payload["tracks"] = associate_projected_rows(payload["rows"], cut_detected=False)
     return payload
 
 
@@ -174,6 +175,31 @@ def _bbox_from_row(item: dict) -> tuple[float, float, float, float] | None:
             float(item["Source_Y2"]),
         )
     return None
+
+
+def associate_projected_rows(
+    rows: list[dict],
+    *,
+    cut_detected: bool = False,
+    broadcast_replay: bool = False,
+) -> list[dict]:
+    detections: list[Detection] = []
+    for row in rows:
+        box = _bbox_from_row(row)
+        if box is None:
+            continue
+        raw_kind = str(row.get("kind") or row.get("Entity_Type") or "other").lower()
+        kind = "player" if raw_kind in {"player", "person"} else ("ball" if raw_kind == "ball" else "other")
+        detections.append(
+            Detection(
+                frameId=int(row.get("Frame_ID") or 0),
+                bbox=box,
+                score=float(row.get("Conf") or 0.0),
+                kind=kind,  # type: ignore[arg-type]
+                stratum="near",
+            )
+        )
+    return TrackerAdapter().associate(detections, cut_detected=cut_detected, broadcast_replay=broadcast_replay)
 
 
 IMAGE_SPACE_SAFE_CHANGES = {"report", "calibration", "team_mapping", "track_edit", "ownership"}

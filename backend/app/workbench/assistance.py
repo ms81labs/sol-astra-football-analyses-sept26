@@ -214,6 +214,8 @@ class AssistanceRouter:
         events: list[dict[str, Any]],
         claimed_evidence_ids: list[str] | None = None,
         known_evidence_ids: set[str] | None = None,
+        model_uncertain: bool = False,
+        measured_quality_gap: bool = False,
     ) -> AssistanceDisposition:
         known = known_evidence_ids or set()
         claimed = claimed_evidence_ids or []
@@ -225,6 +227,17 @@ class AssistanceRouter:
                 output=grounded["output"],
             )
         template = template_report(metrics, events)
+        if policy.cloudPermitted:
+            escalate = escalation_requires_quality_gap(
+                model_uncertain=model_uncertain,
+                measured_gap=measured_quality_gap,
+            )
+            if not escalate["escalate"]:
+                return AssistanceDisposition(
+                    route="template",
+                    reasonCodes=list(escalate["reasonCodes"]),
+                    output=template,
+                )
         if not self.providers_enabled or not policy.allowedModelIds or policy.spendCap <= 0:
             return AssistanceDisposition(
                 route="template",

@@ -31,7 +31,7 @@ import UploadCalibrationPanel from './components/UploadCalibrationPanel';
 import { useCoachAnalysis } from './hooks/useCoachAnalysis';
 import { useReviewSurface } from './features/review/useReviewSurface';
 import type { BackendEvent, CameraProfile, EventTag, FormationSegment, FrameData, MatchBenchmarkSummary, MatchRecord, MatchStats, ProcessingJob, RuntimeCapabilities, ShotMarker } from './types';
-import { buildPassingNetwork, buildPlayerProfiles, computeHeatmap, heatmapAvailability, computeSpeedsForFrame, summarizeShots } from './utils/analytics';
+import { buildPassingNetwork, buildPlayerProfiles, computeHeatmap, heatmapAvailability, speedAvailability, computeSpeedsForFrame, summarizeShots } from './utils/analytics';
 import {
   buildMatchVideoUrl,
   createMatchUpload,
@@ -275,6 +275,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
   }, [handleAddEvent]);
 
   const heatmapAvail = heatmapAvailability(false);
+  const speedAvail = speedAvailability(false);
   const heatmapData = useMemo(() => {
     if (matchData.length === 0 || heatmapAvail.withheld) return null;
     return computeHeatmap(matchData, 'my_team');
@@ -297,9 +298,9 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
   }, [activeMatch, shotMarkers]);
 
   const speedData = useMemo(() => {
-    if (matchData.length === 0) return null;
+    if (matchData.length === 0 || speedAvail.withheld) return null;
     return computeSpeedsForFrame(matchData, currentFrame);
-  }, [currentFrame, matchData]);
+  }, [currentFrame, matchData, speedAvail.withheld]);
 
   const togglePlay = useCallback(() => setIsPlaying((playing) => !playing), []);
 
@@ -944,6 +945,9 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
                 ))}
                 {heatmapAvail.withheld && (
                   <span className="text-[11px] text-amber-200">Whole-match heatmap withheld until identity continuity.</span>
+                )}
+                {speedAvail.withheld && (
+                  <span className="text-[11px] text-amber-200">Derived speeds withheld until identity continuity.</span>
                 )}
                 <button
                   type="button"

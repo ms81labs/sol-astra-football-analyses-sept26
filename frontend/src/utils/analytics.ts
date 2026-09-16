@@ -50,6 +50,14 @@ export function computeHeatmap(
 }
 
 export function heatmapAvailability(identityContinuous: boolean) {
+    return physicalTotalsAvailability(identityContinuous);
+}
+
+export function speedAvailability(identityContinuous: boolean) {
+    return physicalTotalsAvailability(identityContinuous);
+}
+
+function physicalTotalsAvailability(identityContinuous: boolean) {
     return {
         wholeMatch: identityContinuous,
         intervalLimited: !identityContinuous,

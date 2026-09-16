@@ -1134,6 +1134,16 @@ def test_assistance_caps_survive_spend_timeout_and_malformed_output() -> None:
     assert second.route == "template"
     assert "SPEND_CAP" in second.reasonCodes or second.spend >= policy.spendCap
 
+    uncertain = AssistanceRouter(providers_enabled=True, provider=lambda **kwargs: {"ok": True}).run(
+        policy=AssistancePolicy(taskType="report", spendCap=1.0, allowedModelIds=["frontier-1"], cloudPermitted=True),
+        metrics=metrics,
+        events=[],
+        model_uncertain=True,
+        measured_quality_gap=False,
+    )
+    assert uncertain.route != "cloud"
+    assert "ESCALATION_REQUIRES_MEASURED_QUALITY_GAP" in uncertain.reasonCodes
+
 
 def test_extraction_boundaries_exist_and_native_directory_stays_absent() -> None:
     import backend.evaluation as evaluation_pkg

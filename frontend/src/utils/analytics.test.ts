@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   computeHeatmap,
   heatmapAvailability,
+  speedAvailability,
   buildPassingNetwork,
   buildPlayerProfiles,
   buildPlayerContributions,
@@ -323,6 +324,14 @@ describe('computeHeatmap boundaries', () => {
     expect(withheld.withheld).toBe(true);
     const continuous = heatmapAvailability(true);
     expect(continuous.wholeMatch).toBe(true);
+    expect(continuous.withheld).toBe(false);
+  });
+
+  it('withholds derived speeds until identity continuity is validated', () => {
+    const withheld = speedAvailability(false);
+    expect(withheld.withheld).toBe(true);
+    expect(withheld.intervalLimited).toBe(true);
+    const continuous = speedAvailability(true);
     expect(continuous.withheld).toBe(false);
   });
 });

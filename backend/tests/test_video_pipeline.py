@@ -355,3 +355,22 @@ def test_tracking_rows_project_players_from_source_box_ground_contact() -> None:
     )[0]
     assert aerial["measuredGroundLocation"] is False
     assert "AERIAL_NOT_GROUND_PLANE" in aerial["reasonCodes"]
+
+
+def test_projected_rows_reset_tracker_identity_across_cuts() -> None:
+    from backend.app.video_pipeline import associate_projected_rows
+
+    rows = [
+        {
+            "Entity_Type": "player",
+            "Source_X1": 10.0,
+            "Source_Y1": 20.0,
+            "Source_X2": 30.0,
+            "Source_Y2": 80.0,
+            "Frame_ID": 4,
+        }
+    ]
+    tracks = associate_projected_rows(rows, cut_detected=True)
+    assert tracks
+    assert all(track["reset"] is True for track in tracks)
+    assert all(track["silentlyReconnected"] is False for track in tracks)
