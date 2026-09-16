@@ -961,6 +961,62 @@ describe('App match workspace loading', () => {
     expect(await screen.findByText('unreviewed')).toBeTruthy();
   });
 
+  it('exports the marked review range as a half-open source interval without claiming whole-match frequency', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/playlists/export-interval') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            sourceStartSeconds: 0,
+            sourceEndSeconds: 0.2,
+            sourceEndFrameExclusive: 1,
+          }),
+        } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    fireEvent.keyDown(window, { key: 'i' });
+    fireEvent.keyDown(window, { key: 'o' });
+    await waitFor(() => {
+      expect((screen.getByLabelText(/clip start/i) as HTMLInputElement).value).toBe('0');
+      expect((screen.getByLabelText(/clip end/i) as HTMLInputElement).value).toBe('0.2');
+    });
+    fireEvent.click(screen.getByRole('button', { name: /add clip/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/playlists/export-interval'))).toBe(true);
+    });
+    const exportCall = fetchMock.mock.calls.find(([url]) => String(url).includes('/api/playlists/export-interval'));
+    expect(exportCall?.[1]?.method).toBe('POST');
+    expect(exportCall?.[1]?.body).toContain('"timestampStart":0');
+    expect(exportCall?.[1]?.body).toContain('"timestampEnd":0.2');
+    expect(exportCall?.[1]?.body).toContain('"sourceFps":5');
+    expect(exportCall?.[1]?.body).not.toContain('"sourceFps":25');
+    expect(await screen.findByText(/0s to 0.2s/)).toBeTruthy();
+    expect(screen.getByText(/frame 1 exclusive/i)).toBeTruthy();
+    expect(screen.getByText(/do not establish a whole-match frequency/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('swaps stored teams on the loaded match without a vision rerun', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);

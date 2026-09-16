@@ -1654,7 +1654,12 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
             <QualityTimeline items={qualityItems} />
           </div>
           <div className="mb-3 shrink-0">
-            <PlaylistBuilder matchId={activeMatch?.id} />
+            <PlaylistBuilder
+              matchId={activeMatch?.id}
+              reviewRange={review.reviewRange}
+              frames={matchData}
+              sourceFps={fps}
+            />
           </div>
           <div className="mb-3 shrink-0">
             <HoldoutCalibrationPanel matchId={activeMatch?.id} />

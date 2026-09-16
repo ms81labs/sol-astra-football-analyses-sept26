@@ -11,11 +11,38 @@ interface PlaylistClip {
 
 interface PlaylistBuilderProps {
   matchId?: string;
+  reviewRange?: { startFrame: number; endFrame: number } | null;
+  frames?: Array<{ Frame_ID: number; Timestamp: number }>;
+  sourceFps?: number;
 }
 
-export default function PlaylistBuilder({ matchId }: PlaylistBuilderProps) {
-  const [start, setStart] = useState('12');
-  const [end, setEnd] = useState('14');
+function markedIntervalSeconds(
+  range: { startFrame: number; endFrame: number },
+  frames: Array<{ Frame_ID: number; Timestamp: number }>,
+  sourceFps: number,
+): { start: number; end: number } | null {
+  if (frames.length === 0 || !(sourceFps > 0)) return null;
+  const byId = new Map(frames.map((frame) => [frame.Frame_ID, frame.Timestamp]));
+  const start = byId.get(range.startFrame);
+  const endInclusive = byId.get(range.endFrame);
+  if (start == null || endInclusive == null) return null;
+  const next = frames.find((frame) => frame.Frame_ID > range.endFrame);
+  const end = next != null ? next.Timestamp : endInclusive + 1 / sourceFps;
+  if (!(end >= start)) return null;
+  return { start, end };
+}
+
+export default function PlaylistBuilder({
+  matchId,
+  reviewRange = null,
+  frames = [],
+  sourceFps = 25,
+}: PlaylistBuilderProps) {
+  const rangeKey = reviewRange ? `${reviewRange.startFrame}:${reviewRange.endFrame}:${sourceFps}` : '';
+  const marked = reviewRange ? markedIntervalSeconds(reviewRange, frames, sourceFps) : null;
+  const [draft, setDraft] = useState({ key: '', start: '12', end: '14' });
+  const start = marked && draft.key !== rangeKey ? String(marked.start) : draft.start;
+  const end = marked && draft.key !== rangeKey ? String(marked.end) : draft.end;
   const [notes, setNotes] = useState('');
   const [clips, setClips] = useState<PlaylistClip[]>([]);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -27,7 +54,7 @@ export default function PlaylistBuilder({ matchId }: PlaylistBuilderProps) {
     const to = Number(end);
     if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) return;
     try {
-      const interval = await exportPlaylistInterval(from, to, 25);
+      const interval = await exportPlaylistInterval(from, to, sourceFps);
       setExportError(null);
       setClips((current) => [...current, {
         start: interval.sourceStartSeconds,
@@ -63,11 +90,19 @@ export default function PlaylistBuilder({ matchId }: PlaylistBuilderProps) {
       <h4 className="text-xs uppercase tracking-wide text-slate-500">Playlist / report builder</h4>
       <label className="block text-xs text-slate-400">
         Clip start
-        <input value={start} onChange={(event) => setStart(event.target.value)} className="mt-1 w-full rounded border border-slate-600 bg-slate-900 px-2 py-1 text-slate-200" />
+        <input
+          value={start}
+          onChange={(event) => setDraft({ key: rangeKey, start: event.target.value, end })}
+          className="mt-1 w-full rounded border border-slate-600 bg-slate-900 px-2 py-1 text-slate-200"
+        />
       </label>
       <label className="block text-xs text-slate-400">
         Clip end
-        <input value={end} onChange={(event) => setEnd(event.target.value)} className="mt-1 w-full rounded border border-slate-600 bg-slate-900 px-2 py-1 text-slate-200" />
+        <input
+          value={end}
+          onChange={(event) => setDraft({ key: rangeKey, start, end: event.target.value })}
+          className="mt-1 w-full rounded border border-slate-600 bg-slate-900 px-2 py-1 text-slate-200"
+        />
       </label>
       <label className="block text-xs text-slate-400">
         Notes
