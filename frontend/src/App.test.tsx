@@ -411,6 +411,9 @@ describe('App match workspace loading', () => {
       expect(repairCall?.[1]?.body).toContain('"leftTrackId":"7"');
       expect(repairCall?.[1]?.body).toContain('"rightTrackId":"19"');
     });
+    await waitFor(() => {
+      expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(2);
+    });
   });
 
   it('posts match-scoped identity validation through production HTTP', async () => {

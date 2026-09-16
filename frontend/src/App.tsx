@@ -1141,6 +1141,9 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
                         ]);
                       }
                       setIdentityContinuous(false);
+                      if (payload.correction?.saveState === 'saved') {
+                        await loadWorkspaceIntoState(matchId, { prepend: true, force: true });
+                      }
                       const heatmap = await fetchHeatmap(matchId);
                       const identity = heatmap.identityContinuous === true;
                       setIdentityContinuous(identity);
@@ -1179,6 +1182,9 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
                         ]);
                       }
                       setIdentityContinuous(false);
+                      if (payload.correction?.saveState === 'saved') {
+                        await loadWorkspaceIntoState(matchId, { prepend: true, force: true });
+                      }
                       const heatmap = await fetchHeatmap(matchId);
                       const identity = heatmap.identityContinuous === true;
                       setIdentityContinuous(identity);
