@@ -301,6 +301,7 @@ def test_typed_search_answers_known_and_unanswerable_queries_without_sql() -> No
     assert [hit.eventId for hit in hits] == ["t1"]
     refused = parse_typed_query("select * from events; drop table matches")
     assert refused.unanswerable is True
+    assert refused.reason == "refused_code_execution"
     unknown = parse_typed_query("how many fouls did the referee invent")
     assert unknown.unanswerable is True
     assert execute_typed_query(events, unknown, match_id="m1") == []

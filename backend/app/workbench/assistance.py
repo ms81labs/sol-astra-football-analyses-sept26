@@ -79,7 +79,7 @@ def parse_typed_query(text: str) -> TypedQuery:
     if not stripped:
         return TypedQuery(eventFamily="pass", unanswerable=True, reason="empty_query")
     lowered = stripped.lower()
-    if any(token in lowered for token in ("sql", "drop table", "import os", "__import__", "eval(")):
+    if any(token in lowered for token in ("sql", "select ", "drop table", "import os", "__import__", "eval(")):
         return TypedQuery(eventFamily="pass", unanswerable=True, reason="refused_code_execution")
     match = _QUERY_RE.search(stripped)
     if match is None:
