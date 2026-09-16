@@ -165,6 +165,7 @@ def _run_verifier(
     env.pop("QT_QPA_PLATFORM", None)
     env.pop("VERIFY_DAYTONA", None)
     env.pop("ALLOW_DAYTONA_MUTATION", None)
+    env.pop("VERIFY_CODE_ONLY", None)
     env.update(
         {
             "PATH": f"{root / 'bin'}:{env['PATH']}",
