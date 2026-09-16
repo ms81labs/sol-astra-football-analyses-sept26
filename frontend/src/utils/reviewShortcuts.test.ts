@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 
-import { applyReviewShortcut, reviewShortcut } from '../utils/reviewShortcuts';
+import { applyReviewShortcut, reviewShortcut, type ReviewShortcutState } from '../utils/reviewShortcuts';
 
 it('maps the declared review keys to undoable analyst actions', () => {
   expect(reviewShortcut(' ')).toBe('play_pause');
@@ -22,7 +22,7 @@ it('applies play, candidate, frame, mark, accept, reject and undo without loadin
     { frame: 4, timestamp: 0.8, label: 'Pass', type: 'pass' as const, reviewStatus: 'unreviewed' as const },
     { frame: 10, timestamp: 2, label: 'Shot', type: 'shot' as const, reviewStatus: 'unreviewed' as const },
   ];
-  let state = {
+  let state: ReviewShortcutState = {
     isPlaying: false,
     currentFrame: 0,
     frameCount: 27000,

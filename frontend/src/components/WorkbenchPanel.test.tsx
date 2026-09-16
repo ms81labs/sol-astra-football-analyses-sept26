@@ -9,7 +9,8 @@ afterEach(() => {
 });
 
 it('renders independently visible capability statuses from the dossier', async () => {
-  const fetchMock = vi.fn(async (input: RequestInfo) => {
+  const fetchMock = vi.fn(async (input: RequestInfo, init?: RequestInit) => {
+    void init;
     const url = String(input);
     if (url.endsWith('/api/dossier')) {
       return new Response(JSON.stringify({
