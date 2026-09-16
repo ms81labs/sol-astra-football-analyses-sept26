@@ -6,7 +6,7 @@ from pathlib import Path
 from .schemas import MatchConfig
 from .workbench.cache import cache_identity, recompute_plan
 from .workbench.geometry import ground_contact_point, project_to_pitch
-from .workbench.media import FrameSource, OpenCvFrameSource, SamplingAudit, four_rates_receipt, vid_stride_policy
+from .workbench.media import FrameSource, OpenCvFrameSource, SamplingAudit, decode_memory_policy, four_rates_receipt, vid_stride_policy
 from .workbench.perception import Detection, DetectorAdapter, PreprocessorAdapter, TrackerAdapter
 
 # Exposed at module level so tests can patch this name directly.
@@ -130,6 +130,12 @@ def _sampling_and_cache(source_clock: dict[str, object], adapter: FrameSource) -
             "boxCentreIsFoot": False,
             "aerialBallMeasuredGroundLocation": False,
         },
+        "decodeMemoryPolicy": decode_memory_policy(
+            mode="offline",
+            hardware_decode_ok=False,
+            cuda_visible=False,
+            video_engine_capability=False,
+        ),
         "preprocessor": PreprocessorAdapter().transform(
             pixels=b"",
             width=0,

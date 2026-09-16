@@ -1028,6 +1028,7 @@ def summarize_match(
     shots: list[ShotAnalytics] | None = None,
     events: list[DetectedEvent | dict] | None = None,
     *, attack_direction: str = "left_to_right",
+    identity_continuous: bool = False,
 ) -> MatchSummary:
     canonical_frames = [frame if isinstance(frame, FrameData) else FrameData.model_validate(frame) for frame in frames]
     canonical_events = [event if isinstance(event, DetectedEvent) else DetectedEvent.model_validate(event) for event in (events or [])]
@@ -1063,6 +1064,8 @@ def summarize_match(
         dt = frame.timestamp - previous.timestamp
         if dt <= 0:
             sprinting = {"my_team": set(), "enemy": set()}
+            continue
+        if not identity_continuous:
             continue
         current_sprints = {"my_team": set(), "enemy": set()}
 
@@ -1136,14 +1139,14 @@ def summarize_match(
     possession = round((my_team_ownership / controlled_frames) * 100) if controlled_frames else None
     summary = MatchSummary(
         possession=possession,
-        myTeamDistance=round(my_team_total_dist),
-        enemyDistance=round(enemy_total_dist),
+        myTeamDistance=round(my_team_total_dist) if identity_continuous else 0,
+        enemyDistance=round(enemy_total_dist) if identity_continuous else 0,
         myTeamAvgPos={"x": round(my_team_avg_x, 1), "y": round(my_team_avg_y, 1)},
         enemyAvgPos={"x": round(enemy_avg_x, 1), "y": round(enemy_avg_y, 1)},
-        myTeamTopSpeed=round(my_team_top_speed, 1),
-        enemyTopSpeed=round(enemy_top_speed, 1),
-        myTeamSprints=my_team_sprints,
-        enemySprints=enemy_sprints,
+        myTeamTopSpeed=round(my_team_top_speed, 1) if identity_continuous else 0.0,
+        enemyTopSpeed=round(enemy_top_speed, 1) if identity_continuous else 0.0,
+        myTeamSprints=my_team_sprints if identity_continuous else 0,
+        enemySprints=enemy_sprints if identity_continuous else 0,
         myTeamXg=my_team_xg,
         enemyXg=enemy_xg,
         myTeamDefensiveLineHeight=my_team_defensive_line_height,
@@ -1171,6 +1174,7 @@ def summarize_match(
                 controlled_frames=controlled_frames,
                 my_pressing_actions=my_team_high_press_regains,
                 enemy_pressing_actions=enemy_high_press_regains,
+                identity_continuous=identity_continuous,
             )
         }
     )
@@ -1202,6 +1206,7 @@ def _summary_metric_availability(
     controlled_frames: int,
     my_pressing_actions: int,
     enemy_pressing_actions: int,
+    identity_continuous: bool = False,
 ) -> list[MetricAvailabilityRecord]:
     possession = MetricAvailabilityRecord(
         metric="possession_pct",
@@ -1212,23 +1217,24 @@ def _summary_metric_availability(
         denominator="controlled_possession_frames",
     )
     physical_reason = ["CALIBRATION_UNAVAILABLE", "IDENTITY_DISCONTINUITY"]
+    physical_values = {
+        "my_team_distance_m": float(summary.myTeamDistance),
+        "enemy_distance_m": float(summary.enemyDistance),
+        "my_team_top_speed_kmh": float(summary.myTeamTopSpeed),
+        "enemy_top_speed_kmh": float(summary.enemyTopSpeed),
+        "my_team_sprints": float(summary.myTeamSprints),
+        "enemy_sprints": float(summary.enemySprints),
+    }
     physical = [
         MetricAvailabilityRecord(
             metric=name,
-            value=None,
-            availability="withheld",
-            reasonCodes=physical_reason,
+            value=physical_values[name] if identity_continuous else None,
+            availability="available" if identity_continuous else "withheld",
+            reasonCodes=[] if identity_continuous else physical_reason,
             unit="metres" if "distance" in name else None,
             denominator="identity_continuous_eligible_seconds",
         )
-        for name in (
-            "my_team_distance_m",
-            "enemy_distance_m",
-            "my_team_top_speed_kmh",
-            "enemy_top_speed_kmh",
-            "my_team_sprints",
-            "enemy_sprints",
-        )
+        for name in physical_values
     ]
     shot_quality = MetricAvailabilityRecord(
         metric="experimental_shot_quality",

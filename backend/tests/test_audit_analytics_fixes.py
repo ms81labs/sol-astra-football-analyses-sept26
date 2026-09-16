@@ -34,12 +34,12 @@ def test_right_to_left_preserves_mirrored_shots_and_display_coordinates():
 @pytest.mark.parametrize('hz', [5,10])
 def test_continuous_run_counts_one_sprint_independent_of_sample_rate(hz):
     frames=[FrameData(frameId=i,timestamp=i/hz,myTeam=[PlayerData(id=1,x=10+8*(i/hz)/1.05,y=50)]) for i in range(hz*2+1)]
-    result=summarize_match(frames,assign_ball_possession(frames))
+    result=summarize_match(frames,assign_ball_possession(frames), identity_continuous=True)
     assert result.myTeamSprints == 1
     assert result.myTeamDistance == 16
     # A missing observation ends the sprint rather than linking across the gap.
     frames[hz] = frames[hz].model_copy(update={'myTeam': []})
-    assert summarize_match(frames,assign_ball_possession(frames)).myTeamSprints == 2
+    assert summarize_match(frames,assign_ball_possession(frames), identity_continuous=True).myTeamSprints == 2
 
 
 def test_unknown_team_remains_unassigned_and_competes_for_possession():

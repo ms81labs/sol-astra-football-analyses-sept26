@@ -191,11 +191,17 @@ describe('StatsPanel', () => {
           value: null,
           availability: 'unknown',
           reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          unit: 'metres',
+          denominator: 'identity_continuous_eligible_seconds',
+          eligibleSeconds: 0,
         }]}
       />,
     );
     const scoped = within(container);
-    expect(scoped.getByText('Unavailable')).toBeTruthy();
+    expect(scoped.getAllByText('Unavailable').length).toBeGreaterThanOrEqual(1);
+    expect(scoped.getByText(/metric inspector/i)).toBeTruthy();
+    expect(scoped.getByText(/identity_continuous_eligible_seconds/)).toBeTruthy();
+    expect(scoped.getByText(/metres/)).toBeTruthy();
   });
 
   it('renders unknown PPDA as unavailable and labels shot quality as experimental', () => {

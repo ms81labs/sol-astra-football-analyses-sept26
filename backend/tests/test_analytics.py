@@ -541,11 +541,40 @@ def test_summarize_match_uses_ball_assignments_in_possession_percentage():
     ]
 
     assignments = assign_ball_possession(frames)
-    summary = summarize_match(frames, assignments)
+    summary = summarize_match(frames, assignments, identity_continuous=True)
 
     assert summary.possession == 67
     assert summary.myTeamDistance > 0
     assert summary.enemyDistance > 0
+
+
+def test_summarize_match_withholds_physical_totals_until_identity_continuity() -> None:
+    frames = [
+        {
+            "frameId": 0,
+            "timestamp": 0.0,
+            "myTeam": [{"id": 7, "x": 21.0, "y": 50.0, "confidence": 0.92}],
+            "enemies": [{"id": 18, "x": 79.0, "y": 50.0, "confidence": 0.9}],
+        },
+        {
+            "frameId": 1,
+            "timestamp": 0.2,
+            "myTeam": [{"id": 7, "x": 22.0, "y": 50.0, "confidence": 0.92}],
+            "enemies": [{"id": 18, "x": 78.0, "y": 50.0, "confidence": 0.9}],
+        },
+    ]
+    summary = summarize_match(frames, [])
+    assert summary.myTeamDistance == 0
+    assert summary.enemyDistance == 0
+    assert summary.myTeamTopSpeed == 0.0
+    physical = {item.metric: item for item in summary.metricAvailability}
+    assert physical["my_team_distance_m"].availability == "withheld"
+    assert physical["my_team_distance_m"].value is None
+    assert physical["my_team_distance_m"].denominator == "identity_continuous_eligible_seconds"
+    continuous = summarize_match(frames, [], identity_continuous=True)
+    assert continuous.myTeamDistance > 0
+    available = {item.metric: item for item in continuous.metricAvailability}
+    assert available["my_team_distance_m"].availability == "available"
 
 
 def test_summarize_match_keeps_possession_unknown_without_controlled_frames():

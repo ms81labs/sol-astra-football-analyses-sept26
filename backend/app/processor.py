@@ -909,6 +909,9 @@ def _persist_prepared_video_outputs(
         source_clock = video_result.get("sourceClock")
         if isinstance(source_clock, dict):
             storage.save_analysis_artifact(match_id, "source_clock", source_clock)
+        decode_memory = video_result.get("decodeMemoryPolicy")
+        if isinstance(decode_memory, dict):
+            storage.save_analysis_artifact(match_id, "decode_memory_policy", decode_memory)
     _upsert_ball_pipeline_stage(ball_pipeline_trace, raw_rows_stage)
     if not raw_rows_saved:
         storage.save_raw_rows(match_id, ball_rows)

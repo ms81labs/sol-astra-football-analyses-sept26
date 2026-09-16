@@ -258,6 +258,10 @@ def test_process_video_input_attaches_four_rates_and_cache_identity(tmp_path):
     assert result["vidStridePolicy"]["targetFpsEqualsInferenceFps"] is False
     assert result["projectionPolicy"]["boxCentreIsFoot"] is False
     assert result["projectionPolicy"]["aerialBallMeasuredGroundLocation"] is False
+    assert result["decodeMemoryPolicy"]["retainAllDecodedFrames"] is False
+    assert result["decodeMemoryPolicy"]["gpuResident"] is False
+    assert result["decodeMemoryPolicy"]["canPromoteDefault"] is False
+    assert "CUDA_VISIBILITY_IS_NOT_VIDEO_CAPABILITY" in result["decodeMemoryPolicy"]["reasonCodes"] or result["decodeMemoryPolicy"]["videoEngineCapability"] is False
 
 
 def test_report_only_reprocess_does_not_invoke_vision():

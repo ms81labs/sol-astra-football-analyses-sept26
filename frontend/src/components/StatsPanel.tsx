@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import type { FormationSegment, MatchBenchmarkSummary, MatchStats, PlayerProfile, ShotSummary } from '../types';
 import type { MetricAvailability } from '../utils/workbench';
+import MetricInspector from './MetricInspector';
 
 interface StatsPanelProps {
     stats: MatchStats | null;
@@ -148,6 +149,20 @@ export default function StatsPanel({
                         <div className="mt-1 flex gap-4 justify-center text-xs">
                             <ComparisonArrow current={stats.myTeamDistance} previous={comparisonStats.myTeamDistance} />
                             <ComparisonArrow current={stats.enemyDistance} previous={comparisonStats.enemyDistance} />
+                        </div>
+                    )}
+                    {physicalUnavailable && physical && (
+                        <div className="mt-3">
+                            <MetricInspector
+                                metric={physical.metric}
+                                unit={physical.unit || 'metres'}
+                                denominator={physical.denominator || 'identity_continuous_eligible_seconds'}
+                                definitionVersion={physical.definitionVersion}
+                                eligibleDuration={physical.eligibleSeconds ?? 0}
+                                exclusions={physical.reasonCodes}
+                                value={physical.value}
+                                availability={physical.availability}
+                            />
                         </div>
                     )}
                 </div>

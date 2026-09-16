@@ -48,6 +48,8 @@ export interface MetricAvailability {
   availability: string;
   reasonCodes: string[];
   unit?: string | null;
+  denominator?: string | null;
+  eligibleSeconds?: number;
 }
 
 export interface WorkbenchFlags {
