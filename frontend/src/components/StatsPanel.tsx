@@ -316,7 +316,7 @@ export default function StatsPanel({
                                     </div>
                                     <div>
                                         <p className="text-slate-500">High Regains</p>
-                                        <p className="text-slate-300 font-mono font-semibold">{stats.myTeamHighPressRegains}</p>
+                                        <p className="text-slate-300 font-mono font-semibold">{stats.myTeamHighPressRegains == null ? 'Unavailable' : stats.myTeamHighPressRegains}</p>
                                     </div>
                                     <div>
                                         <p className="text-slate-500">Counterpress</p>
@@ -337,7 +337,7 @@ export default function StatsPanel({
                                     </div>
                                     <div>
                                         <p className="text-slate-500">High Regains</p>
-                                        <p className="text-slate-300 font-mono font-semibold">{stats.enemyHighPressRegains}</p>
+                                        <p className="text-slate-300 font-mono font-semibold">{stats.enemyHighPressRegains == null ? 'Unavailable' : stats.enemyHighPressRegains}</p>
                                     </div>
                                     <div>
                                         <p className="text-slate-500">Counterpress</p>

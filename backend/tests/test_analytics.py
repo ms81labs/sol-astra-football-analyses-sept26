@@ -1850,6 +1850,10 @@ def test_summarize_match_marks_ppda_unknown_when_pressing_denominator_is_zero():
     assert summary.enemyBlockHeight is None
     assert summary.myTeamTransitionExposure is None
     assert summary.enemyTransitionExposure is None
+    assert summary.myTeamHighPressRegains is None
+    assert summary.enemyHighPressRegains is None
+    assert summary.myTeamRegainZones is None
+    assert summary.enemyRegainZones is None
     shot_quality = _metric(summary, "experimental_shot_quality")
     assert shot_quality.availability == "unknown"
     assert shot_quality.value is None

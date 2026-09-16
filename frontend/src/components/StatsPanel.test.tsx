@@ -324,6 +324,20 @@ describe('StatsPanel', () => {
     expect(scoped.getAllByText(/experimental shot quality/i).length).toBeGreaterThanOrEqual(1);
   });
 
+  it('renders null high-press regains as unavailable rather than a measured zero', () => {
+    const { container } = render(
+      <StatsPanel
+        stats={{ ...baseStats, myTeamHighPressRegains: null, enemyHighPressRegains: null }}
+        benchmark={benchmarkTruthReady}
+        shotSummary={shotSummary}
+      />,
+    );
+    const pressing = within(container).getByText('Pressing').closest('div');
+    expect(pressing).toBeTruthy();
+    expect(within(pressing as HTMLElement).getAllByText('Unavailable').length).toBeGreaterThanOrEqual(2);
+    expect(pressing!.textContent).not.toMatch(/High Regains\s*0/);
+  });
+
   it('renders null PPDA without availability records as unavailable rather than a measured zero', () => {
     const { container } = render(
       <StatsPanel

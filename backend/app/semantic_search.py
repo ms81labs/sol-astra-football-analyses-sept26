@@ -123,7 +123,7 @@ def _detect_themes_from_summary(summary: dict) -> list[tuple[str, float]]:
         summary_text_parts.append(block_height.replace("_", " "))
     
     # Regain zones
-    regain_zones = summary.get("myTeamRegainZones", {})
+    regain_zones = summary.get("myTeamRegainZones") or {}
     if regain_zones.get("attacking_third", 0) > 3:
         summary_text_parts.append("high press win ball in attacking third")
     if regain_zones.get("defensive_third", 0) > 5:

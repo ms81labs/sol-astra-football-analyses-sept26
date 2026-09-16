@@ -104,8 +104,8 @@ export interface MatchStats {
     enemyDefensiveTeamLength: number | null;
     myTeamPpda: number | null;
     enemyPpda: number | null;
-    myTeamHighPressRegains: number;
-    enemyHighPressRegains: number;
+    myTeamHighPressRegains: number | null;
+    enemyHighPressRegains: number | null;
     myTeamCounterpressRecoverySeconds: number | null;
     enemyCounterpressRecoverySeconds: number | null;
     formation: string | null;         // e.g. "4-4-2"

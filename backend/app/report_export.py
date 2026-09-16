@@ -40,6 +40,12 @@ def _format_named_shape(value: str | None) -> str:
     return value.replace("_", " ").title()
 
 
+def _format_zone_count(zones: dict | None, key: str) -> str:
+    if zones is None:
+        return "Unavailable"
+    return _format_measured(zones.get(key), 0)
+
+
 def _availability_lookup(summary: dict, metric: str) -> dict | None:
     for item in summary.get("metricAvailability") or []:
         if item.get("metric") == metric:
@@ -246,8 +252,8 @@ def render_match_report_html(
           {_render_kv_card("Enemy PPDA", _format_available_metric(summary, "enemy_ppda", "enemyPpda", 1))}
           {_render_kv_card("My Team Defensive Line", _format_measured(summary.get("myTeamDefensiveLineHeight"), 1))}
           {_render_kv_card("Enemy Defensive Line", _format_measured(summary.get("enemyDefensiveLineHeight"), 1))}
-          {_render_kv_card("My Team High Press Regains", _format_number(summary.get("myTeamHighPressRegains"), 0))}
-          {_render_kv_card("Enemy High Press Regains", _format_number(summary.get("enemyHighPressRegains"), 0))}
+          {_render_kv_card("My Team High Press Regains", _format_measured(summary.get("myTeamHighPressRegains"), 0))}
+          {_render_kv_card("Enemy High Press Regains", _format_measured(summary.get("enemyHighPressRegains"), 0))}
           {_render_kv_card("My Team Counterpress Recovery", _format_duration_seconds(summary.get("myTeamCounterpressRecoverySeconds")))}
           {_render_kv_card("Enemy Counterpress Recovery", _format_duration_seconds(summary.get("enemyCounterpressRecoverySeconds")))}
         </div>
@@ -263,12 +269,12 @@ def render_match_report_html(
         </div>
         <h3 style="margin-top: 16px;">Regain Zones</h3>
         <div class="grid-3" style="margin-top: 8px;">
-          {_render_kv_card("My Team Defensive Third Regains", _format_number(summary.get("myTeamRegainZones", {}).get("defensive_third", 0), 0))}
-          {_render_kv_card("My Team Middle Third Regains", _format_number(summary.get("myTeamRegainZones", {}).get("middle_third", 0), 0))}
-          {_render_kv_card("My Team Attacking Third Regains", _format_number(summary.get("myTeamRegainZones", {}).get("attacking_third", 0), 0))}
-          {_render_kv_card("Enemy Defensive Third Regains", _format_number(summary.get("enemyRegainZones", {}).get("defensive_third", 0), 0))}
-          {_render_kv_card("Enemy Middle Third Regains", _format_number(summary.get("enemyRegainZones", {}).get("middle_third", 0), 0))}
-          {_render_kv_card("Enemy Attacking Third Regains", _format_number(summary.get("enemyRegainZones", {}).get("attacking_third", 0), 0))}
+          {_render_kv_card("My Team Defensive Third Regains", _format_zone_count(summary.get("myTeamRegainZones"), "defensive_third"))}
+          {_render_kv_card("My Team Middle Third Regains", _format_zone_count(summary.get("myTeamRegainZones"), "middle_third"))}
+          {_render_kv_card("My Team Attacking Third Regains", _format_zone_count(summary.get("myTeamRegainZones"), "attacking_third"))}
+          {_render_kv_card("Enemy Defensive Third Regains", _format_zone_count(summary.get("enemyRegainZones"), "defensive_third"))}
+          {_render_kv_card("Enemy Middle Third Regains", _format_zone_count(summary.get("enemyRegainZones"), "middle_third"))}
+          {_render_kv_card("Enemy Attacking Third Regains", _format_zone_count(summary.get("enemyRegainZones"), "attacking_third"))}
         </div>
       </section>
 

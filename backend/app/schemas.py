@@ -133,16 +133,16 @@ class MatchSummary(BaseModel):
     enemyDefensiveTeamLength: float | None = None
     myTeamPpda: float | None = None
     enemyPpda: float | None = None
-    myTeamHighPressRegains: int = 0
-    enemyHighPressRegains: int = 0
+    myTeamHighPressRegains: int | None = None
+    enemyHighPressRegains: int | None = None
     myTeamCounterpressRecoverySeconds: float | None = None
     enemyCounterpressRecoverySeconds: float | None = None
     formation: str | None = None
     # Defensive context metrics
     myTeamBlockHeight: str | None = None
     enemyBlockHeight: str | None = None
-    myTeamRegainZones: dict[str, int] = Field(default_factory=lambda: {"defensive_third": 0, "middle_third": 0, "attacking_third": 0})
-    enemyRegainZones: dict[str, int] = Field(default_factory=lambda: {"defensive_third": 0, "middle_third": 0, "attacking_third": 0})
+    myTeamRegainZones: dict[str, int] | None = None
+    enemyRegainZones: dict[str, int] | None = None
     myTeamTransitionExposure: float | None = None
     enemyTransitionExposure: float | None = None
     ballSignalStatus: str = "trusted"

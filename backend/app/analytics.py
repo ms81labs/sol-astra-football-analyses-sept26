@@ -289,12 +289,13 @@ def _is_pressing_zone(team: str, x: float) -> bool:
 def _summarize_pressing_metrics(
     frames: list[FrameData],
     events: list[DetectedEvent],
-) -> tuple[float | None, float | None, int, int, float | None, float | None]:
+) -> tuple[float | None, float | None, int | None, int | None, float | None, float | None]:
     frame_by_id = {frame.frameId: frame for frame in frames}
     regain_types = {"turnover", "recovery", "tackle"}
     teams = ("my_team", "enemy")
     passes_allowed = {team: 0 for team in teams}
     pressing_actions = {team: 0 for team in teams}
+    observed_regain = {team: False for team in teams}
 
     def event_position(event: DetectedEvent) -> tuple[float, float] | None:
         frame = frame_by_id.get(event.frameId)
@@ -330,6 +331,7 @@ def _summarize_pressing_metrics(
             position = event_position(event)
             if position is None:
                 continue
+            observed_regain[event.team] = True
             if _is_pressing_zone(event.team, position[0]):
                 pressing_actions[event.team] += 1
 
@@ -360,8 +362,8 @@ def _summarize_pressing_metrics(
     return (
         ppda["my_team"],
         ppda["enemy"],
-        pressing_actions["my_team"],
-        pressing_actions["enemy"],
+        pressing_actions["my_team"] if observed_regain["my_team"] else None,
+        pressing_actions["enemy"] if observed_regain["enemy"] else None,
         average_recovery("my_team"),
         average_recovery("enemy"),
     )
@@ -408,7 +410,7 @@ def _summarize_defensive_context(
     events: list[DetectedEvent],
     my_team_defensive_line_height: float | None,
     enemy_defensive_line_height: float | None,
-) -> tuple[str | None, str | None, dict[str, int], dict[str, int], float | None, float | None]:
+) -> tuple[str | None, str | None, dict[str, int] | None, dict[str, int] | None, float | None, float | None]:
     """Compute block height classification, regain zones, and transition exposure."""
     # Block height classification
     my_team_block_height = None if my_team_defensive_line_height is None else _classify_block_height(my_team_defensive_line_height)
@@ -417,6 +419,7 @@ def _summarize_defensive_context(
     # Regain zones - count recoveries by pitch third
     my_team_regain_zones = {"defensive_third": 0, "middle_third": 0, "attacking_third": 0}
     enemy_regain_zones = {"defensive_third": 0, "middle_third": 0, "attacking_third": 0}
+    observed_regain = {"my_team": False, "enemy": False}
     frame_by_id = {frame.frameId: frame for frame in frames}
     
     regain_types = {"recovery", "tackle", "turnover"}
@@ -445,8 +448,10 @@ def _summarize_defensive_context(
         
         if event.team == "my_team":
             my_team_regain_zones[zone] += 1
-        else:
+            observed_regain["my_team"] = True
+        elif event.team == "enemy":
             enemy_regain_zones[zone] += 1
+            observed_regain["enemy"] = True
     
     # Transition exposure: ratio of turnovers faced to high-press regains
     # Higher value = more vulnerable (facing turnovers without regaining high up)
@@ -487,8 +492,8 @@ def _summarize_defensive_context(
     return (
         my_team_block_height,
         enemy_block_height,
-        my_team_regain_zones,
-        enemy_regain_zones,
+        my_team_regain_zones if observed_regain["my_team"] else None,
+        enemy_regain_zones if observed_regain["enemy"] else None,
         my_team_exposure,
         enemy_exposure,
     )
@@ -1199,8 +1204,8 @@ def summarize_match(
     )
 
 
-def _ppda_availability(metric: str, value: float | None, pressing_actions: int) -> MetricAvailabilityRecord:
-    if pressing_actions <= 0:
+def _ppda_availability(metric: str, value: float | None, pressing_actions: int | None) -> MetricAvailabilityRecord:
+    if pressing_actions is None or pressing_actions <= 0:
         return MetricAvailabilityRecord(
             metric=metric,
             value=None,
@@ -1223,8 +1228,8 @@ def _summary_metric_availability(
     summary: MatchSummary,
     *,
     controlled_frames: int,
-    my_pressing_actions: int,
-    enemy_pressing_actions: int,
+    my_pressing_actions: int | None,
+    enemy_pressing_actions: int | None,
     identity_continuous: bool = False,
 ) -> list[MetricAvailabilityRecord]:
     possession = MetricAvailabilityRecord(
