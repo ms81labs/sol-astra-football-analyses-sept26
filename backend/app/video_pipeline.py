@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+from dataclasses import asdict
 from pathlib import Path
 
 from .schemas import MatchConfig
-from .workbench.media import FrameSource, OpenCvFrameSource
+from .workbench.cache import cache_identity, recompute_plan
+from .workbench.media import FrameSource, OpenCvFrameSource, SamplingAudit, four_rates_receipt
 
 # Exposed at module level so tests can patch this name directly.
-from backend.run_guerilla import process_video as _process_video_impl
+from backend.run_guerilla import TARGET_FPS, process_video as _process_video_impl
 
 
 def _probe_source_clock(video_path: Path, frame_source: FrameSource | None) -> dict[str, object]:
@@ -77,5 +79,71 @@ def process_video_input(
     if not result:
         raise RuntimeError("Video pipeline did not return any tracking rows.")
     payload = result if isinstance(result, dict) else {"rows": result, "trackColors": {}}
-    payload["sourceClock"] = _probe_source_clock(Path(video_path), adapter)
+    source_clock = _probe_source_clock(Path(video_path), adapter)
+    payload["sourceClock"] = source_clock
+    payload.update(_sampling_and_cache(source_clock, adapter))
+    return payload
+
+
+def _sampling_and_cache(source_clock: dict[str, object], adapter: FrameSource) -> dict[str, object]:
+    source_sha = str(source_clock.get("sourceSha256") or "")
+    nominal = source_clock.get("nominalFps")
+    try:
+        nominal_fps = float(nominal) if nominal not in {None, ""} else None
+    except (TypeError, ValueError):
+        nominal_fps = None
+    interval = 1
+    if nominal_fps and nominal_fps > TARGET_FPS:
+        interval = int(nominal_fps / TARGET_FPS)
+    audit = SamplingAudit(
+        source_sha256=source_sha,
+        declared_target_fps=float(TARGET_FPS),
+        nominal_fps=nominal_fps,
+        frame_interval=interval,
+        selected_backend=f"{getattr(adapter, 'name', 'opencv')}+ultralytics_track",
+        temporal_policy="clip_local_index_modulo",
+    )
+    rates = four_rates_receipt(audit)
+    identity = cache_identity(
+        source_sha256=source_sha or "0" * 64,
+        interval_start=0.0,
+        interval_end=0.0,
+        decoder_version=str(getattr(adapter, "name", "opencv")),
+        model_hash="unspecified",
+        temporal_policy=audit.temporal_policy,
+        output_schema="evidence_v1",
+    )
+    return {
+        "sampling": audit.receipt().model_dump(mode="json"),
+        "fourRates": asdict(rates),
+        "cacheIdentity": identity,
+        "exportFpsEqualsInferenceFps": False,
+    }
+
+
+def reprocess_for_change(
+    *,
+    change: str,
+    previous_identity: str | None,
+    current_identity: str,
+    vision,
+) -> dict[str, object]:
+    plan = recompute_plan(
+        previous_identity=previous_identity,
+        current_identity=current_identity,
+        change=change,
+    )
+    if change == "report" or plan["reuse"]:
+        return {
+            "visionInvoked": False,
+            "rebuild": list(plan["rebuild"]),
+            "reused": True,
+            "reason": "report_text_or_identical_cache_identity",
+        }
+    payload = vision()
+    if not isinstance(payload, dict):
+        payload = {"rows": payload}
+    payload["visionInvoked"] = True
+    payload["rebuild"] = list(plan["rebuild"])
+    payload["reused"] = False
     return payload

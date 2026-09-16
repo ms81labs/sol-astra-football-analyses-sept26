@@ -218,6 +218,11 @@ def test_workbench_corrections_search_jobs_and_unknown_metrics(tmp_path: Path) -
             targets = await client.get("/api/workbench/targets")
             assert targets.json()["measured"] is False
             assert targets.json()["p95MetadataApiReadMs"] == 500
+            decisions = await client.get("/api/workbench/decisions")
+            assert [item["id"] for item in decisions.json()["items"]][0] == "camera_support"
+            rolled = await client.post("/api/workbench/rollback", json={"flagName": "gpu_default", "affectedOutputs": ["run-17"]})
+            assert rolled.json()["newJobsAdmitted"] is False
+            assert rolled.json()["rewrotePastTrialOutcomes"] is False
 
     _run(body)
 

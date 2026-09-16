@@ -11,6 +11,7 @@ from .admission import admit_camera, admit_media
 from .assistance import AssistancePolicy, AssistanceRouter, execute_typed_query, parse_typed_query
 from .contracts import SourceClockIdentity, jsonable
 from .costs import credit_allocation, match_cost
+from .decisions import architecture_decisions
 from .dossier import build_baseline_dossier, build_release_dossier
 from .evaluation import current_repository_evaluation_gate
 from .evidence import EvidenceStore, inspect_metric, metric_dictionary, summarize_legacy_match
@@ -30,6 +31,7 @@ from .reports import assemble_report
 from .review import CorrectionLog, new_correction, playlist_export_interval
 from .rights import rights_register
 from .risks import risk_register
+from .rollback import rollback_release
 from .roster import model_roster
 from .setup import assess_match_setup, create_match
 from .store import WorkbenchStore
@@ -507,5 +509,17 @@ def create_workbench_router(storage_root: Path) -> APIRouter:
     @router.get("/targets")
     def get_targets() -> dict:
         return metadata_api_targets()
+
+    @router.get("/decisions")
+    def get_decisions() -> dict:
+        return {"items": architecture_decisions()}
+
+    @router.post("/rollback")
+    def post_rollback(payload: dict | None = None) -> dict:
+        body = payload or {}
+        return rollback_release(
+            flag_name=str(body.get("flagName") or "unspecified"),
+            affected_outputs=list(body.get("affectedOutputs") or []),
+        )
 
     return router

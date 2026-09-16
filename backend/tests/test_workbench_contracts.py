@@ -1835,3 +1835,69 @@ def test_risk_register_worked_flow_and_independent_reviewer_stay_honest() -> Non
     assert telestration_before_3d()["blenderEnabled"] is False
     assert telestration_before_3d()["pitchView"] == "2d"
 
+
+def test_architecture_decisions_record_alternatives_owner_and_reconsideration() -> None:
+    from backend.app.workbench.decisions import architecture_decisions
+
+    records = architecture_decisions()
+    ids = [item["id"] for item in records]
+    assert ids == [
+        "camera_support",
+        "coordinate_conventions",
+        "persistence",
+        "detector_licensing",
+        "ai_routing",
+        "cloud_region",
+        "capability_release",
+    ]
+    for item in records:
+        assert item["alternatives"]
+        assert item["evidence"]
+        assert item["owner"]
+        assert item["reversible"] is True
+        assert item["reconsiderWhen"]
+    camera = next(item for item in records if item["id"] == "camera_support")
+    assert camera["decision"] == "stitched_panoramic_view_declared_initial"
+    cloud = next(item for item in records if item["id"] == "cloud_region")
+    assert cloud["euGpuProven"] is False
+
+
+def test_promotion_receipt_is_not_complete_match_acceptance() -> None:
+    from backend.app.workbench.receipts import promotion_receipt
+
+    receipt = promotion_receipt(
+        source_sha256="a" * 64,
+        weights="weights-v1",
+        configuration="evidence_v1",
+        hardware="cpu",
+        native_builds=[],
+        selected_backend="opencv+ultralytics_track",
+        frame_count=10,
+        call_count=10,
+        cold_timing_ms=100,
+        warm_timing_ms=40,
+        peak_memory_bytes=1024,
+        transferred_bytes=0,
+        output_quality="unproven",
+        accepted_coverage=0.0,
+        failure_cases=["labels_incomplete"],
+        allocated_spend=1.0,
+        fallback_event="cpu_local",
+    )
+    assert receipt["stageBenchmarkIsCompleteMatchAcceptance"] is False
+    assert receipt["completeMatchAccepted"] is False
+    assert receipt["fallbackEvent"] == "cpu_local"
+    assert receipt["sourceSha256"] == "a" * 64
+
+
+def test_rollback_stops_admission_and_does_not_rewrite_past_outcomes() -> None:
+    from backend.app.workbench.rollback import rollback_release
+
+    rolled = rollback_release(flag_name="gpu_default", affected_outputs=["run-17-report"])
+    assert rolled["flagReverted"] is True
+    assert rolled["flagName"] == "gpu_default"
+    assert rolled["newJobsAdmitted"] is False
+    assert rolled["artifactsPreserved"] is True
+    assert "run-17-report" in rolled["staleOutputs"]
+    assert rolled["rewrotePastTrialOutcomes"] is False
+

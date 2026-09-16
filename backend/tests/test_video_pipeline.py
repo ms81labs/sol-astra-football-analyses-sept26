@@ -231,3 +231,54 @@ def test_process_video_input_raises_when_process_video_returns_nothing():
 
         with pytest.raises(RuntimeError, match="tracking rows"):
             process_video_input(Path("/fake/video.mp4"), config)
+
+
+def test_process_video_input_attaches_four_rates_and_cache_identity(tmp_path):
+    video = tmp_path / "clip.bin"
+    video.write_bytes(b"fixture-bytes")
+    config = _cfg([[0, 0], [100, 0], [100, 100], [0, 100]])
+
+    class FakeSource:
+        name = "fixture"
+
+        def probe(self, path):
+            from backend.app.workbench.contracts import SourceClockIdentity
+
+            return SourceClockIdentity(sourceSha256="a" * 64, byteSize=path.stat().st_size, codec="h264")
+
+    with patch("backend.app.video_pipeline._process_video_impl") as mock_process:
+        mock_process.return_value = {"rows": [{"Frame_ID": 0}], "trackColors": {}}
+        result = process_video_input(video, config, frame_source=FakeSource())
+
+    assert result["exportFpsEqualsInferenceFps"] is False
+    assert result["fourRates"]["exportFpsEqualsInferenceFps"] is False
+    assert result["cacheIdentity"]
+    assert result["sampling"]["selectedBackend"] == "fixture+ultralytics_track"
+
+
+def test_report_only_reprocess_does_not_invoke_vision():
+    from backend.app.video_pipeline import reprocess_for_change
+
+    calls = []
+
+    def vision():
+        calls.append("vision")
+        return {"rows": [{"Frame_ID": 1}]}
+
+    reused = reprocess_for_change(
+        change="report",
+        previous_identity="abc",
+        current_identity="abc",
+        vision=vision,
+    )
+    assert reused["visionInvoked"] is False
+    assert calls == []
+    rebuilt = reprocess_for_change(
+        change="calibration",
+        previous_identity=None,
+        current_identity="def",
+        vision=vision,
+    )
+    assert rebuilt["visionInvoked"] is True
+    assert "pitch_positions" in rebuilt["rebuild"]
+    assert calls == ["vision"]
