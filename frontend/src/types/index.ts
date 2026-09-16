@@ -117,6 +117,11 @@ export interface MatchStats {
         reasonCodes: string[];
         unit?: string | null;
         publishedLabel?: string | null;
+        eligibleSeconds?: number;
+        requestedSeconds?: number;
+        evidenceIds?: string[];
+        reviewStatus?: string;
+        denominator?: string | null;
     }>;
 }
 
@@ -196,10 +201,13 @@ export interface ProcessingJob {
     progress: number;
     message?: string | null;
     error?: string | null;
+    remoteRunId?: string | null;
     logPath?: string | null;
     startedAt?: string | null;
     completedAt?: string | null;
     durationSeconds?: number | null;
+    createdAt?: string;
+    updatedAt?: string;
 }
 
 export type CameraProfile =
@@ -222,6 +230,7 @@ export interface UploadConfig {
         processingScope: 'local_only' | 'local_plus_burst' | 'hosted';
         cloudPermission: boolean;
         retentionClass: 'working' | 'review' | 'publication' | 'unknown';
+        audience?: string | null;
     };
 }
 
@@ -265,6 +274,7 @@ export interface ShotMarker {
     y: number;
     inBox: boolean;
     xg: number;
+    publishedLabel?: string;
     distanceToGoal?: number;
     angleDegrees?: number;
 }

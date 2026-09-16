@@ -2677,3 +2677,23 @@ def test_escalation_json_repair_and_cancellation_charges_stay_bounded() -> None:
     assert billed["chargesErased"] is False
     assert billed["incurred"] == 1.2
 
+
+def test_frontend_types_are_compatible_with_backend_schemas() -> None:
+    from backend.app.schemas import DetectedEvent, JobRecord, MatchConfig, MatchRecord, MetricAvailabilityRecord, ShotAnalytics
+
+    types_text = Path("/workspace/frontend/src/types/index.ts").read_text(encoding="utf-8")
+    contracts = {
+        "BackendEvent": DetectedEvent,
+        "ProcessingJob": JobRecord,
+        "UploadConfig": MatchConfig,
+        "MatchRecord": MatchRecord,
+        "ShotMarker": ShotAnalytics,
+    }
+    for interface_name, model in contracts.items():
+        assert f"export interface {interface_name}" in types_text, interface_name
+        missing = [name for name in model.model_fields if name not in types_text]
+        assert missing == [], f"{interface_name} missing backend fields: {missing}"
+    availability_fields = list(MetricAvailabilityRecord.model_fields)
+    missing_availability = [name for name in availability_fields if name not in types_text]
+    assert missing_availability == [], f"metricAvailability missing backend fields: {missing_availability}"
+

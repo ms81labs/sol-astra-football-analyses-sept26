@@ -5,6 +5,7 @@ from html import escape
 
 from .llm import _build_event_summary
 from .schemas import DetectedEvent, FormationSegment, MatchRecord, MatchSummary, ShotAnalytics
+from .workbench.reports import assemble_report
 
 
 def _format_percent(value: float | int | None) -> str:
@@ -107,9 +108,21 @@ def render_match_report_html(
     event_summary: dict,
     tactical_report: dict | None,
     drills: dict | None,
+    publication: dict | None = None,
 ) -> str:
     latest_formations = formation_timeline[-5:]
+    publication = publication or {
+        "accepted": True,
+        "requiresAnalyst": True,
+        "wholeMatchFrequency": False,
+        "frequencyRequiresDenominator": True,
+    }
+    whole_match_frequency = "true" if publication.get("wholeMatchFrequency") else "false"
+    has_tactical_report = bool(tactical_report)
+    has_drills = bool(drills)
     if summary.get("possession") is None:
+        has_tactical_report = False
+        has_drills = False
         tactical_report = None
         drills = None
     tactical_report = tactical_report or {}
@@ -180,6 +193,7 @@ def render_match_report_html(
         <div class="eyebrow">Guerilla Analytics Match Report</div>
         <h1>{escape(match_name)}</h1>
         <p class="lede">Input mode: {escape(input_mode)} • Exported at: {escape(exported_at)}</p>
+        <p class="lede" data-whole-match-frequency="{whole_match_frequency}">Reviewed passages do not establish a whole-match frequency.</p>
       </header>
 
       <section>
@@ -200,7 +214,7 @@ def render_match_report_html(
           f'<div class="card"><div class="eyebrow">Weaknesses</div><p class="muted">{escape(tactical_report.get("weaknesses", "-"))}</p></div>'
           '</div>'
           f'<div class="grid" style="margin-top: 12px;">{_render_kv_card("Overall Rating", str(tactical_report.get("rating", "-")) + "/10")}{_render_kv_card("Key Player", "#" + str(tactical_report.get("key_player", "-")))}</div>')
-         if tactical_report else '<div class="card"><p class="muted">Coach report not generated yet.</p></div>'}
+         if has_tactical_report else '<div class="card"><p class="muted">Coach report not generated yet.</p></div>'}
       </section>
 
       <section>
@@ -308,6 +322,19 @@ def render_match_report_html(
 </html>"""
 
 
+def _known_evidence_ids(events: list[DetectedEvent], tactical_report: dict | None, drills: dict | None) -> set[str]:
+    known: set[str] = set()
+    for event in events:
+        payload = event.model_dump(mode="json")
+        description = str(payload.get("description") or "").strip()
+        if description:
+            known.add(description)
+        for evidence_id in payload.get("evidenceIds") or []:
+            known.add(str(evidence_id))
+    del tactical_report, drills
+    return known
+
+
 def build_match_report_export(
     *,
     match: MatchRecord,
@@ -320,6 +347,15 @@ def build_match_report_export(
 ) -> str:
     event_summary = _build_event_summary(events, shots)
     exported_at = datetime.now(timezone.utc).isoformat()
+    claimed = [str(item) for item in (tactical_report or {}).get("evidence") or []]
+    assembled = assemble_report(
+        metrics=[item.model_dump(mode="json") for item in summary.metricAvailability],
+        events=[event.model_dump(mode="json") for event in events],
+        claimed_evidence_ids=claimed,
+        known_evidence_ids=_known_evidence_ids(events, tactical_report, drills),
+        narrative=tactical_report,
+    )
+    published_tactical = tactical_report if assembled["publication"]["accepted"] else None
     return render_match_report_html(
         match_name=match.name,
         input_mode=match.inputMode,
@@ -327,6 +363,7 @@ def build_match_report_export(
         summary=summary.model_dump(mode="json"),
         formation_timeline=[segment.model_dump(mode="json") for segment in formation_timeline],
         event_summary=event_summary,
-        tactical_report=tactical_report,
+        tactical_report=published_tactical,
         drills=drills,
+        publication=assembled["publication"],
     )

@@ -206,6 +206,7 @@ export default function CoachInsights({
 
         {tacticalReport ? (
           <div className="space-y-3">
+            <p className="text-[11px] text-amber-200">Reviewed passages do not establish a whole-match frequency.</p>
             <div className="flex items-center justify-between">
               <span className="text-xs text-slate-400">Overall Rating</span>
               <span className="text-xl font-bold text-emerald-400">{tacticalReport.rating}/10</span>

@@ -40,6 +40,7 @@ describe('CoachInsights', () => {
     expect(screen.getByText('Player Focus')).toBeTruthy();
     expect(screen.getByText('Primary Creator')).toBeTruthy();
     expect(screen.getByText('2 through balls, 0.54 xG created')).toBeTruthy();
+    expect(screen.getByText(/reviewed passages do not establish a whole-match frequency/i)).toBeTruthy();
   });
 
   it('renders drill evidence and player-focus context', () => {

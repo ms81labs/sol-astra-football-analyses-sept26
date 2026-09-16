@@ -1,4 +1,7 @@
-from backend.app.report_export import render_match_report_html
+from datetime import datetime, timezone
+
+from backend.app.report_export import build_match_report_export, render_match_report_html
+from backend.app.schemas import DetectedEvent, MatchConfig, MatchRecord, MatchSummary
 
 
 def test_render_report_html_includes_core_match_sections():
@@ -147,4 +150,65 @@ def test_render_report_html_does_not_publish_unknown_ppda_as_zero():
     assert "experimental shot quality" in html.lower()
     assert "My Team PPDA" in html
     assert ">0.0<" not in html.replace("0.42", "SHOT")
+
+
+def _sample_match() -> MatchRecord:
+    now = datetime.now(timezone.utc)
+    return MatchRecord(
+        id="match-1",
+        name="Grounded Match",
+        inputMode="video",
+        status="ready",
+        originalFilename="clip.mp4",
+        config=MatchConfig(),
+        createdAt=now,
+        updatedAt=now,
+    )
+
+
+def _sample_summary() -> MatchSummary:
+    return MatchSummary(
+        possession=55,
+        myTeamDistance=0,
+        enemyDistance=0,
+        myTeamAvgPos={"x": 50.0, "y": 50.0},
+        enemyAvgPos={"x": 50.0, "y": 50.0},
+        myTeamTopSpeed=0.0,
+        enemyTopSpeed=0.0,
+        myTeamSprints=0,
+        enemySprints=0,
+        formation="4-3-3",
+    )
+
+
+def test_build_match_report_export_does_not_imply_whole_match_frequency() -> None:
+    html = build_match_report_export(
+        match=_sample_match(),
+        summary=_sample_summary(),
+        formation_timeline=[],
+        shots=[],
+        events=[
+            DetectedEvent(type="shot", frameId=12, timestamp=4.0, description="Reviewed shot in box"),
+        ],
+        tactical_report={"summary": "Three reviewed passages created chances.", "evidence": ["Reviewed shot in box"]},
+        drills=None,
+    )
+    assert "do not establish a whole-match frequency" in html.lower()
+    assert 'data-whole-match-frequency="false"' in html
+
+
+def test_build_match_report_export_rejects_fabricated_evidence_from_publication() -> None:
+    html = build_match_report_export(
+        match=_sample_match(),
+        summary=_sample_summary(),
+        formation_timeline=[],
+        shots=[],
+        events=[
+            DetectedEvent(type="pass", frameId=3, timestamp=1.0, description="Observed pass"),
+        ],
+        tactical_report={"summary": "Invented dominance from missing clip", "evidence": ["not-a-real-evidence-id"]},
+        drills=None,
+    )
+    assert "Invented dominance from missing clip" not in html
+    assert "Coach report not generated yet" in html
 
