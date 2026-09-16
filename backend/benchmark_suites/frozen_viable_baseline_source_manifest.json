@@ -1,0 +1,62 @@
+{
+  "suiteName": "frozen-viable-baseline-source-manifest",
+  "suiteType": "user_supplied_source_clip_manifest",
+  "baselineFingerprint": {
+    "detectorModelPath": "yolov10n.pt",
+    "primaryMode": "anchored_player_ranked_context_960",
+    "keptCleanupLane": "recent_ball_plus_inward_anchor_center_bias35_960"
+  },
+  "entries": [
+    {
+      "clipId": "trimed-football-2-1minute",
+      "label": "Trimmed football 2 - 1 minute",
+      "localPath": "/root/WorkSpace/fotball-analyst/videos/trimed-football-2-1minute.mp4",
+      "sourceType": "user_supplied_local_video",
+      "enabled": true,
+      "notes": "Short prefix of trimed-5min.mp4; all 1,796 decodable frames are byte-identical and must not count as an independent source.",
+      "tags": [
+        "user-supplied",
+        "manifest-expansion",
+        "short-source"
+      ]
+    },
+    {
+      "clipId": "trimed-11min",
+      "label": "Trimmed 11 minute source",
+      "localPath": "/root/WorkSpace/fotball-analyst/videos/trimed-11min.mp4",
+      "sourceType": "user_supplied_local_video",
+      "enabled": true,
+      "notes": "Longer source clip whose match relationship is not recorded. Upload through the existing object-storage-backed remote benchmark path.",
+      "tags": [
+        "user-supplied",
+        "manifest-expansion",
+        "long-source"
+      ]
+    },
+    {
+      "clipId": "trimed-15min",
+      "label": "Trimmed 15 minute source",
+      "localPath": "/root/WorkSpace/fotball-analyst/videos/trimed-15min.mp4",
+      "sourceType": "user_supplied_local_video",
+      "enabled": true,
+      "notes": "Third allowed attempt for the bounded import batch if earlier entries do not already hit the success cap.",
+      "tags": [
+        "user-supplied",
+        "manifest-expansion",
+        "long-source"
+      ]
+    },
+    {
+      "clipId": "reserve-future-source",
+      "label": "Future source clip",
+      "localPath": "/root/WorkSpace/fotball-analyst/videos/replace-with-clip-4.mp4",
+      "sourceType": "user_supplied_local_video",
+      "enabled": false,
+      "notes": "Keep extra clips disabled until you are ready for a later expansion batch.",
+      "tags": [
+        "user-supplied",
+        "manifest-expansion"
+      ]
+    }
+  ]
+}

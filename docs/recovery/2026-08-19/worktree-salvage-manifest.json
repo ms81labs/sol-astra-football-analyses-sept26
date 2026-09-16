@@ -1,0 +1,3471 @@
+{
+  "archiveRoot": "/root/WorkSpace/fotball-analyst-recovery-archive/2026-08-19-worktree-salvage",
+  "comparisonRoot": "/root/WorkSpace/fotball-analyst",
+  "generatedAt": "2026-08-19T16:50:00Z",
+  "globalUnresolvedVariantMatrix": {
+    "countDefinitions": {
+      "conflictingContentTypeModeVariantPathCount": "Number of distinct unresolved paths having more than one exact source variant grouped by type, mode, and SHA-256.",
+      "contextOccurrenceCount": "All comparison rows for unresolved paths, including integrated occurrences for context.",
+      "distinctUnresolvedPathCount": "Number of distinct paths having at least one unique_unresolved occurrence.",
+      "repeatedUnresolvedPathCount": "Number of distinct unresolved paths having more than one unique_unresolved occurrence.",
+      "unresolvedOccurrenceCount": "Number of comparison rows whose disposition is unique_unresolved."
+    },
+    "counts": {
+      "conflictingContentTypeModeVariantPathCount": 18,
+      "contextOccurrenceCount": 85,
+      "distinctUnresolvedPathCount": 44,
+      "repeatedUnresolvedPathCount": 21,
+      "unresolvedOccurrenceCount": 81
+    },
+    "decisionPolicy": {
+      "conflictingVariantDecisionStatus": "manual_review_select_variant",
+      "generatedPycClassification": "editor_or_cache_material",
+      "generatedPycDecisionStatus": "archive_only_non_product",
+      "singleVariantDecisionStatus": "manual_review_preserve_or_archive",
+      "statement": "No variant choice or supersession has been approved. Integrated occurrences are context only and do not select among unresolved variants.",
+      "supersessionApproved": false,
+      "variantChoiceApproved": false
+    },
+    "derivedFromImmutableComparisons": [
+      {
+        "absolutePath": "/root/WorkSpace/fotball-analyst-recovery-archive/2026-08-19-worktree-salvage/recovery-history-batch/comparison.json",
+        "pathCount": 2,
+        "sha256": "2492dfd9411bf72e976406a6b8d9984d11f089b56ffd3dca016bc74c9c5d0508",
+        "worktree": "recovery-history-batch"
+      },
+      {
+        "absolutePath": "/root/WorkSpace/fotball-analyst-recovery-archive/2026-08-19-worktree-salvage/hybrid-staged-recovery/comparison.json",
+        "pathCount": 75,
+        "sha256": "ddf50b1299d133df3f71f117bd7013f0e8d8f561ccadbca3969ac5c604b6b394",
+        "worktree": "hybrid-staged-recovery"
+      },
+      {
+        "absolutePath": "/root/WorkSpace/fotball-analyst-recovery-archive/2026-08-19-worktree-salvage/reusable-pod-lane/comparison.json",
+        "pathCount": 48,
+        "sha256": "4e286dcc992c04ea694a7a075cb1709e9a6a6ae401395ad92e061e5121bb6f04",
+        "worktree": "reusable-pod-lane"
+      },
+      {
+        "absolutePath": "/root/WorkSpace/fotball-analyst-recovery-archive/2026-08-19-worktree-salvage/proposal-support-bridge/comparison.json",
+        "pathCount": 33,
+        "sha256": "5d0cb07441ed95bfb2095844caef36e05f9207e61171292046e8780adbb0c764",
+        "worktree": "proposal-support-bridge"
+      }
+    ],
+    "knownVariantChecks": [
+      {
+        "actualDistinctSourceHashCount": 3,
+        "expectedDistinctSourceHashCount": 3,
+        "passed": true,
+        "path": "backend/scripts/run_pod_proof_cycle.py",
+        "sourceSha256s": [
+          "40adebb4e093363169f4f52edb65afa809553f569d4c31e273b590f3251e4ff2",
+          "5f584f4d8426c58ea63f031a5ea14259f021ec76e5232988c3eb77a956c284a7",
+          "fa34d1cc85b1b1d72a647dd7746250a0e782f24487645564fab07e7ad6405941"
+        ]
+      }
+    ],
+    "paths": [
+      {
+        "classification": "editor_or_cache_material",
+        "conflictingSourceVariant": false,
+        "contextOccurrenceCount": 3,
+        "decisionReason": "Generated Python bytecode/cache material is preserved only in the immutable salvage bundle and is not product source.",
+        "decisionStatus": "archive_only_non_product",
+        "occurrences": [
+          {
+            "comparisonBlobId": "7455af2015d2f9674739e9b46c2ffbe23d5dd565",
+            "comparisonMode": 420,
+            "comparisonSha256": "de845a7f88d672df9b0d55fdf8d6e108b82ac34fb5a1adaa5ced955bf7fc7b3e",
+            "comparisonSize": 329640,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": null,
+            "sourceMode": null,
+            "sourceSha256": null,
+            "sourceSize": null,
+            "sourceType": "missing",
+            "worktree": "recovery-history-batch"
+          },
+          {
+            "comparisonBlobId": "7455af2015d2f9674739e9b46c2ffbe23d5dd565",
+            "comparisonMode": 420,
+            "comparisonSha256": "de845a7f88d672df9b0d55fdf8d6e108b82ac34fb5a1adaa5ced955bf7fc7b3e",
+            "comparisonSize": 329640,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": null,
+            "sourceMode": null,
+            "sourceSha256": null,
+            "sourceSize": null,
+            "sourceType": "missing",
+            "worktree": "hybrid-staged-recovery"
+          },
+          {
+            "comparisonBlobId": "7455af2015d2f9674739e9b46c2ffbe23d5dd565",
+            "comparisonMode": 420,
+            "comparisonSha256": "de845a7f88d672df9b0d55fdf8d6e108b82ac34fb5a1adaa5ced955bf7fc7b3e",
+            "comparisonSize": 329640,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": null,
+            "sourceMode": null,
+            "sourceSha256": null,
+            "sourceSize": null,
+            "sourceType": "missing",
+            "worktree": "reusable-pod-lane"
+          }
+        ],
+        "path": "backend/__pycache__/run_guerilla.cpython-312.pyc",
+        "repeatedUnresolvedPath": true,
+        "sourceVariantCount": 1,
+        "supersessionApproved": false,
+        "uniqueUnresolvedOccurrenceCount": 3,
+        "variantChoiceApproved": false,
+        "variants": [
+          {
+            "dispositions": [
+              "unique_unresolved",
+              "unique_unresolved",
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 3,
+            "sourceBlobId": null,
+            "sourceMode": null,
+            "sourceSha256": null,
+            "sourceSize": null,
+            "sourceType": "missing",
+            "variantKey": "type=missing;mode=None;sha256=None",
+            "worktrees": [
+              "recovery-history-batch",
+              "hybrid-staged-recovery",
+              "reusable-pod-lane"
+            ]
+          }
+        ]
+      },
+      {
+        "classification": "manual_review",
+        "conflictingSourceVariant": true,
+        "contextOccurrenceCount": 3,
+        "decisionReason": "Multiple exact source type/mode/hash variants exist; a reviewer must select or reconcile a variant before preservation.",
+        "decisionStatus": "manual_review_select_variant",
+        "occurrences": [
+          {
+            "comparisonBlobId": "c108f0d334a527bc7b11bfd846c38d6778e8a1c8",
+            "comparisonMode": 420,
+            "comparisonSha256": "c5707b2580acec24f49e50af05f9c2f26394dc5221ecfb99520fefe61160a897",
+            "comparisonSize": 3334,
+            "comparisonType": "regular",
+            "disposition": "integrated",
+            "sourceBlobId": "c108f0d334a527bc7b11bfd846c38d6778e8a1c8",
+            "sourceMode": 420,
+            "sourceSha256": "c5707b2580acec24f49e50af05f9c2f26394dc5221ecfb99520fefe61160a897",
+            "sourceSize": 3334,
+            "sourceType": "regular",
+            "worktree": "hybrid-staged-recovery"
+          },
+          {
+            "comparisonBlobId": "c108f0d334a527bc7b11bfd846c38d6778e8a1c8",
+            "comparisonMode": 420,
+            "comparisonSha256": "c5707b2580acec24f49e50af05f9c2f26394dc5221ecfb99520fefe61160a897",
+            "comparisonSize": 3334,
+            "comparisonType": "regular",
+            "disposition": "integrated",
+            "sourceBlobId": "c108f0d334a527bc7b11bfd846c38d6778e8a1c8",
+            "sourceMode": 420,
+            "sourceSha256": "c5707b2580acec24f49e50af05f9c2f26394dc5221ecfb99520fefe61160a897",
+            "sourceSize": 3334,
+            "sourceType": "regular",
+            "worktree": "reusable-pod-lane"
+          },
+          {
+            "comparisonBlobId": "c108f0d334a527bc7b11bfd846c38d6778e8a1c8",
+            "comparisonMode": 420,
+            "comparisonSha256": "c5707b2580acec24f49e50af05f9c2f26394dc5221ecfb99520fefe61160a897",
+            "comparisonSize": 3334,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "92c654bf6dc5d4cad9998dd6d0d1bd8d9ef4b56f",
+            "sourceMode": 420,
+            "sourceSha256": "7dfdd72eb29038ef2f14460a0da2aa9f9c8121eece3c08b287731749bb3d78a7",
+            "sourceSize": 3561,
+            "sourceType": "regular",
+            "worktree": "proposal-support-bridge"
+          }
+        ],
+        "path": "backend/app/jobs.py",
+        "repeatedUnresolvedPath": false,
+        "sourceVariantCount": 2,
+        "supersessionApproved": false,
+        "uniqueUnresolvedOccurrenceCount": 1,
+        "variantChoiceApproved": false,
+        "variants": [
+          {
+            "dispositions": [
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 1,
+            "sourceBlobId": "92c654bf6dc5d4cad9998dd6d0d1bd8d9ef4b56f",
+            "sourceMode": 420,
+            "sourceSha256": "7dfdd72eb29038ef2f14460a0da2aa9f9c8121eece3c08b287731749bb3d78a7",
+            "sourceSize": 3561,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=7dfdd72eb29038ef2f14460a0da2aa9f9c8121eece3c08b287731749bb3d78a7",
+            "worktrees": [
+              "proposal-support-bridge"
+            ]
+          },
+          {
+            "dispositions": [
+              "integrated",
+              "integrated"
+            ],
+            "occurrenceCount": 2,
+            "sourceBlobId": "c108f0d334a527bc7b11bfd846c38d6778e8a1c8",
+            "sourceMode": 420,
+            "sourceSha256": "c5707b2580acec24f49e50af05f9c2f26394dc5221ecfb99520fefe61160a897",
+            "sourceSize": 3334,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=c5707b2580acec24f49e50af05f9c2f26394dc5221ecfb99520fefe61160a897",
+            "worktrees": [
+              "hybrid-staged-recovery",
+              "reusable-pod-lane"
+            ]
+          }
+        ]
+      },
+      {
+        "classification": "manual_review",
+        "conflictingSourceVariant": false,
+        "contextOccurrenceCount": 2,
+        "decisionReason": "A single exact source variant is unresolved and must be explicitly preserved or archived.",
+        "decisionStatus": "manual_review_preserve_or_archive",
+        "occurrences": [
+          {
+            "comparisonBlobId": "479170f257402f0da0970e44d1a6688efb68eb08",
+            "comparisonMode": 420,
+            "comparisonSha256": "06034dbb2b32aa52fe59a542a773dd36a3e61971e90dd308457ce83cc574c429",
+            "comparisonSize": 67330,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "ef36d32bb3a02d40d5ec1ecd8c0f530075b36e79",
+            "sourceMode": 420,
+            "sourceSha256": "12b3f5524c6cad2462795044598d297fd4ffc3b688108298874eec8750778a70",
+            "sourceSize": 26948,
+            "sourceType": "regular",
+            "worktree": "hybrid-staged-recovery"
+          },
+          {
+            "comparisonBlobId": "479170f257402f0da0970e44d1a6688efb68eb08",
+            "comparisonMode": 420,
+            "comparisonSha256": "06034dbb2b32aa52fe59a542a773dd36a3e61971e90dd308457ce83cc574c429",
+            "comparisonSize": 67330,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "ef36d32bb3a02d40d5ec1ecd8c0f530075b36e79",
+            "sourceMode": 420,
+            "sourceSha256": "12b3f5524c6cad2462795044598d297fd4ffc3b688108298874eec8750778a70",
+            "sourceSize": 26948,
+            "sourceType": "regular",
+            "worktree": "reusable-pod-lane"
+          }
+        ],
+        "path": "backend/app/main.py",
+        "repeatedUnresolvedPath": true,
+        "sourceVariantCount": 1,
+        "supersessionApproved": false,
+        "uniqueUnresolvedOccurrenceCount": 2,
+        "variantChoiceApproved": false,
+        "variants": [
+          {
+            "dispositions": [
+              "unique_unresolved",
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 2,
+            "sourceBlobId": "ef36d32bb3a02d40d5ec1ecd8c0f530075b36e79",
+            "sourceMode": 420,
+            "sourceSha256": "12b3f5524c6cad2462795044598d297fd4ffc3b688108298874eec8750778a70",
+            "sourceSize": 26948,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=12b3f5524c6cad2462795044598d297fd4ffc3b688108298874eec8750778a70",
+            "worktrees": [
+              "hybrid-staged-recovery",
+              "reusable-pod-lane"
+            ]
+          }
+        ]
+      },
+      {
+        "classification": "manual_review",
+        "conflictingSourceVariant": true,
+        "contextOccurrenceCount": 3,
+        "decisionReason": "Multiple exact source type/mode/hash variants exist; a reviewer must select or reconcile a variant before preservation.",
+        "decisionStatus": "manual_review_select_variant",
+        "occurrences": [
+          {
+            "comparisonBlobId": "f42e1b0b5df24717d89fcfe85e89f2bc2d6beae7",
+            "comparisonMode": 420,
+            "comparisonSha256": "737e3949662922985dca9db5e3ac7b86ff93eb6250adddcaa867d6db9c3f6308",
+            "comparisonSize": 44197,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "2916cc6e1055ca89fb18970d3db1817d5019cb68",
+            "sourceMode": 420,
+            "sourceSha256": "631b7965ad62b190fbb578c6f4fe16e6e78aa47cb7aeac4a1c5bf8385d6923e8",
+            "sourceSize": 41611,
+            "sourceType": "regular",
+            "worktree": "hybrid-staged-recovery"
+          },
+          {
+            "comparisonBlobId": "f42e1b0b5df24717d89fcfe85e89f2bc2d6beae7",
+            "comparisonMode": 420,
+            "comparisonSha256": "737e3949662922985dca9db5e3ac7b86ff93eb6250adddcaa867d6db9c3f6308",
+            "comparisonSize": 44197,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "2916cc6e1055ca89fb18970d3db1817d5019cb68",
+            "sourceMode": 420,
+            "sourceSha256": "631b7965ad62b190fbb578c6f4fe16e6e78aa47cb7aeac4a1c5bf8385d6923e8",
+            "sourceSize": 41611,
+            "sourceType": "regular",
+            "worktree": "reusable-pod-lane"
+          },
+          {
+            "comparisonBlobId": "f42e1b0b5df24717d89fcfe85e89f2bc2d6beae7",
+            "comparisonMode": 420,
+            "comparisonSha256": "737e3949662922985dca9db5e3ac7b86ff93eb6250adddcaa867d6db9c3f6308",
+            "comparisonSize": 44197,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "ce0f55f7db43a62b25f04281b6a2c0b8f68d7414",
+            "sourceMode": 420,
+            "sourceSha256": "ff383017faa2f867d9461e0738900a01d769a85e6c009f82409410635ea32799",
+            "sourceSize": 230310,
+            "sourceType": "regular",
+            "worktree": "proposal-support-bridge"
+          }
+        ],
+        "path": "backend/app/processor.py",
+        "repeatedUnresolvedPath": true,
+        "sourceVariantCount": 2,
+        "supersessionApproved": false,
+        "uniqueUnresolvedOccurrenceCount": 3,
+        "variantChoiceApproved": false,
+        "variants": [
+          {
+            "dispositions": [
+              "unique_unresolved",
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 2,
+            "sourceBlobId": "2916cc6e1055ca89fb18970d3db1817d5019cb68",
+            "sourceMode": 420,
+            "sourceSha256": "631b7965ad62b190fbb578c6f4fe16e6e78aa47cb7aeac4a1c5bf8385d6923e8",
+            "sourceSize": 41611,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=631b7965ad62b190fbb578c6f4fe16e6e78aa47cb7aeac4a1c5bf8385d6923e8",
+            "worktrees": [
+              "hybrid-staged-recovery",
+              "reusable-pod-lane"
+            ]
+          },
+          {
+            "dispositions": [
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 1,
+            "sourceBlobId": "ce0f55f7db43a62b25f04281b6a2c0b8f68d7414",
+            "sourceMode": 420,
+            "sourceSha256": "ff383017faa2f867d9461e0738900a01d769a85e6c009f82409410635ea32799",
+            "sourceSize": 230310,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=ff383017faa2f867d9461e0738900a01d769a85e6c009f82409410635ea32799",
+            "worktrees": [
+              "proposal-support-bridge"
+            ]
+          }
+        ]
+      },
+      {
+        "classification": "manual_review",
+        "conflictingSourceVariant": false,
+        "contextOccurrenceCount": 1,
+        "decisionReason": "A single exact source variant is unresolved and must be explicitly preserved or archived.",
+        "decisionStatus": "manual_review_preserve_or_archive",
+        "occurrences": [
+          {
+            "comparisonBlobId": null,
+            "comparisonMode": null,
+            "comparisonSha256": null,
+            "comparisonSize": null,
+            "comparisonType": "missing",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "96dbaac48822fbc06299a7af998a8231d3d0f9c5",
+            "sourceMode": 420,
+            "sourceSha256": "9a0ea59fc0033788485fa0f735e510c1bc62ad5039465adf62ce67e7a2bd2941",
+            "sourceSize": 17709,
+            "sourceType": "regular",
+            "worktree": "proposal-support-bridge"
+          }
+        ],
+        "path": "backend/app/proof_artifact_materialization.py",
+        "repeatedUnresolvedPath": false,
+        "sourceVariantCount": 1,
+        "supersessionApproved": false,
+        "uniqueUnresolvedOccurrenceCount": 1,
+        "variantChoiceApproved": false,
+        "variants": [
+          {
+            "dispositions": [
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 1,
+            "sourceBlobId": "96dbaac48822fbc06299a7af998a8231d3d0f9c5",
+            "sourceMode": 420,
+            "sourceSha256": "9a0ea59fc0033788485fa0f735e510c1bc62ad5039465adf62ce67e7a2bd2941",
+            "sourceSize": 17709,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=9a0ea59fc0033788485fa0f735e510c1bc62ad5039465adf62ce67e7a2bd2941",
+            "worktrees": [
+              "proposal-support-bridge"
+            ]
+          }
+        ]
+      },
+      {
+        "classification": "manual_review",
+        "conflictingSourceVariant": true,
+        "contextOccurrenceCount": 3,
+        "decisionReason": "Multiple exact source type/mode/hash variants exist; a reviewer must select or reconcile a variant before preservation.",
+        "decisionStatus": "manual_review_select_variant",
+        "occurrences": [
+          {
+            "comparisonBlobId": "b229fffd02623822607ccf9ed46e1dbb549a206f",
+            "comparisonMode": 420,
+            "comparisonSha256": "343b18997d8e52a71ef3c56f1df70e4d3eeb456b5c2e6d011d90f4932f56ff07",
+            "comparisonSize": 14085,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "45dddaa45adba2f638a856f3f5132c83a7034c4a",
+            "sourceMode": 420,
+            "sourceSha256": "ebe00748c47b56305c36dedfb2e8b5d222cddb7aa3765062d42759956f7411ed",
+            "sourceSize": 1299,
+            "sourceType": "regular",
+            "worktree": "hybrid-staged-recovery"
+          },
+          {
+            "comparisonBlobId": "b229fffd02623822607ccf9ed46e1dbb549a206f",
+            "comparisonMode": 420,
+            "comparisonSha256": "343b18997d8e52a71ef3c56f1df70e4d3eeb456b5c2e6d011d90f4932f56ff07",
+            "comparisonSize": 14085,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "45dddaa45adba2f638a856f3f5132c83a7034c4a",
+            "sourceMode": 420,
+            "sourceSha256": "ebe00748c47b56305c36dedfb2e8b5d222cddb7aa3765062d42759956f7411ed",
+            "sourceSize": 1299,
+            "sourceType": "regular",
+            "worktree": "reusable-pod-lane"
+          },
+          {
+            "comparisonBlobId": "b229fffd02623822607ccf9ed46e1dbb549a206f",
+            "comparisonMode": 420,
+            "comparisonSha256": "343b18997d8e52a71ef3c56f1df70e4d3eeb456b5c2e6d011d90f4932f56ff07",
+            "comparisonSize": 14085,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "68177da45fd079b251e3a31577004f7521dc98cb",
+            "sourceMode": 420,
+            "sourceSha256": "fd84e5c433033e03742461a54631b75e59585549d69b35eae2563fc604c12a8e",
+            "sourceSize": 6891,
+            "sourceType": "regular",
+            "worktree": "proposal-support-bridge"
+          }
+        ],
+        "path": "backend/app/proof_runtime.py",
+        "repeatedUnresolvedPath": true,
+        "sourceVariantCount": 2,
+        "supersessionApproved": false,
+        "uniqueUnresolvedOccurrenceCount": 3,
+        "variantChoiceApproved": false,
+        "variants": [
+          {
+            "dispositions": [
+              "unique_unresolved",
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 2,
+            "sourceBlobId": "45dddaa45adba2f638a856f3f5132c83a7034c4a",
+            "sourceMode": 420,
+            "sourceSha256": "ebe00748c47b56305c36dedfb2e8b5d222cddb7aa3765062d42759956f7411ed",
+            "sourceSize": 1299,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=ebe00748c47b56305c36dedfb2e8b5d222cddb7aa3765062d42759956f7411ed",
+            "worktrees": [
+              "hybrid-staged-recovery",
+              "reusable-pod-lane"
+            ]
+          },
+          {
+            "dispositions": [
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 1,
+            "sourceBlobId": "68177da45fd079b251e3a31577004f7521dc98cb",
+            "sourceMode": 420,
+            "sourceSha256": "fd84e5c433033e03742461a54631b75e59585549d69b35eae2563fc604c12a8e",
+            "sourceSize": 6891,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=fd84e5c433033e03742461a54631b75e59585549d69b35eae2563fc604c12a8e",
+            "worktrees": [
+              "proposal-support-bridge"
+            ]
+          }
+        ]
+      },
+      {
+        "classification": "manual_review",
+        "conflictingSourceVariant": true,
+        "contextOccurrenceCount": 3,
+        "decisionReason": "Multiple exact source type/mode/hash variants exist; a reviewer must select or reconcile a variant before preservation.",
+        "decisionStatus": "manual_review_select_variant",
+        "occurrences": [
+          {
+            "comparisonBlobId": "55d16ed1d5eb0964b4ccda93153f2af694db5459",
+            "comparisonMode": 420,
+            "comparisonSha256": "9f9e71265085a8182d27caeb150edbe18c760eaaf38c4c219d74d88e042b1a18",
+            "comparisonSize": 104546,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "fb7c00fb99d527c8e6d7e7152e467630929edcbc",
+            "sourceMode": 420,
+            "sourceSha256": "92b96c0b887d7e4a71f90a4d26d8acd7815fdee17a8b191171d35f220f4caebe",
+            "sourceSize": 98308,
+            "sourceType": "regular",
+            "worktree": "hybrid-staged-recovery"
+          },
+          {
+            "comparisonBlobId": "55d16ed1d5eb0964b4ccda93153f2af694db5459",
+            "comparisonMode": 420,
+            "comparisonSha256": "9f9e71265085a8182d27caeb150edbe18c760eaaf38c4c219d74d88e042b1a18",
+            "comparisonSize": 104546,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "fb7c00fb99d527c8e6d7e7152e467630929edcbc",
+            "sourceMode": 420,
+            "sourceSha256": "92b96c0b887d7e4a71f90a4d26d8acd7815fdee17a8b191171d35f220f4caebe",
+            "sourceSize": 98308,
+            "sourceType": "regular",
+            "worktree": "reusable-pod-lane"
+          },
+          {
+            "comparisonBlobId": "55d16ed1d5eb0964b4ccda93153f2af694db5459",
+            "comparisonMode": 420,
+            "comparisonSha256": "9f9e71265085a8182d27caeb150edbe18c760eaaf38c4c219d74d88e042b1a18",
+            "comparisonSize": 104546,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "23477cdb534ecdd22b8d488d63bd764069d1e949",
+            "sourceMode": 420,
+            "sourceSha256": "909bc26afd15d5a9ecc31c922546a45c82172cffaa4812b01ea60a9ec4e6ce83",
+            "sourceSize": 266754,
+            "sourceType": "regular",
+            "worktree": "proposal-support-bridge"
+          }
+        ],
+        "path": "backend/app/run_benchmarks.py",
+        "repeatedUnresolvedPath": true,
+        "sourceVariantCount": 2,
+        "supersessionApproved": false,
+        "uniqueUnresolvedOccurrenceCount": 3,
+        "variantChoiceApproved": false,
+        "variants": [
+          {
+            "dispositions": [
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 1,
+            "sourceBlobId": "23477cdb534ecdd22b8d488d63bd764069d1e949",
+            "sourceMode": 420,
+            "sourceSha256": "909bc26afd15d5a9ecc31c922546a45c82172cffaa4812b01ea60a9ec4e6ce83",
+            "sourceSize": 266754,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=909bc26afd15d5a9ecc31c922546a45c82172cffaa4812b01ea60a9ec4e6ce83",
+            "worktrees": [
+              "proposal-support-bridge"
+            ]
+          },
+          {
+            "dispositions": [
+              "unique_unresolved",
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 2,
+            "sourceBlobId": "fb7c00fb99d527c8e6d7e7152e467630929edcbc",
+            "sourceMode": 420,
+            "sourceSha256": "92b96c0b887d7e4a71f90a4d26d8acd7815fdee17a8b191171d35f220f4caebe",
+            "sourceSize": 98308,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=92b96c0b887d7e4a71f90a4d26d8acd7815fdee17a8b191171d35f220f4caebe",
+            "worktrees": [
+              "hybrid-staged-recovery",
+              "reusable-pod-lane"
+            ]
+          }
+        ]
+      },
+      {
+        "classification": "manual_review",
+        "conflictingSourceVariant": true,
+        "contextOccurrenceCount": 3,
+        "decisionReason": "Multiple exact source type/mode/hash variants exist; a reviewer must select or reconcile a variant before preservation.",
+        "decisionStatus": "manual_review_select_variant",
+        "occurrences": [
+          {
+            "comparisonBlobId": "e35bd9d01466b2dddb4889cde24c7666892605ea",
+            "comparisonMode": 420,
+            "comparisonSha256": "99336e69a6b58b48856f26b63f2f24a594ca250e0563fb5add656437c021e1dc",
+            "comparisonSize": 14204,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "6910aac5d08096d3427d2e439359d332faf64671",
+            "sourceMode": 420,
+            "sourceSha256": "495363e24d1bfec64e903cd0198ddfac8fc4cd8fd88b71f24a9e7289a8bde964",
+            "sourceSize": 13214,
+            "sourceType": "regular",
+            "worktree": "hybrid-staged-recovery"
+          },
+          {
+            "comparisonBlobId": "e35bd9d01466b2dddb4889cde24c7666892605ea",
+            "comparisonMode": 420,
+            "comparisonSha256": "99336e69a6b58b48856f26b63f2f24a594ca250e0563fb5add656437c021e1dc",
+            "comparisonSize": 14204,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "6910aac5d08096d3427d2e439359d332faf64671",
+            "sourceMode": 420,
+            "sourceSha256": "495363e24d1bfec64e903cd0198ddfac8fc4cd8fd88b71f24a9e7289a8bde964",
+            "sourceSize": 13214,
+            "sourceType": "regular",
+            "worktree": "reusable-pod-lane"
+          },
+          {
+            "comparisonBlobId": "e35bd9d01466b2dddb4889cde24c7666892605ea",
+            "comparisonMode": 420,
+            "comparisonSha256": "99336e69a6b58b48856f26b63f2f24a594ca250e0563fb5add656437c021e1dc",
+            "comparisonSize": 14204,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "1c75a5502b0684ad13cebe583c124fd90844e701",
+            "sourceMode": 420,
+            "sourceSha256": "afef199b6f8aa344ed3ac5ab090d6e678d34899c260175b77c6697fd62d29008",
+            "sourceSize": 13962,
+            "sourceType": "regular",
+            "worktree": "proposal-support-bridge"
+          }
+        ],
+        "path": "backend/app/runpod.py",
+        "repeatedUnresolvedPath": true,
+        "sourceVariantCount": 2,
+        "supersessionApproved": false,
+        "uniqueUnresolvedOccurrenceCount": 3,
+        "variantChoiceApproved": false,
+        "variants": [
+          {
+            "dispositions": [
+              "unique_unresolved",
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 2,
+            "sourceBlobId": "6910aac5d08096d3427d2e439359d332faf64671",
+            "sourceMode": 420,
+            "sourceSha256": "495363e24d1bfec64e903cd0198ddfac8fc4cd8fd88b71f24a9e7289a8bde964",
+            "sourceSize": 13214,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=495363e24d1bfec64e903cd0198ddfac8fc4cd8fd88b71f24a9e7289a8bde964",
+            "worktrees": [
+              "hybrid-staged-recovery",
+              "reusable-pod-lane"
+            ]
+          },
+          {
+            "dispositions": [
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 1,
+            "sourceBlobId": "1c75a5502b0684ad13cebe583c124fd90844e701",
+            "sourceMode": 420,
+            "sourceSha256": "afef199b6f8aa344ed3ac5ab090d6e678d34899c260175b77c6697fd62d29008",
+            "sourceSize": 13962,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=afef199b6f8aa344ed3ac5ab090d6e678d34899c260175b77c6697fd62d29008",
+            "worktrees": [
+              "proposal-support-bridge"
+            ]
+          }
+        ]
+      },
+      {
+        "classification": "manual_review",
+        "conflictingSourceVariant": true,
+        "contextOccurrenceCount": 3,
+        "decisionReason": "Multiple exact source type/mode/hash variants exist; a reviewer must select or reconcile a variant before preservation.",
+        "decisionStatus": "manual_review_select_variant",
+        "occurrences": [
+          {
+            "comparisonBlobId": "e576d1c0cd77806ece5017b7677db4da860bbfa2",
+            "comparisonMode": 420,
+            "comparisonSha256": "41935b2c7bcd3f38c9b739aa20c6549ecdd8b0459dbce2f0e70d40735e423944",
+            "comparisonSize": 15399,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "88519d7ac24172c4943a5139b074262923c478ec",
+            "sourceMode": 420,
+            "sourceSha256": "27ec3cd3dcd6bc030f3032ffe5e5bf59c53f755f4e0376005e14a278d9d1e7d6",
+            "sourceSize": 14520,
+            "sourceType": "regular",
+            "worktree": "hybrid-staged-recovery"
+          },
+          {
+            "comparisonBlobId": "e576d1c0cd77806ece5017b7677db4da860bbfa2",
+            "comparisonMode": 420,
+            "comparisonSha256": "41935b2c7bcd3f38c9b739aa20c6549ecdd8b0459dbce2f0e70d40735e423944",
+            "comparisonSize": 15399,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "88519d7ac24172c4943a5139b074262923c478ec",
+            "sourceMode": 420,
+            "sourceSha256": "27ec3cd3dcd6bc030f3032ffe5e5bf59c53f755f4e0376005e14a278d9d1e7d6",
+            "sourceSize": 14520,
+            "sourceType": "regular",
+            "worktree": "reusable-pod-lane"
+          },
+          {
+            "comparisonBlobId": "e576d1c0cd77806ece5017b7677db4da860bbfa2",
+            "comparisonMode": 420,
+            "comparisonSha256": "41935b2c7bcd3f38c9b739aa20c6549ecdd8b0459dbce2f0e70d40735e423944",
+            "comparisonSize": 15399,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "212623408010d2156de34029413454e1f2dc427b",
+            "sourceMode": 420,
+            "sourceSha256": "8e84d753aacc6d1df061f7dbd644b529e3d15b8482c767e0b45dde2ed55637d8",
+            "sourceSize": 15185,
+            "sourceType": "regular",
+            "worktree": "proposal-support-bridge"
+          }
+        ],
+        "path": "backend/app/runpod_worker.py",
+        "repeatedUnresolvedPath": true,
+        "sourceVariantCount": 2,
+        "supersessionApproved": false,
+        "uniqueUnresolvedOccurrenceCount": 3,
+        "variantChoiceApproved": false,
+        "variants": [
+          {
+            "dispositions": [
+              "unique_unresolved",
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 2,
+            "sourceBlobId": "88519d7ac24172c4943a5139b074262923c478ec",
+            "sourceMode": 420,
+            "sourceSha256": "27ec3cd3dcd6bc030f3032ffe5e5bf59c53f755f4e0376005e14a278d9d1e7d6",
+            "sourceSize": 14520,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=27ec3cd3dcd6bc030f3032ffe5e5bf59c53f755f4e0376005e14a278d9d1e7d6",
+            "worktrees": [
+              "hybrid-staged-recovery",
+              "reusable-pod-lane"
+            ]
+          },
+          {
+            "dispositions": [
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 1,
+            "sourceBlobId": "212623408010d2156de34029413454e1f2dc427b",
+            "sourceMode": 420,
+            "sourceSha256": "8e84d753aacc6d1df061f7dbd644b529e3d15b8482c767e0b45dde2ed55637d8",
+            "sourceSize": 15185,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=8e84d753aacc6d1df061f7dbd644b529e3d15b8482c767e0b45dde2ed55637d8",
+            "worktrees": [
+              "proposal-support-bridge"
+            ]
+          }
+        ]
+      },
+      {
+        "classification": "manual_review",
+        "conflictingSourceVariant": true,
+        "contextOccurrenceCount": 3,
+        "decisionReason": "Multiple exact source type/mode/hash variants exist; a reviewer must select or reconcile a variant before preservation.",
+        "decisionStatus": "manual_review_select_variant",
+        "occurrences": [
+          {
+            "comparisonBlobId": "bbdb9faacee1b9305976121249e193def99fd746",
+            "comparisonMode": 420,
+            "comparisonSha256": "890a833d1d8589c0ca4a2b6aec5f5f1143c0bbc79f3b11d70182812c366136a2",
+            "comparisonSize": 2458,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "dc9852b90d4a3ad3e623e0231a35ce40957a7442",
+            "sourceMode": 420,
+            "sourceSha256": "113b15d37e775cd0d2b7ce515c4361f0a4d4a48c2e7bfddc47259f8d40d0c32f",
+            "sourceSize": 1603,
+            "sourceType": "regular",
+            "worktree": "hybrid-staged-recovery"
+          },
+          {
+            "comparisonBlobId": "bbdb9faacee1b9305976121249e193def99fd746",
+            "comparisonMode": 420,
+            "comparisonSha256": "890a833d1d8589c0ca4a2b6aec5f5f1143c0bbc79f3b11d70182812c366136a2",
+            "comparisonSize": 2458,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "dc9852b90d4a3ad3e623e0231a35ce40957a7442",
+            "sourceMode": 420,
+            "sourceSha256": "113b15d37e775cd0d2b7ce515c4361f0a4d4a48c2e7bfddc47259f8d40d0c32f",
+            "sourceSize": 1603,
+            "sourceType": "regular",
+            "worktree": "reusable-pod-lane"
+          },
+          {
+            "comparisonBlobId": "bbdb9faacee1b9305976121249e193def99fd746",
+            "comparisonMode": 420,
+            "comparisonSha256": "890a833d1d8589c0ca4a2b6aec5f5f1143c0bbc79f3b11d70182812c366136a2",
+            "comparisonSize": 2458,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "3c980b7498054eb2bbf0e469ed123f787c7e8067",
+            "sourceMode": 420,
+            "sourceSha256": "050da2f1f1af35a46eade251550d30d0a91df6db82f3bcb8f6574b5fa88533f5",
+            "sourceSize": 1978,
+            "sourceType": "regular",
+            "worktree": "proposal-support-bridge"
+          }
+        ],
+        "path": "backend/app/video_pipeline.py",
+        "repeatedUnresolvedPath": true,
+        "sourceVariantCount": 2,
+        "supersessionApproved": false,
+        "uniqueUnresolvedOccurrenceCount": 3,
+        "variantChoiceApproved": false,
+        "variants": [
+          {
+            "dispositions": [
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 1,
+            "sourceBlobId": "3c980b7498054eb2bbf0e469ed123f787c7e8067",
+            "sourceMode": 420,
+            "sourceSha256": "050da2f1f1af35a46eade251550d30d0a91df6db82f3bcb8f6574b5fa88533f5",
+            "sourceSize": 1978,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=050da2f1f1af35a46eade251550d30d0a91df6db82f3bcb8f6574b5fa88533f5",
+            "worktrees": [
+              "proposal-support-bridge"
+            ]
+          },
+          {
+            "dispositions": [
+              "unique_unresolved",
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 2,
+            "sourceBlobId": "dc9852b90d4a3ad3e623e0231a35ce40957a7442",
+            "sourceMode": 420,
+            "sourceSha256": "113b15d37e775cd0d2b7ce515c4361f0a4d4a48c2e7bfddc47259f8d40d0c32f",
+            "sourceSize": 1603,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=113b15d37e775cd0d2b7ce515c4361f0a4d4a48c2e7bfddc47259f8d40d0c32f",
+            "worktrees": [
+              "hybrid-staged-recovery",
+              "reusable-pod-lane"
+            ]
+          }
+        ]
+      },
+      {
+        "classification": "manual_review",
+        "conflictingSourceVariant": false,
+        "contextOccurrenceCount": 1,
+        "decisionReason": "A single exact source variant is unresolved and must be explicitly preserved or archived.",
+        "decisionStatus": "manual_review_preserve_or_archive",
+        "occurrences": [
+          {
+            "comparisonBlobId": "8d030d22611c55736957ef05f8d3d577bcfb5176",
+            "comparisonMode": 420,
+            "comparisonSha256": "d4a2e6c46ec4c24b64062d3d57bf4d22d4acb44de604b0543616ffff517d37b2",
+            "comparisonSize": 5187,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "a568d4e1af27ac5084726a7b0fc342a99b9b7c59",
+            "sourceMode": 420,
+            "sourceSha256": "72f88be1e02bf9f83b4ade7d69b7e2f67687201ff7b770293c319ce3ff8f2829",
+            "sourceSize": 5159,
+            "sourceType": "regular",
+            "worktree": "proposal-support-bridge"
+          }
+        ],
+        "path": "backend/benchmark_suites/frozen_viable_baseline_slice_suite.json",
+        "repeatedUnresolvedPath": false,
+        "sourceVariantCount": 1,
+        "supersessionApproved": false,
+        "uniqueUnresolvedOccurrenceCount": 1,
+        "variantChoiceApproved": false,
+        "variants": [
+          {
+            "dispositions": [
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 1,
+            "sourceBlobId": "a568d4e1af27ac5084726a7b0fc342a99b9b7c59",
+            "sourceMode": 420,
+            "sourceSha256": "72f88be1e02bf9f83b4ade7d69b7e2f67687201ff7b770293c319ce3ff8f2829",
+            "sourceSize": 5159,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=72f88be1e02bf9f83b4ade7d69b7e2f67687201ff7b770293c319ce3ff8f2829",
+            "worktrees": [
+              "proposal-support-bridge"
+            ]
+          }
+        ]
+      },
+      {
+        "classification": "manual_review",
+        "conflictingSourceVariant": false,
+        "contextOccurrenceCount": 1,
+        "decisionReason": "A single exact source variant is unresolved and must be explicitly preserved or archived.",
+        "decisionStatus": "manual_review_preserve_or_archive",
+        "occurrences": [
+          {
+            "comparisonBlobId": "b9b24043d77d2ab11dcbcf6f84ceb8553467a425",
+            "comparisonMode": 420,
+            "comparisonSha256": "99af103cc77a28cb74e201b5f9c96d7e7873501d2f949b6ece156d04d410e6fb",
+            "comparisonSize": 2132,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "9fae88d6728563716a21b43d2822c96be0b65b44",
+            "sourceMode": 420,
+            "sourceSha256": "1407e3cfdb9accdc3ea455dca5395f810cdb2531699ce513d7ad01bc9b4d45bb",
+            "sourceSize": 1185,
+            "sourceType": "regular",
+            "worktree": "proposal-support-bridge"
+          }
+        ],
+        "path": "backend/benchmark_suites/frozen_viable_baseline_source_manifest.json",
+        "repeatedUnresolvedPath": false,
+        "sourceVariantCount": 1,
+        "supersessionApproved": false,
+        "uniqueUnresolvedOccurrenceCount": 1,
+        "variantChoiceApproved": false,
+        "variants": [
+          {
+            "dispositions": [
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 1,
+            "sourceBlobId": "9fae88d6728563716a21b43d2822c96be0b65b44",
+            "sourceMode": 420,
+            "sourceSha256": "1407e3cfdb9accdc3ea455dca5395f810cdb2531699ce513d7ad01bc9b4d45bb",
+            "sourceSize": 1185,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=1407e3cfdb9accdc3ea455dca5395f810cdb2531699ce513d7ad01bc9b4d45bb",
+            "worktrees": [
+              "proposal-support-bridge"
+            ]
+          }
+        ]
+      },
+      {
+        "classification": "manual_review",
+        "conflictingSourceVariant": false,
+        "contextOccurrenceCount": 2,
+        "decisionReason": "A single exact source variant is unresolved and must be explicitly preserved or archived.",
+        "decisionStatus": "manual_review_preserve_or_archive",
+        "occurrences": [
+          {
+            "comparisonBlobId": "6fb5afac41cc6a3b6d7d15d572d60864e2c6387a",
+            "comparisonMode": 420,
+            "comparisonSha256": "884d698fe217332f760052f8311544429d044e35593f700f4d69081629f009f4",
+            "comparisonSize": 15827,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "ff3d155625a716548a27aea6146f6289bd0db953",
+            "sourceMode": 420,
+            "sourceSha256": "5dbcf174daa82d9af1815e8129bfcdd10c1f056b48c503004556f53037119930",
+            "sourceSize": 15403,
+            "sourceType": "regular",
+            "worktree": "hybrid-staged-recovery"
+          },
+          {
+            "comparisonBlobId": "6fb5afac41cc6a3b6d7d15d572d60864e2c6387a",
+            "comparisonMode": 420,
+            "comparisonSha256": "884d698fe217332f760052f8311544429d044e35593f700f4d69081629f009f4",
+            "comparisonSize": 15827,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "ff3d155625a716548a27aea6146f6289bd0db953",
+            "sourceMode": 420,
+            "sourceSha256": "5dbcf174daa82d9af1815e8129bfcdd10c1f056b48c503004556f53037119930",
+            "sourceSize": 15403,
+            "sourceType": "regular",
+            "worktree": "reusable-pod-lane"
+          }
+        ],
+        "path": "backend/pitch_detector.py",
+        "repeatedUnresolvedPath": true,
+        "sourceVariantCount": 1,
+        "supersessionApproved": false,
+        "uniqueUnresolvedOccurrenceCount": 2,
+        "variantChoiceApproved": false,
+        "variants": [
+          {
+            "dispositions": [
+              "unique_unresolved",
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 2,
+            "sourceBlobId": "ff3d155625a716548a27aea6146f6289bd0db953",
+            "sourceMode": 420,
+            "sourceSha256": "5dbcf174daa82d9af1815e8129bfcdd10c1f056b48c503004556f53037119930",
+            "sourceSize": 15403,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=5dbcf174daa82d9af1815e8129bfcdd10c1f056b48c503004556f53037119930",
+            "worktrees": [
+              "hybrid-staged-recovery",
+              "reusable-pod-lane"
+            ]
+          }
+        ]
+      },
+      {
+        "classification": "manual_review",
+        "conflictingSourceVariant": true,
+        "contextOccurrenceCount": 3,
+        "decisionReason": "Multiple exact source type/mode/hash variants exist; a reviewer must select or reconcile a variant before preservation.",
+        "decisionStatus": "manual_review_select_variant",
+        "occurrences": [
+          {
+            "comparisonBlobId": "89a9d2fd43e9071db844ea736d52f8e014520e34",
+            "comparisonMode": 420,
+            "comparisonSha256": "a9175a5cf85e3314196caaa669dea027b4cfeba8dda0467f67f32a2f0b7b4bd0",
+            "comparisonSize": 387922,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "706ef913e72cac1f853856de596a81c4e5ebf0b3",
+            "sourceMode": 420,
+            "sourceSha256": "205c6f34d674a8110d93d2ba31c2e69698b1a05ac7f5e99d7d53a9055006a9b9",
+            "sourceSize": 223873,
+            "sourceType": "regular",
+            "worktree": "hybrid-staged-recovery"
+          },
+          {
+            "comparisonBlobId": "89a9d2fd43e9071db844ea736d52f8e014520e34",
+            "comparisonMode": 420,
+            "comparisonSha256": "a9175a5cf85e3314196caaa669dea027b4cfeba8dda0467f67f32a2f0b7b4bd0",
+            "comparisonSize": 387922,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "706ef913e72cac1f853856de596a81c4e5ebf0b3",
+            "sourceMode": 420,
+            "sourceSha256": "205c6f34d674a8110d93d2ba31c2e69698b1a05ac7f5e99d7d53a9055006a9b9",
+            "sourceSize": 223873,
+            "sourceType": "regular",
+            "worktree": "reusable-pod-lane"
+          },
+          {
+            "comparisonBlobId": "89a9d2fd43e9071db844ea736d52f8e014520e34",
+            "comparisonMode": 420,
+            "comparisonSha256": "a9175a5cf85e3314196caaa669dea027b4cfeba8dda0467f67f32a2f0b7b4bd0",
+            "comparisonSize": 387922,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "8dd186a80ed7f2cd2bffeed1bd58be9717739bf2",
+            "sourceMode": 420,
+            "sourceSha256": "51d00a46016c210bdfb34680dbe943e8170cf26fbcace1dc5e4ea6aae2e89d3b",
+            "sourceSize": 888071,
+            "sourceType": "regular",
+            "worktree": "proposal-support-bridge"
+          }
+        ],
+        "path": "backend/run_guerilla.py",
+        "repeatedUnresolvedPath": true,
+        "sourceVariantCount": 2,
+        "supersessionApproved": false,
+        "uniqueUnresolvedOccurrenceCount": 3,
+        "variantChoiceApproved": false,
+        "variants": [
+          {
+            "dispositions": [
+              "unique_unresolved",
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 2,
+            "sourceBlobId": "706ef913e72cac1f853856de596a81c4e5ebf0b3",
+            "sourceMode": 420,
+            "sourceSha256": "205c6f34d674a8110d93d2ba31c2e69698b1a05ac7f5e99d7d53a9055006a9b9",
+            "sourceSize": 223873,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=205c6f34d674a8110d93d2ba31c2e69698b1a05ac7f5e99d7d53a9055006a9b9",
+            "worktrees": [
+              "hybrid-staged-recovery",
+              "reusable-pod-lane"
+            ]
+          },
+          {
+            "dispositions": [
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 1,
+            "sourceBlobId": "8dd186a80ed7f2cd2bffeed1bd58be9717739bf2",
+            "sourceMode": 420,
+            "sourceSha256": "51d00a46016c210bdfb34680dbe943e8170cf26fbcace1dc5e4ea6aae2e89d3b",
+            "sourceSize": 888071,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=51d00a46016c210bdfb34680dbe943e8170cf26fbcace1dc5e4ea6aae2e89d3b",
+            "worktrees": [
+              "proposal-support-bridge"
+            ]
+          }
+        ]
+      },
+      {
+        "classification": "manual_review",
+        "conflictingSourceVariant": true,
+        "contextOccurrenceCount": 3,
+        "decisionReason": "Multiple exact source type/mode/hash variants exist; a reviewer must select or reconcile a variant before preservation.",
+        "decisionStatus": "manual_review_select_variant",
+        "occurrences": [
+          {
+            "comparisonBlobId": "0b291fd0ab8e0c087541b7c2eb0f3c413913db84",
+            "comparisonMode": 420,
+            "comparisonSha256": "ca3847f3ef704c44ddbe67c7cb624a79ce9cd31feae5b58d42d782613b530cf7",
+            "comparisonSize": 15687,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "452162be3fcdeffe4511ea9a7c4fe31de18d4753",
+            "sourceMode": 420,
+            "sourceSha256": "49c3f4341fc2f3fd3bcf47cab32740f0fd3e4eb1bdd3885db3f0e56325028a07",
+            "sourceSize": 14334,
+            "sourceType": "regular",
+            "worktree": "hybrid-staged-recovery"
+          },
+          {
+            "comparisonBlobId": "0b291fd0ab8e0c087541b7c2eb0f3c413913db84",
+            "comparisonMode": 420,
+            "comparisonSha256": "ca3847f3ef704c44ddbe67c7cb624a79ce9cd31feae5b58d42d782613b530cf7",
+            "comparisonSize": 15687,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "452162be3fcdeffe4511ea9a7c4fe31de18d4753",
+            "sourceMode": 420,
+            "sourceSha256": "49c3f4341fc2f3fd3bcf47cab32740f0fd3e4eb1bdd3885db3f0e56325028a07",
+            "sourceSize": 14334,
+            "sourceType": "regular",
+            "worktree": "reusable-pod-lane"
+          },
+          {
+            "comparisonBlobId": "0b291fd0ab8e0c087541b7c2eb0f3c413913db84",
+            "comparisonMode": 420,
+            "comparisonSha256": "ca3847f3ef704c44ddbe67c7cb624a79ce9cd31feae5b58d42d782613b530cf7",
+            "comparisonSize": 15687,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "f5d4d213e091dfc91fea328c5e8b6d2cb08df6ae",
+            "sourceMode": 420,
+            "sourceSha256": "b1e18e62913e4283cd9489c9156f413e9348670bb4c9f83500f8a510d973ffb2",
+            "sourceSize": 15021,
+            "sourceType": "regular",
+            "worktree": "proposal-support-bridge"
+          }
+        ],
+        "path": "backend/runpod_handler/handler.py",
+        "repeatedUnresolvedPath": true,
+        "sourceVariantCount": 2,
+        "supersessionApproved": false,
+        "uniqueUnresolvedOccurrenceCount": 3,
+        "variantChoiceApproved": false,
+        "variants": [
+          {
+            "dispositions": [
+              "unique_unresolved",
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 2,
+            "sourceBlobId": "452162be3fcdeffe4511ea9a7c4fe31de18d4753",
+            "sourceMode": 420,
+            "sourceSha256": "49c3f4341fc2f3fd3bcf47cab32740f0fd3e4eb1bdd3885db3f0e56325028a07",
+            "sourceSize": 14334,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=49c3f4341fc2f3fd3bcf47cab32740f0fd3e4eb1bdd3885db3f0e56325028a07",
+            "worktrees": [
+              "hybrid-staged-recovery",
+              "reusable-pod-lane"
+            ]
+          },
+          {
+            "dispositions": [
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 1,
+            "sourceBlobId": "f5d4d213e091dfc91fea328c5e8b6d2cb08df6ae",
+            "sourceMode": 420,
+            "sourceSha256": "b1e18e62913e4283cd9489c9156f413e9348670bb4c9f83500f8a510d973ffb2",
+            "sourceSize": 15021,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=b1e18e62913e4283cd9489c9156f413e9348670bb4c9f83500f8a510d973ffb2",
+            "worktrees": [
+              "proposal-support-bridge"
+            ]
+          }
+        ]
+      },
+      {
+        "classification": "manual_review",
+        "conflictingSourceVariant": false,
+        "contextOccurrenceCount": 1,
+        "decisionReason": "A single exact source variant is unresolved and must be explicitly preserved or archived.",
+        "decisionStatus": "manual_review_preserve_or_archive",
+        "occurrences": [
+          {
+            "comparisonBlobId": null,
+            "comparisonMode": null,
+            "comparisonSha256": null,
+            "comparisonSize": null,
+            "comparisonType": "missing",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "ec2d8fd91a76910933b50a0f25c54ffebcfb0bb5",
+            "sourceMode": 420,
+            "sourceSha256": "7d48649b81f09acd66179960b18009c0bb58068bcb8bdb88ca4d89eaf64d6160",
+            "sourceSize": 3425,
+            "sourceType": "regular",
+            "worktree": "proposal-support-bridge"
+          }
+        ],
+        "path": "backend/scripts/repair_primary_hardening_verdict.py",
+        "repeatedUnresolvedPath": false,
+        "sourceVariantCount": 1,
+        "supersessionApproved": false,
+        "uniqueUnresolvedOccurrenceCount": 1,
+        "variantChoiceApproved": false,
+        "variants": [
+          {
+            "dispositions": [
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 1,
+            "sourceBlobId": "ec2d8fd91a76910933b50a0f25c54ffebcfb0bb5",
+            "sourceMode": 420,
+            "sourceSha256": "7d48649b81f09acd66179960b18009c0bb58068bcb8bdb88ca4d89eaf64d6160",
+            "sourceSize": 3425,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=7d48649b81f09acd66179960b18009c0bb58068bcb8bdb88ca4d89eaf64d6160",
+            "worktrees": [
+              "proposal-support-bridge"
+            ]
+          }
+        ]
+      },
+      {
+        "classification": "manual_review",
+        "conflictingSourceVariant": false,
+        "contextOccurrenceCount": 1,
+        "decisionReason": "A single exact source variant is unresolved and must be explicitly preserved or archived.",
+        "decisionStatus": "manual_review_preserve_or_archive",
+        "occurrences": [
+          {
+            "comparisonBlobId": "cebf86dc02b57e9dda061885983104b32ec89d26",
+            "comparisonMode": 420,
+            "comparisonSha256": "d70feaa33ca31582ca3cb4d8ef9b6304ca10475a67a522bccb2c36a06430ceac",
+            "comparisonSize": 14765,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "6ad7a0ee8d9d90b63fcee6d26df78d1b8b8b08dd",
+            "sourceMode": 420,
+            "sourceSha256": "f08fe4c21df74b14c1d897a3af66fb3279a2584e41f76c0f2cde2be25fbf6639",
+            "sourceSize": 11833,
+            "sourceType": "regular",
+            "worktree": "proposal-support-bridge"
+          }
+        ],
+        "path": "backend/scripts/run_benchmark_suite.py",
+        "repeatedUnresolvedPath": false,
+        "sourceVariantCount": 1,
+        "supersessionApproved": false,
+        "uniqueUnresolvedOccurrenceCount": 1,
+        "variantChoiceApproved": false,
+        "variants": [
+          {
+            "dispositions": [
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 1,
+            "sourceBlobId": "6ad7a0ee8d9d90b63fcee6d26df78d1b8b8b08dd",
+            "sourceMode": 420,
+            "sourceSha256": "f08fe4c21df74b14c1d897a3af66fb3279a2584e41f76c0f2cde2be25fbf6639",
+            "sourceSize": 11833,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=f08fe4c21df74b14c1d897a3af66fb3279a2584e41f76c0f2cde2be25fbf6639",
+            "worktrees": [
+              "proposal-support-bridge"
+            ]
+          }
+        ]
+      },
+      {
+        "classification": "manual_review",
+        "conflictingSourceVariant": false,
+        "contextOccurrenceCount": 1,
+        "decisionReason": "A single exact source variant is unresolved and must be explicitly preserved or archived.",
+        "decisionStatus": "manual_review_preserve_or_archive",
+        "occurrences": [
+          {
+            "comparisonBlobId": "76c98657a64383b75c4e4449d56c085289569477",
+            "comparisonMode": 420,
+            "comparisonSha256": "1e1d335e1d0c9e61d928c6577110aa0bf0913f8082edda62379e1d887a64fc22",
+            "comparisonSize": 16986,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "580813bd6e3cd5c7f56612e98c8967e2246d3eb6",
+            "sourceMode": 420,
+            "sourceSha256": "3e5adaf964003256e5af11054db3d5244b99b361baafafd1345f6542ee0c4443",
+            "sourceSize": 16086,
+            "sourceType": "regular",
+            "worktree": "proposal-support-bridge"
+          }
+        ],
+        "path": "backend/scripts/run_clip_manifest_expansion.py",
+        "repeatedUnresolvedPath": false,
+        "sourceVariantCount": 1,
+        "supersessionApproved": false,
+        "uniqueUnresolvedOccurrenceCount": 1,
+        "variantChoiceApproved": false,
+        "variants": [
+          {
+            "dispositions": [
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 1,
+            "sourceBlobId": "580813bd6e3cd5c7f56612e98c8967e2246d3eb6",
+            "sourceMode": 420,
+            "sourceSha256": "3e5adaf964003256e5af11054db3d5244b99b361baafafd1345f6542ee0c4443",
+            "sourceSize": 16086,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=3e5adaf964003256e5af11054db3d5244b99b361baafafd1345f6542ee0c4443",
+            "worktrees": [
+              "proposal-support-bridge"
+            ]
+          }
+        ]
+      },
+      {
+        "classification": "manual_review",
+        "conflictingSourceVariant": true,
+        "contextOccurrenceCount": 3,
+        "decisionReason": "Multiple exact source type/mode/hash variants exist; a reviewer must select or reconcile a variant before preservation.",
+        "decisionStatus": "manual_review_select_variant",
+        "occurrences": [
+          {
+            "comparisonBlobId": "f22974d4ee454304d56ffee2caf7de554c8b1504",
+            "comparisonMode": 420,
+            "comparisonSha256": "1b0ea9bd6e353cd34a2f29ff54d5904a262f80003916dc1f14a9c6bd79ed7a68",
+            "comparisonSize": 6581,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "0e781d018d82c0a55e73aad5f122026397053006",
+            "sourceMode": 420,
+            "sourceSha256": "3b578a53fadfc2e6b4974d8bd9bdf9d678df576a7095a7c705cdeafe36dd9856",
+            "sourceSize": 15026,
+            "sourceType": "regular",
+            "worktree": "hybrid-staged-recovery"
+          },
+          {
+            "comparisonBlobId": "f22974d4ee454304d56ffee2caf7de554c8b1504",
+            "comparisonMode": 420,
+            "comparisonSha256": "1b0ea9bd6e353cd34a2f29ff54d5904a262f80003916dc1f14a9c6bd79ed7a68",
+            "comparisonSize": 6581,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "0e781d018d82c0a55e73aad5f122026397053006",
+            "sourceMode": 420,
+            "sourceSha256": "3b578a53fadfc2e6b4974d8bd9bdf9d678df576a7095a7c705cdeafe36dd9856",
+            "sourceSize": 15026,
+            "sourceType": "regular",
+            "worktree": "reusable-pod-lane"
+          },
+          {
+            "comparisonBlobId": "f22974d4ee454304d56ffee2caf7de554c8b1504",
+            "comparisonMode": 420,
+            "comparisonSha256": "1b0ea9bd6e353cd34a2f29ff54d5904a262f80003916dc1f14a9c6bd79ed7a68",
+            "comparisonSize": 6581,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "57f5eab6febbaa4430da61959606cd6b722d1c02",
+            "sourceMode": 420,
+            "sourceSha256": "0babccc5ffd226b6b6d64549de92e7a25cee27907dc774fb938e8b9dafbb9b6b",
+            "sourceSize": 66801,
+            "sourceType": "regular",
+            "worktree": "proposal-support-bridge"
+          }
+        ],
+        "path": "backend/scripts/run_local_app_path_proof.py",
+        "repeatedUnresolvedPath": true,
+        "sourceVariantCount": 2,
+        "supersessionApproved": false,
+        "uniqueUnresolvedOccurrenceCount": 3,
+        "variantChoiceApproved": false,
+        "variants": [
+          {
+            "dispositions": [
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 1,
+            "sourceBlobId": "57f5eab6febbaa4430da61959606cd6b722d1c02",
+            "sourceMode": 420,
+            "sourceSha256": "0babccc5ffd226b6b6d64549de92e7a25cee27907dc774fb938e8b9dafbb9b6b",
+            "sourceSize": 66801,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=0babccc5ffd226b6b6d64549de92e7a25cee27907dc774fb938e8b9dafbb9b6b",
+            "worktrees": [
+              "proposal-support-bridge"
+            ]
+          },
+          {
+            "dispositions": [
+              "unique_unresolved",
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 2,
+            "sourceBlobId": "0e781d018d82c0a55e73aad5f122026397053006",
+            "sourceMode": 420,
+            "sourceSha256": "3b578a53fadfc2e6b4974d8bd9bdf9d678df576a7095a7c705cdeafe36dd9856",
+            "sourceSize": 15026,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=3b578a53fadfc2e6b4974d8bd9bdf9d678df576a7095a7c705cdeafe36dd9856",
+            "worktrees": [
+              "hybrid-staged-recovery",
+              "reusable-pod-lane"
+            ]
+          }
+        ]
+      },
+      {
+        "classification": "manual_review",
+        "conflictingSourceVariant": false,
+        "contextOccurrenceCount": 2,
+        "decisionReason": "A single exact source variant is unresolved and must be explicitly preserved or archived.",
+        "decisionStatus": "manual_review_preserve_or_archive",
+        "occurrences": [
+          {
+            "comparisonBlobId": "7cc68cd2afaab0a6877ff2588b86c3daa21d4217",
+            "comparisonMode": 420,
+            "comparisonSha256": "bbd0574b73a51904cec66baec66cb10617bdaf5c32852d220cf06df674da4fe2",
+            "comparisonSize": 15491,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "731f22562ab403afe1de82951a681310b257fbef",
+            "sourceMode": 420,
+            "sourceSha256": "c48f7164a83654d7829d11ee3fc7ee27b78f710d70d7e47f36ffd140d43218d1",
+            "sourceSize": 14634,
+            "sourceType": "regular",
+            "worktree": "hybrid-staged-recovery"
+          },
+          {
+            "comparisonBlobId": "7cc68cd2afaab0a6877ff2588b86c3daa21d4217",
+            "comparisonMode": 420,
+            "comparisonSha256": "bbd0574b73a51904cec66baec66cb10617bdaf5c32852d220cf06df674da4fe2",
+            "comparisonSize": 15491,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "731f22562ab403afe1de82951a681310b257fbef",
+            "sourceMode": 420,
+            "sourceSha256": "c48f7164a83654d7829d11ee3fc7ee27b78f710d70d7e47f36ffd140d43218d1",
+            "sourceSize": 14634,
+            "sourceType": "regular",
+            "worktree": "reusable-pod-lane"
+          }
+        ],
+        "path": "backend/scripts/run_managed_remote_app_path_proof.py",
+        "repeatedUnresolvedPath": true,
+        "sourceVariantCount": 1,
+        "supersessionApproved": false,
+        "uniqueUnresolvedOccurrenceCount": 2,
+        "variantChoiceApproved": false,
+        "variants": [
+          {
+            "dispositions": [
+              "unique_unresolved",
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 2,
+            "sourceBlobId": "731f22562ab403afe1de82951a681310b257fbef",
+            "sourceMode": 420,
+            "sourceSha256": "c48f7164a83654d7829d11ee3fc7ee27b78f710d70d7e47f36ffd140d43218d1",
+            "sourceSize": 14634,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=c48f7164a83654d7829d11ee3fc7ee27b78f710d70d7e47f36ffd140d43218d1",
+            "worktrees": [
+              "hybrid-staged-recovery",
+              "reusable-pod-lane"
+            ]
+          }
+        ]
+      },
+      {
+        "classification": "manual_review",
+        "conflictingSourceVariant": true,
+        "contextOccurrenceCount": 3,
+        "decisionReason": "Multiple exact source type/mode/hash variants exist; a reviewer must select or reconcile a variant before preservation.",
+        "decisionStatus": "manual_review_select_variant",
+        "occurrences": [
+          {
+            "comparisonBlobId": "529bba611c6e2c5c18145d72bcac127970d4f422",
+            "comparisonMode": 420,
+            "comparisonSha256": "ec6ae93ac805aa95ef2e81adaa0d596c35d2dc89c6c7730f495f791364f3571b",
+            "comparisonSize": 40046,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "4e24ad7f1e1a97dbd1ffdac60b43c0cc3696be24",
+            "sourceMode": 420,
+            "sourceSha256": "40adebb4e093363169f4f52edb65afa809553f569d4c31e273b590f3251e4ff2",
+            "sourceSize": 33523,
+            "sourceType": "regular",
+            "worktree": "hybrid-staged-recovery"
+          },
+          {
+            "comparisonBlobId": "529bba611c6e2c5c18145d72bcac127970d4f422",
+            "comparisonMode": 420,
+            "comparisonSha256": "ec6ae93ac805aa95ef2e81adaa0d596c35d2dc89c6c7730f495f791364f3571b",
+            "comparisonSize": 40046,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "9c9740485e93c7039dafcc874c52b2bf82d838e0",
+            "sourceMode": 420,
+            "sourceSha256": "fa34d1cc85b1b1d72a647dd7746250a0e782f24487645564fab07e7ad6405941",
+            "sourceSize": 44483,
+            "sourceType": "regular",
+            "worktree": "reusable-pod-lane"
+          },
+          {
+            "comparisonBlobId": "529bba611c6e2c5c18145d72bcac127970d4f422",
+            "comparisonMode": 420,
+            "comparisonSha256": "ec6ae93ac805aa95ef2e81adaa0d596c35d2dc89c6c7730f495f791364f3571b",
+            "comparisonSize": 40046,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "fa4cb76bcbfa1ff8bcf0507ea3787981d092bb3a",
+            "sourceMode": 420,
+            "sourceSha256": "5f584f4d8426c58ea63f031a5ea14259f021ec76e5232988c3eb77a956c284a7",
+            "sourceSize": 149275,
+            "sourceType": "regular",
+            "worktree": "proposal-support-bridge"
+          }
+        ],
+        "path": "backend/scripts/run_pod_proof_cycle.py",
+        "repeatedUnresolvedPath": true,
+        "sourceVariantCount": 3,
+        "supersessionApproved": false,
+        "uniqueUnresolvedOccurrenceCount": 3,
+        "variantChoiceApproved": false,
+        "variants": [
+          {
+            "dispositions": [
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 1,
+            "sourceBlobId": "4e24ad7f1e1a97dbd1ffdac60b43c0cc3696be24",
+            "sourceMode": 420,
+            "sourceSha256": "40adebb4e093363169f4f52edb65afa809553f569d4c31e273b590f3251e4ff2",
+            "sourceSize": 33523,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=40adebb4e093363169f4f52edb65afa809553f569d4c31e273b590f3251e4ff2",
+            "worktrees": [
+              "hybrid-staged-recovery"
+            ]
+          },
+          {
+            "dispositions": [
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 1,
+            "sourceBlobId": "fa4cb76bcbfa1ff8bcf0507ea3787981d092bb3a",
+            "sourceMode": 420,
+            "sourceSha256": "5f584f4d8426c58ea63f031a5ea14259f021ec76e5232988c3eb77a956c284a7",
+            "sourceSize": 149275,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=5f584f4d8426c58ea63f031a5ea14259f021ec76e5232988c3eb77a956c284a7",
+            "worktrees": [
+              "proposal-support-bridge"
+            ]
+          },
+          {
+            "dispositions": [
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 1,
+            "sourceBlobId": "9c9740485e93c7039dafcc874c52b2bf82d838e0",
+            "sourceMode": 420,
+            "sourceSha256": "fa34d1cc85b1b1d72a647dd7746250a0e782f24487645564fab07e7ad6405941",
+            "sourceSize": 44483,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=fa34d1cc85b1b1d72a647dd7746250a0e782f24487645564fab07e7ad6405941",
+            "worktrees": [
+              "reusable-pod-lane"
+            ]
+          }
+        ]
+      },
+      {
+        "classification": "manual_review",
+        "conflictingSourceVariant": true,
+        "contextOccurrenceCount": 3,
+        "decisionReason": "Multiple exact source type/mode/hash variants exist; a reviewer must select or reconcile a variant before preservation.",
+        "decisionStatus": "manual_review_select_variant",
+        "occurrences": [
+          {
+            "comparisonBlobId": "fdac0026f6775a1bd13f1beb8049e0377171c1c9",
+            "comparisonMode": 420,
+            "comparisonSha256": "10d4bdef3dfa642c952f5d246737760e75f0944dad4cd55063c9b00e64b9696b",
+            "comparisonSize": 17892,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "d5952597e9916b12e76649fde1241885b2cf7464",
+            "sourceMode": 420,
+            "sourceSha256": "04eabc2dc796ae1a3ecefd7bb9e1f9b40fb5c9d0c395d4d38e05ba58f44eccf7",
+            "sourceSize": 16601,
+            "sourceType": "regular",
+            "worktree": "hybrid-staged-recovery"
+          },
+          {
+            "comparisonBlobId": "fdac0026f6775a1bd13f1beb8049e0377171c1c9",
+            "comparisonMode": 420,
+            "comparisonSha256": "10d4bdef3dfa642c952f5d246737760e75f0944dad4cd55063c9b00e64b9696b",
+            "comparisonSize": 17892,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "d5952597e9916b12e76649fde1241885b2cf7464",
+            "sourceMode": 420,
+            "sourceSha256": "04eabc2dc796ae1a3ecefd7bb9e1f9b40fb5c9d0c395d4d38e05ba58f44eccf7",
+            "sourceSize": 16601,
+            "sourceType": "regular",
+            "worktree": "reusable-pod-lane"
+          },
+          {
+            "comparisonBlobId": "fdac0026f6775a1bd13f1beb8049e0377171c1c9",
+            "comparisonMode": 420,
+            "comparisonSha256": "10d4bdef3dfa642c952f5d246737760e75f0944dad4cd55063c9b00e64b9696b",
+            "comparisonSize": 17892,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "37b8a827a3e5325e5e148dfbf1aefa8fdf64f9bc",
+            "sourceMode": 420,
+            "sourceSha256": "b8b697220a4904b04e8350d9c0b819db0c4a47b88f76fa0666d041b7a6223a20",
+            "sourceSize": 37341,
+            "sourceType": "regular",
+            "worktree": "proposal-support-bridge"
+          }
+        ],
+        "path": "backend/scripts/run_remote_app_path_proof.py",
+        "repeatedUnresolvedPath": true,
+        "sourceVariantCount": 2,
+        "supersessionApproved": false,
+        "uniqueUnresolvedOccurrenceCount": 3,
+        "variantChoiceApproved": false,
+        "variants": [
+          {
+            "dispositions": [
+              "unique_unresolved",
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 2,
+            "sourceBlobId": "d5952597e9916b12e76649fde1241885b2cf7464",
+            "sourceMode": 420,
+            "sourceSha256": "04eabc2dc796ae1a3ecefd7bb9e1f9b40fb5c9d0c395d4d38e05ba58f44eccf7",
+            "sourceSize": 16601,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=04eabc2dc796ae1a3ecefd7bb9e1f9b40fb5c9d0c395d4d38e05ba58f44eccf7",
+            "worktrees": [
+              "hybrid-staged-recovery",
+              "reusable-pod-lane"
+            ]
+          },
+          {
+            "dispositions": [
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 1,
+            "sourceBlobId": "37b8a827a3e5325e5e148dfbf1aefa8fdf64f9bc",
+            "sourceMode": 420,
+            "sourceSha256": "b8b697220a4904b04e8350d9c0b819db0c4a47b88f76fa0666d041b7a6223a20",
+            "sourceSize": 37341,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=b8b697220a4904b04e8350d9c0b819db0c4a47b88f76fa0666d041b7a6223a20",
+            "worktrees": [
+              "proposal-support-bridge"
+            ]
+          }
+        ]
+      },
+      {
+        "classification": "manual_review",
+        "conflictingSourceVariant": true,
+        "contextOccurrenceCount": 3,
+        "decisionReason": "Multiple exact source type/mode/hash variants exist; a reviewer must select or reconcile a variant before preservation.",
+        "decisionStatus": "manual_review_select_variant",
+        "occurrences": [
+          {
+            "comparisonBlobId": "11ce7a0f3daf9ace72a02685403877b211a5b8dc",
+            "comparisonMode": 420,
+            "comparisonSha256": "858ddfb780b9e26ee709dfabdddf17a7751239533a568a40638c086d26190b83",
+            "comparisonSize": 5267,
+            "comparisonType": "regular",
+            "disposition": "integrated",
+            "sourceBlobId": "11ce7a0f3daf9ace72a02685403877b211a5b8dc",
+            "sourceMode": 420,
+            "sourceSha256": "858ddfb780b9e26ee709dfabdddf17a7751239533a568a40638c086d26190b83",
+            "sourceSize": 5267,
+            "sourceType": "regular",
+            "worktree": "hybrid-staged-recovery"
+          },
+          {
+            "comparisonBlobId": "11ce7a0f3daf9ace72a02685403877b211a5b8dc",
+            "comparisonMode": 420,
+            "comparisonSha256": "858ddfb780b9e26ee709dfabdddf17a7751239533a568a40638c086d26190b83",
+            "comparisonSize": 5267,
+            "comparisonType": "regular",
+            "disposition": "integrated",
+            "sourceBlobId": "11ce7a0f3daf9ace72a02685403877b211a5b8dc",
+            "sourceMode": 420,
+            "sourceSha256": "858ddfb780b9e26ee709dfabdddf17a7751239533a568a40638c086d26190b83",
+            "sourceSize": 5267,
+            "sourceType": "regular",
+            "worktree": "reusable-pod-lane"
+          },
+          {
+            "comparisonBlobId": "11ce7a0f3daf9ace72a02685403877b211a5b8dc",
+            "comparisonMode": 420,
+            "comparisonSha256": "858ddfb780b9e26ee709dfabdddf17a7751239533a568a40638c086d26190b83",
+            "comparisonSize": 5267,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "e788c59522008543cf5538974c1e4b0b3f4989a8",
+            "sourceMode": 420,
+            "sourceSha256": "495d3f96c53b7018716367ad391456f57b25902eedceb44e547099f6813f893d",
+            "sourceSize": 22352,
+            "sourceType": "regular",
+            "worktree": "proposal-support-bridge"
+          }
+        ],
+        "path": "backend/scripts/run_remote_video_benchmark.py",
+        "repeatedUnresolvedPath": false,
+        "sourceVariantCount": 2,
+        "supersessionApproved": false,
+        "uniqueUnresolvedOccurrenceCount": 1,
+        "variantChoiceApproved": false,
+        "variants": [
+          {
+            "dispositions": [
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 1,
+            "sourceBlobId": "e788c59522008543cf5538974c1e4b0b3f4989a8",
+            "sourceMode": 420,
+            "sourceSha256": "495d3f96c53b7018716367ad391456f57b25902eedceb44e547099f6813f893d",
+            "sourceSize": 22352,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=495d3f96c53b7018716367ad391456f57b25902eedceb44e547099f6813f893d",
+            "worktrees": [
+              "proposal-support-bridge"
+            ]
+          },
+          {
+            "dispositions": [
+              "integrated",
+              "integrated"
+            ],
+            "occurrenceCount": 2,
+            "sourceBlobId": "11ce7a0f3daf9ace72a02685403877b211a5b8dc",
+            "sourceMode": 420,
+            "sourceSha256": "858ddfb780b9e26ee709dfabdddf17a7751239533a568a40638c086d26190b83",
+            "sourceSize": 5267,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=858ddfb780b9e26ee709dfabdddf17a7751239533a568a40638c086d26190b83",
+            "worktrees": [
+              "hybrid-staged-recovery",
+              "reusable-pod-lane"
+            ]
+          }
+        ]
+      },
+      {
+        "classification": "manual_review",
+        "conflictingSourceVariant": false,
+        "contextOccurrenceCount": 2,
+        "decisionReason": "A single exact source variant is unresolved and must be explicitly preserved or archived.",
+        "decisionStatus": "manual_review_preserve_or_archive",
+        "occurrences": [
+          {
+            "comparisonBlobId": "271ef1039c01f8a964ae5d056a5e01c5f6aa19e2",
+            "comparisonMode": 420,
+            "comparisonSha256": "88649d73343cdb90756354727af5c8c891e8d75fb9f58e658feac4b3e8e4f9a6",
+            "comparisonSize": 6355,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "e3a1c5afa17932943dfa3b2f091647175385dfc6",
+            "sourceMode": 420,
+            "sourceSha256": "fa88607cc1996b942fd62d94e269e288b1878cdc1a563827b108ae712942de84",
+            "sourceSize": 4322,
+            "sourceType": "regular",
+            "worktree": "hybrid-staged-recovery"
+          },
+          {
+            "comparisonBlobId": "271ef1039c01f8a964ae5d056a5e01c5f6aa19e2",
+            "comparisonMode": 420,
+            "comparisonSha256": "88649d73343cdb90756354727af5c8c891e8d75fb9f58e658feac4b3e8e4f9a6",
+            "comparisonSize": 6355,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "e3a1c5afa17932943dfa3b2f091647175385dfc6",
+            "sourceMode": 420,
+            "sourceSha256": "fa88607cc1996b942fd62d94e269e288b1878cdc1a563827b108ae712942de84",
+            "sourceSize": 4322,
+            "sourceType": "regular",
+            "worktree": "reusable-pod-lane"
+          }
+        ],
+        "path": "backend/scripts/run_trimmed_ball_recovery_matrix.py",
+        "repeatedUnresolvedPath": true,
+        "sourceVariantCount": 1,
+        "supersessionApproved": false,
+        "uniqueUnresolvedOccurrenceCount": 2,
+        "variantChoiceApproved": false,
+        "variants": [
+          {
+            "dispositions": [
+              "unique_unresolved",
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 2,
+            "sourceBlobId": "e3a1c5afa17932943dfa3b2f091647175385dfc6",
+            "sourceMode": 420,
+            "sourceSha256": "fa88607cc1996b942fd62d94e269e288b1878cdc1a563827b108ae712942de84",
+            "sourceSize": 4322,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=fa88607cc1996b942fd62d94e269e288b1878cdc1a563827b108ae712942de84",
+            "worktrees": [
+              "hybrid-staged-recovery",
+              "reusable-pod-lane"
+            ]
+          }
+        ]
+      },
+      {
+        "classification": "manual_review",
+        "conflictingSourceVariant": false,
+        "contextOccurrenceCount": 1,
+        "decisionReason": "A single exact source variant is unresolved and must be explicitly preserved or archived.",
+        "decisionStatus": "manual_review_preserve_or_archive",
+        "occurrences": [
+          {
+            "comparisonBlobId": "2052b2ffd7769c098301bfbaedc9db5e3a80fa60",
+            "comparisonMode": 420,
+            "comparisonSha256": "26cc1c799eb0335e2dc29e76722d9a276f58d399e8220f3db9686ab52e36b0b6",
+            "comparisonSize": 31128,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "925eb094f1c2f3c7f04be1569f80b1fcb7635a70",
+            "sourceMode": 420,
+            "sourceSha256": "b5dd8c5ab420966460c501bb014fa76bd583313a966f3399633d849d73ec25b8",
+            "sourceSize": 29376,
+            "sourceType": "regular",
+            "worktree": "hybrid-staged-recovery"
+          }
+        ],
+        "path": "backend/tests/test_api.py",
+        "repeatedUnresolvedPath": false,
+        "sourceVariantCount": 1,
+        "supersessionApproved": false,
+        "uniqueUnresolvedOccurrenceCount": 1,
+        "variantChoiceApproved": false,
+        "variants": [
+          {
+            "dispositions": [
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 1,
+            "sourceBlobId": "925eb094f1c2f3c7f04be1569f80b1fcb7635a70",
+            "sourceMode": 420,
+            "sourceSha256": "b5dd8c5ab420966460c501bb014fa76bd583313a966f3399633d849d73ec25b8",
+            "sourceSize": 29376,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=b5dd8c5ab420966460c501bb014fa76bd583313a966f3399633d849d73ec25b8",
+            "worktrees": [
+              "hybrid-staged-recovery"
+            ]
+          }
+        ]
+      },
+      {
+        "classification": "manual_review",
+        "conflictingSourceVariant": false,
+        "contextOccurrenceCount": 1,
+        "decisionReason": "A single exact source variant is unresolved and must be explicitly preserved or archived.",
+        "decisionStatus": "manual_review_preserve_or_archive",
+        "occurrences": [
+          {
+            "comparisonBlobId": "95b37f4a194d5d67b89a6c10453bd608eae4b598",
+            "comparisonMode": 420,
+            "comparisonSha256": "7b77412080891a32ac68a0a42b19ac45d7f26d41a15ae667494c916727c00e68",
+            "comparisonSize": 5342,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "e83f6cd7f6dfac13ddfc31ecbdbc832fc471ecc5",
+            "sourceMode": 420,
+            "sourceSha256": "2f663e0b3f9ff5a113a3b7e0c927812f01f5373108fe033ad7e3500fa71a5082",
+            "sourceSize": 5290,
+            "sourceType": "regular",
+            "worktree": "hybrid-staged-recovery"
+          }
+        ],
+        "path": "backend/tests/test_gpu_contract.py",
+        "repeatedUnresolvedPath": false,
+        "sourceVariantCount": 1,
+        "supersessionApproved": false,
+        "uniqueUnresolvedOccurrenceCount": 1,
+        "variantChoiceApproved": false,
+        "variants": [
+          {
+            "dispositions": [
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 1,
+            "sourceBlobId": "e83f6cd7f6dfac13ddfc31ecbdbc832fc471ecc5",
+            "sourceMode": 420,
+            "sourceSha256": "2f663e0b3f9ff5a113a3b7e0c927812f01f5373108fe033ad7e3500fa71a5082",
+            "sourceSize": 5290,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=2f663e0b3f9ff5a113a3b7e0c927812f01f5373108fe033ad7e3500fa71a5082",
+            "worktrees": [
+              "hybrid-staged-recovery"
+            ]
+          }
+        ]
+      },
+      {
+        "classification": "manual_review",
+        "conflictingSourceVariant": true,
+        "contextOccurrenceCount": 2,
+        "decisionReason": "Multiple exact source type/mode/hash variants exist; a reviewer must select or reconcile a variant before preservation.",
+        "decisionStatus": "manual_review_select_variant",
+        "occurrences": [
+          {
+            "comparisonBlobId": "23487f24f41ed669fc1392da296e914fb25d77cc",
+            "comparisonMode": 420,
+            "comparisonSha256": "33b705d50b22af1a83bade1e9366d88fb1beac477bb0af23d7f08c774d1c34c3",
+            "comparisonSize": 52420,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "321e030f2141d3c5ef4a2c1428415f3c800a666c",
+            "sourceMode": 420,
+            "sourceSha256": "5d313de54242afff4c411b90714b0c571e4582345fae2c984d6fa82cc3f74405",
+            "sourceSize": 47355,
+            "sourceType": "regular",
+            "worktree": "hybrid-staged-recovery"
+          },
+          {
+            "comparisonBlobId": "23487f24f41ed669fc1392da296e914fb25d77cc",
+            "comparisonMode": 420,
+            "comparisonSha256": "33b705d50b22af1a83bade1e9366d88fb1beac477bb0af23d7f08c774d1c34c3",
+            "comparisonSize": 52420,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "94002c1d4a84d6ee3fc6b01dcc8466147165400c",
+            "sourceMode": 420,
+            "sourceSha256": "0a567c627fafdef168a0ee9026556169adebad9e996cdb635325cde3aac9d15c",
+            "sourceSize": 85340,
+            "sourceType": "regular",
+            "worktree": "proposal-support-bridge"
+          }
+        ],
+        "path": "backend/tests/test_processor.py",
+        "repeatedUnresolvedPath": true,
+        "sourceVariantCount": 2,
+        "supersessionApproved": false,
+        "uniqueUnresolvedOccurrenceCount": 2,
+        "variantChoiceApproved": false,
+        "variants": [
+          {
+            "dispositions": [
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 1,
+            "sourceBlobId": "94002c1d4a84d6ee3fc6b01dcc8466147165400c",
+            "sourceMode": 420,
+            "sourceSha256": "0a567c627fafdef168a0ee9026556169adebad9e996cdb635325cde3aac9d15c",
+            "sourceSize": 85340,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=0a567c627fafdef168a0ee9026556169adebad9e996cdb635325cde3aac9d15c",
+            "worktrees": [
+              "proposal-support-bridge"
+            ]
+          },
+          {
+            "dispositions": [
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 1,
+            "sourceBlobId": "321e030f2141d3c5ef4a2c1428415f3c800a666c",
+            "sourceMode": 420,
+            "sourceSha256": "5d313de54242afff4c411b90714b0c571e4582345fae2c984d6fa82cc3f74405",
+            "sourceSize": 47355,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=5d313de54242afff4c411b90714b0c571e4582345fae2c984d6fa82cc3f74405",
+            "worktrees": [
+              "hybrid-staged-recovery"
+            ]
+          }
+        ]
+      },
+      {
+        "classification": "manual_review",
+        "conflictingSourceVariant": false,
+        "contextOccurrenceCount": 1,
+        "decisionReason": "A single exact source variant is unresolved and must be explicitly preserved or archived.",
+        "decisionStatus": "manual_review_preserve_or_archive",
+        "occurrences": [
+          {
+            "comparisonBlobId": null,
+            "comparisonMode": null,
+            "comparisonSha256": null,
+            "comparisonSize": null,
+            "comparisonType": "missing",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "3b71788811be66c49bd9ae088d6a3660f9e56d23",
+            "sourceMode": 420,
+            "sourceSha256": "90987f683f165861e979274fc55bc6dda4044ee198f8249631335c621a1b9a7d",
+            "sourceSize": 14237,
+            "sourceType": "regular",
+            "worktree": "proposal-support-bridge"
+          }
+        ],
+        "path": "backend/tests/test_proof_artifact_materialization.py",
+        "repeatedUnresolvedPath": false,
+        "sourceVariantCount": 1,
+        "supersessionApproved": false,
+        "uniqueUnresolvedOccurrenceCount": 1,
+        "variantChoiceApproved": false,
+        "variants": [
+          {
+            "dispositions": [
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 1,
+            "sourceBlobId": "3b71788811be66c49bd9ae088d6a3660f9e56d23",
+            "sourceMode": 420,
+            "sourceSha256": "90987f683f165861e979274fc55bc6dda4044ee198f8249631335c621a1b9a7d",
+            "sourceSize": 14237,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=90987f683f165861e979274fc55bc6dda4044ee198f8249631335c621a1b9a7d",
+            "worktrees": [
+              "proposal-support-bridge"
+            ]
+          }
+        ]
+      },
+      {
+        "classification": "manual_review",
+        "conflictingSourceVariant": false,
+        "contextOccurrenceCount": 1,
+        "decisionReason": "A single exact source variant is unresolved and must be explicitly preserved or archived.",
+        "decisionStatus": "manual_review_preserve_or_archive",
+        "occurrences": [
+          {
+            "comparisonBlobId": null,
+            "comparisonMode": null,
+            "comparisonSha256": null,
+            "comparisonSize": null,
+            "comparisonType": "missing",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "298ad504a06a0441b0018bdf804ca6a3e014db00",
+            "sourceMode": 420,
+            "sourceSha256": "ca8ba82e34985f0b97fc70d8dc7cfae717210237ea115a5df9e0c9d4e14635a6",
+            "sourceSize": 4253,
+            "sourceType": "regular",
+            "worktree": "proposal-support-bridge"
+          }
+        ],
+        "path": "backend/tests/test_proof_runtime.py",
+        "repeatedUnresolvedPath": false,
+        "sourceVariantCount": 1,
+        "supersessionApproved": false,
+        "uniqueUnresolvedOccurrenceCount": 1,
+        "variantChoiceApproved": false,
+        "variants": [
+          {
+            "dispositions": [
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 1,
+            "sourceBlobId": "298ad504a06a0441b0018bdf804ca6a3e014db00",
+            "sourceMode": 420,
+            "sourceSha256": "ca8ba82e34985f0b97fc70d8dc7cfae717210237ea115a5df9e0c9d4e14635a6",
+            "sourceSize": 4253,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=ca8ba82e34985f0b97fc70d8dc7cfae717210237ea115a5df9e0c9d4e14635a6",
+            "worktrees": [
+              "proposal-support-bridge"
+            ]
+          }
+        ]
+      },
+      {
+        "classification": "manual_review",
+        "conflictingSourceVariant": false,
+        "contextOccurrenceCount": 1,
+        "decisionReason": "A single exact source variant is unresolved and must be explicitly preserved or archived.",
+        "decisionStatus": "manual_review_preserve_or_archive",
+        "occurrences": [
+          {
+            "comparisonBlobId": null,
+            "comparisonMode": null,
+            "comparisonSha256": null,
+            "comparisonSize": null,
+            "comparisonType": "missing",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "fdfd018aa52911d14fa35caac47c3f748d459ff2",
+            "sourceMode": 420,
+            "sourceSha256": "2b0625e22437b18f3da0d9f8f7fde8e18cb0dd52f84cac108ca83ad2b2272295",
+            "sourceSize": 2404,
+            "sourceType": "regular",
+            "worktree": "proposal-support-bridge"
+          }
+        ],
+        "path": "backend/tests/test_repair_primary_hardening_verdict.py",
+        "repeatedUnresolvedPath": false,
+        "sourceVariantCount": 1,
+        "supersessionApproved": false,
+        "uniqueUnresolvedOccurrenceCount": 1,
+        "variantChoiceApproved": false,
+        "variants": [
+          {
+            "dispositions": [
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 1,
+            "sourceBlobId": "fdfd018aa52911d14fa35caac47c3f748d459ff2",
+            "sourceMode": 420,
+            "sourceSha256": "2b0625e22437b18f3da0d9f8f7fde8e18cb0dd52f84cac108ca83ad2b2272295",
+            "sourceSize": 2404,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=2b0625e22437b18f3da0d9f8f7fde8e18cb0dd52f84cac108ca83ad2b2272295",
+            "worktrees": [
+              "proposal-support-bridge"
+            ]
+          }
+        ]
+      },
+      {
+        "classification": "manual_review",
+        "conflictingSourceVariant": false,
+        "contextOccurrenceCount": 1,
+        "decisionReason": "A single exact source variant is unresolved and must be explicitly preserved or archived.",
+        "decisionStatus": "manual_review_preserve_or_archive",
+        "occurrences": [
+          {
+            "comparisonBlobId": "74fa2c80ff215e23837bec8f6f02f259cfac217c",
+            "comparisonMode": 420,
+            "comparisonSha256": "871d67ab00f395e6c28e636637af986069cd06ed797293fedcaeb481ca15d8bd",
+            "comparisonSize": 17376,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "5726d9a64588c6c7fa6fd0aa93bfa591dca4c913",
+            "sourceMode": 420,
+            "sourceSha256": "2fb002d162d76869298a12bdbe0cae885e17becbce1ca2c0eb821170cb287e34",
+            "sourceSize": 9702,
+            "sourceType": "regular",
+            "worktree": "proposal-support-bridge"
+          }
+        ],
+        "path": "backend/tests/test_run_benchmark_suite.py",
+        "repeatedUnresolvedPath": false,
+        "sourceVariantCount": 1,
+        "supersessionApproved": false,
+        "uniqueUnresolvedOccurrenceCount": 1,
+        "variantChoiceApproved": false,
+        "variants": [
+          {
+            "dispositions": [
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 1,
+            "sourceBlobId": "5726d9a64588c6c7fa6fd0aa93bfa591dca4c913",
+            "sourceMode": 420,
+            "sourceSha256": "2fb002d162d76869298a12bdbe0cae885e17becbce1ca2c0eb821170cb287e34",
+            "sourceSize": 9702,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=2fb002d162d76869298a12bdbe0cae885e17becbce1ca2c0eb821170cb287e34",
+            "worktrees": [
+              "proposal-support-bridge"
+            ]
+          }
+        ]
+      },
+      {
+        "classification": "manual_review",
+        "conflictingSourceVariant": true,
+        "contextOccurrenceCount": 3,
+        "decisionReason": "Multiple exact source type/mode/hash variants exist; a reviewer must select or reconcile a variant before preservation.",
+        "decisionStatus": "manual_review_select_variant",
+        "occurrences": [
+          {
+            "comparisonBlobId": "7c664d6a67115207f3f094ca86f7539f876c8ed1",
+            "comparisonMode": 420,
+            "comparisonSha256": "670d2ce13eff9a3989d4b86a84cb2bd5e2e555b76d84e07c40b74f95b0a3b5af",
+            "comparisonSize": 105756,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "70700e190ee0f8a53144827ce0df2dd3fd3def72",
+            "sourceMode": 420,
+            "sourceSha256": "ff35cc2044411363923d32360b30068e38b60253040d7803f2c5c59a5da4e55a",
+            "sourceSize": 93832,
+            "sourceType": "regular",
+            "worktree": "hybrid-staged-recovery"
+          },
+          {
+            "comparisonBlobId": "7c664d6a67115207f3f094ca86f7539f876c8ed1",
+            "comparisonMode": 420,
+            "comparisonSha256": "670d2ce13eff9a3989d4b86a84cb2bd5e2e555b76d84e07c40b74f95b0a3b5af",
+            "comparisonSize": 105756,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "70700e190ee0f8a53144827ce0df2dd3fd3def72",
+            "sourceMode": 420,
+            "sourceSha256": "ff35cc2044411363923d32360b30068e38b60253040d7803f2c5c59a5da4e55a",
+            "sourceSize": 93832,
+            "sourceType": "regular",
+            "worktree": "reusable-pod-lane"
+          },
+          {
+            "comparisonBlobId": "7c664d6a67115207f3f094ca86f7539f876c8ed1",
+            "comparisonMode": 420,
+            "comparisonSha256": "670d2ce13eff9a3989d4b86a84cb2bd5e2e555b76d84e07c40b74f95b0a3b5af",
+            "comparisonSize": 105756,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "ef560b79d0d3aa5972356970d92b0f1229a242e0",
+            "sourceMode": 420,
+            "sourceSha256": "7c78549fcae8c7139289aba362e19cf335b016d135b72a8ea749e7148dfa84f0",
+            "sourceSize": 155627,
+            "sourceType": "regular",
+            "worktree": "proposal-support-bridge"
+          }
+        ],
+        "path": "backend/tests/test_run_benchmarks.py",
+        "repeatedUnresolvedPath": true,
+        "sourceVariantCount": 2,
+        "supersessionApproved": false,
+        "uniqueUnresolvedOccurrenceCount": 3,
+        "variantChoiceApproved": false,
+        "variants": [
+          {
+            "dispositions": [
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 1,
+            "sourceBlobId": "ef560b79d0d3aa5972356970d92b0f1229a242e0",
+            "sourceMode": 420,
+            "sourceSha256": "7c78549fcae8c7139289aba362e19cf335b016d135b72a8ea749e7148dfa84f0",
+            "sourceSize": 155627,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=7c78549fcae8c7139289aba362e19cf335b016d135b72a8ea749e7148dfa84f0",
+            "worktrees": [
+              "proposal-support-bridge"
+            ]
+          },
+          {
+            "dispositions": [
+              "unique_unresolved",
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 2,
+            "sourceBlobId": "70700e190ee0f8a53144827ce0df2dd3fd3def72",
+            "sourceMode": 420,
+            "sourceSha256": "ff35cc2044411363923d32360b30068e38b60253040d7803f2c5c59a5da4e55a",
+            "sourceSize": 93832,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=ff35cc2044411363923d32360b30068e38b60253040d7803f2c5c59a5da4e55a",
+            "worktrees": [
+              "hybrid-staged-recovery",
+              "reusable-pod-lane"
+            ]
+          }
+        ]
+      },
+      {
+        "classification": "manual_review",
+        "conflictingSourceVariant": false,
+        "contextOccurrenceCount": 1,
+        "decisionReason": "A single exact source variant is unresolved and must be explicitly preserved or archived.",
+        "decisionStatus": "manual_review_preserve_or_archive",
+        "occurrences": [
+          {
+            "comparisonBlobId": "c4be38a7c3472ba8145fb973a2958168886821c1",
+            "comparisonMode": 420,
+            "comparisonSha256": "8795c0081955c69374109bb3da518292cf075ff4046660e8ce172a37b4d28a5b",
+            "comparisonSize": 17115,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "a757820c42a10bd5704fa0aebd89de934af76bba",
+            "sourceMode": 420,
+            "sourceSha256": "18e31d3a9f3b4dc0ea5b430a83d348a6f8cab9714ac9dc6e4c9b4ad3f03a562e",
+            "sourceSize": 14723,
+            "sourceType": "regular",
+            "worktree": "proposal-support-bridge"
+          }
+        ],
+        "path": "backend/tests/test_run_clip_manifest_expansion.py",
+        "repeatedUnresolvedPath": false,
+        "sourceVariantCount": 1,
+        "supersessionApproved": false,
+        "uniqueUnresolvedOccurrenceCount": 1,
+        "variantChoiceApproved": false,
+        "variants": [
+          {
+            "dispositions": [
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 1,
+            "sourceBlobId": "a757820c42a10bd5704fa0aebd89de934af76bba",
+            "sourceMode": 420,
+            "sourceSha256": "18e31d3a9f3b4dc0ea5b430a83d348a6f8cab9714ac9dc6e4c9b4ad3f03a562e",
+            "sourceSize": 14723,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=18e31d3a9f3b4dc0ea5b430a83d348a6f8cab9714ac9dc6e4c9b4ad3f03a562e",
+            "worktrees": [
+              "proposal-support-bridge"
+            ]
+          }
+        ]
+      },
+      {
+        "classification": "manual_review",
+        "conflictingSourceVariant": true,
+        "contextOccurrenceCount": 3,
+        "decisionReason": "Multiple exact source type/mode/hash variants exist; a reviewer must select or reconcile a variant before preservation.",
+        "decisionStatus": "manual_review_select_variant",
+        "occurrences": [
+          {
+            "comparisonBlobId": "5692249f48947b6da7eb3b0ec2b2794c5e672632",
+            "comparisonMode": 420,
+            "comparisonSha256": "49c36a94924a1c3b4219880ef26348f0e4416277e88f328a218cd349930f6b49",
+            "comparisonSize": 322713,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "4205172d96274f8bb094768474c9c207d9f0d73f",
+            "sourceMode": 420,
+            "sourceSha256": "87fee8d5b1c8e5a0d4015e322dfa529a887703cc7fc68d7becc0418ad6440795",
+            "sourceSize": 202935,
+            "sourceType": "regular",
+            "worktree": "hybrid-staged-recovery"
+          },
+          {
+            "comparisonBlobId": "5692249f48947b6da7eb3b0ec2b2794c5e672632",
+            "comparisonMode": 420,
+            "comparisonSha256": "49c36a94924a1c3b4219880ef26348f0e4416277e88f328a218cd349930f6b49",
+            "comparisonSize": 322713,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "4205172d96274f8bb094768474c9c207d9f0d73f",
+            "sourceMode": 420,
+            "sourceSha256": "87fee8d5b1c8e5a0d4015e322dfa529a887703cc7fc68d7becc0418ad6440795",
+            "sourceSize": 202935,
+            "sourceType": "regular",
+            "worktree": "reusable-pod-lane"
+          },
+          {
+            "comparisonBlobId": "5692249f48947b6da7eb3b0ec2b2794c5e672632",
+            "comparisonMode": 420,
+            "comparisonSha256": "49c36a94924a1c3b4219880ef26348f0e4416277e88f328a218cd349930f6b49",
+            "comparisonSize": 322713,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "9bd12250022c75b8e4e5bc25506543f5a34d201f",
+            "sourceMode": 420,
+            "sourceSha256": "3b2a0add338ad48a6e3550f9b148dd9c0f2acab5ca6e4965ea771f2a73ed72f0",
+            "sourceSize": 394723,
+            "sourceType": "regular",
+            "worktree": "proposal-support-bridge"
+          }
+        ],
+        "path": "backend/tests/test_run_guerilla.py",
+        "repeatedUnresolvedPath": true,
+        "sourceVariantCount": 2,
+        "supersessionApproved": false,
+        "uniqueUnresolvedOccurrenceCount": 3,
+        "variantChoiceApproved": false,
+        "variants": [
+          {
+            "dispositions": [
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 1,
+            "sourceBlobId": "9bd12250022c75b8e4e5bc25506543f5a34d201f",
+            "sourceMode": 420,
+            "sourceSha256": "3b2a0add338ad48a6e3550f9b148dd9c0f2acab5ca6e4965ea771f2a73ed72f0",
+            "sourceSize": 394723,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=3b2a0add338ad48a6e3550f9b148dd9c0f2acab5ca6e4965ea771f2a73ed72f0",
+            "worktrees": [
+              "proposal-support-bridge"
+            ]
+          },
+          {
+            "dispositions": [
+              "unique_unresolved",
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 2,
+            "sourceBlobId": "4205172d96274f8bb094768474c9c207d9f0d73f",
+            "sourceMode": 420,
+            "sourceSha256": "87fee8d5b1c8e5a0d4015e322dfa529a887703cc7fc68d7becc0418ad6440795",
+            "sourceSize": 202935,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=87fee8d5b1c8e5a0d4015e322dfa529a887703cc7fc68d7becc0418ad6440795",
+            "worktrees": [
+              "hybrid-staged-recovery",
+              "reusable-pod-lane"
+            ]
+          }
+        ]
+      },
+      {
+        "classification": "manual_review",
+        "conflictingSourceVariant": true,
+        "contextOccurrenceCount": 3,
+        "decisionReason": "Multiple exact source type/mode/hash variants exist; a reviewer must select or reconcile a variant before preservation.",
+        "decisionStatus": "manual_review_select_variant",
+        "occurrences": [
+          {
+            "comparisonBlobId": "facdb3db832d8e9787ac0abff620f9330d693acc",
+            "comparisonMode": 420,
+            "comparisonSha256": "eca3cc8069ba52893185e9fd78ff22d3dac4883accf18cf9e0e65a1069136d9a",
+            "comparisonSize": 35156,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "0ce6513e9badd099db512908176cfb3855e6cb0c",
+            "sourceMode": 420,
+            "sourceSha256": "865a559f6fd345ea54ea8906ea4b214001643d68437be774a470f20ff3245953",
+            "sourceSize": 29425,
+            "sourceType": "regular",
+            "worktree": "hybrid-staged-recovery"
+          },
+          {
+            "comparisonBlobId": "facdb3db832d8e9787ac0abff620f9330d693acc",
+            "comparisonMode": 420,
+            "comparisonSha256": "eca3cc8069ba52893185e9fd78ff22d3dac4883accf18cf9e0e65a1069136d9a",
+            "comparisonSize": 35156,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "0ce6513e9badd099db512908176cfb3855e6cb0c",
+            "sourceMode": 420,
+            "sourceSha256": "865a559f6fd345ea54ea8906ea4b214001643d68437be774a470f20ff3245953",
+            "sourceSize": 29425,
+            "sourceType": "regular",
+            "worktree": "reusable-pod-lane"
+          },
+          {
+            "comparisonBlobId": "facdb3db832d8e9787ac0abff620f9330d693acc",
+            "comparisonMode": 420,
+            "comparisonSha256": "eca3cc8069ba52893185e9fd78ff22d3dac4883accf18cf9e0e65a1069136d9a",
+            "comparisonSize": 35156,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "42ebd3726a4e0bf1179ab4400df3fb47cb10d45c",
+            "sourceMode": 420,
+            "sourceSha256": "30432e01288e8b2a272ce01d3bef161ec2ea3c0bb020ff578d772cd239b13e72",
+            "sourceSize": 84668,
+            "sourceType": "regular",
+            "worktree": "proposal-support-bridge"
+          }
+        ],
+        "path": "backend/tests/test_run_local_app_path_proof.py",
+        "repeatedUnresolvedPath": true,
+        "sourceVariantCount": 2,
+        "supersessionApproved": false,
+        "uniqueUnresolvedOccurrenceCount": 3,
+        "variantChoiceApproved": false,
+        "variants": [
+          {
+            "dispositions": [
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 1,
+            "sourceBlobId": "42ebd3726a4e0bf1179ab4400df3fb47cb10d45c",
+            "sourceMode": 420,
+            "sourceSha256": "30432e01288e8b2a272ce01d3bef161ec2ea3c0bb020ff578d772cd239b13e72",
+            "sourceSize": 84668,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=30432e01288e8b2a272ce01d3bef161ec2ea3c0bb020ff578d772cd239b13e72",
+            "worktrees": [
+              "proposal-support-bridge"
+            ]
+          },
+          {
+            "dispositions": [
+              "unique_unresolved",
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 2,
+            "sourceBlobId": "0ce6513e9badd099db512908176cfb3855e6cb0c",
+            "sourceMode": 420,
+            "sourceSha256": "865a559f6fd345ea54ea8906ea4b214001643d68437be774a470f20ff3245953",
+            "sourceSize": 29425,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=865a559f6fd345ea54ea8906ea4b214001643d68437be774a470f20ff3245953",
+            "worktrees": [
+              "hybrid-staged-recovery",
+              "reusable-pod-lane"
+            ]
+          }
+        ]
+      },
+      {
+        "classification": "manual_review",
+        "conflictingSourceVariant": true,
+        "contextOccurrenceCount": 3,
+        "decisionReason": "Multiple exact source type/mode/hash variants exist; a reviewer must select or reconcile a variant before preservation.",
+        "decisionStatus": "manual_review_select_variant",
+        "occurrences": [
+          {
+            "comparisonBlobId": "e63b766b9473526116ba44b1aa62410a1599f968",
+            "comparisonMode": 420,
+            "comparisonSha256": "2a25637e728ad5f82b32295ba9efc6ea4b6080ab0217ae97b90b149d6714f498",
+            "comparisonSize": 41057,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "d0938702de75a3de07aff3a8e5dca1cfe178eaa1",
+            "sourceMode": 420,
+            "sourceSha256": "ec72ed832d0daf960910980931130852829db56f03dd19ba9443fa51183bd5f4",
+            "sourceSize": 22726,
+            "sourceType": "regular",
+            "worktree": "hybrid-staged-recovery"
+          },
+          {
+            "comparisonBlobId": "e63b766b9473526116ba44b1aa62410a1599f968",
+            "comparisonMode": 420,
+            "comparisonSha256": "2a25637e728ad5f82b32295ba9efc6ea4b6080ab0217ae97b90b149d6714f498",
+            "comparisonSize": 41057,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "1deb7aafe726cce4c8b8612fb17fd8521b3981c9",
+            "sourceMode": 420,
+            "sourceSha256": "4a98804f918478fc83ce4df56e426500663aff47e066070ad99a6c7b96d7af2a",
+            "sourceSize": 36156,
+            "sourceType": "regular",
+            "worktree": "reusable-pod-lane"
+          },
+          {
+            "comparisonBlobId": "e63b766b9473526116ba44b1aa62410a1599f968",
+            "comparisonMode": 420,
+            "comparisonSha256": "2a25637e728ad5f82b32295ba9efc6ea4b6080ab0217ae97b90b149d6714f498",
+            "comparisonSize": 41057,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "f141baad595fee452915247bad0e964616b7e513",
+            "sourceMode": 420,
+            "sourceSha256": "c7e589bf1f30f28e5c3fc1398017a4db8ee7143003b1093ce0fe555ff6598226",
+            "sourceSize": 121471,
+            "sourceType": "regular",
+            "worktree": "proposal-support-bridge"
+          }
+        ],
+        "path": "backend/tests/test_run_pod_proof_cycle.py",
+        "repeatedUnresolvedPath": true,
+        "sourceVariantCount": 3,
+        "supersessionApproved": false,
+        "uniqueUnresolvedOccurrenceCount": 3,
+        "variantChoiceApproved": false,
+        "variants": [
+          {
+            "dispositions": [
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 1,
+            "sourceBlobId": "1deb7aafe726cce4c8b8612fb17fd8521b3981c9",
+            "sourceMode": 420,
+            "sourceSha256": "4a98804f918478fc83ce4df56e426500663aff47e066070ad99a6c7b96d7af2a",
+            "sourceSize": 36156,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=4a98804f918478fc83ce4df56e426500663aff47e066070ad99a6c7b96d7af2a",
+            "worktrees": [
+              "reusable-pod-lane"
+            ]
+          },
+          {
+            "dispositions": [
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 1,
+            "sourceBlobId": "f141baad595fee452915247bad0e964616b7e513",
+            "sourceMode": 420,
+            "sourceSha256": "c7e589bf1f30f28e5c3fc1398017a4db8ee7143003b1093ce0fe555ff6598226",
+            "sourceSize": 121471,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=c7e589bf1f30f28e5c3fc1398017a4db8ee7143003b1093ce0fe555ff6598226",
+            "worktrees": [
+              "proposal-support-bridge"
+            ]
+          },
+          {
+            "dispositions": [
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 1,
+            "sourceBlobId": "d0938702de75a3de07aff3a8e5dca1cfe178eaa1",
+            "sourceMode": 420,
+            "sourceSha256": "ec72ed832d0daf960910980931130852829db56f03dd19ba9443fa51183bd5f4",
+            "sourceSize": 22726,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=ec72ed832d0daf960910980931130852829db56f03dd19ba9443fa51183bd5f4",
+            "worktrees": [
+              "hybrid-staged-recovery"
+            ]
+          }
+        ]
+      },
+      {
+        "classification": "manual_review",
+        "conflictingSourceVariant": false,
+        "contextOccurrenceCount": 1,
+        "decisionReason": "A single exact source variant is unresolved and must be explicitly preserved or archived.",
+        "decisionStatus": "manual_review_preserve_or_archive",
+        "occurrences": [
+          {
+            "comparisonBlobId": "e6aaf068836eda7575dae9d524496dceb95dc9e9",
+            "comparisonMode": 420,
+            "comparisonSha256": "b0cbe185c3a6d8e0bf3e2d132ac2bc117c28aeb05711d35e660a9cd464917a3e",
+            "comparisonSize": 15773,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "fc54723a0e57e6adc92c92cb11110d2f1b842964",
+            "sourceMode": 420,
+            "sourceSha256": "86e236f3fe42429cbd2e04e40b03415196bc0eadf28923c4651ea1412e69c75c",
+            "sourceSize": 14790,
+            "sourceType": "regular",
+            "worktree": "hybrid-staged-recovery"
+          }
+        ],
+        "path": "backend/tests/test_runpod.py",
+        "repeatedUnresolvedPath": false,
+        "sourceVariantCount": 1,
+        "supersessionApproved": false,
+        "uniqueUnresolvedOccurrenceCount": 1,
+        "variantChoiceApproved": false,
+        "variants": [
+          {
+            "dispositions": [
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 1,
+            "sourceBlobId": "fc54723a0e57e6adc92c92cb11110d2f1b842964",
+            "sourceMode": 420,
+            "sourceSha256": "86e236f3fe42429cbd2e04e40b03415196bc0eadf28923c4651ea1412e69c75c",
+            "sourceSize": 14790,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=86e236f3fe42429cbd2e04e40b03415196bc0eadf28923c4651ea1412e69c75c",
+            "worktrees": [
+              "hybrid-staged-recovery"
+            ]
+          }
+        ]
+      },
+      {
+        "classification": "manual_review",
+        "conflictingSourceVariant": false,
+        "contextOccurrenceCount": 1,
+        "decisionReason": "A single exact source variant is unresolved and must be explicitly preserved or archived.",
+        "decisionStatus": "manual_review_preserve_or_archive",
+        "occurrences": [
+          {
+            "comparisonBlobId": "453fa797b896322b9260e850b14e665c86c9b74c",
+            "comparisonMode": 420,
+            "comparisonSha256": "37a525de30710f98db41d4a0ae945a5fe8e7ac2ee3d06fbcac7594360ae44809",
+            "comparisonSize": 19069,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "d0ce729de62868ea5b3518f17a59157c2cfb1b44",
+            "sourceMode": 420,
+            "sourceSha256": "f9c04a6ec601fb10eb5874124443da3a2ab0a02caf465fb2bc8ef436fbcdacca",
+            "sourceSize": 17854,
+            "sourceType": "regular",
+            "worktree": "hybrid-staged-recovery"
+          }
+        ],
+        "path": "backend/tests/test_runpod_handler.py",
+        "repeatedUnresolvedPath": false,
+        "sourceVariantCount": 1,
+        "supersessionApproved": false,
+        "uniqueUnresolvedOccurrenceCount": 1,
+        "variantChoiceApproved": false,
+        "variants": [
+          {
+            "dispositions": [
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 1,
+            "sourceBlobId": "d0ce729de62868ea5b3518f17a59157c2cfb1b44",
+            "sourceMode": 420,
+            "sourceSha256": "f9c04a6ec601fb10eb5874124443da3a2ab0a02caf465fb2bc8ef436fbcdacca",
+            "sourceSize": 17854,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=f9c04a6ec601fb10eb5874124443da3a2ab0a02caf465fb2bc8ef436fbcdacca",
+            "worktrees": [
+              "hybrid-staged-recovery"
+            ]
+          }
+        ]
+      },
+      {
+        "classification": "manual_review",
+        "conflictingSourceVariant": false,
+        "contextOccurrenceCount": 1,
+        "decisionReason": "A single exact source variant is unresolved and must be explicitly preserved or archived.",
+        "decisionStatus": "manual_review_preserve_or_archive",
+        "occurrences": [
+          {
+            "comparisonBlobId": "1cb356f54b4f187ea8e9f9820ad192af5a21c7fb",
+            "comparisonMode": 420,
+            "comparisonSha256": "2c1b8652244dd81367cdd653e4d64458dc3104dd95adfe0a6a2746ac1c878667",
+            "comparisonSize": 39876,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "7f2a65f3a9f58f0a41aa59bc54d33f76612903cd",
+            "sourceMode": 420,
+            "sourceSha256": "61f003e5ac9857defae4f4fc3f4229ce822f43a4c7b1dd8be09986b00a9f5492",
+            "sourceSize": 37254,
+            "sourceType": "regular",
+            "worktree": "hybrid-staged-recovery"
+          }
+        ],
+        "path": "backend/tests/test_runpod_worker.py",
+        "repeatedUnresolvedPath": false,
+        "sourceVariantCount": 1,
+        "supersessionApproved": false,
+        "uniqueUnresolvedOccurrenceCount": 1,
+        "variantChoiceApproved": false,
+        "variants": [
+          {
+            "dispositions": [
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 1,
+            "sourceBlobId": "7f2a65f3a9f58f0a41aa59bc54d33f76612903cd",
+            "sourceMode": 420,
+            "sourceSha256": "61f003e5ac9857defae4f4fc3f4229ce822f43a4c7b1dd8be09986b00a9f5492",
+            "sourceSize": 37254,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=61f003e5ac9857defae4f4fc3f4229ce822f43a4c7b1dd8be09986b00a9f5492",
+            "worktrees": [
+              "hybrid-staged-recovery"
+            ]
+          }
+        ]
+      },
+      {
+        "classification": "manual_review",
+        "conflictingSourceVariant": false,
+        "contextOccurrenceCount": 1,
+        "decisionReason": "A single exact source variant is unresolved and must be explicitly preserved or archived.",
+        "decisionStatus": "manual_review_preserve_or_archive",
+        "occurrences": [
+          {
+            "comparisonBlobId": "4bcfa14122b7a007e1ea06a23d9f37bec3592c25",
+            "comparisonMode": 420,
+            "comparisonSha256": "3216a320f36229e24ca12f8fd1e11e2f70a277b9094442509ffcedb251da84aa",
+            "comparisonSize": 6788,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "020c77a2ad1dac1f7817c78c5664943d09de81e6",
+            "sourceMode": 420,
+            "sourceSha256": "be61a4bb0f02dd9cea3ec840952065a377ae5b9cebd69795f1bbe5093c182d80",
+            "sourceSize": 4074,
+            "sourceType": "regular",
+            "worktree": "hybrid-staged-recovery"
+          }
+        ],
+        "path": "backend/tests/test_video_pipeline.py",
+        "repeatedUnresolvedPath": false,
+        "sourceVariantCount": 1,
+        "supersessionApproved": false,
+        "uniqueUnresolvedOccurrenceCount": 1,
+        "variantChoiceApproved": false,
+        "variants": [
+          {
+            "dispositions": [
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 1,
+            "sourceBlobId": "020c77a2ad1dac1f7817c78c5664943d09de81e6",
+            "sourceMode": 420,
+            "sourceSha256": "be61a4bb0f02dd9cea3ec840952065a377ae5b9cebd69795f1bbe5093c182d80",
+            "sourceSize": 4074,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=be61a4bb0f02dd9cea3ec840952065a377ae5b9cebd69795f1bbe5093c182d80",
+            "worktrees": [
+              "hybrid-staged-recovery"
+            ]
+          }
+        ]
+      },
+      {
+        "classification": "manual_review",
+        "conflictingSourceVariant": false,
+        "contextOccurrenceCount": 1,
+        "decisionReason": "A single exact source variant is unresolved and must be explicitly preserved or archived.",
+        "decisionStatus": "manual_review_preserve_or_archive",
+        "occurrences": [
+          {
+            "comparisonBlobId": "3b0042028fb37d19c088caf3085eb1fc3b85cf05",
+            "comparisonMode": 420,
+            "comparisonSha256": "03376809927c06da66f0287f16157f80c1bcbb6ebbfc0b17534a77e9b7a17358",
+            "comparisonSize": 13848,
+            "comparisonType": "regular",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "5869c5c6dcae4895729ab3431abd050ec071c3e1",
+            "sourceMode": 420,
+            "sourceSha256": "6c4a1806f446fa3256ac46e5e71189418a3316142df44ba1c5587be0efcd18bf",
+            "sourceSize": 4170,
+            "sourceType": "regular",
+            "worktree": "proposal-support-bridge"
+          }
+        ],
+        "path": "docs/superpowers/plans/2026-04-11-active-now-systematic-roadmap.md",
+        "repeatedUnresolvedPath": false,
+        "sourceVariantCount": 1,
+        "supersessionApproved": false,
+        "uniqueUnresolvedOccurrenceCount": 1,
+        "variantChoiceApproved": false,
+        "variants": [
+          {
+            "dispositions": [
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 1,
+            "sourceBlobId": "5869c5c6dcae4895729ab3431abd050ec071c3e1",
+            "sourceMode": 420,
+            "sourceSha256": "6c4a1806f446fa3256ac46e5e71189418a3316142df44ba1c5587be0efcd18bf",
+            "sourceSize": 4170,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=6c4a1806f446fa3256ac46e5e71189418a3316142df44ba1c5587be0efcd18bf",
+            "worktrees": [
+              "proposal-support-bridge"
+            ]
+          }
+        ]
+      },
+      {
+        "classification": "manual_review",
+        "conflictingSourceVariant": false,
+        "contextOccurrenceCount": 1,
+        "decisionReason": "A single exact source variant is unresolved and must be explicitly preserved or archived.",
+        "decisionStatus": "manual_review_preserve_or_archive",
+        "occurrences": [
+          {
+            "comparisonBlobId": null,
+            "comparisonMode": null,
+            "comparisonSha256": null,
+            "comparisonSize": null,
+            "comparisonType": "missing",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "d672867bbf96f1769473d210fd8ea3df7272a37b",
+            "sourceMode": 420,
+            "sourceSha256": "cb9e790a815dc73d304eef8134f8f290f717638aa6f31f4171f34b3c8ede8890",
+            "sourceSize": 1227,
+            "sourceType": "regular",
+            "worktree": "proposal-support-bridge"
+          }
+        ],
+        "path": "docs/superpowers/plans/2026-04-17-primary-promoted-acquisition-hardening-batch-analysis.md",
+        "repeatedUnresolvedPath": false,
+        "sourceVariantCount": 1,
+        "supersessionApproved": false,
+        "uniqueUnresolvedOccurrenceCount": 1,
+        "variantChoiceApproved": false,
+        "variants": [
+          {
+            "dispositions": [
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 1,
+            "sourceBlobId": "d672867bbf96f1769473d210fd8ea3df7272a37b",
+            "sourceMode": 420,
+            "sourceSha256": "cb9e790a815dc73d304eef8134f8f290f717638aa6f31f4171f34b3c8ede8890",
+            "sourceSize": 1227,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=cb9e790a815dc73d304eef8134f8f290f717638aa6f31f4171f34b3c8ede8890",
+            "worktrees": [
+              "proposal-support-bridge"
+            ]
+          }
+        ]
+      },
+      {
+        "classification": "manual_review",
+        "conflictingSourceVariant": false,
+        "contextOccurrenceCount": 1,
+        "decisionReason": "A single exact source variant is unresolved and must be explicitly preserved or archived.",
+        "decisionStatus": "manual_review_preserve_or_archive",
+        "occurrences": [
+          {
+            "comparisonBlobId": null,
+            "comparisonMode": null,
+            "comparisonSha256": null,
+            "comparisonSize": null,
+            "comparisonType": "missing",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "e1645870c11d429c3a8bcd27f72e4de46dff6ff7",
+            "sourceMode": 420,
+            "sourceSha256": "e5e4493b97455b0fa4785e6867659e2b4ec29cd6618cd848ec893b9faeaae849",
+            "sourceSize": 9301,
+            "sourceType": "regular",
+            "worktree": "proposal-support-bridge"
+          }
+        ],
+        "path": "docs/superpowers/plans/2026-04-20-agent-loop-fork-handoff.md",
+        "repeatedUnresolvedPath": false,
+        "sourceVariantCount": 1,
+        "supersessionApproved": false,
+        "uniqueUnresolvedOccurrenceCount": 1,
+        "variantChoiceApproved": false,
+        "variants": [
+          {
+            "dispositions": [
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 1,
+            "sourceBlobId": "e1645870c11d429c3a8bcd27f72e4de46dff6ff7",
+            "sourceMode": 420,
+            "sourceSha256": "e5e4493b97455b0fa4785e6867659e2b4ec29cd6618cd848ec893b9faeaae849",
+            "sourceSize": 9301,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=e5e4493b97455b0fa4785e6867659e2b4ec29cd6618cd848ec893b9faeaae849",
+            "worktrees": [
+              "proposal-support-bridge"
+            ]
+          }
+        ]
+      },
+      {
+        "classification": "manual_review",
+        "conflictingSourceVariant": false,
+        "contextOccurrenceCount": 1,
+        "decisionReason": "A single exact source variant is unresolved and must be explicitly preserved or archived.",
+        "decisionStatus": "manual_review_preserve_or_archive",
+        "occurrences": [
+          {
+            "comparisonBlobId": null,
+            "comparisonMode": null,
+            "comparisonSha256": null,
+            "comparisonSize": null,
+            "comparisonType": "missing",
+            "disposition": "unique_unresolved",
+            "sourceBlobId": "88f25a6ad974bd5bb7a00fae19388c286ae9ddfa",
+            "sourceMode": 420,
+            "sourceSha256": "8f53bc7f0a90b7aaae05b4e682cec7971e01ed7f4d0d24d733412614fc5da37d",
+            "sourceSize": 3097,
+            "sourceType": "regular",
+            "worktree": "proposal-support-bridge"
+          }
+        ],
+        "path": "docs/superpowers/plans/2026-04-20-agent-loop-session-starter-prompt.txt",
+        "repeatedUnresolvedPath": false,
+        "sourceVariantCount": 1,
+        "supersessionApproved": false,
+        "uniqueUnresolvedOccurrenceCount": 1,
+        "variantChoiceApproved": false,
+        "variants": [
+          {
+            "dispositions": [
+              "unique_unresolved"
+            ],
+            "occurrenceCount": 1,
+            "sourceBlobId": "88f25a6ad974bd5bb7a00fae19388c286ae9ddfa",
+            "sourceMode": 420,
+            "sourceSha256": "8f53bc7f0a90b7aaae05b4e682cec7971e01ed7f4d0d24d733412614fc5da37d",
+            "sourceSize": 3097,
+            "sourceType": "regular",
+            "variantKey": "type=regular;mode=420;sha256=8f53bc7f0a90b7aaae05b4e682cec7971e01ed7f4d0d24d733412614fc5da37d",
+            "worktrees": [
+              "proposal-support-bridge"
+            ]
+          }
+        ]
+      }
+    ],
+    "schemaVersion": "recovery-global-unresolved-variant-matrix-v1"
+  },
+  "repositoryHeadBeforeReportCommit": "1b032268982641b739d167598e2f3d745512a174",
+  "safeguards": {
+    "branchMutationCount": 0,
+    "salvageCliModified": false,
+    "sourceWorktreeMutationCount": 0,
+    "sourceWorktreeRemovalCount": 0,
+    "statement": "All salvage runs were read-only. No paused worktree, branch, source path, or comparison-root path was modified by salvage.",
+    "supersessionEvidenceProvided": false
+  },
+  "schemaVersion": "recovery-worktree-salvage-manifest-v1",
+  "totals": {
+    "comparisonPaths": 158,
+    "environmentDeletions": 98916,
+    "integrated": 77,
+    "meaningfulTracked": 39,
+    "superseded": 0,
+    "uniqueUnresolved": 81,
+    "untracked": 119,
+    "worktreeCount": 4
+  },
+  "worktrees": [
+    {
+      "archivePath": "/root/WorkSpace/fotball-analyst-recovery-archive/2026-08-19-worktree-salvage/recovery-history-batch",
+      "comparisonRoot": {
+        "absolutePath": "/root/WorkSpace/fotball-analyst",
+        "head": "1b032268982641b739d167598e2f3d745512a174"
+      },
+      "dispositionCounts": {
+        "integrated": 1,
+        "superseded": 0,
+        "unique_unresolved": 1
+      },
+      "evidenceCounts": {
+        "comparisonPaths": 2,
+        "environmentDeletions": 32972,
+        "meaningfulTracked": 2,
+        "untracked": 0
+      },
+      "generatedAt": "2026-08-19T16:41:00Z",
+      "id": "recovery-history-batch",
+      "noMutationResult": {
+        "passed": true,
+        "sourceFingerprintSha256After": "46f84d9cd412f81053facd6a2fe4878ea6449984522446b348e6d9b4e3176cc7",
+        "sourceFingerprintSha256Before": "46f84d9cd412f81053facd6a2fe4878ea6449984522446b348e6d9b4e3176cc7",
+        "statusSha256After": "8793f417f14aa3a712515f770de01682be338c981b4b75cea0ebd8aca15c6ceb",
+        "statusSha256Before": "8793f417f14aa3a712515f770de01682be338c981b4b75cea0ebd8aca15c6ceb"
+      },
+      "outputs": [
+        {
+          "name": "checksums.json",
+          "sha256": "c950789470743b2c67e20e6f06cc8bcc9cf48a3a9063c5b294c0a7ec569d8e4d",
+          "sizeBytes": 546
+        },
+        {
+          "name": "comparison.json",
+          "sha256": "2492dfd9411bf72e976406a6b8d9984d11f089b56ffd3dca016bc74c9c5d0508",
+          "sizeBytes": 811
+        },
+        {
+          "name": "environment-deletions.json",
+          "sha256": "a9c4c3a1b93e969eefc4032e034d78a01084e4a4da95bbba2cac9fb8fb8c4e86",
+          "sizeBytes": 8977729
+        },
+        {
+          "name": "meaningful-tracked.patch",
+          "sha256": "3b5424cac7bf7685d1625a2f20ff53d8c49275746387a0f20fc4357d25ed512d",
+          "sizeBytes": 7634
+        },
+        {
+          "name": "metadata.json",
+          "sha256": "89840251074048ca4c522e84f96c26786ffa5e0424e2cf498c2df72b48ef4667",
+          "sizeBytes": 18138489
+        },
+        {
+          "name": "untracked.tar.gz",
+          "sha256": "272adeccafe73e7009d51f2ec2be9871db5e0eb14239f483ea429be26c3c6402",
+          "sizeBytes": 45
+        }
+      ],
+      "source": {
+        "absolutePath": "/root/WorkSpace/fotball-analyst/.worktrees/recovery-history-batch",
+        "branch": "recovery-history-batch",
+        "branchRef": "refs/heads/recovery-history-batch",
+        "detached": false,
+        "head": "6991eddf6fd81f5960fed1638d77158123c6618a",
+        "statusCounts": {
+          "deleted": 32974,
+          "modified": 0,
+          "otherTracked": 0,
+          "total": 32974,
+          "tracked": 32974,
+          "untracked": 0
+        },
+        "statusSha256": "8793f417f14aa3a712515f770de01682be338c981b4b75cea0ebd8aca15c6ceb"
+      },
+      "supersessionInput": null,
+      "uniqueUnresolvedPaths": [
+        "backend/__pycache__/run_guerilla.cpython-312.pyc"
+      ],
+      "verification": {
+        "allRecordedChecksumsMatch": true,
+        "environmentDeletionBlobsReachableAndMatchSourceHead": true,
+        "exactSixOutputFilenames": true,
+        "integratedRowsHaveContentAndTypeEquality": true,
+        "liveSourceHeadAndStatusUnchanged": true,
+        "patchReadabilityVerifiedAgainstSourceHead": true,
+        "sourceBeforeAfterFingerprintMatches": true,
+        "supersededRowsRequireExplicitEvidence": true,
+        "tarSafetyAndContentVerified": true
+      }
+    },
+    {
+      "archivePath": "/root/WorkSpace/fotball-analyst-recovery-archive/2026-08-19-worktree-salvage/hybrid-staged-recovery",
+      "comparisonRoot": {
+        "absolutePath": "/root/WorkSpace/fotball-analyst",
+        "head": "1b032268982641b739d167598e2f3d745512a174"
+      },
+      "dispositionCounts": {
+        "integrated": 48,
+        "superseded": 0,
+        "unique_unresolved": 27
+      },
+      "evidenceCounts": {
+        "comparisonPaths": 75,
+        "environmentDeletions": 32972,
+        "meaningfulTracked": 9,
+        "untracked": 66
+      },
+      "generatedAt": "2026-08-19T16:42:00Z",
+      "id": "hybrid-staged-recovery",
+      "noMutationResult": {
+        "passed": true,
+        "sourceFingerprintSha256After": "e546c3a592da7eb7b7106a9a89031bd2ccf497c10f6cbd1e787cc88fa3e8c8cc",
+        "sourceFingerprintSha256Before": "e546c3a592da7eb7b7106a9a89031bd2ccf497c10f6cbd1e787cc88fa3e8c8cc",
+        "statusSha256After": "7d85013056182e03094b2c95734de671fbbe62a96706f4686c729cb0a8cb1689",
+        "statusSha256Before": "7d85013056182e03094b2c95734de671fbbe62a96706f4686c729cb0a8cb1689"
+      },
+      "outputs": [
+        {
+          "name": "checksums.json",
+          "sha256": "8f8584fc0474b010d0f942b84bb40dc72ca865d2efe0f3cca5ea549f9c04119f",
+          "sizeBytes": 546
+        },
+        {
+          "name": "comparison.json",
+          "sha256": "ddf50b1299d133df3f71f117bd7013f0e8d8f561ccadbca3969ac5c604b6b394",
+          "sizeBytes": 48519
+        },
+        {
+          "name": "environment-deletions.json",
+          "sha256": "a9c4c3a1b93e969eefc4032e034d78a01084e4a4da95bbba2cac9fb8fb8c4e86",
+          "sizeBytes": 8977729
+        },
+        {
+          "name": "meaningful-tracked.patch",
+          "sha256": "bc39ee59c6e1c8baea236fdbfd71bbc1a217e81394f323a3e0723138516a4fcc",
+          "sizeBytes": 276144
+        },
+        {
+          "name": "metadata.json",
+          "sha256": "84cdd820b304813cea4e7a80ccb482abda19a87ec341373b9fbac5d86c74cd45",
+          "sizeBytes": 18232751
+        },
+        {
+          "name": "untracked.tar.gz",
+          "sha256": "c0c06448790a4a9ac5d7be629762adaa5b28da7e12aac316b9dcd1461def39ff",
+          "sizeBytes": 168559
+        }
+      ],
+      "source": {
+        "absolutePath": "/root/WorkSpace/fotball-analyst/.worktrees/hybrid-staged-recovery",
+        "branch": "hybrid-staged-recovery",
+        "branchRef": "refs/heads/hybrid-staged-recovery",
+        "detached": false,
+        "head": "6991eddf6fd81f5960fed1638d77158123c6618a",
+        "statusCounts": {
+          "deleted": 32974,
+          "modified": 7,
+          "otherTracked": 0,
+          "total": 33047,
+          "tracked": 32981,
+          "untracked": 66
+        },
+        "statusSha256": "7d85013056182e03094b2c95734de671fbbe62a96706f4686c729cb0a8cb1689"
+      },
+      "supersessionInput": null,
+      "uniqueUnresolvedPaths": [
+        "backend/__pycache__/run_guerilla.cpython-312.pyc",
+        "backend/app/main.py",
+        "backend/app/processor.py",
+        "backend/app/proof_runtime.py",
+        "backend/app/run_benchmarks.py",
+        "backend/app/runpod.py",
+        "backend/app/runpod_worker.py",
+        "backend/app/video_pipeline.py",
+        "backend/pitch_detector.py",
+        "backend/run_guerilla.py",
+        "backend/runpod_handler/handler.py",
+        "backend/scripts/run_local_app_path_proof.py",
+        "backend/scripts/run_managed_remote_app_path_proof.py",
+        "backend/scripts/run_pod_proof_cycle.py",
+        "backend/scripts/run_remote_app_path_proof.py",
+        "backend/scripts/run_trimmed_ball_recovery_matrix.py",
+        "backend/tests/test_api.py",
+        "backend/tests/test_gpu_contract.py",
+        "backend/tests/test_processor.py",
+        "backend/tests/test_run_benchmarks.py",
+        "backend/tests/test_run_guerilla.py",
+        "backend/tests/test_run_local_app_path_proof.py",
+        "backend/tests/test_run_pod_proof_cycle.py",
+        "backend/tests/test_runpod.py",
+        "backend/tests/test_runpod_handler.py",
+        "backend/tests/test_runpod_worker.py",
+        "backend/tests/test_video_pipeline.py"
+      ],
+      "verification": {
+        "allRecordedChecksumsMatch": true,
+        "environmentDeletionBlobsReachableAndMatchSourceHead": true,
+        "exactSixOutputFilenames": true,
+        "integratedRowsHaveContentAndTypeEquality": true,
+        "liveSourceHeadAndStatusUnchanged": true,
+        "patchReadabilityVerifiedAgainstSourceHead": true,
+        "sourceBeforeAfterFingerprintMatches": true,
+        "supersededRowsRequireExplicitEvidence": true,
+        "tarSafetyAndContentVerified": true
+      }
+    },
+    {
+      "archivePath": "/root/WorkSpace/fotball-analyst-recovery-archive/2026-08-19-worktree-salvage/reusable-pod-lane",
+      "comparisonRoot": {
+        "absolutePath": "/root/WorkSpace/fotball-analyst",
+        "head": "1b032268982641b739d167598e2f3d745512a174"
+      },
+      "dispositionCounts": {
+        "integrated": 28,
+        "superseded": 0,
+        "unique_unresolved": 20
+      },
+      "evidenceCounts": {
+        "comparisonPaths": 48,
+        "environmentDeletions": 32972,
+        "meaningfulTracked": 8,
+        "untracked": 40
+      },
+      "generatedAt": "2026-08-19T16:43:00Z",
+      "id": "reusable-pod-lane",
+      "noMutationResult": {
+        "passed": true,
+        "sourceFingerprintSha256After": "6ff23863f9baa6aa901421f6168a1aa39ff69522e397c8b2a5b1a3314cae0c55",
+        "sourceFingerprintSha256Before": "6ff23863f9baa6aa901421f6168a1aa39ff69522e397c8b2a5b1a3314cae0c55",
+        "statusSha256After": "ed5954e103b3feac047dc3af9d67c0a3a43df613ab950fe2bdb7e2e59c606a27",
+        "statusSha256Before": "ed5954e103b3feac047dc3af9d67c0a3a43df613ab950fe2bdb7e2e59c606a27"
+      },
+      "outputs": [
+        {
+          "name": "checksums.json",
+          "sha256": "59198226a5a86df209a647f3e91b368a0fa7f7c899c5fb6a9771b7b173cda297",
+          "sizeBytes": 546
+        },
+        {
+          "name": "comparison.json",
+          "sha256": "4e286dcc992c04ea694a7a075cb1709e9a6a6ae401395ad92e061e5121bb6f04",
+          "sizeBytes": 30883
+        },
+        {
+          "name": "environment-deletions.json",
+          "sha256": "a9c4c3a1b93e969eefc4032e034d78a01084e4a4da95bbba2cac9fb8fb8c4e86",
+          "sizeBytes": 8977729
+        },
+        {
+          "name": "meaningful-tracked.patch",
+          "sha256": "2e1d39da954d18448d9d05209a8dfeb56c3dd1ea2d55edb3c8317e2939b6276a",
+          "sizeBytes": 274975
+        },
+        {
+          "name": "metadata.json",
+          "sha256": "6976fa231d40dd45f9838870e93c9df05f0d7b60804624e63a271447d6c13c29",
+          "sizeBytes": 18197867
+        },
+        {
+          "name": "untracked.tar.gz",
+          "sha256": "9d0cba9cc7f5944063ed0a2095fb3fec2a02ec383aca42a751d60b401a3a11f4",
+          "sizeBytes": 126821
+        }
+      ],
+      "source": {
+        "absolutePath": "/root/WorkSpace/fotball-analyst/.worktrees/reusable-pod-lane",
+        "branch": "reusable-pod-lane",
+        "branchRef": "refs/heads/reusable-pod-lane",
+        "detached": false,
+        "head": "6991eddf6fd81f5960fed1638d77158123c6618a",
+        "statusCounts": {
+          "deleted": 32974,
+          "modified": 6,
+          "otherTracked": 0,
+          "total": 33020,
+          "tracked": 32980,
+          "untracked": 40
+        },
+        "statusSha256": "ed5954e103b3feac047dc3af9d67c0a3a43df613ab950fe2bdb7e2e59c606a27"
+      },
+      "supersessionInput": null,
+      "uniqueUnresolvedPaths": [
+        "backend/__pycache__/run_guerilla.cpython-312.pyc",
+        "backend/app/main.py",
+        "backend/app/processor.py",
+        "backend/app/proof_runtime.py",
+        "backend/app/run_benchmarks.py",
+        "backend/app/runpod.py",
+        "backend/app/runpod_worker.py",
+        "backend/app/video_pipeline.py",
+        "backend/pitch_detector.py",
+        "backend/run_guerilla.py",
+        "backend/runpod_handler/handler.py",
+        "backend/scripts/run_local_app_path_proof.py",
+        "backend/scripts/run_managed_remote_app_path_proof.py",
+        "backend/scripts/run_pod_proof_cycle.py",
+        "backend/scripts/run_remote_app_path_proof.py",
+        "backend/scripts/run_trimmed_ball_recovery_matrix.py",
+        "backend/tests/test_run_benchmarks.py",
+        "backend/tests/test_run_guerilla.py",
+        "backend/tests/test_run_local_app_path_proof.py",
+        "backend/tests/test_run_pod_proof_cycle.py"
+      ],
+      "verification": {
+        "allRecordedChecksumsMatch": true,
+        "environmentDeletionBlobsReachableAndMatchSourceHead": true,
+        "exactSixOutputFilenames": true,
+        "integratedRowsHaveContentAndTypeEquality": true,
+        "liveSourceHeadAndStatusUnchanged": true,
+        "patchReadabilityVerifiedAgainstSourceHead": true,
+        "sourceBeforeAfterFingerprintMatches": true,
+        "supersededRowsRequireExplicitEvidence": true,
+        "tarSafetyAndContentVerified": true
+      }
+    },
+    {
+      "archivePath": "/root/WorkSpace/fotball-analyst-recovery-archive/2026-08-19-worktree-salvage/proposal-support-bridge",
+      "comparisonRoot": {
+        "absolutePath": "/root/WorkSpace/fotball-analyst",
+        "head": "1b032268982641b739d167598e2f3d745512a174"
+      },
+      "dispositionCounts": {
+        "integrated": 0,
+        "superseded": 0,
+        "unique_unresolved": 33
+      },
+      "evidenceCounts": {
+        "comparisonPaths": 33,
+        "environmentDeletions": 0,
+        "meaningfulTracked": 20,
+        "untracked": 13
+      },
+      "generatedAt": "2026-08-19T16:44:00Z",
+      "id": "proposal-support-bridge",
+      "noMutationResult": {
+        "passed": true,
+        "sourceFingerprintSha256After": "69908fe86b59aebdd855b0b372e57ec1b8a5c6a2e82ba8eb6ae09413f15f2248",
+        "sourceFingerprintSha256Before": "69908fe86b59aebdd855b0b372e57ec1b8a5c6a2e82ba8eb6ae09413f15f2248",
+        "statusSha256After": "49ecda82ac4508b7900bf98b4831e024a1378719bbd48a5806c6ac55a415fca6",
+        "statusSha256Before": "49ecda82ac4508b7900bf98b4831e024a1378719bbd48a5806c6ac55a415fca6"
+      },
+      "outputs": [
+        {
+          "name": "checksums.json",
+          "sha256": "7b8a620cf2eb2936211cc05d76f4a8a3958bab647f4a68f0e64e2081f88d8ea3",
+          "sizeBytes": 546
+        },
+        {
+          "name": "comparison.json",
+          "sha256": "5d0cb07441ed95bfb2095844caef36e05f9207e61171292046e8780adbb0c764",
+          "sizeBytes": 20960
+        },
+        {
+          "name": "environment-deletions.json",
+          "sha256": "0b11a61a7c9f7134058d0ce8a4b0c03746aa7b57cfd6a3f077adf08cecad307f",
+          "sizeBytes": 73
+        },
+        {
+          "name": "meaningful-tracked.patch",
+          "sha256": "f019a740e5eb89a9e9b298bbbad85f95a1a41fd337affe4bf5e31445c5ed35be",
+          "sizeBytes": 1222465
+        },
+        {
+          "name": "metadata.json",
+          "sha256": "beaf4a78a59f3ba3bcac8a76b64a55233b8dc7b539e881d9dbe600ad9dbc998b",
+          "sizeBytes": 377262
+        },
+        {
+          "name": "untracked.tar.gz",
+          "sha256": "d44e0d3dcb3b70d79bfde5acf4103f74ad5c8a20a920ef636ed4610edbc5a2a8",
+          "sizeBytes": 20206
+        }
+      ],
+      "source": {
+        "absolutePath": "/root/WorkSpace/fotball-analyst/.worktrees/proposal-support-bridge",
+        "branch": "proposal-support-bridge",
+        "branchRef": "refs/heads/proposal-support-bridge",
+        "detached": false,
+        "head": "3897c7c75dd0d758372a08697923f95337d5fc34",
+        "statusCounts": {
+          "deleted": 0,
+          "modified": 20,
+          "otherTracked": 0,
+          "total": 33,
+          "tracked": 20,
+          "untracked": 13
+        },
+        "statusSha256": "49ecda82ac4508b7900bf98b4831e024a1378719bbd48a5806c6ac55a415fca6"
+      },
+      "supersessionInput": null,
+      "uniqueUnresolvedPaths": [
+        "backend/app/jobs.py",
+        "backend/app/processor.py",
+        "backend/app/proof_artifact_materialization.py",
+        "backend/app/proof_runtime.py",
+        "backend/app/run_benchmarks.py",
+        "backend/app/runpod.py",
+        "backend/app/runpod_worker.py",
+        "backend/app/video_pipeline.py",
+        "backend/benchmark_suites/frozen_viable_baseline_slice_suite.json",
+        "backend/benchmark_suites/frozen_viable_baseline_source_manifest.json",
+        "backend/run_guerilla.py",
+        "backend/runpod_handler/handler.py",
+        "backend/scripts/repair_primary_hardening_verdict.py",
+        "backend/scripts/run_benchmark_suite.py",
+        "backend/scripts/run_clip_manifest_expansion.py",
+        "backend/scripts/run_local_app_path_proof.py",
+        "backend/scripts/run_pod_proof_cycle.py",
+        "backend/scripts/run_remote_app_path_proof.py",
+        "backend/scripts/run_remote_video_benchmark.py",
+        "backend/tests/test_processor.py",
+        "backend/tests/test_proof_artifact_materialization.py",
+        "backend/tests/test_proof_runtime.py",
+        "backend/tests/test_repair_primary_hardening_verdict.py",
+        "backend/tests/test_run_benchmark_suite.py",
+        "backend/tests/test_run_benchmarks.py",
+        "backend/tests/test_run_clip_manifest_expansion.py",
+        "backend/tests/test_run_guerilla.py",
+        "backend/tests/test_run_local_app_path_proof.py",
+        "backend/tests/test_run_pod_proof_cycle.py",
+        "docs/superpowers/plans/2026-04-11-active-now-systematic-roadmap.md",
+        "docs/superpowers/plans/2026-04-17-primary-promoted-acquisition-hardening-batch-analysis.md",
+        "docs/superpowers/plans/2026-04-20-agent-loop-fork-handoff.md",
+        "docs/superpowers/plans/2026-04-20-agent-loop-session-starter-prompt.txt"
+      ],
+      "verification": {
+        "allRecordedChecksumsMatch": true,
+        "environmentDeletionBlobsReachableAndMatchSourceHead": true,
+        "exactSixOutputFilenames": true,
+        "integratedRowsHaveContentAndTypeEquality": true,
+        "liveSourceHeadAndStatusUnchanged": true,
+        "patchReadabilityVerifiedAgainstSourceHead": true,
+        "sourceBeforeAfterFingerprintMatches": true,
+        "supersededRowsRequireExplicitEvidence": true,
+        "tarSafetyAndContentVerified": true
+      }
+    }
+  ]
+}

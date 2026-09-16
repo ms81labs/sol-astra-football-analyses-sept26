@@ -1,0 +1,436 @@
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Literal
+
+from pydantic import BaseModel, Field
+from pydantic.dataclasses import dataclass
+
+
+class HomographyPoint(BaseModel):
+    x: float
+    y: float
+
+
+class MatchConfig(BaseModel):
+    attackDirection: Literal["left_to_right", "right_to_left"] = "left_to_right"
+    manualHomographyPoints: list[HomographyPoint] = Field(default_factory=list)
+    myTeamCluster: int | None = None
+    llmProvider: Literal["local", "cloud"] = "local"
+    autoHomography: bool = False  # if True, skip manualHomographyPoints and try pitch_detector.py first
+
+
+class BallData(BaseModel):
+    x: float
+    y: float
+    confidence: float = 0.0
+
+
+class BallEstimate(BaseModel):
+    x: float
+    y: float
+    confidence: float = 0.0
+    radius: float = 0.0
+
+
+@dataclass(slots=True)
+class PlayerData:
+    id: int
+    x: float
+    y: float
+    confidence: float = 0.0
+
+
+class FrameData(BaseModel):
+    frameId: int
+    timestamp: float
+    ball: BallData | None = None
+    myTeam: list[PlayerData] = Field(default_factory=list)
+    enemies: list[PlayerData] = Field(default_factory=list)
+    unassignedPlayers: list[PlayerData] = Field(default_factory=list)
+    possession: "BallOwnership | None" = None
+
+
+class BallOwnership(BaseModel):
+    frameId: int
+    timestamp: float
+    team: Literal["my_team", "enemy", "contested", "dead_ball", "unassigned"]
+    trackId: int | None = None
+    distance: float | None = None
+
+
+class MatchStateFrame(BaseModel):
+    frameId: int
+    timestamp: float
+    mode: Literal["controlled_possession", "loose_ball", "aerial_transit", "restart_or_out", "unknown"]
+    controllingTeam: Literal["my_team", "enemy", "unassigned", "contested", "none"]
+    controllingTrackId: int | None = None
+    ballVisibility: Literal["visible", "inferred", "hidden"]
+    ballEstimate: BallEstimate | None = None
+    source: Literal["observed_ball", "inferred_ball", "player_conditioned", "restart_rule", "unknown"]
+    confidence: float = 0.0
+    reasonCodes: list[str] = Field(default_factory=list)
+
+
+class MatchSummary(BaseModel):
+    possession: int | None
+    myTeamDistance: int
+    enemyDistance: int
+    myTeamAvgPos: dict[str, float]
+    enemyAvgPos: dict[str, float]
+    myTeamTopSpeed: float
+    enemyTopSpeed: float
+    myTeamSprints: int
+    enemySprints: int
+    myTeamXg: float = 0.0
+    enemyXg: float = 0.0
+    myTeamDefensiveLineHeight: float = 0.0
+    enemyDefensiveLineHeight: float = 0.0
+    myTeamDefensiveTeamLength: float = 0.0
+    enemyDefensiveTeamLength: float = 0.0
+    myTeamPpda: float = 0.0
+    enemyPpda: float = 0.0
+    myTeamHighPressRegains: int = 0
+    enemyHighPressRegains: int = 0
+    myTeamCounterpressRecoverySeconds: float = 0.0
+    enemyCounterpressRecoverySeconds: float = 0.0
+    formation: str
+    # Defensive context metrics
+    myTeamBlockHeight: str = "mid_block"
+    enemyBlockHeight: str = "mid_block"
+    myTeamRegainZones: dict[str, int] = Field(default_factory=lambda: {"defensive_third": 0, "middle_third": 0, "attacking_third": 0})
+    enemyRegainZones: dict[str, int] = Field(default_factory=lambda: {"defensive_third": 0, "middle_third": 0, "attacking_third": 0})
+    myTeamTransitionExposure: float = 0.0
+    enemyTransitionExposure: float = 0.0
+    ballSignalStatus: str = "trusted"
+    ballSignalMessage: str | None = None
+    truthGateReasons: list[str] = Field(default_factory=list)
+
+
+class FormationSegment(BaseModel):
+    formation: str
+    startFrameId: int
+    endFrameId: int
+    startTimestamp: float
+    endTimestamp: float
+
+
+class ShotAnalytics(BaseModel):
+    frameId: int
+    timestamp: float
+    team: Literal["my_team", "enemy"]
+    playerId: int
+    x: float
+    y: float
+    inBox: bool
+    xg: float
+    distanceToGoal: float
+    angleDegrees: float
+
+
+class DetectedEvent(BaseModel):
+    type: str
+    frameId: int
+    timestamp: float
+    team: str | None = None
+    fromTrackId: int | None = None
+    toTrackId: int | None = None
+    description: str
+
+
+class ColorClusterSummary(BaseModel):
+    clusterId: int
+    rgbCentroid: list[float]
+    trackIds: list[int]
+
+
+class ColorClusterResult(BaseModel):
+    trackToCluster: dict[int, int]
+    clusters: list[ColorClusterSummary]
+
+
+class MatchRecord(BaseModel):
+    id: str
+    name: str
+    inputMode: str
+    status: str
+    originalFilename: str
+    config: MatchConfig
+    createdAt: datetime
+    updatedAt: datetime
+    requiresTeamSelection: bool = False
+    teamClusters: list[ColorClusterSummary] = Field(default_factory=list)
+
+
+class JobRecord(BaseModel):
+    id: str
+    matchId: str
+    status: str
+    progress: float
+    message: str | None = None
+    error: str | None = None
+    remoteRunId: str | None = None
+    logPath: str | None = None
+    startedAt: datetime | None = None
+    completedAt: datetime | None = None
+    durationSeconds: float | None = None
+    createdAt: datetime
+    updatedAt: datetime
+
+
+class MatchFramesResponse(BaseModel):
+    matchId: str
+    frames: list[FrameData]
+
+
+class MatchAnalyticsResponse(BaseModel):
+    matchId: str
+    summary: MatchSummary
+    ballAssignments: list[BallOwnership]
+    formationTimeline: list[FormationSegment] = Field(default_factory=list)
+    shots: list[ShotAnalytics] = Field(default_factory=list)
+
+
+class MatchEventsResponse(BaseModel):
+    matchId: str
+    events: list[DetectedEvent]
+
+
+# Review Bundle / Playlist schemas
+class ReviewBundleItem(BaseModel):
+    annotationId: str
+    matchId: str
+    frameStart: int
+    frameEnd: int
+    timestampStart: float
+    timestampEnd: float
+    label: str
+    description: str = ""
+
+
+class ReviewBundle(BaseModel):
+    id: str
+    name: str
+    description: str = ""
+    items: list[ReviewBundleItem] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+    createdAt: str
+    updatedAt: str
+
+
+class CreateBundleRequest(BaseModel):
+    name: str
+    description: str = ""
+    items: list[ReviewBundleItem] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+
+
+class UpdateBundleRequest(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    items: list[ReviewBundleItem] | None = None
+    tags: list[str] | None = None
+
+
+# Semantic Search / Tactical Theme Search schemas
+class TacticalTheme(str):
+    """Known tactical themes for filtering and searching."""
+    HIGH_PRESS = "high_press"
+    LOW_BLOCK = "low_block"
+    MID_BLOCK = "mid_block"
+    COUNTER_ATTACK = "counter_attack"
+    POSSESSION_BASED = "possession_based"
+    DIRECT_PLAY = "direct_play"
+    WING_PLAY = "wing_play"
+    THROUGH_BALLS = "through_balls"
+    DEFENSIVE_TRANSITION = "defensive_transition"
+    OFFENSIVE_TRANSITION = "offensive_transition"
+    DEEP_DEFENSE = "deep_defense"
+    AGGRESSIVE_PRESS = "aggressive_press"
+    PASSIVE_PRESS = "passive_press"
+
+
+class SearchQuery(BaseModel):
+    """Natural language search query for tactical search."""
+    query: str = Field(..., description="Natural language query (e.g., 'matches with high press and counter-attacks')")
+    limit: int = Field(default=10, ge=1, le=50, description="Maximum results to return")
+    match_ids: list[str] | None = Field(default=None, description="Optional: restrict search to specific match IDs")
+    tactical_themes: list[str] | None = Field(default=None, description="Optional: filter by tactical themes")
+
+
+class MatchSearchResult(BaseModel):
+    """A single match search result."""
+    matchId: str
+    matchName: str
+    relevanceScore: float = Field(..., description="Relevance score 0-100")
+    matchedThemes: list[str] = Field(default_factory=list, description="Tactical themes matched")
+    summary: str = Field(default="", description="Brief summary explaining the match")
+    summaryData: dict = Field(default_factory=dict, description="Match summary data")
+
+
+class BundleSearchResult(BaseModel):
+    """A single bundle search result."""
+    bundleId: str
+    bundleName: str
+    relevanceScore: float = Field(..., description="Relevance score 0-100")
+    matchedThemes: list[str] = Field(default_factory=list)
+    itemCount: int = 0
+    description: str = ""
+
+
+class SemanticSearchResponse(BaseModel):
+    """Response for semantic search queries."""
+    query: str
+    results: list[MatchSearchResult] = Field(default_factory=list)
+    totalMatches: int = 0
+    searchMetadata: dict = Field(default_factory=dict)
+
+
+class BundleSearchResponse(BaseModel):
+    """Response for bundle search queries."""
+    query: str
+    results: list[BundleSearchResult] = Field(default_factory=list)
+    totalMatches: int = 0
+
+
+class TacticalThemeSummary(BaseModel):
+    """Summary of tactical themes for a match."""
+    matchId: str
+    detectedThemes: list[str] = Field(default_factory=list)
+    themeDetails: dict[str, float] = Field(default_factory=dict, description="Theme strength scores")
+
+
+FrameData.model_rebuild()
+
+
+# ===== Annotation & Issue Schemas =====
+
+
+class TacticalAnnotationRecord(BaseModel):
+    """A persisted annotation on a match — note, arrow, circle, or tagged moment."""
+    id: str
+    matchId: str
+    type: Literal["note", "arrow", "circle", "moment"]
+    frameStart: int
+    frameEnd: int
+    timestampStart: float
+    timestampEnd: float
+    x: float | None = None
+    y: float | None = None
+    x2: float | None = None
+    y2: float | None = None
+    text: str | None = None
+    label: str | None = None
+    team: str | None = None
+    playerIds: list[int] | None = None
+    createdAt: str
+    updatedAt: str
+
+
+class CreateAnnotationRequest(BaseModel):
+    """Request body for POST /api/matches/{match_id}/annotations."""
+    type: Literal["note", "arrow", "circle", "moment"]
+    frameStart: int
+    frameEnd: int
+    timestampStart: float
+    timestampEnd: float
+    x: float | None = None
+    y: float | None = None
+    x2: float | None = None
+    y2: float | None = None
+    text: str | None = None
+    label: str | None = None
+    team: str | None = None
+    playerIds: list[int] | None = None
+
+
+class MatchIssueRecord(BaseModel):
+    """A logged issue / trust crop for a match."""
+    id: str
+    matchId: str
+    bucket: str
+    frameStart: int
+    frameEnd: int
+    timestampStart: float
+    timestampEnd: float
+    processingBackend: Literal["local", "remote", "unknown"] = "unknown"
+    evidenceTarget: Literal["trust_eval", "product_bug", "both"] = "both"
+    note: str
+    createdAt: str
+    updatedAt: str
+
+
+class CreateIssueRequest(BaseModel):
+    """Request body for POST /api/matches/{match_id}/issues."""
+    frameStart: int
+    frameEnd: int
+    timestampStart: float
+    timestampEnd: float
+    bucket: str
+    processingBackend: Literal["local", "remote", "unknown"] = "unknown"
+    evidenceTarget: Literal["trust_eval", "product_bug", "both"] = "both"
+    note: str
+
+
+# ===== Dashboard =====
+
+
+class DashboardSummary(BaseModel):
+    """Aggregated totals and averages across all completed matches."""
+    matchCount: int
+    avgPossession: float | None
+    avgMyTeamXg: float
+    avgEnemyXg: float
+    avgXgDiff: float
+    avgMyTeamSprints: float
+    avgEnemySprints: float
+    mostUsedFormation: str
+
+
+class SeasonTrendPoint(BaseModel):
+    """Single data point in season trends."""
+    matchId: str
+    name: str
+    date: str
+    summary: "MatchSummary"
+
+
+class DashboardComparison(BaseModel):
+    """Side-by-side comparison delta between the last 2 matches."""
+    latestMatchId: str
+    latestMatchName: str
+    previousMatchId: str
+    previousMatchName: str
+    possessionDelta: float | None
+    xgDiffDelta: float
+    myTeamSprintsDelta: float
+    enemySprintsDelta: float
+
+
+class DashboardResponse(BaseModel):
+    """Response for GET /api/dashboard."""
+    summary: DashboardSummary
+    comparison: DashboardComparison | None = None
+    opponentRollups: list = []
+    playerTrendSnapshots: list = []
+    trends: list[SeasonTrendPoint] = []
+
+
+# ===== Trust Crops =====
+
+
+class TrustCropSchema(BaseModel):
+    """A frame window flagged as uncertain / worth human review."""
+    frameStart: int
+    frameEnd: int
+    timestampStart: float
+    timestampEnd: float
+    score: float
+    reasons: list[str]
+
+
+class TrustCropsResponse(BaseModel):
+    """Response for trust crop queue for a match."""
+    matchId: str
+    crops: list[TrustCropSchema]
+    totalFrames: int

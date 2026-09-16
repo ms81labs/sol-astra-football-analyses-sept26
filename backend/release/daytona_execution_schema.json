@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://guerilla-analytics.invalid/schemas/daytona-execution-policy-v1.json",
+  "title": "Daytona execution policy v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "sdkVersion",
+    "image",
+    "target",
+    "cpu",
+    "memoryGiB",
+    "diskGiB",
+    "gpu",
+    "gpuTypes",
+    "spot",
+    "public",
+    "ephemeral",
+    "networkBlockAll",
+    "ttlMinutes",
+    "createTimeoutSeconds",
+    "executionTimeoutSeconds",
+    "transferTimeoutSeconds",
+    "deleteTimeoutSeconds",
+    "cleanupAttempts"
+  ],
+  "properties": {
+    "schemaVersion": {"type": "integer", "const": 1},
+    "sdkVersion": {"type": "string", "const": "0.207.0"},
+    "image": {
+      "type": "string",
+      "const": "docker.io/pytorch/pytorch@sha256:417bd75df6365104c283ea4c1651fb3530d9eb5a4c2fafa51943cff2a94e6385",
+      "pattern": "^docker\\.io/pytorch/pytorch@sha256:[0-9a-f]{64}$"
+    },
+    "target": {"type": "string", "const": "us"},
+    "cpu": {"type": "integer", "const": 4},
+    "memoryGiB": {"type": "integer", "const": 8},
+    "diskGiB": {"type": "integer", "const": 10},
+    "gpu": {"type": "integer", "const": 1},
+    "gpuTypes": {
+      "type": "array",
+      "const": ["RTX-PRO-6000", "H100"],
+      "prefixItems": [
+        {"type": "string", "const": "RTX-PRO-6000"},
+        {"type": "string", "const": "H100"}
+      ],
+      "items": false,
+      "minItems": 2,
+      "maxItems": 2,
+      "uniqueItems": true
+    },
+    "spot": {"type": "boolean", "const": false},
+    "public": {"type": "boolean", "const": false},
+    "ephemeral": {"type": "boolean", "const": true},
+    "networkBlockAll": {"type": "boolean", "const": true},
+    "ttlMinutes": {"type": "integer", "const": 180, "minimum": 1, "maximum": 180},
+    "createTimeoutSeconds": {"type": "integer", "const": 600, "minimum": 1, "maximum": 600},
+    "executionTimeoutSeconds": {"type": "integer", "const": 9000, "minimum": 1, "maximum": 9000},
+    "transferTimeoutSeconds": {"type": "integer", "const": 1800, "minimum": 1, "maximum": 1800},
+    "deleteTimeoutSeconds": {"type": "integer", "const": 120, "minimum": 1, "maximum": 120},
+    "cleanupAttempts": {"type": "integer", "const": 3, "minimum": 1, "maximum": 3}
+  }
+}

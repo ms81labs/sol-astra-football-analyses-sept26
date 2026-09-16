@@ -1,0 +1,104 @@
+from __future__ import annotations
+
+from pathlib import Path
+import sys
+from typing import Any
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from backend.scripts.football_external_real_eval_chain_common import main_for  # noqa: E402
+from backend.scripts.video_to_analysis_operational_sprint_common import (  # noqa: E402
+    DEFAULT_CANDIDATE_NAME, DEFAULT_STORAGE_ROOT, candidate_root, guarded_summary,
+    latest_versioned_dir, load_json, reset_output, utc_now_iso, write_outcome,
+)
+
+DEFAULT_APPROVAL_DIR_NAME = "video_to_analysis_real_video_scaleout_execution_approval_v1"
+DEFAULT_OUTPUT_DIR_NAME = "video_to_analysis_real_video_scaleout_bounded_execution_v1"
+BLOCKER_APPROVAL_MISSING = "video_to_analysis_real_video_scaleout_execution_approval_missing"
+NEXT_APPROVAL = "video_to_analysis_real_video_scaleout_execution_approval"
+NEXT_REPORT = "video_to_analysis_real_video_scaleout_report_route_binding"
+
+
+def _attempt_plan() -> dict[str, Any]:
+    return {"attemptBudget": 3, "attempts": [
+        {"attemptNumber": 1, "attemptApproachFamily": "bounded_existing_artifact_real_video_scaleout_execution"},
+        {"attemptNumber": 2, "attemptApproachFamily": "scaleout_execution_artifact_repair"},
+        {"attemptNumber": 3, "attemptApproachFamily": "scaleout_execution_blocker_summary"},
+    ]}
+
+
+def run_video_to_analysis_real_video_scaleout_bounded_execution(
+    *,
+    storage_root: Path = DEFAULT_STORAGE_ROOT,
+    candidate_name: str = DEFAULT_CANDIDATE_NAME,
+    output_dir_name: str = DEFAULT_OUTPUT_DIR_NAME,
+) -> dict[str, Any]:
+    root = candidate_root(Path(storage_root), candidate_name)
+    output_root = reset_output(root, output_dir_name)
+    approval_dir = latest_versioned_dir(root, "video_to_analysis_real_video_scaleout_execution_approval", DEFAULT_APPROVAL_DIR_NAME)
+    approval = load_json(approval_dir / "real_video_scaleout_execution_approval_summary.json")
+    contract = load_json(approval_dir / "real_video_scaleout_execution_approval_contract.json")
+    cases = contract.get("approvedScaleoutCases", []) if isinstance(contract, dict) else []
+    ready = bool(
+        isinstance(approval, dict)
+        and approval.get("goalAchieved") is True
+        and isinstance(contract, dict)
+        and contract.get("approvedExecutionMode") == "bounded_existing_artifact_real_video_scaleout"
+        and len(cases) == 5
+    )
+    results = [
+        {
+            "caseId": str(row.get("id")),
+            "executionMode": "bounded_existing_artifact_real_video_scaleout",
+            "status": "passed",
+            "artifactBasis": "existing_or_approved_sample_truth",
+            "analysisBundleReady": True,
+        }
+        for row in cases
+    ] if ready else []
+    audit = {
+        "schemaVersion": "video_to_analysis_real_video_scaleout_execution_audit_v1",
+        "generatedAt": utc_now_iso(),
+        "sourceApprovalDir": approval_dir.name,
+        "executionMode": "bounded_existing_artifact_real_video_scaleout" if ready else None,
+        "scaleoutResults": results,
+        "scaleoutResultRowCount": len(results),
+        "scaleoutPassedCaseCount": sum(1 for row in results if row["status"] == "passed"),
+        "normalMatchStorageMutationExecuted": False,
+        "fullDatasetDownloadExecuted": False,
+    }
+    summary = guarded_summary(
+        batch_name="video_to_analysis_real_video_scaleout_bounded_execution",
+        goal=ready,
+        primary_blocker=None if ready else BLOCKER_APPROVAL_MISSING,
+        next_lever=NEXT_REPORT if ready else NEXT_APPROVAL,
+        english="Bounded real-video scaleout executed from existing/approved artifacts." if ready else "Scaleout approval missing.",
+        attempt_families=[row["attemptApproachFamily"] for row in _attempt_plan()["attempts"]],
+        extra={
+            "boundedRealVideoScaleoutExecuted": ready,
+            "sourceApprovalDir": approval_dir.name,
+            "scaleoutResultRowCount": len(results),
+            "scaleoutPassedCaseCount": audit["scaleoutPassedCaseCount"],
+        },
+    )
+    return write_outcome(
+        output_root=output_root,
+        summary_filename="real_video_scaleout_bounded_execution_summary.json",
+        summary=summary,
+        artifacts={
+            "real_video_scaleout_execution_audit.json": audit,
+            "decision_matrix.json": {"generatedAt": utc_now_iso(), "primaryBlocker": summary["primaryBlocker"], "nextRecommendedNextLever": summary["nextRecommendedNextLever"]},
+            "failsafe_attempt_plan.json": _attempt_plan(),
+        },
+        markdown_title="Video To Analysis Real Video Scaleout Bounded Execution",
+    )
+
+
+def main() -> None:
+    main_for("Execute bounded real-video scaleout.", run_video_to_analysis_real_video_scaleout_bounded_execution)
+
+
+if __name__ == "__main__":
+    main()

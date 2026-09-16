@@ -1,0 +1,1077 @@
+/* eslint-disable react-refresh/only-export-components */
+import ModalDialog from './components/ModalDialog';
+import { useState, useEffect, useCallback, useLayoutEffect, useMemo, useRef } from 'react';
+
+
+import AnnotationList from './components/AnnotationList';
+import DrawingToolbar from './components/DrawingToolbar';
+import ReviewToolbar from './components/ReviewToolbar';
+import TacticalPitch from './components/TacticalPitch';
+import CoachInsights from './components/CoachInsights';
+import DashboardPanel from './components/DashboardPanel';
+import DemoMatchIssuePanel from './components/DemoMatchIssuePanel';
+import MatchVideoPanel from './components/MatchVideoPanel';
+import PlayerDetailPanel from './components/PlayerDetailPanel';
+import StatsPanel from './components/StatsPanel';
+import TeamSelectionBanner from './components/TeamSelectionBanner';
+import Timeline from './components/Timeline';
+import TrustCropPanel from './components/TrustCropPanel';
+import UploadCalibrationPanel from './components/UploadCalibrationPanel';
+import { useCoachAnalysis } from './hooks/useCoachAnalysis';
+import { useReviewSurface } from './features/review/useReviewSurface';
+import type { BackendEvent, EventTag, FormationSegment, FrameData, MatchBenchmarkSummary, MatchRecord, MatchStats, ProcessingJob, RuntimeCapabilities, ShotMarker } from './types';
+import { buildPassingNetwork, buildPlayerProfiles, computeHeatmap, computeSpeedsForFrame, summarizeShots } from './utils/analytics';
+import {
+  buildMatchVideoUrl,
+  createMatchUpload,
+  fetchMatches,
+  fetchMatchWorkspace,
+  mapBackendEventsToTags,
+  runMatchAnalysis,
+  updateMatchConfig,
+  waitForJobCompletion,
+} from './utils/api';
+import { buildUploadConfig, createEmptyPointInputs } from './utils/uploadConfig';
+import { getUploadFailureGuidance } from './utils/uploadErrors';
+import { findNearestFrameIndex } from './utils/videoSync';
+
+interface MatchEntry {
+  id: string;
+  name: string;
+  detail: MatchRecord;
+  data: FrameData[];
+  stats: MatchStats;
+  benchmark: MatchBenchmarkSummary | null;
+  formationTimeline: FormationSegment[];
+  shotAnalytics: ShotMarker[];
+  backendEvents: BackendEvent[];
+  baseEvents: EventTag[];
+}
+
+export function formatJobStatus(job: ProcessingJob): string {
+  return `${job.message || 'Processing match'} (${Math.round(job.progress * 100)}%)`;
+}
+
+function emptyStats(): MatchStats {
+  return {
+    possession: null,
+    ballSignalStatus: 'trusted',
+    ballSignalMessage: null,
+    myTeamDistance: 0,
+    enemyDistance: 0,
+    myTeamAvgPos: { x: 50, y: 50 },
+    enemyAvgPos: { x: 50, y: 50 },
+    myTeamTopSpeed: 0,
+    enemyTopSpeed: 0,
+    myTeamSprints: 0,
+    enemySprints: 0,
+    myTeamXg: 0,
+    enemyXg: 0,
+    myTeamDefensiveLineHeight: 0,
+    enemyDefensiveLineHeight: 0,
+    myTeamDefensiveTeamLength: 0,
+    enemyDefensiveTeamLength: 0,
+    myTeamPpda: 0,
+    enemyPpda: 0,
+    myTeamHighPressRegains: 0,
+    enemyHighPressRegains: 0,
+    myTeamCounterpressRecoverySeconds: 0,
+    enemyCounterpressRecoverySeconds: 0,
+    formation: '-',
+  };
+}
+
+function workspaceToEntry(workspace: Awaited<ReturnType<typeof fetchMatchWorkspace>>): MatchEntry {
+  return {
+    id: workspace.detail.id,
+    name: workspace.detail.name,
+    detail: workspace.detail,
+    data: workspace.frames,
+    stats: workspace.analytics.summary,
+    benchmark: workspace.benchmark,
+    formationTimeline: workspace.analytics.formationTimeline,
+    shotAnalytics: workspace.analytics.shots,
+    backendEvents: workspace.events,
+    baseEvents: mapBackendEventsToTags(workspace.events, workspace.frames),
+  };
+}
+
+const LOCAL_RUNTIME_CAPABILITIES: RuntimeCapabilities = {
+  analysisProviders: ['local'],
+  defaultAnalysisProvider: 'local',
+  pdfExportAvailable: false,
+};
+
+interface AppProps {
+  runtimeCapabilities?: RuntimeCapabilities;
+}
+
+function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}) {
+  const [matches, setMatches] = useState<MatchRecord[]>([]);
+  const [activeMatch, setActiveMatch] = useState<MatchEntry | null>(null);
+  const [comparisonMatch, setComparisonMatch] = useState<MatchEntry | null>(null);
+
+  const [currentFrame, setCurrentFrame] = useState(0);
+  const [seekVersion, setSeekVersion] = useState(0);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [fps] = useState(5);
+
+  // A.5 — Coach analysis hook: owns llmThinking, llmResponse, llmProvider, tacticalReport, drillResponse, activeTab
+  const coach = useCoachAnalysis({
+    runtimeCapabilities,
+    runMatchAnalysis,
+    currentFrame,
+  });
+  const resetCoachAnalysis = coach.resetAnalysis;
+
+  const [showZones, setShowZones] = useState(false);
+  const [showNetwork, setShowNetwork] = useState(false);
+  const [showShots, setShowShots] = useState(false);
+  const [showHeatmap, setShowHeatmap] = useState(false);
+  const [selectedPlayer, setSelectedPlayer] = useState<import('./types').PlayerProfile | null>(null);
+  const [showIssuePanel, setShowIssuePanel] = useState(false);
+  const [showDashboard, setShowDashboard] = useState(false);
+  const [showTrustCrop, setShowTrustCrop] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [comparisonLoadError, setComparisonLoadError] = useState<string | null>(null);
+  const [events, setEvents] = useState<EventTag[]>([]);
+  const [jobStatus, setJobStatus] = useState<string | null>(null);
+  const uploadAbortControllerRef = useRef<AbortController | null>(null);
+  const activeWorkspaceRequestRef = useRef(0);
+  const comparisonWorkspaceRequestRef = useRef(0);
+  const activeMatchIdRef = useRef<string | null>(null);
+  const activeFrameTimestampsRef = useRef<number[]>([]);
+  const loadingOperationRef = useRef(0);
+  const [uploadAttackDirection, setUploadAttackDirection] = useState<'left_to_right' | 'right_to_left'>('left_to_right');
+  const [uploadPointInputs, setUploadPointInputs] = useState(createEmptyPointInputs);
+  const [uploadAutoHomography, setUploadAutoHomography] = useState(true);
+  const [uploadVideoFile, setUploadVideoFile] = useState<File | null>(null);
+  const [uploadVideoPreviewUrl, setUploadVideoPreviewUrl] = useState<string | null>(null);
+  const [teamSelectionSaving, setTeamSelectionSaving] = useState(false);
+
+  const beginLoadingOperation = useCallback(() => {
+    const operationId = ++loadingOperationRef.current;
+    setIsLoading(true);
+    return operationId;
+  }, []);
+
+  const finishLoadingOperation = useCallback((operationId: number) => {
+    if (loadingOperationRef.current === operationId) setIsLoading(false);
+  }, []);
+
+  useLayoutEffect(() => {
+    activeMatchIdRef.current = activeMatch?.id ?? null;
+  }, [activeMatch?.id]);
+  const matchData = useMemo(() => activeMatch?.data || [], [activeMatch]);
+  const matchStats = activeMatch?.stats || null;
+  const matchBenchmark = activeMatch?.benchmark || null;
+  const requiresTeamSelection = activeMatch?.detail.requiresTeamSelection ?? false;
+  const isBallSignalUntrusted = matchStats?.ballSignalStatus === 'untrusted';
+  const isBenchmarkTruthGateFailed = matchBenchmark ? !matchBenchmark.fiveMinuteTruthReady : false;
+  const truthGateReasons = matchBenchmark?.truthGateReasons ?? [];
+  const isTacticalInterpretationPaused = requiresTeamSelection || isBallSignalUntrusted || isBenchmarkTruthGateFailed;
+  const tacticalPauseMessage = requiresTeamSelection
+    ? 'Tactical interpretation is paused until a team cluster is chosen.'
+    : isBallSignalUntrusted
+      ? 'Ball signal is untrusted, so tactical interpretation is paused.'
+      : isBenchmarkTruthGateFailed
+        ? 'Benchmark truth gates failed, so this match is review-only until coverage improves.'
+        : null;
+  const comparisonStats = comparisonMatch?.stats ?? null;
+  const comparisonName = comparisonMatch?.name ?? null;
+  const isVideoMatch = activeMatch?.detail.inputMode === 'video';
+  const frameTimestamps = useMemo(() => matchData.map((frame) => frame.Timestamp), [matchData]);
+  const currentTimestamp = matchData[currentFrame]?.Timestamp ?? 0;
+  const matchVideoUrl = activeMatch ? buildMatchVideoUrl(activeMatch.id) : '';
+  const uploadFailureGuidance = getUploadFailureGuidance(loadError);
+  const canRetryUpload =
+    !uploadAutoHomography &&
+    uploadVideoFile !== null &&
+    uploadPointInputs.every((point) => point.x.trim() !== '' && point.y.trim() !== '');
+
+  // A.4 — Review surface hook: manages annotations, issues, review range, pitch placement
+  const review = useReviewSurface({
+    activeMatchId: activeMatch?.id ?? null,
+    currentFrame,
+    matchData,
+    pausePlayback: () => setIsPlaying(false),
+    clearResponse: coach.clearResponse,
+    onSeekFrame: (frame) => {
+      setCurrentFrame(frame);
+      setSeekVersion(version => version + 1);
+      coach.clearResponse();
+    },
+    setLoadError,
+  });
+
+  useEffect(() => {
+    let interval: ReturnType<typeof setInterval>;
+    if (isPlaying && matchData.length > 0 && !isVideoMatch) {
+      interval = setInterval(() => {
+        setCurrentFrame((prev) => {
+          if (prev >= matchData.length - 1) {
+            setIsPlaying(false);
+            return prev;
+          }
+          return prev + 1;
+        });
+      }, 1000 / fps);
+    }
+    return () => clearInterval(interval);
+  }, [fps, isPlaying, isVideoMatch, matchData.length]);
+
+  useEffect(() => {
+    return () => {
+      if (uploadVideoPreviewUrl) {
+        URL.revokeObjectURL(uploadVideoPreviewUrl);
+      }
+    };
+  }, [uploadVideoPreviewUrl]);
+
+  useEffect(() => () => uploadAbortControllerRef.current?.abort(), []);
+
+  const handleAddEvent = useCallback((event: EventTag) => {
+    const frame = findNearestFrameIndex(activeFrameTimestampsRef.current, event.timestamp);
+    setEvents((prev) => [...prev, { ...event, frame }]);
+  }, []);
+
+  // Bridge CustomEvent('add-event') from Timeline.tsx to App state
+  useEffect(() => {
+    const handler = (e: Event) => {
+      handleAddEvent((e as CustomEvent<EventTag>).detail);
+    };
+    window.addEventListener('add-event', handler);
+    return () => window.removeEventListener('add-event', handler);
+  }, [handleAddEvent]);
+
+  const heatmapData = useMemo(() => {
+    if (matchData.length === 0) return null;
+    return computeHeatmap(matchData, 'my_team');
+  }, [matchData]);
+
+  const passingNetwork = useMemo(() => {
+    if (!activeMatch) return [];
+    return buildPassingNetwork(activeMatch.backendEvents);
+  }, [activeMatch]);
+
+  const shotMarkers = useMemo(() => {
+    return activeMatch?.shotAnalytics ?? [];
+  }, [activeMatch]);
+
+  const shotSummary = useMemo(() => summarizeShots(shotMarkers), [shotMarkers]);
+
+  const playerProfiles = useMemo(() => {
+    if (!activeMatch) return [];
+    return buildPlayerProfiles(activeMatch.data, activeMatch.backendEvents, shotMarkers);
+  }, [activeMatch, shotMarkers]);
+
+  const speedData = useMemo(() => {
+    if (matchData.length === 0) return null;
+    return computeSpeedsForFrame(matchData, currentFrame);
+  }, [currentFrame, matchData]);
+
+  const togglePlay = useCallback(() => setIsPlaying((playing) => !playing), []);
+
+  const handleSeek = useCallback((frame: number) => {
+    setCurrentFrame(Math.max(0, Math.min(matchData.length - 1, Math.trunc(frame))));
+    setSeekVersion(version => version + 1);
+    coach.clearResponse();
+  }, [coach, matchData.length]);
+
+  const handleDrawingAnnotation = useCallback(
+    (x: number, y: number, x2?: number, y2?: number) => {
+      if (!review.reviewMode || !activeMatch) return;
+      if (review.reviewMode === 'circle') {
+        void review.handlePitchPointSelect({ x, y });
+      } else if (review.reviewMode === 'arrow') {
+        if (review.pitchAnnotationPlacementMode === 'arrow-start') {
+          void review.handlePitchPointSelect({ x, y });
+        } else if (review.pitchAnnotationPlacementMode === 'arrow-end' && x2 !== undefined && y2 !== undefined) {
+          void review.handlePitchPointSelect({ x: x2, y: y2 });
+        }
+      }
+    },
+    [activeMatch, review],
+  );
+
+  const loadWorkspaceIntoState = useCallback(
+    async (
+      matchId: string,
+      { prepend = false, force = false }: { prepend?: boolean; force?: boolean } = {},
+      signal?: AbortSignal,
+    ) => {
+      if (!force && activeMatchIdRef.current === matchId) return true;
+
+      const requestId = ++activeWorkspaceRequestRef.current;
+      const loadingOperationId = beginLoadingOperation();
+      setLoadError(null);
+      try {
+        const workspace = await fetchMatchWorkspace(matchId, signal);
+        if (signal?.aborted || activeWorkspaceRequestRef.current !== requestId) return false;
+        const entry = workspaceToEntry(workspace);
+        activeFrameTimestampsRef.current = entry.data.map(frame => frame.Timestamp);
+
+        setMatches((previous) => {
+          if (previous.some((match) => match.id === entry.id)) {
+            return previous.map((match) => (match.id === entry.id ? entry.detail : match));
+          }
+          return prepend ? [entry.detail, ...previous] : [...previous, entry.detail];
+        });
+        setActiveMatch(entry);
+        comparisonWorkspaceRequestRef.current += 1;
+        setComparisonMatch(null);
+        setComparisonLoadError(null);
+        setCurrentFrame(0);
+        setIsPlaying(false);
+        setSelectedPlayer(null);
+        setEvents(entry.baseEvents);
+        resetCoachAnalysis();
+        setLoadError(null);
+        return true;
+      } catch (err) {
+        if (signal?.aborted || activeWorkspaceRequestRef.current !== requestId) return false;
+        setLoadError(err instanceof Error ? err.message : 'Failed to load the selected match.');
+        throw err;
+      } finally {
+        finishLoadingOperation(loadingOperationId);
+      }
+    },
+    [beginLoadingOperation, finishLoadingOperation, resetCoachAnalysis],
+  );
+
+  useEffect(() => {
+    const controller = new AbortController();
+
+    async function init() {
+      const loadingOperationId = beginLoadingOperation();
+      setLoadError(null);
+      try {
+        const listedMatches = await fetchMatches();
+        if (controller.signal.aborted) return;
+        const readyMatches = listedMatches.filter((match) => match.status === 'ready');
+        setMatches(readyMatches);
+
+        if (readyMatches.length === 0) {
+          setActiveMatch(null);
+          comparisonWorkspaceRequestRef.current += 1;
+          setComparisonMatch(null);
+          setComparisonLoadError(null);
+          setEvents([]);
+          return;
+        }
+
+        await loadWorkspaceIntoState(readyMatches[0].id, {}, controller.signal);
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        console.error('Could not load matches from the backend.', err);
+        setLoadError(err instanceof Error ? err.message : 'Failed to load matches from the backend.');
+      } finally {
+        finishLoadingOperation(loadingOperationId);
+      }
+    }
+
+    void init();
+    return () => controller.abort();
+  }, [beginLoadingOperation, finishLoadingOperation, loadWorkspaceIntoState]);
+
+  const executeUpload = useCallback(
+    async (file: File) => {
+      const isJson = file.name.endsWith('.json');
+      const isVideo = /\.(mp4|mov|m4v|avi)$/i.test(file.name);
+
+      if (!isJson && !isVideo) {
+        setLoadError('Please upload a tracking JSON file or a video file.');
+        return;
+      }
+
+      let uploadConfig;
+      try {
+        uploadConfig = buildUploadConfig({
+          isVideo,
+          llmProvider: coach.llmProvider,
+          attackDirection: uploadAttackDirection,
+          pointInputs: uploadPointInputs,
+          autoHomography: uploadAutoHomography,
+        });
+      } catch (err) {
+        setLoadError(err instanceof Error ? err.message : 'Video uploads require calibration points.');
+        return;
+      }
+
+      uploadAbortControllerRef.current?.abort();
+      const controller = new AbortController();
+      uploadAbortControllerRef.current = controller;
+      const activeRequestId = activeWorkspaceRequestRef.current;
+      const loadingOperationId = beginLoadingOperation();
+      setJobStatus('Uploading match...');
+      setLoadError(null);
+
+      try {
+        const upload = await createMatchUpload({
+          name: file.name.replace(/\.[^.]+$/, ''),
+          inputMode: isJson ? 'tracking_json' : 'video',
+          file,
+          config: uploadConfig,
+          signal: controller.signal,
+        });
+
+        if (controller.signal.aborted) return;
+        setJobStatus('Processing match...');
+        await waitForJobCompletion(upload.jobId, undefined, undefined, controller.signal, (job) => {
+          setJobStatus(formatJobStatus(job));
+        });
+        if (controller.signal.aborted || activeWorkspaceRequestRef.current !== activeRequestId) return;
+        setJobStatus('Loading tactical workspace...');
+        await loadWorkspaceIntoState(upload.matchId, { prepend: true, force: true }, controller.signal);
+        if (controller.signal.aborted) return;
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        console.error(err);
+        setLoadError(err instanceof Error ? err.message : 'Failed to upload and process match.');
+      } finally {
+        if (!controller.signal.aborted) {
+          setJobStatus(null);
+        }
+        finishLoadingOperation(loadingOperationId);
+        controller.abort();
+        if (uploadAbortControllerRef.current === controller) {
+          uploadAbortControllerRef.current = null;
+        }
+      }
+    },
+    [beginLoadingOperation, coach.llmProvider, finishLoadingOperation, loadWorkspaceIntoState, uploadAttackDirection, uploadPointInputs, uploadAutoHomography],
+  );
+
+  const handleFileUpload = useCallback(
+    async (file: File) => {
+      const isJson = file.name.endsWith('.json');
+      const isVideo = /\.(mp4|mov|m4v|avi)$/i.test(file.name);
+
+      if (!isJson && !isVideo) {
+        setLoadError('Please upload a tracking JSON file or a video file.');
+        return;
+      }
+
+      setUploadVideoFile(isVideo ? file : null);
+      setUploadVideoPreviewUrl((previousUrl) => {
+        if (previousUrl) {
+          URL.revokeObjectURL(previousUrl);
+        }
+        return isVideo ? URL.createObjectURL(file) : null;
+      });
+
+      await executeUpload(file);
+    },
+    [executeUpload],
+  );
+
+  const handleRetryUpload = useCallback(() => {
+    if (!uploadVideoFile || !canRetryUpload) {
+      return;
+    }
+    void executeUpload(uploadVideoFile);
+  }, [canRetryUpload, executeUpload, uploadVideoFile]);
+
+  const updateUploadPoint = useCallback((index: number, axis: 'x' | 'y', value: string) => {
+    setUploadPointInputs((prev) =>
+      prev.map((point, pointIndex) => (pointIndex === index ? { ...point, [axis]: value } : point)),
+    );
+  }, []);
+
+  const resetUploadPoints = useCallback(() => {
+    setUploadPointInputs(createEmptyPointInputs());
+  }, []);
+
+  const handleDrop = useCallback(
+    (event: React.DragEvent) => {
+      event.preventDefault();
+      const file = event.dataTransfer.files[0];
+      if (file) void handleFileUpload(file);
+    },
+    [handleFileUpload],
+  );
+
+  const handleFileInput = useCallback(
+    (event: React.ChangeEvent<HTMLInputElement>) => {
+      const file = event.target.files?.[0];
+      if (file) void handleFileUpload(file);
+      event.target.value = '';
+    },
+    [handleFileUpload],
+  );
+
+  const handleMatchSelection = useCallback(
+    (matchId: string) => {
+      void loadWorkspaceIntoState(matchId).catch(() => undefined);
+    },
+    [loadWorkspaceIntoState],
+  );
+
+  const handleComparisonSelection = useCallback((matchId: string | null) => {
+    if (!matchId) {
+      comparisonWorkspaceRequestRef.current += 1;
+      setComparisonMatch(null);
+      setComparisonLoadError(null);
+      return;
+    }
+    if (comparisonMatch?.id === matchId) return;
+
+    const requestId = ++comparisonWorkspaceRequestRef.current;
+    setComparisonLoadError(null);
+    void fetchMatchWorkspace(matchId)
+      .then((workspace) => {
+        if (comparisonWorkspaceRequestRef.current !== requestId) return;
+        setComparisonMatch(workspaceToEntry(workspace));
+      })
+      .catch((err) => {
+        if (comparisonWorkspaceRequestRef.current !== requestId) return;
+        setComparisonLoadError(err instanceof Error ? err.message : 'Failed to load the comparison match.');
+      });
+  }, [comparisonMatch?.id]);
+
+  const handleTeamClusterSelection = useCallback(
+    async (clusterId: number) => {
+      if (!activeMatch) return;
+
+      const matchId = activeMatch.id;
+      const activeRequestId = activeWorkspaceRequestRef.current;
+      const loadingOperationId = beginLoadingOperation();
+      setTeamSelectionSaving(true);
+      setJobStatus('Relabeling teams...');
+      setLoadError(null);
+      try {
+        await updateMatchConfig(matchId, { myTeamCluster: clusterId });
+        if (activeWorkspaceRequestRef.current !== activeRequestId || activeMatchIdRef.current !== matchId) return;
+        await loadWorkspaceIntoState(matchId, { prepend: true, force: true });
+      } catch (err) {
+        console.error(err);
+        if (activeWorkspaceRequestRef.current === activeRequestId) {
+          setLoadError(err instanceof Error ? err.message : 'Failed to apply team selection.');
+        }
+      } finally {
+        setJobStatus(null);
+        finishLoadingOperation(loadingOperationId);
+        setTeamSelectionSaving(false);
+      }
+    },
+    [activeMatch, beginLoadingOperation, finishLoadingOperation, loadWorkspaceIntoState],
+  );
+
+  const handleVideoTimeChange = useCallback(
+    (time: number) => {
+      if (frameTimestamps.length === 0) return;
+      setCurrentFrame(findNearestFrameIndex(frameTimestamps, time));
+    },
+    [frameTimestamps],
+  );
+
+  return (
+    <div className="min-h-screen bg-slate-900 text-slate-200 p-6 font-sans">
+      <header className="mb-6 flex justify-between items-center gap-4 flex-wrap">
+        <div>
+          <h1 className="text-3xl font-bold text-emerald-400">Guerilla Analytics</h1>
+          <p className="text-slate-400 text-sm">Local-First Tactical Panel</p>
+        </div>
+        <div className="flex items-center space-x-3 flex-wrap justify-end">
+          {matches.length > 1 && (
+            <select
+              aria-label="Active match"
+              value={activeMatch?.id ?? ''}
+              onChange={(event) => handleMatchSelection(event.target.value)}
+              className="bg-slate-800 text-slate-200 text-xs px-3 py-2 rounded border border-slate-700 font-mono"
+            >
+              {matches.map((match) => (
+                <option key={match.id} value={match.id}>
+                  {match.name}
+                </option>
+              ))}
+            </select>
+          )}
+          {matches.length > 1 && (
+            <select
+              aria-label="Comparison match"
+              value={comparisonMatch?.id ?? ''}
+              onChange={(event) => handleComparisonSelection(event.target.value || null)}
+              className="bg-slate-800 text-slate-200 text-xs px-3 py-2 rounded border border-slate-700 font-mono"
+            >
+              <option value="">Compare to...</option>
+              {matches.map(
+                (match) =>
+                  match.id !== activeMatch?.id && (
+                    <option key={match.id} value={match.id}>
+                      {match.name}
+                    </option>
+                  ),
+              )}
+            </select>
+          )}
+          {activeMatch && (
+            <span className="text-xs text-slate-500 font-mono bg-slate-800 px-3 py-1 rounded border border-slate-700">
+              {activeMatch.name}
+            </span>
+          )}
+          <label className="focus-within:ring-2 focus-within:ring-emerald-300 bg-emerald-600 hover:bg-emerald-500 px-4 py-2 rounded text-sm transition-colors border border-emerald-500 shadow-sm flex items-center gap-2 cursor-pointer text-white font-semibold">
+            Load Match
+            <input type="file" accept=".json,video/*" onChange={handleFileInput} className="sr-only" disabled={isLoading || jobStatus !== null} />
+          </label>
+        </div>
+      </header>
+
+      <UploadCalibrationPanel
+        autoHomography={uploadAutoHomography}
+        loadedVideoConfig={isVideoMatch ? activeMatch?.detail.config ?? null : undefined}
+        attackDirection={uploadAttackDirection}
+        pointInputs={uploadPointInputs}
+        previewUrl={uploadVideoPreviewUrl}
+        canRetryUpload={canRetryUpload}
+        isRetryingUpload={jobStatus !== null}
+        uploadFailureGuidance={uploadFailureGuidance}
+        onAutoHomographyChange={setUploadAutoHomography}
+        onAttackDirectionChange={setUploadAttackDirection}
+        onPointChange={updateUploadPoint}
+        onResetPoints={resetUploadPoints}
+        onRetryUpload={handleRetryUpload}
+      />
+
+      {activeMatch && loadError && (
+        <div role="alert" className="mb-4 rounded border border-red-800 bg-red-900/30 px-3 py-2 text-sm text-red-300">
+          {loadError}
+        </div>
+      )}
+      {comparisonLoadError && (
+        <div role="alert" className="mb-4 rounded border border-red-800 bg-red-900/30 px-3 py-2 text-sm text-red-300">
+          Comparison unavailable: {comparisonLoadError}
+        </div>
+      )}
+
+      {activeMatch?.detail.requiresTeamSelection && (
+        <TeamSelectionBanner
+          clusters={activeMatch.detail.teamClusters || []}
+          isSubmitting={teamSelectionSaving}
+          onSelectCluster={(clusterId) => void handleTeamClusterSelection(clusterId)}
+        />
+      )}
+
+      <main className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        <div className="lg:col-span-3 bg-slate-800 p-4 rounded-xl shadow-lg border border-slate-700 flex flex-col items-center">
+          <div
+            className={`w-full ${isVideoMatch && matchData.length > 0 ? 'max-w-6xl' : 'max-w-4xl'} aspect-[1.5] bg-green-800 rounded-lg overflow-hidden border-2 border-slate-600 relative shrink-0 flex items-center justify-center`}
+          >
+            {isLoading && (!activeMatch || jobStatus !== null) ? (
+              <div className="w-full h-full flex flex-col items-center justify-center bg-slate-900 z-10">
+                <div className="text-4xl mb-4 animate-bounce">⚽</div>
+                <p className="text-slate-400 text-sm">{jobStatus || 'Loading tactical workspace...'}</p>
+              </div>
+            ) : loadError && !activeMatch ? (
+              <div className="w-full h-full flex flex-col items-center justify-center bg-slate-900 border-2 border-dashed border-red-900/50 p-10 text-center z-10">
+                <div className="text-4xl mb-4">⚠️</div>
+                <h2 className="text-xl font-bold text-red-400 mb-2">Backend Not Ready</h2>
+                <p className="text-slate-400 text-sm max-w-md">{loadError}</p>
+                {uploadFailureGuidance && (
+                  <p className="mt-3 max-w-md rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+                    {uploadFailureGuidance}
+                  </p>
+                )}
+              </div>
+            ) : matchData.length === 0 ? (
+              <div
+                className="w-full h-full flex flex-col items-center justify-center bg-slate-900 border-2 border-dashed border-slate-700 hover:border-emerald-600/50 p-10 text-center z-10 transition-colors"
+                onDragOver={(event) => {
+                  event.preventDefault();
+                  event.currentTarget.classList.add('border-emerald-400');
+                }}
+                onDragLeave={(event) => {
+                  event.currentTarget.classList.remove('border-emerald-400');
+                }}
+                onDrop={(event) => {
+                  event.currentTarget.classList.remove('border-emerald-400');
+                  handleDrop(event);
+                }}
+              >
+                <div className="text-5xl mb-6">⚽</div>
+                <h2 className="text-2xl font-bold text-slate-200 mb-4">Upload a Match</h2>
+                <p className="text-slate-400 max-w-md mb-8">
+                  Import existing tracking JSON now, or send video through the backend pipeline once calibration points are available.
+                </p>
+                <label className="focus-within:ring-2 focus-within:ring-emerald-300 bg-emerald-600 hover:bg-emerald-500 px-6 py-3 rounded-lg text-sm transition-colors border border-emerald-500 shadow-lg cursor-pointer text-white font-semibold mb-8 flex items-center gap-2">
+                  Upload JSON or Video
+                  <input type="file" accept=".json,video/*" onChange={handleFileInput} className="sr-only" disabled={isLoading || jobStatus !== null} />
+                </label>
+                <p className="text-slate-600 text-xs mb-6">Drag & drop works too. Tracking JSON imports are the fastest path for tranche 1 verification, while video uploads use the calibration strip above.</p>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-left w-full max-w-3xl px-4">
+                  <div className="bg-slate-800 p-4 rounded-xl border border-slate-700">
+                    <div className="w-7 h-7 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold mb-2 text-sm">1</div>
+                    <h3 className="font-semibold text-slate-200 mb-1 text-sm">Upload Source</h3>
+                    <p className="text-xs text-slate-400">Tracking JSON is ready today. Video jobs depend on manual homography inputs.</p>
+                  </div>
+                  <div className="bg-slate-800 p-4 rounded-xl border border-slate-700">
+                    <div className="w-7 h-7 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold mb-2 text-sm">2</div>
+                    <h3 className="font-semibold text-slate-200 mb-1 text-sm">Process Locally</h3>
+                    <p className="text-xs text-slate-400">The backend stores match state, analytics, and derived events in SQLite plus local artifacts.</p>
+                  </div>
+                  <div className="bg-slate-800 p-4 rounded-xl border border-slate-700">
+                    <div className="w-7 h-7 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold mb-2 text-sm">3</div>
+                    <h3 className="font-semibold text-slate-200 mb-1 text-sm">Review Tactically</h3>
+                    <p className="text-xs text-slate-400">Playback, overlays, event markers, and tactical analysis all come from the persisted API workspace.</p>
+                  </div>
+                </div>
+              </div>
+            ) : isVideoMatch ? (
+              <div className="grid h-full w-full grid-cols-1 gap-4 bg-slate-900 p-4 xl:grid-cols-[1.2fr_1fr]">
+                <MatchVideoPanel
+                  key={matchVideoUrl}
+                  videoUrl={matchVideoUrl}
+                  currentTimestamp={currentTimestamp}
+                  isPlaying={isPlaying}
+                  seekVersion={seekVersion}
+                  onPlayingChange={setIsPlaying}
+                  onVideoTimeChange={handleVideoTimeChange}
+                />
+                <div className="overflow-hidden rounded-lg border border-slate-700 bg-green-800">
+                  <TacticalPitch
+                    frameData={matchData[currentFrame] || null}
+                    annotations={coach.llmResponse}
+                    showZones={showZones}
+                    showNetwork={showNetwork}
+                    showShots={showShots}
+                    showHeatmap={showHeatmap}
+                    heatmapData={heatmapData}
+                    passNetwork={passingNetwork}
+                    shotMarkers={shotMarkers}
+                    speedData={speedData}
+                    playerProfiles={playerProfiles}
+                    onPlayerClick={setSelectedPlayer}
+                    drawingMode={review.reviewMode}
+                    pitchAnnotationPlacementMode={review.pitchAnnotationPlacementMode}
+                    savedAnnotations={review.annotations}
+                    onAnnotationCreate={handleDrawingAnnotation}
+                  />
+                </div>
+              </div>
+            ) : (
+              <TacticalPitch
+                frameData={matchData[currentFrame] || null}
+                annotations={coach.llmResponse}
+                showZones={showZones}
+                showNetwork={showNetwork}
+                showShots={showShots}
+                showHeatmap={showHeatmap}
+                heatmapData={heatmapData}
+                passNetwork={passingNetwork}
+                shotMarkers={shotMarkers}
+                speedData={speedData}
+                playerProfiles={playerProfiles}
+                onPlayerClick={setSelectedPlayer}
+                drawingMode={review.reviewMode}
+                pitchAnnotationPlacementMode={review.pitchAnnotationPlacementMode}
+                savedAnnotations={review.annotations}
+                onAnnotationCreate={handleDrawingAnnotation}
+              />
+            )}
+          </div>
+
+          {selectedPlayer && (
+            <div className="fixed right-4 top-20 z-50 w-80 max-w-xs">
+              <PlayerDetailPanel
+                player={selectedPlayer}
+                events={activeMatch?.backendEvents ?? []}
+              />
+              <button
+                type="button"
+                onClick={() => setSelectedPlayer(null)}
+                className="mt-2 w-full rounded border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs text-slate-400 hover:bg-slate-800 transition-colors"
+              >
+                Close
+              </button>
+            </div>
+          )}
+
+          <Timeline
+            matchData={matchData}
+            currentFrame={currentFrame}
+            isPlaying={isPlaying}
+            fps={fps}
+            events={events}
+            reviewRange={review.reviewRange}
+            onRangeChange={review.setReviewRange}
+            onSeek={handleSeek}
+            onTogglePlay={togglePlay}
+          />
+
+          {matchData.length > 0 && (
+            <div className="w-full max-w-4xl mt-4 flex justify-between items-center text-sm flex-wrap gap-2">
+              <div className="flex space-x-4 bg-slate-900 px-3 py-2 rounded-lg border border-slate-700">
+                <div className="flex items-center space-x-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-blue-500"></span>
+                  <span className="text-slate-400 text-xs">My Team</span>
+                </div>
+                <div className="flex items-center space-x-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-red-500"></span>
+                  <span className="text-slate-400 text-xs">Enemy</span>
+                </div>
+                <div className="flex items-center space-x-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-yellow-400"></span>
+                  <span className="text-slate-400 text-xs">Ball</span>
+                </div>
+                <div className="flex items-center space-x-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full bg-orange-500"></span>
+                  <span className="text-slate-400 text-xs">Sprint</span>
+                </div>
+              </div>
+
+              <div className="flex space-x-2">
+                {[
+                  { key: 'heatmap', label: 'Heat Map', active: showHeatmap, toggle: () => setShowHeatmap(!showHeatmap), activeStyle: 'bg-orange-600/20 border-orange-500 text-orange-400' },
+                  { key: 'zones', label: 'Zones', active: showZones, toggle: () => setShowZones(!showZones), activeStyle: 'bg-emerald-600/20 border-emerald-500 text-emerald-400' },
+                  { key: 'network', label: 'Pass Net', active: showNetwork, toggle: () => setShowNetwork(!showNetwork), activeStyle: 'bg-blue-600/20 border-blue-500 text-blue-400' },
+                  { key: 'shots', label: 'Shot Map', active: showShots, toggle: () => setShowShots(!showShots), activeStyle: 'bg-rose-600/20 border-rose-500 text-rose-300' },
+                ].map((button) => (
+                  <button
+                    key={button.key}
+                    onClick={button.toggle}
+                    aria-pressed={button.active}
+                    className={`px-3 py-1.5 rounded border text-xs font-semibold transition-colors ${
+                      button.active ? button.activeStyle : 'bg-slate-900 border-slate-700 text-slate-400 hover:border-slate-500'
+                    }`}
+                  >
+                    {button.label}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setShowDashboard(true)}
+                  className="px-3 py-1.5 rounded border border-emerald-600/30 bg-emerald-900/20 text-emerald-300 text-xs font-semibold hover:bg-emerald-900/40 transition-colors"
+                >
+                  Dashboard
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowTrustCrop(true)}
+                  className="px-3 py-1.5 rounded border border-amber-600/30 bg-amber-900/20 text-amber-300 text-xs font-semibold hover:bg-amber-900/40 transition-colors"
+                >
+                  Trust Crops
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowIssuePanel(true)}
+                  className="px-3 py-1.5 rounded border border-amber-600/30 bg-amber-900/20 text-amber-300 text-xs font-semibold hover:bg-amber-900/40 transition-colors"
+                >
+                  Report Issue
+                </button>
+              </div>
+            </div>
+          )}
+
+          {matchData.length > 0 && (
+            <StatsPanel
+              stats={matchStats || emptyStats()}
+              benchmark={matchBenchmark}
+              formationTimeline={activeMatch?.formationTimeline ?? []}
+              shotSummary={shotSummary}
+              playerProfiles={playerProfiles}
+              comparisonStats={comparisonStats}
+              comparisonName={comparisonName ?? undefined}
+            />
+          )}
+        </div>
+
+        <div className="bg-slate-800 rounded-xl shadow-lg border border-slate-700 p-4 flex flex-col" style={{ maxHeight: '85vh' }}>
+          <h2 className="text-lg font-semibold mb-3 text-emerald-400 border-b border-slate-700 pb-2">Tactical Brain</h2>
+
+          {isTacticalInterpretationPaused && (
+            <div className="mb-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+              <p>{tacticalPauseMessage}</p>
+              {truthGateReasons.length > 0 && (
+                <ul className="mt-2 list-disc space-y-1 pl-4">
+                  {truthGateReasons.slice(0, 3).map((reason) => (
+                    <li key={reason}>{reason}</li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+
+          {/* A.4 — Annotation toolbar and list wired to useReviewSurface */}
+          <div className="mb-3 shrink-0">
+            <ReviewToolbar
+              onCreateNote={review.handleCreateNote}
+              onCreateTaggedMoment={review.handleCreateTaggedMoment}
+            />
+          </div>
+          <div className="mb-3 shrink-0">
+            <DrawingToolbar
+              activeMode={review.reviewMode}
+              onArrow={review.startArrowPlacement}
+              onCircle={review.startCirclePlacement}
+              onCancel={review.cancelPlacement}
+            />
+          </div>
+
+          <div className="mb-3 flex-1 overflow-y-auto">
+            <AnnotationList
+              annotations={review.annotations}
+              onSeekToAnnotation={review.handleSeekToAnnotation}
+              onDeleteAnnotation={review.handleDeleteAnnotation}
+            />
+          </div>
+
+          <div className="border-t border-slate-700 pt-3 mt-2"></div>
+
+          {matchData.length === 0 ? (
+            <div className="text-center text-slate-500 mt-10 p-4 border border-dashed border-slate-700 rounded-lg">
+              <p>Waiting for processed match data...</p>
+            </div>
+          ) : (
+            <div className="flex flex-col flex-1 overflow-hidden">
+              <div className="flex bg-slate-900 rounded p-0.5 border border-slate-700 mb-3 shrink-0">
+                <button
+                  onClick={() => coach.selectLlmProvider('local')}
+                  className={`flex-1 text-xs py-1.5 rounded transition font-medium ${coach.llmProvider === 'local' ? 'bg-slate-700 text-emerald-400' : 'text-slate-400'}`}
+                >
+                  Local
+                </button>
+                <button
+                  disabled={!coach.supportsCloudProvider}
+                  onClick={() => coach.selectLlmProvider('cloud')}
+                  className={`flex-1 text-xs py-1.5 rounded transition font-medium ${coach.llmProvider === 'cloud' ? 'bg-slate-700 text-blue-400' : 'text-slate-400'}`}
+                >
+                  Cloud
+                </button>
+              </div>
+
+              <div className="flex bg-slate-900 rounded p-0.5 border border-slate-700 mb-3 shrink-0">
+                {(['analysis', 'report', 'drills'] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    onClick={() => coach.setActiveTab(tab)}
+                    className={`flex-1 text-xs py-1.5 rounded transition font-medium capitalize ${coach.activeTab === tab ? 'bg-slate-700 text-emerald-400' : 'text-slate-400'}`}
+                  >
+                    {tab === 'analysis' ? 'Analysis' : tab === 'report' ? 'Report' : 'Drills'}
+                  </button>
+                ))}
+              </div>
+
+              <div className="border-t border-slate-700 pt-3 mb-3 shrink-0"></div>
+
+              <div className="flex-1 overflow-y-auto space-y-3 text-sm">
+                {coach.activeTab === 'analysis' && (
+                  <>
+                    <div className="p-3 bg-slate-900 rounded border border-slate-700">
+                      <h3 className="text-emerald-500 font-medium mb-1 text-xs">Offside Check</h3>
+                      <p className="text-xs text-slate-400 mb-2">Ask the backend analysis engine to inspect the current frame.</p>
+                      <button
+                        disabled={coach.llmThinking || isPlaying || isTacticalInterpretationPaused}
+                        onClick={() => coach.runScenario({ matchId: activeMatch?.id ?? null, currentFrame, scenario: 'offside' })}
+                        className="w-full py-1.5 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 rounded text-xs font-semibold transition"
+                      >
+                        Run Check
+                      </button>
+                    </div>
+
+                    <div className="p-3 bg-slate-900 rounded border border-slate-700">
+                      <h3 className="text-emerald-500 font-medium mb-1 text-xs">Defense Spacing</h3>
+                      <p className="text-xs text-slate-400 mb-2">Analyze horizontal spacing from the persisted frame data.</p>
+                      <button
+                        disabled={coach.llmThinking || isPlaying || isTacticalInterpretationPaused}
+                        onClick={() => coach.runScenario({ matchId: activeMatch?.id ?? null, currentFrame, scenario: 'spacing' })}
+                        className="w-full py-1.5 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 rounded text-xs font-semibold transition"
+                      >
+                        Analyze Lines
+                      </button>
+                    </div>
+
+                    <div className="pt-3 border-t border-slate-700">
+                      <p className="text-xs text-slate-400 mb-1">Output:</p>
+                      <div className="p-2 bg-slate-900 rounded border border-slate-700 font-mono text-xs text-emerald-400 min-h-[60px] whitespace-pre-wrap">
+                        {isTacticalInterpretationPaused
+                          ? tacticalPauseMessage
+                          : coach.llmThinking
+                            ? 'Thinking...'
+                            : coach.llmResponse
+                              ? JSON.stringify(coach.llmResponse, null, 2)
+                              : 'Ready.'}
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {!isTacticalInterpretationPaused && (coach.activeTab === 'report' || coach.activeTab === 'drills') && (
+                <CoachInsights
+                  activeTab={coach.activeTab === 'report' ? 'report' : 'drills'}
+                  llmThinking={coach.llmThinking}
+                  matchId={activeMatch?.id ?? null}
+                  currentFrame={currentFrame}
+                  events={events}
+                  tacticalReport={coach.tacticalReport}
+                  drillResponse={coach.drillResponse}
+                  ballSignalStatus={matchStats?.ballSignalStatus ?? null}
+                  onSwitchMatch={loadWorkspaceIntoState}
+                  onGenerateReport={() => coach.runScenario({ matchId: activeMatch?.id ?? null, currentFrame, scenario: 'tactical_report' })}
+                  onGenerateDrills={() => coach.runScenario({ matchId: activeMatch?.id ?? null, currentFrame, scenario: 'drills' })}
+                />
+              )}
+                {isTacticalInterpretationPaused && coach.activeTab !== 'analysis' && (
+                  <div className="rounded-lg border border-slate-700 bg-slate-900/70 p-3 text-xs text-slate-400">
+                    Tactical interpretation is paused while the match is waiting on truth prerequisites.
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      </main>
+
+      {/* A.3/A.4 — Issue modal overlay */}
+      {showIssuePanel && (
+        <ModalDialog label="Match issues" onClose={() => setShowIssuePanel(false)}>
+          <div className="w-full max-w-2xl">
+            <DemoMatchIssuePanel
+              issues={review.issues}
+              currentFrame={currentFrame}
+              currentTimestamp={currentTimestamp}
+              reviewRange={review.reviewRange}
+              processingBackend="unknown"
+              onCreateIssue={review.handleCreateIssue}
+              onSeekToIssue={review.handleSeekToIssue}
+              onDeleteIssue={review.handleDeleteIssue}
+            />
+            <button
+              type="button"
+              onClick={() => setShowIssuePanel(false)}
+              className="mt-3 w-full rounded border border-slate-700 bg-slate-900 px-4 py-2 text-sm text-slate-400 hover:bg-slate-800 transition-colors"
+            >
+              Close
+            </button>
+          </div>
+        </ModalDialog>
+      )}
+
+      {showDashboard && (
+        <DashboardPanel
+          onClose={() => setShowDashboard(false)}
+          onSelectMatch={(matchId) => {
+            setShowDashboard(false);
+            void loadWorkspaceIntoState(matchId).catch(() => undefined);
+          }}
+        />
+      )}
+
+      {showTrustCrop && activeMatch && (
+        <>
+          <TrustCropPanel
+            matchId={activeMatch.id}
+            frames={matchData}
+            onClose={() => setShowTrustCrop(false)}
+            onSeekToCrop={(frame) => {
+              setShowTrustCrop(false);
+              setIsPlaying(false);
+              handleSeek(frame);
+            }}
+          />
+        </>
+      )}
+    </div>
+  );
+}
+export default App;

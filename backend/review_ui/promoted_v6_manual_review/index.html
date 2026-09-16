@@ -1,0 +1,523 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Promoted V6 Manual Review</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family:
+          Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: #0d1117;
+        color: #f0f3f6;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: #0d1117;
+      }
+
+      button,
+      select,
+      textarea {
+        font: inherit;
+      }
+
+      .app {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 340px;
+        min-height: 100vh;
+      }
+
+      .stage {
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        min-width: 0;
+        border-right: 1px solid #30363d;
+      }
+
+      .toolbar,
+      .footer {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 10px 14px;
+        background: #161b22;
+        border-bottom: 1px solid #30363d;
+      }
+
+      .footer {
+        border-top: 1px solid #30363d;
+        border-bottom: 0;
+      }
+
+      .toolbar button,
+      .footer button,
+      .decision-button {
+        border: 1px solid #3b434d;
+        border-radius: 6px;
+        background: #21262d;
+        color: #f0f3f6;
+        min-height: 34px;
+        padding: 6px 10px;
+        cursor: pointer;
+      }
+
+      .toolbar button:hover,
+      .footer button:hover,
+      .decision-button:hover {
+        border-color: #58a6ff;
+      }
+
+      .decision-button.primary {
+        border-color: #238636;
+        background: #1f6f3d;
+      }
+
+      .decision-button.warning {
+        border-color: #8b6f1f;
+        background: #6e5315;
+      }
+
+      .decision-button.danger {
+        border-color: #da3633;
+        background: #842029;
+      }
+
+      .canvas-wrap {
+        position: relative;
+        min-height: 0;
+        overflow: auto;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #05080d;
+        padding: 16px;
+      }
+
+      canvas {
+        display: block;
+        max-width: 100%;
+        max-height: calc(100vh - 128px);
+        background: #111827;
+        cursor: crosshair;
+      }
+
+      aside {
+        min-width: 0;
+        padding: 14px;
+        background: #0d1117;
+        overflow: auto;
+      }
+
+      h1,
+      h2 {
+        margin: 0 0 10px;
+        font-size: 16px;
+        line-height: 1.25;
+      }
+
+      h2 {
+        margin-top: 18px;
+        font-size: 13px;
+        color: #8b949e;
+        text-transform: uppercase;
+      }
+
+      .meta-grid {
+        display: grid;
+        grid-template-columns: 120px minmax(0, 1fr);
+        gap: 6px 10px;
+        font-size: 13px;
+      }
+
+      .meta-grid dt {
+        color: #8b949e;
+      }
+
+      .meta-grid dd {
+        margin: 0;
+        overflow-wrap: anywhere;
+      }
+
+      .progress {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        margin-bottom: 12px;
+      }
+
+      .stat {
+        border: 1px solid #30363d;
+        border-radius: 6px;
+        padding: 8px;
+        background: #161b22;
+      }
+
+      .stat strong {
+        display: block;
+        font-size: 18px;
+      }
+
+      .stat span {
+        color: #8b949e;
+        font-size: 12px;
+      }
+
+      .decisions {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 8px;
+      }
+
+      textarea {
+        width: 100%;
+        min-height: 72px;
+        border: 1px solid #30363d;
+        border-radius: 6px;
+        background: #010409;
+        color: #f0f3f6;
+        padding: 8px;
+        resize: vertical;
+      }
+
+      .status {
+        min-height: 20px;
+        color: #8b949e;
+        font-size: 13px;
+      }
+
+      @media (max-width: 900px) {
+        .app {
+          grid-template-columns: 1fr;
+        }
+
+        .stage {
+          border-right: 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="app">
+      <section class="stage">
+        <div class="toolbar">
+          <button id="previous">Prev</button>
+          <button id="next">Next</button>
+          <select id="filter">
+            <option value="pending_review">Pending</option>
+            <option value="all">All</option>
+            <option value="accept_seed">Accepted</option>
+            <option value="adjust_bbox">Adjusted</option>
+            <option value="reject_seed">Rejected</option>
+            <option value="confirm_hard_negative">Hard negatives</option>
+          </select>
+          <span class="status" id="position"></span>
+        </div>
+        <div class="canvas-wrap">
+          <canvas id="review-canvas" width="1280" height="720"></canvas>
+        </div>
+        <div class="footer">
+          <button id="reset-box">Reset box</button>
+          <button id="run-resolution">Validate gate</button>
+          <span class="status" id="status"></span>
+        </div>
+      </section>
+      <aside>
+        <h1>Promoted V6 Manual Review</h1>
+        <div class="progress">
+          <div class="stat"><strong id="pending-count">0</strong><span>pending</span></div>
+          <div class="stat"><strong id="resolved-count">0</strong><span>resolved</span></div>
+          <div class="stat"><strong id="positive-count">0</strong><span>positive</span></div>
+          <div class="stat"><strong id="negative-count">0</strong><span>negative</span></div>
+        </div>
+
+        <h2>Decision</h2>
+        <div class="decisions">
+          <button class="decision-button primary" data-decision="accept_seed">A Accept seed</button>
+          <button class="decision-button warning" data-decision="adjust_bbox">B Adjust bbox</button>
+          <button class="decision-button danger" data-decision="reject_seed">R Reject seed</button>
+          <button class="decision-button danger" data-decision="confirm_hard_negative">H Hard negative</button>
+        </div>
+
+        <h2>Notes</h2>
+        <textarea id="reviewer-notes" placeholder="Optional reviewer notes"></textarea>
+
+        <h2>Frame</h2>
+        <dl class="meta-grid" id="meta"></dl>
+      </aside>
+    </main>
+
+    <script>
+      const canvas = document.getElementById("review-canvas");
+      const ctx = canvas.getContext("2d");
+      const statusEl = document.getElementById("status");
+      const positionEl = document.getElementById("position");
+      const filterEl = document.getElementById("filter");
+      const notesEl = document.getElementById("reviewer-notes");
+      const metaEl = document.getElementById("meta");
+      let state = null;
+      let filteredItems = [];
+      let currentIndex = 0;
+      let image = new Image();
+      let activeBox = null;
+      let dragMode = null;
+      let dragStart = null;
+      let pendingAction = false;
+
+      function setStatus(text) {
+        statusEl.textContent = text || "";
+      }
+
+      function setPendingAction(pending) {
+        pendingAction = pending;
+        document.querySelector("main").setAttribute("aria-busy", pending ? "true" : "false");
+        document.querySelectorAll("main button, main input, main select, main textarea").forEach((control) => {
+          control.disabled = pending;
+        });
+      }
+
+      function boxWidth(box) {
+        return Math.max(0, box.x2 - box.x1);
+      }
+
+      function boxHeight(box) {
+        return Math.max(0, box.y2 - box.y1);
+      }
+
+      function cloneBox(box) {
+        return box ? { x1: box.x1, y1: box.y1, x2: box.x2, y2: box.y2 } : null;
+      }
+
+      function currentItem() {
+        return filteredItems[currentIndex] || null;
+      }
+
+      function applyFilter() {
+        const filter = filterEl.value;
+        filteredItems = state.reviewItems.filter((item) => filter === "all" || item.decision === filter);
+        currentIndex = Math.min(currentIndex, Math.max(0, filteredItems.length - 1));
+        renderCurrent();
+      }
+
+      function updateStats(summary) {
+        document.getElementById("pending-count").textContent = summary.pendingReviewCount;
+        document.getElementById("resolved-count").textContent =
+          summary.reviewItemCount - summary.pendingReviewCount;
+        document.getElementById("positive-count").textContent = summary.reviewedPositiveCount;
+        document.getElementById("negative-count").textContent = summary.reviewedNegativeCount;
+      }
+
+      function renderMeta(item) {
+        const pairs = [
+          ["decision", item.decision],
+          ["frameIndex", item.frameIndex],
+          ["timestampSeconds", item.timestampSeconds],
+          ["candidateFrameId", item.candidateFrameId],
+          ["windowId", item.windowId || item.curationUnitId],
+          ["sourceClipId", item.sourceClipId],
+          ["reviewItemId", item.reviewItemId],
+          ["gapClass", item.gapClass],
+          ["seedBBox", JSON.stringify(item.seedBBox)],
+        ];
+        metaEl.replaceChildren();
+        pairs.forEach(([key, value]) => {
+          const dt = document.createElement("dt");
+          const dd = document.createElement("dd");
+          dt.textContent = key;
+          dd.textContent = String(value ?? "");
+          metaEl.append(dt, dd);
+        });
+        notesEl.value = item.reviewerNotes || "";
+      }
+
+      function fitCanvasToImage() {
+        if (!image.naturalWidth || !image.naturalHeight) return;
+        canvas.width = image.naturalWidth;
+        canvas.height = image.naturalHeight;
+      }
+
+      function drawBox(box, color, label) {
+        if (!box) return;
+        ctx.save();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 3;
+        ctx.strokeRect(box.x1, box.y1, boxWidth(box), boxHeight(box));
+        ctx.fillStyle = color;
+        ctx.font = "16px sans-serif";
+        ctx.fillText(label, box.x1, Math.max(16, box.y1 - 6));
+        ctx.restore();
+      }
+
+      function redraw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (image.complete && image.naturalWidth) {
+          ctx.drawImage(image, 0, 0);
+        }
+        const item = currentItem();
+        if (!item) return;
+        drawBox(item.seedBBox, "#58a6ff", "seed");
+        drawBox(activeBox, "#f2cc60", "reviewed");
+      }
+
+      function renderCurrent() {
+        const item = currentItem();
+        if (!item) {
+          positionEl.textContent = "No items";
+          metaEl.innerHTML = "";
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          return;
+        }
+        positionEl.textContent = `${currentIndex + 1} / ${filteredItems.length}`;
+        activeBox = cloneBox(item.reviewedBBox || item.seedBBox);
+        renderMeta(item);
+        image = new Image();
+        image.onload = () => {
+          fitCanvasToImage();
+          redraw();
+        };
+        image.src = item.imageUrl;
+      }
+
+      async function loadState() {
+        const response = await fetch("/api/review-state");
+        if (!response.ok) throw new Error(`review-state failed: ${response.status}`);
+        state = await response.json();
+        updateStats(state.summary);
+        applyFilter();
+      }
+
+      async function saveDecision(decision) {
+        if (pendingAction) return;
+        const item = currentItem();
+        if (!item) return;
+        const body = {
+          decision,
+          reviewerNotes: notesEl.value,
+        };
+        if (decision === "adjust_bbox") {
+          body.reviewedBBox = activeBox;
+        }
+        const reviewItemId = item.reviewItemId;
+        setPendingAction(true);
+        try {
+          const response = await fetch(`/api/review-items/${encodeURIComponent(reviewItemId)}`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+          const payload = await response.json();
+          if (!response.ok) {
+            setStatus(payload.error || "Save failed");
+            return;
+          }
+          await loadState();
+          setStatus(`Saved ${decision}`);
+        } catch (_) {
+          setStatus("Save failed");
+        } finally {
+          setPendingAction(false);
+        }
+      }
+
+      function move(delta) {
+        currentIndex = Math.max(0, Math.min(filteredItems.length - 1, currentIndex + delta));
+        renderCurrent();
+      }
+
+      function canvasPoint(event) {
+        const rect = canvas.getBoundingClientRect();
+        const sx = canvas.width / rect.width;
+        const sy = canvas.height / rect.height;
+        return {
+          x: (event.clientX - rect.left) * sx,
+          y: (event.clientY - rect.top) * sy,
+        };
+      }
+
+      canvas.addEventListener("mousedown", (event) => {
+        if (pendingAction) return;
+        const point = canvasPoint(event);
+        activeBox = activeBox || { x1: point.x, y1: point.y, x2: point.x + 12, y2: point.y + 12 };
+        dragStart = { point, box: cloneBox(activeBox) };
+        const nearCorner = Math.abs(point.x - activeBox.x2) < 12 && Math.abs(point.y - activeBox.y2) < 12;
+        dragMode = nearCorner ? "resize" : "move";
+      });
+
+      window.addEventListener("mousemove", (event) => {
+        if (pendingAction) return;
+        if (!dragMode || !dragStart || !activeBox) return;
+        const point = canvasPoint(event);
+        const dx = point.x - dragStart.point.x;
+        const dy = point.y - dragStart.point.y;
+        if (dragMode === "resize") {
+          activeBox.x2 = Math.max(activeBox.x1 + 1, dragStart.box.x2 + dx);
+          activeBox.y2 = Math.max(activeBox.y1 + 1, dragStart.box.y2 + dy);
+        } else {
+          const width = boxWidth(dragStart.box);
+          const height = boxHeight(dragStart.box);
+          activeBox.x1 = Math.max(0, dragStart.box.x1 + dx);
+          activeBox.y1 = Math.max(0, dragStart.box.y1 + dy);
+          activeBox.x2 = activeBox.x1 + width;
+          activeBox.y2 = activeBox.y1 + height;
+        }
+        redraw();
+      });
+
+      window.addEventListener("mouseup", () => {
+        dragMode = null;
+        dragStart = null;
+        if (pendingAction) return;
+      });
+
+      document.getElementById("previous").addEventListener("click", () => { if (!pendingAction) move(-1); });
+      document.getElementById("next").addEventListener("click", () => { if (!pendingAction) move(1); });
+      document.getElementById("reset-box").addEventListener("click", () => {
+        if (pendingAction) return;
+        const item = currentItem();
+        activeBox = cloneBox(item && item.seedBBox);
+        redraw();
+      });
+      filterEl.addEventListener("change", () => {
+        if (pendingAction) return;
+        currentIndex = 0;
+        applyFilter();
+      });
+      document.querySelectorAll("[data-decision]").forEach((button) => {
+        button.addEventListener("click", () => saveDecision(button.dataset.decision));
+      });
+      async function runResolution() {
+        if (pendingAction) return;
+        setPendingAction(true);
+        try {
+          const response = await fetch("/api/run-resolution", { method: "POST", body: "{}" });
+          const payload = await response.json();
+          setStatus(response.ok && payload.summary ? `Gate: ${payload.summary.batchStatus}` : payload.error || "Resolver failed");
+        } catch (_) {
+          setStatus("Resolver failed");
+        } finally {
+          setPendingAction(false);
+        }
+      }
+      document.getElementById("run-resolution").addEventListener("click", () => { runResolution(); });
+      window.addEventListener("keydown", (event) => {
+        if (pendingAction) return;
+        if (event.target === notesEl) return;
+        if (event.key === "ArrowLeft") move(-1);
+        if (event.key === "ArrowRight") move(1);
+        if (event.key.toLowerCase() === "a") saveDecision("accept_seed");
+        if (event.key.toLowerCase() === "b") saveDecision("adjust_bbox");
+        if (event.key.toLowerCase() === "r") saveDecision("reject_seed");
+        if (event.key.toLowerCase() === "h") saveDecision("confirm_hard_negative");
+      });
+
+      loadState().catch((error) => setStatus(error.message));
+    </script>
+  </body>
+</html>

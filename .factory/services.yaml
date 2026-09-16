@@ -1,0 +1,59 @@
+commands:
+  install: .factory/runtime/research-addon-venv/bin/python -m pip install -r backend/requirements.txt
+  test: QT_QPA_PLATFORM=offscreen .factory/runtime/research-addon-venv/bin/python -m pytest backend/tests/test_run_local_app_path_proof.py backend/tests/test_compare_local_remote_proof.py backend/tests/test_compare_ball_pipeline_trace.py -q
+  typecheck: |
+    .factory/runtime/research-addon-venv/bin/python - <<'PY'
+    import ast
+    from pathlib import Path
+
+    paths = [
+        Path("backend/scripts/run_local_app_path_proof.py"),
+        Path("backend/scripts/compare_local_remote_proof.py"),
+        Path("backend/scripts/compare_ball_pipeline_trace.py"),
+    ]
+    addon_root = Path("research-addon")
+    if addon_root.exists():
+        paths.extend(sorted(addon_root.rglob("*.py")))
+
+    for path in paths:
+        ast.parse(path.read_text(), filename=str(path))
+    print("ast parse ok for", len(paths), "files")
+    PY
+  lint: |
+    .factory/runtime/research-addon-venv/bin/python - <<'PY'
+    from pathlib import Path
+
+    roots = [
+        Path(".factory/library"),
+        Path(".factory/skills"),
+        Path("research-addon"),
+    ]
+    explicit_files = [Path(".factory/init.sh"), Path(".factory/services.yaml")]
+    suffixes = {".py", ".md", ".json", ".yaml", ".yml", ".sh"}
+    issues = []
+
+    for root in roots:
+        if not root.exists():
+            continue
+        for path in root.rglob("*"):
+            if not path.is_file() or path.suffix not in suffixes:
+                continue
+            for line_no, line in enumerate(path.read_text().splitlines(), start=1):
+                if line.rstrip() != line:
+                    issues.append(f"{path}:{line_no}: trailing whitespace")
+
+    for path in explicit_files:
+        if not path.exists() or path.suffix not in suffixes:
+            continue
+        for line_no, line in enumerate(path.read_text().splitlines(), start=1):
+            if line.rstrip() != line:
+                issues.append(f"{path}:{line_no}: trailing whitespace")
+
+    if issues:
+        print("\n".join(issues))
+        raise SystemExit(1)
+
+    print("whitespace lint passed")
+    PY
+
+services: {}

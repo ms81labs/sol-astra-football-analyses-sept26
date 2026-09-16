@@ -1,0 +1,357 @@
+{
+  "calibrationPath": "backend/benchmark_suites/football_analysis_pilot_soccertrack_calibration_cv.json",
+  "calibrationSha256": "a121125a6d460e876af5cdc4378405227d7d02105e55d15ea9da9f099220bf99",
+  "confidenceSweepCutoffs": [
+    0.25,
+    0.4,
+    0.6
+  ],
+  "confidenceSweepPostInference": true,
+  "decision": "1920 and source-width tiling increase sample recall but fail the 3 m pitch p95 bar; higher tiled confidence improves sample precision at a recall cost, so promote neither",
+  "developmentDiagnosticOnly": true,
+  "heldOutSourceAccessed": false,
+  "intrinsicsPath": "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_analysis_pilot_corpus_v1/soccertrack/117093/calibration/117093_camera_intrinsics.npz",
+  "intrinsicsSha256": "fe3f14a96495aa6706e6bf716490d599e0818ed0a48e7bf8e4387e7fe985c720",
+  "modelPath": "yolov10n.pt",
+  "modelSha256": "11287ed0735678e7ba1ac2a9b3098c049155b3fde123992e724c1264bcc16b6f",
+  "officialValidationCalibrationUsedForPitchFiltering": true,
+  "pilotAcceptanceEligible": false,
+  "referenceLabelsUsedForInference": false,
+  "referencePath": "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_analysis_pilot_corpus_v1/soccertrack/117093/pilot_reference_intervals.jsonl.gz",
+  "referenceSha256": "507f34f548d799d70c21dd5b5f6841a98dd015f1f535b32159f3d0ac5d0a89ed",
+  "referenceUse": "post_inference_pitch_scoring_only",
+  "results": [
+    {
+      "clipPath": "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_analysis_pilot_corpus_v1/annotation_clips/soccertrack-v2-117093-01.mp4",
+      "clipSha256": "8429f711e3428db1a1274ac005a2c5db272f5521f1e68e9ca7232af5a094d075",
+      "freshDetectionByImageSize": {
+        "1280": {
+          "evaluatedFrameCount": 25,
+          "onPitchDetectionCount": 392,
+          "outOfPitchReferenceCount": 2,
+          "pitchAlignment": {
+            "matchedEntityCount": 283,
+            "medianMatchedErrorMeters": 1.0179576679074938,
+            "p95MatchedErrorMeters": 4.331758527392274,
+            "precision": 0.7219387755102041,
+            "predictedEntityCount": 392,
+            "recall": 0.5145454545454545,
+            "referenceEntityCount": 550,
+            "thresholdMeters": 5.0,
+            "unmatchedPredictedCount": 109,
+            "unmatchedReferenceCount": 267
+          },
+          "rawDetectionCount": 459,
+          "referenceNormalizedCoordinateRange": {
+            "x": [
+              0.11,
+              1.03
+            ],
+            "y": [
+              0.02,
+              1.0
+            ]
+          }
+        },
+        "1920": {
+          "evaluatedFrameCount": 25,
+          "onPitchDetectionCount": 619,
+          "outOfPitchReferenceCount": 2,
+          "pitchAlignment": {
+            "matchedEntityCount": 413,
+            "medianMatchedErrorMeters": 1.0455157552692904,
+            "p95MatchedErrorMeters": 3.857862714831134,
+            "precision": 0.6672051696284329,
+            "predictedEntityCount": 619,
+            "recall": 0.7509090909090909,
+            "referenceEntityCount": 550,
+            "thresholdMeters": 5.0,
+            "unmatchedPredictedCount": 206,
+            "unmatchedReferenceCount": 137
+          },
+          "rawDetectionCount": 693,
+          "referenceNormalizedCoordinateRange": {
+            "x": [
+              0.11,
+              1.03
+            ],
+            "y": [
+              0.02,
+              1.0
+            ]
+          }
+        }
+      },
+      "half": "first",
+      "savedPredictionPath": "backend/storage/football-analysis-pilot-predictions-v1/matches/dd7c1e792cae4d46bf452e079ca461d5/raw_rows.json",
+      "savedPredictionSha256": "bb92e82be8e23b9d503f783126be1018b6dd0a2a159a12dce5f803bb5a78580e",
+      "savedProduction": {
+        "evaluatedFrameCount": 25,
+        "outOfPitchReferenceCount": 2,
+        "pitchAlignment": {
+          "matchedEntityCount": 192,
+          "medianMatchedErrorMeters": 0.9360444827372099,
+          "p95MatchedErrorMeters": 3.570029004746078,
+          "precision": 0.6575342465753424,
+          "predictedEntityCount": 292,
+          "recall": 0.3490909090909091,
+          "referenceEntityCount": 550,
+          "thresholdMeters": 5.0,
+          "unmatchedPredictedCount": 100,
+          "unmatchedReferenceCount": 358
+        },
+        "referenceNormalizedCoordinateRange": {
+          "x": [
+            0.11,
+            1.03
+          ],
+          "y": [
+            0.02,
+            1.0
+          ]
+        }
+      },
+      "taskId": "soccertrack-v2-117093-01",
+      "tiled1280ConfidenceSweep": {
+        "0.25": {
+          "matchedEntityCount": 475,
+          "medianMatchedErrorMeters": 1.1712268707286677,
+          "p95MatchedErrorMeters": 3.8204817391529025,
+          "precision": 0.7364341085271318,
+          "predictedEntityCount": 645,
+          "recall": 0.8636363636363636,
+          "referenceEntityCount": 550,
+          "thresholdMeters": 5.0,
+          "unmatchedPredictedCount": 170,
+          "unmatchedReferenceCount": 75
+        },
+        "0.4": {
+          "matchedEntityCount": 430,
+          "medianMatchedErrorMeters": 1.1216510381098583,
+          "p95MatchedErrorMeters": 4.072838930590544,
+          "precision": 0.7664884135472371,
+          "predictedEntityCount": 561,
+          "recall": 0.7818181818181819,
+          "referenceEntityCount": 550,
+          "thresholdMeters": 5.0,
+          "unmatchedPredictedCount": 131,
+          "unmatchedReferenceCount": 120
+        },
+        "0.6": {
+          "matchedEntityCount": 369,
+          "medianMatchedErrorMeters": 1.0692080699838085,
+          "p95MatchedErrorMeters": 3.9224996674083275,
+          "precision": 0.831081081081081,
+          "predictedEntityCount": 444,
+          "recall": 0.6709090909090909,
+          "referenceEntityCount": 550,
+          "thresholdMeters": 5.0,
+          "unmatchedPredictedCount": 75,
+          "unmatchedReferenceCount": 181
+        }
+      },
+      "tiled1280Detection": {
+        "evaluatedFrameCount": 25,
+        "onPitchDetectionCount": 769,
+        "outOfPitchReferenceCount": 2,
+        "pitchAlignment": {
+          "matchedEntityCount": 499,
+          "medianMatchedErrorMeters": 1.1712268707286677,
+          "p95MatchedErrorMeters": 3.9666971787516,
+          "precision": 0.6488946684005201,
+          "predictedEntityCount": 769,
+          "recall": 0.9072727272727272,
+          "referenceEntityCount": 550,
+          "thresholdMeters": 5.0,
+          "unmatchedPredictedCount": 270,
+          "unmatchedReferenceCount": 51
+        },
+        "rawDetectionCount": 1334,
+        "referenceNormalizedCoordinateRange": {
+          "x": [
+            0.11,
+            1.03
+          ],
+          "y": [
+            0.02,
+            1.0
+          ]
+        },
+        "tileHeightPixels": "full_source_frame",
+        "tileOverlapPixels": 0,
+        "tileWidthPixels": 1024
+      }
+    },
+    {
+      "clipPath": "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_analysis_pilot_corpus_v1/annotation_clips/soccertrack-v2-117093-03.mp4",
+      "clipSha256": "b9cc6ef89b9bc4ca19754dda82edbe0d9a6314141b3ae1c2d296194af182599c",
+      "freshDetectionByImageSize": {
+        "1280": {
+          "evaluatedFrameCount": 25,
+          "onPitchDetectionCount": 438,
+          "outOfPitchReferenceCount": 7,
+          "pitchAlignment": {
+            "matchedEntityCount": 282,
+            "medianMatchedErrorMeters": 0.9348238186672233,
+            "p95MatchedErrorMeters": 3.7113524224517858,
+            "precision": 0.6438356164383562,
+            "predictedEntityCount": 438,
+            "recall": 0.5127272727272727,
+            "referenceEntityCount": 550,
+            "thresholdMeters": 5.0,
+            "unmatchedPredictedCount": 156,
+            "unmatchedReferenceCount": 268
+          },
+          "rawDetectionCount": 445,
+          "referenceNormalizedCoordinateRange": {
+            "x": [
+              0.03,
+              0.99
+            ],
+            "y": [
+              -0.01,
+              1.01
+            ]
+          }
+        },
+        "1920": {
+          "evaluatedFrameCount": 25,
+          "onPitchDetectionCount": 608,
+          "outOfPitchReferenceCount": 7,
+          "pitchAlignment": {
+            "matchedEntityCount": 379,
+            "medianMatchedErrorMeters": 0.9236281641329334,
+            "p95MatchedErrorMeters": 3.795565252039645,
+            "precision": 0.6233552631578947,
+            "predictedEntityCount": 608,
+            "recall": 0.6890909090909091,
+            "referenceEntityCount": 550,
+            "thresholdMeters": 5.0,
+            "unmatchedPredictedCount": 229,
+            "unmatchedReferenceCount": 171
+          },
+          "rawDetectionCount": 638,
+          "referenceNormalizedCoordinateRange": {
+            "x": [
+              0.03,
+              0.99
+            ],
+            "y": [
+              -0.01,
+              1.01
+            ]
+          }
+        }
+      },
+      "half": "second",
+      "savedPredictionPath": "backend/storage/football-analysis-pilot-predictions-v1/matches/a49358f5360348a7b7135d90abb85dab/raw_rows.json",
+      "savedPredictionSha256": "58b6b89099f399ef29b9c4ed6bdfd364a87289852035233d3bea8184d8b5c48d",
+      "savedProduction": {
+        "evaluatedFrameCount": 25,
+        "outOfPitchReferenceCount": 7,
+        "pitchAlignment": {
+          "matchedEntityCount": 203,
+          "medianMatchedErrorMeters": 0.8817883323773165,
+          "p95MatchedErrorMeters": 3.6878530456742125,
+          "precision": 0.7408759124087592,
+          "predictedEntityCount": 274,
+          "recall": 0.3690909090909091,
+          "referenceEntityCount": 550,
+          "thresholdMeters": 5.0,
+          "unmatchedPredictedCount": 71,
+          "unmatchedReferenceCount": 347
+        },
+        "referenceNormalizedCoordinateRange": {
+          "x": [
+            0.03,
+            0.99
+          ],
+          "y": [
+            -0.01,
+            1.01
+          ]
+        }
+      },
+      "taskId": "soccertrack-v2-117093-03",
+      "tiled1280ConfidenceSweep": {
+        "0.25": {
+          "matchedEntityCount": 482,
+          "medianMatchedErrorMeters": 1.109576851792542,
+          "p95MatchedErrorMeters": 3.7880996341931827,
+          "precision": 0.7799352750809061,
+          "predictedEntityCount": 618,
+          "recall": 0.8763636363636363,
+          "referenceEntityCount": 550,
+          "thresholdMeters": 5.0,
+          "unmatchedPredictedCount": 136,
+          "unmatchedReferenceCount": 68
+        },
+        "0.4": {
+          "matchedEntityCount": 448,
+          "medianMatchedErrorMeters": 1.1074663598245214,
+          "p95MatchedErrorMeters": 3.883705208951922,
+          "precision": 0.8160291438979964,
+          "predictedEntityCount": 549,
+          "recall": 0.8145454545454546,
+          "referenceEntityCount": 550,
+          "thresholdMeters": 5.0,
+          "unmatchedPredictedCount": 101,
+          "unmatchedReferenceCount": 102
+        },
+        "0.6": {
+          "matchedEntityCount": 377,
+          "medianMatchedErrorMeters": 0.9797443193665467,
+          "p95MatchedErrorMeters": 3.883205486751626,
+          "precision": 0.834070796460177,
+          "predictedEntityCount": 452,
+          "recall": 0.6854545454545454,
+          "referenceEntityCount": 550,
+          "thresholdMeters": 5.0,
+          "unmatchedPredictedCount": 75,
+          "unmatchedReferenceCount": 173
+        }
+      },
+      "tiled1280Detection": {
+        "evaluatedFrameCount": 25,
+        "onPitchDetectionCount": 692,
+        "outOfPitchReferenceCount": 7,
+        "pitchAlignment": {
+          "matchedEntityCount": 516,
+          "medianMatchedErrorMeters": 1.113036125770271,
+          "p95MatchedErrorMeters": 3.7894088391962404,
+          "precision": 0.7456647398843931,
+          "predictedEntityCount": 692,
+          "recall": 0.9381818181818182,
+          "referenceEntityCount": 550,
+          "thresholdMeters": 5.0,
+          "unmatchedPredictedCount": 176,
+          "unmatchedReferenceCount": 34
+        },
+        "rawDetectionCount": 1139,
+        "referenceNormalizedCoordinateRange": {
+          "x": [
+            0.03,
+            0.99
+          ],
+          "y": [
+            -0.01,
+            1.01
+          ]
+        },
+        "tileHeightPixels": "full_source_frame",
+        "tileOverlapPixels": 0,
+        "tileWidthPixels": 1024
+      }
+    }
+  ],
+  "runtimeChanged": false,
+  "sampledFramesPerTask": 25,
+  "sampledTaskIds": [
+    "soccertrack-v2-117093-01",
+    "soccertrack-v2-117093-03"
+  ],
+  "schemaVersion": "football_analysis_pilot_soccertrack_resolution_diagnostic_v3",
+  "sourceFrameStride": 100,
+  "trackingAppliedToFreshDetections": false,
+  "validationSourceId": "soccertrack-v2-117093"
+}

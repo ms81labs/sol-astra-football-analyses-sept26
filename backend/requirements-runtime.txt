@@ -1,0 +1,12 @@
+# Direct non-ML dependencies needed by the API and its operational paths.
+boto3==1.34.131
+daytona==0.207.0
+fastapi==0.121.0
+fastparquet==2025.12.0
+httpx==0.28.1
+pandas==3.0.1
+pydantic==2.13.5
+python-multipart==0.0.32
+requests==2.32.5
+starlette==0.49.3
+uvicorn==0.38.0

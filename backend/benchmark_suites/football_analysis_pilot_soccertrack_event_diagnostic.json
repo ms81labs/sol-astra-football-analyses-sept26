@@ -1,0 +1,416 @@
+{
+  "classMap": {
+    "CROSS": "pass",
+    "HIGH PASS": "pass",
+    "PASS": "pass",
+    "SHOT": "shot"
+  },
+  "currentCodeRecalculation": {
+    "fullArtifactEventTypeCountsByPath": {
+      "backend/storage/daytona-g-capacity-v7.3/matches/5b56cbd876664b9b9fe25b1c95515b8f": {
+        "recovery": 451
+      },
+      "backend/storage/daytona-g-capacity-v7.3/matches/c43b571fdb1745a08b8209430bb65abe": {
+        "recovery": 269
+      }
+    },
+    "inputFrameSha256ByPath": {
+      "backend/storage/daytona-g-capacity-v7.3/matches/5b56cbd876664b9b9fe25b1c95515b8f/frames.json": "ddbb4328ae85819202e58e9ba69af42a698f92bb7af3ba1b68489c1156e7af53",
+      "backend/storage/daytona-g-capacity-v7.3/matches/c43b571fdb1745a08b8209430bb65abe/frames.json": "e544e02bcfb553b33349af9a6d01f582841a108ae6a834bc17425c59dbd3c7ba"
+    },
+    "method": "rerun detect_events from retained production frames and possession without changing stored artifacts",
+    "pooled": {
+      "classes": {
+        "pass": {
+          "counts": {
+            "falseNegatives": 53,
+            "falsePositives": 0,
+            "predictions": 0,
+            "truePositives": 0,
+            "truth": 53
+          },
+          "diagnosticThresholdChecks": {
+            "precision": false,
+            "recall": false
+          },
+          "precision": null,
+          "precision95": null,
+          "recall": 0.0,
+          "recall95": [
+            0.0,
+            0.06758198857654184
+          ]
+        },
+        "shot": {
+          "counts": {
+            "falseNegatives": 2,
+            "falsePositives": 0,
+            "predictions": 0,
+            "truePositives": 0,
+            "truth": 2
+          },
+          "diagnosticThresholdChecks": {
+            "precision": false,
+            "recall": false
+          },
+          "precision": null,
+          "precision95": null,
+          "recall": 0.0,
+          "recall95": [
+            0.0,
+            0.6576197724933468
+          ]
+        }
+      }
+    },
+    "taskResults": [
+      {
+        "classes": {
+          "pass": {
+            "applicable": true,
+            "counts": {
+              "falseNegatives": 8,
+              "falsePositives": 0,
+              "predictions": 0,
+              "truePositives": 0,
+              "truth": 8
+            },
+            "precision": null,
+            "precision95": null,
+            "recall": 0.0,
+            "recall95": [
+              0.0,
+              0.3244075648838801
+            ]
+          },
+          "shot": {
+            "applicable": true,
+            "counts": {
+              "falseNegatives": 1,
+              "falsePositives": 0,
+              "predictions": 0,
+              "truePositives": 0,
+              "truth": 1
+            },
+            "precision": null,
+            "precision95": null,
+            "recall": 0.0,
+            "recall95": [
+              0.0,
+              0.7934506856227626
+            ]
+          }
+        },
+        "taskId": "soccertrack-v2-117092-01"
+      },
+      {
+        "classes": {
+          "pass": {
+            "applicable": true,
+            "counts": {
+              "falseNegatives": 19,
+              "falsePositives": 0,
+              "predictions": 0,
+              "truePositives": 0,
+              "truth": 19
+            },
+            "precision": null,
+            "precision95": null,
+            "recall": 0.0,
+            "recall95": [
+              0.0,
+              0.16817922405261618
+            ]
+          },
+          "shot": {
+            "applicable": false,
+            "counts": {
+              "falseNegatives": 0,
+              "falsePositives": 0,
+              "predictions": 0,
+              "truePositives": 0,
+              "truth": 0
+            },
+            "precision": null,
+            "precision95": null,
+            "recall": null,
+            "recall95": null
+          }
+        },
+        "taskId": "soccertrack-v2-117092-02"
+      },
+      {
+        "classes": {
+          "pass": {
+            "applicable": true,
+            "counts": {
+              "falseNegatives": 26,
+              "falsePositives": 0,
+              "predictions": 0,
+              "truePositives": 0,
+              "truth": 26
+            },
+            "precision": null,
+            "precision95": null,
+            "recall": 0.0,
+            "recall95": [
+              0.0,
+              0.12872892185921525
+            ]
+          },
+          "shot": {
+            "applicable": true,
+            "counts": {
+              "falseNegatives": 1,
+              "falsePositives": 0,
+              "predictions": 0,
+              "truePositives": 0,
+              "truth": 1
+            },
+            "precision": null,
+            "precision95": null,
+            "recall": 0.0,
+            "recall95": [
+              0.0,
+              0.7934506856227626
+            ]
+          }
+        },
+        "taskId": "soccertrack-v2-117092-03"
+      }
+    ]
+  },
+  "developmentDiagnosticOnly": true,
+  "exclusionReasons": [
+    "only the event stage and one validation source are scored",
+    "the validation source informed prior development and diagnostics",
+    "official left/right team labels are intentionally treated as unknown until home/away mapping is declared"
+  ],
+  "generatedAt": "2026-09-15T06:06:28.148258+00:00",
+  "pilotAcceptanceEligible": false,
+  "pooled": {
+    "classes": {
+      "pass": {
+        "counts": {
+          "falseNegatives": 0,
+          "falsePositives": 856,
+          "predictions": 909,
+          "truePositives": 53,
+          "truth": 53
+        },
+        "diagnosticThresholdChecks": {
+          "precision": false,
+          "recall": true
+        },
+        "precision": 0.058305830583058306,
+        "precision95": [
+          0.04485074130749727,
+          0.07547843278873517
+        ],
+        "recall": 1.0,
+        "recall95": [
+          0.9324180114234583,
+          1.0
+        ]
+      },
+      "shot": {
+        "counts": {
+          "falseNegatives": 2,
+          "falsePositives": 0,
+          "predictions": 0,
+          "truePositives": 0,
+          "truth": 2
+        },
+        "diagnosticThresholdChecks": {
+          "precision": false,
+          "recall": false
+        },
+        "precision": null,
+        "precision95": null,
+        "recall": 0.0,
+        "recall95": [
+          0.0,
+          0.6576197724933468
+        ]
+      }
+    }
+  },
+  "predictionEventSha256ByPath": {
+    "backend/storage/daytona-g-capacity-v7.3/matches/5b56cbd876664b9b9fe25b1c95515b8f/events.json": "67b20456b4ba2ef531339ccd5aaba4046a25ea8b6064c8158889e04d4d68716d",
+    "backend/storage/daytona-g-capacity-v7.3/matches/c43b571fdb1745a08b8209430bb65abe/events.json": "e7d278dfec698184e3ba49e5f1b7a9bd8b3115cd4d693458d57cbfbfb1bac7e3"
+  },
+  "schemaVersion": "football_analysis_pilot_soccertrack_event_diagnostic_v3",
+  "sourceId": "soccertrack-v2-117092",
+  "sourceLabelsPath": "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_external_soccertrack_google_drive_bounded_fixture_fetch_v1/sample_fixture_files/selected_match_117092/bas__117092__117092_12_class_events.json",
+  "sourceLabelsSha256": "3511e4e8a241daffb0c7ac80b2cb471a3dfbb1731ff7175a01289a1bd46a32f5",
+  "sourceMetadataXmlPath": "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_external_soccertrack_google_drive_bounded_fixture_fetch_v1/sample_fixture_files/selected_match_117092/raw__117092__117092_tracker_box_metadata.xml",
+  "sourceMetadataXmlSha256": "1cd20ca19cd927d187938ef07734b583f58d6486b1385be67a43fe9b3be591b6",
+  "taskIds": [
+    "soccertrack-v2-117092-01",
+    "soccertrack-v2-117092-02",
+    "soccertrack-v2-117092-03"
+  ],
+  "taskResults": [
+    {
+      "classes": {
+        "pass": {
+          "applicable": true,
+          "counts": {
+            "falseNegatives": 0,
+            "falsePositives": 242,
+            "predictions": 250,
+            "truePositives": 8,
+            "truth": 8
+          },
+          "precision": 0.032,
+          "precision95": [
+            0.01630236549364963,
+            0.06186240283408648
+          ],
+          "recall": 1.0,
+          "recall95": [
+            0.6755924351161198,
+            1.0
+          ]
+        },
+        "shot": {
+          "applicable": true,
+          "counts": {
+            "falseNegatives": 1,
+            "falsePositives": 0,
+            "predictions": 0,
+            "truePositives": 0,
+            "truth": 1
+          },
+          "precision": null,
+          "precision95": null,
+          "recall": 0.0,
+          "recall95": [
+            0.0,
+            0.7934506856227626
+          ]
+        }
+      },
+      "taskId": "soccertrack-v2-117092-01"
+    },
+    {
+      "classes": {
+        "pass": {
+          "applicable": true,
+          "counts": {
+            "falseNegatives": 0,
+            "falsePositives": 350,
+            "predictions": 369,
+            "truePositives": 19,
+            "truth": 19
+          },
+          "precision": 0.051490514905149054,
+          "precision95": [
+            0.03320843712425971,
+            0.07901475541725539
+          ],
+          "recall": 1.0,
+          "recall95": [
+            0.8318207759473838,
+            0.9999999999999999
+          ]
+        },
+        "shot": {
+          "applicable": false,
+          "counts": {
+            "falseNegatives": 0,
+            "falsePositives": 0,
+            "predictions": 0,
+            "truePositives": 0,
+            "truth": 0
+          },
+          "precision": null,
+          "precision95": null,
+          "recall": null,
+          "recall95": null
+        }
+      },
+      "taskId": "soccertrack-v2-117092-02"
+    },
+    {
+      "classes": {
+        "pass": {
+          "applicable": true,
+          "counts": {
+            "falseNegatives": 0,
+            "falsePositives": 264,
+            "predictions": 290,
+            "truePositives": 26,
+            "truth": 26
+          },
+          "precision": 0.0896551724137931,
+          "precision95": [
+            0.06191716719799251,
+            0.1281222474060893
+          ],
+          "recall": 1.0,
+          "recall95": [
+            0.8712710781407849,
+            1.0
+          ]
+        },
+        "shot": {
+          "applicable": true,
+          "counts": {
+            "falseNegatives": 1,
+            "falsePositives": 0,
+            "predictions": 0,
+            "truePositives": 0,
+            "truth": 1
+          },
+          "precision": null,
+          "precision95": null,
+          "recall": 0.0,
+          "recall95": [
+            0.0,
+            0.7934506856227626
+          ]
+        }
+      },
+      "taskId": "soccertrack-v2-117092-03"
+    }
+  ],
+  "trackingContinuityByPath": {
+    "backend/storage/daytona-g-capacity-v7.3/matches/5b56cbd876664b9b9fe25b1c95515b8f/frames.json": {
+      "playerRows": 124506,
+      "playerRowsPerSampledFrame": 9.215840118430792,
+      "sampledFrames": 13510,
+      "sampledFramesPerTrack": {
+        "atMostFiveFrameTrackShare": 0.5267846247712019,
+        "atMostFiveFrameTracks": 4317,
+        "maximum": 1394,
+        "median": 5,
+        "p90NearestRank": 37,
+        "singleFrameTracks": 1621
+      },
+      "uniqueTrackIds": 8195,
+      "untrackedPlayerRows": 79
+    },
+    "backend/storage/daytona-g-capacity-v7.3/matches/c43b571fdb1745a08b8209430bb65abe/frames.json": {
+      "playerRows": 109001,
+      "playerRowsPerSampledFrame": 8.0891280148423,
+      "sampledFrames": 13475,
+      "sampledFramesPerTrack": {
+        "atMostFiveFrameTrackShare": 0.5544178991277967,
+        "atMostFiveFrameTracks": 4386,
+        "maximum": 392,
+        "median": 4,
+        "p90NearestRank": 35,
+        "singleFrameTracks": 1555
+      },
+      "uniqueTrackIds": 7911,
+      "untrackedPlayerRows": 240
+    }
+  },
+  "truthAlignment": "BAS position is tracker match milliseconds; use metadata's second-half anchor to map each frozen video task to source frames",
+  "truthReferenceClockOffsetsSecondsByTask": {
+    "soccertrack-v2-117092-01": 0.0,
+    "soccertrack-v2-117092-02": 0.0,
+    "soccertrack-v2-117092-03": 5.0
+  }
+}

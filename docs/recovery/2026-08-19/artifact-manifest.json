@@ -1,0 +1,153 @@
+{
+  "artifactCount": 10,
+  "artifacts": [
+    {
+      "artifactClass": "non-environment-file-over-50MiB",
+      "id": "soccernet-sn-bas-2025-valid-224p-video",
+      "origin": "SoccerNet SN-BAS-2025 valid.zip member fetched and extracted by the approved video-member range workflow.",
+      "originVerification": "audited local provenance",
+      "path": "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_external_soccernet_video_member_extract_v1/extracted_video/england_efl/2019-2020/2019-10-01 - Middlesbrough - Preston North End/224p.mp4",
+      "restoreSource": "Hugging Face dataset SoccerNet/SN-BAS-2025 valid.zip at https://huggingface.co/datasets/SoccerNet/SN-BAS-2025/resolve/main/valid.zip, member england_efl/2019-2020/2019-10-01 - Middlesbrough - Preston North End/224p.mp4; remote availability not revalidated during recovery.",
+      "retentionClass": "required-local-external-benchmark-video",
+      "sha256": "e0acd859287f444bfabe1234e60b9634552543923aa03865856afb9be9395d78",
+      "sizeBytes": 237589445
+    },
+    {
+      "artifactClass": "non-environment-file-over-50MiB",
+      "id": "soccertrack-117092-gsr-first-half",
+      "origin": "SoccerTrack-v2 selected match 117092 bounded Google Drive fixture fetch; source gsr/117092/117092_1st.json.",
+      "originVerification": "audited local provenance",
+      "path": "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_external_soccertrack_google_drive_bounded_fixture_fetch_v1/sample_fixture_files/selected_match_117092/gsr__117092__117092_1st.json",
+      "restoreSource": "Google Drive file ID 1wQtwcO6hsn7iMrd07r8-E3y2L19H8HCA recorded by google_drive_bounded_fixture_fetch_manifest.json; access not revalidated during recovery.",
+      "retentionClass": "required-local-external-benchmark-fixture",
+      "sha256": "af3baad872ffd73f41853929a6dba035d68ebda9830f9b9c8071dc51aba4aa29",
+      "sizeBytes": 2695285313
+    },
+    {
+      "artifactClass": "non-environment-file-over-50MiB",
+      "id": "soccertrack-117092-gsr-second-half",
+      "origin": "SoccerTrack-v2 selected match 117092 bounded Google Drive fixture fetch; source gsr/117092/117092_2nd.json.",
+      "originVerification": "audited local provenance",
+      "path": "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_external_soccertrack_google_drive_bounded_fixture_fetch_v1/sample_fixture_files/selected_match_117092/gsr__117092__117092_2nd.json",
+      "restoreSource": "Google Drive file ID 1NOF9WQcVzgqV2cMUbCtw1X9pxvx3Ouoj recorded by google_drive_bounded_fixture_fetch_manifest.json; access not revalidated during recovery.",
+      "retentionClass": "required-local-external-benchmark-fixture",
+      "sha256": "ee2aac7f5a3b241f6d911d5601faa116fa97d310f252240590d4d7d9df982207",
+      "sizeBytes": 2700747690
+    },
+    {
+      "artifactClass": "non-environment-file-over-50MiB",
+      "id": "soccertrack-117092-tracker-box-data",
+      "origin": "SoccerTrack-v2 selected match 117092 bounded Google Drive fixture fetch; source raw/117092/117092_tracker_box_data.xml.",
+      "originVerification": "audited local provenance",
+      "path": "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_external_soccertrack_google_drive_bounded_fixture_fetch_v1/sample_fixture_files/selected_match_117092/raw__117092__117092_tracker_box_data.xml",
+      "restoreSource": "Google Drive file ID 1ECWD7AO9rPaJcul8p1Rn-VgftPTxIWn5 recorded by google_drive_bounded_fixture_fetch_manifest.json; access not revalidated during recovery.",
+      "retentionClass": "required-local-external-benchmark-fixture",
+      "sha256": "61cb708aef9b399417596c631e83c8f686bc9ab4ccba97b9edb574f7f0442f09",
+      "sizeBytes": 318185653
+    },
+    {
+      "artifactClass": "required-model-artifact",
+      "id": "touchline-detector-v7.3-bounded-retrain-best",
+      "origin": "Best checkpoint from the completed v7_3_bounded_retrain run using source export batch v7_3_export_label_overlay_audit_v1 and yolov10n.pt as the base model.",
+      "originVerification": "audited recovery evidence",
+      "path": "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/v7_3_bounded_retrain_v1/train_run/weights/best.pt",
+      "restoreSource": "local-only/unverified; training evidence records remote checkpoint fallback as disallowed, so preserve this exact local checkpoint.",
+      "retentionClass": "required-local-ignored-trained-checkpoint",
+      "sha256": "e7724403223429691e051ef946af1808413808349d6730bdca935da743d79cc0",
+      "sizeBytes": 5711162
+    },
+    {
+      "artifactClass": "non-environment-file-over-50MiB",
+      "id": "trimmed-football-video-11min",
+      "origin": "Pre-existing local trimmed football video; upstream origin is unverified by this recovery audit.",
+      "originVerification": "unverified local origin",
+      "path": "videos/trimed-11min.mp4",
+      "restoreSource": "local-only/unverified; retain the current path and checksum because no independently verified restore source is recorded.",
+      "retentionClass": "large-local-video-source",
+      "sha256": "d416b6da5da3c320d345addf004b99106c77f427abf5216325a02a0bc4b952ca",
+      "sizeBytes": 840689025
+    },
+    {
+      "artifactClass": "non-environment-file-over-50MiB",
+      "id": "trimmed-football-video-15min",
+      "origin": "Pre-existing local trimmed football video; upstream origin is unverified by this recovery audit.",
+      "originVerification": "unverified local origin",
+      "path": "videos/trimed-15min.mp4",
+      "restoreSource": "local-only/unverified; retain the current path and checksum because no independently verified restore source is recorded.",
+      "retentionClass": "large-local-video-source",
+      "sha256": "64181ca3eb17aa1ba2282c6b77e6cf2bb670f459b1a2cdddc7c5787b09ee2ccc",
+      "sizeBytes": 1105678702
+    },
+    {
+      "artifactClass": "non-environment-file-over-50MiB",
+      "id": "trimmed-football-video-5min",
+      "origin": "Pre-existing local trimmed football video used throughout detector evaluation workflows; upstream origin is unverified by this recovery audit.",
+      "originVerification": "unverified local origin",
+      "path": "videos/trimed-5min.mp4",
+      "restoreSource": "local-only/unverified; retain the current path and checksum because no independently verified restore source is recorded.",
+      "retentionClass": "required-local-video-source",
+      "sha256": "cd7532baf8c075d6b8e7bbc99d03ae3e16d2778be49791d8d9a4245b6586465f",
+      "sizeBytes": 382602613
+    },
+    {
+      "artifactClass": "non-environment-file-over-50MiB",
+      "id": "trimmed-football-video-1min",
+      "origin": "Pre-existing local one-minute trimmed football video; upstream origin is unverified by this recovery audit.",
+      "originVerification": "unverified local origin",
+      "path": "videos/trimed-football-2-1minute.mp4",
+      "restoreSource": "local-only/unverified; retain the current path and checksum because no independently verified restore source is recorded.",
+      "retentionClass": "large-local-video-source",
+      "sha256": "e1b83d4231787978f70672910febe8acc3ab39589db154967f58935b48ca379b",
+      "sizeBytes": 83259906
+    },
+    {
+      "artifactClass": "required-model-artifact",
+      "id": "yolov10n-base-model",
+      "origin": "Pre-existing local YOLOv10n base model referenced by v7_3_bounded_retrain_v1/training_config.json as baseModelPath.",
+      "originVerification": "audited recovery evidence",
+      "path": "yolov10n.pt",
+      "restoreSource": "local-only/unverified; no independently verified remote artifact identifier is recorded by the recovery audit.",
+      "retentionClass": "required-local-ignored-model",
+      "sha256": "11287ed0735678e7ba1ac2a9b3098c049155b3fde123992e724c1264bcc16b6f",
+      "sizeBytes": 5860383
+    }
+  ],
+  "excludedScopePolicy": {
+    "excludedCacheDirectoryNames": [
+      "__pycache__",
+      ".pytest_cache",
+      ".mypy_cache",
+      ".ruff_cache",
+      ".cache",
+      "cache",
+      "caches"
+    ],
+    "excludedEnvironmentDirectoryNames": [
+      "venv",
+      ".venv",
+      "*_venv",
+      "node_modules"
+    ],
+    "excludedTopLevelDirectories": [
+      ".git",
+      ".worktrees",
+      "archive"
+    ],
+    "statement": "The over-50-MiB scan includes regular non-environment files under the current repository root and excludes .git, .worktrees, archive, virtual-environment directories named venv or .venv or ending in _venv, node_modules, and cache directories. Symlinks are not dereferenced. Artifact bytes remain in place and are never copied into tracked reports.",
+    "symlinkPolicy": "do not dereference"
+  },
+  "generatedAt": "2026-08-19T16:55:00Z",
+  "largeFileCount": 8,
+  "repositoryRoot": "/root/WorkSpace/fotball-analyst",
+  "requiredModelArtifactCount": 2,
+  "schemaVersion": "recovery-artifact-manifest-v1",
+  "thresholdBytesExclusive": 52428800,
+  "verification": {
+    "allPathsExistAsRegularFiles": true,
+    "allSha256ValuesComputedFromCurrentFiles": true,
+    "allSizesObservedFromCurrentFiles": true,
+    "artifactBytesCopiedIntoTrackedDocs": false,
+    "knownSoccerNetAndSoccerTrackHashesMatchRecordedProvenance": true,
+    "requiredModelHashesMatchAuditedFreeze": true
+  }
+}

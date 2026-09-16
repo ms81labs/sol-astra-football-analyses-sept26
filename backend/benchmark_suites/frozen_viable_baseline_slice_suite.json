@@ -1,0 +1,151 @@
+{
+  "suiteName": "frozen-viable-baseline-slice-suite",
+  "suiteType": "saved_match_slice_suite",
+  "baselineFingerprint": {
+    "detectorModelPath": "yolov10n.pt",
+    "primaryMode": "anchored_player_ranked_context_960",
+    "keptCleanupLane": "recent_ball_plus_inward_anchor_center_bias35_960"
+  },
+  "entries": [
+    {
+      "entryId": "0247c76647f84e81bb659e541affbe9c",
+      "label": "Saved slice 0247c766",
+      "sourceType": "saved_match_artifacts",
+      "matchId": "0247c76647f84e81bb659e541affbe9c",
+      "sourceClipId": "trimed-5min.mp4",
+      "videoPath": "/root/WorkSpace/fotball-analyst/videos/trimed-5min.mp4",
+      "notes": "Auto-discovered from saved match artifacts.",
+      "tags": [
+        "slice",
+        "saved-artifacts",
+        "frozen-viable-baseline"
+      ]
+    },
+    {
+      "entryId": "1d67fa87080446a0a777901aace43809",
+      "label": "Saved slice 1d67fa87",
+      "sourceType": "saved_match_artifacts",
+      "matchId": "1d67fa87080446a0a777901aace43809",
+      "sourceClipId": "trimed-football-2-1minute.mp4",
+      "videoPath": "/root/WorkSpace/fotball-analyst/videos/trimed-football-2-1minute.mp4",
+      "notes": "Auto-discovered from saved match artifacts.",
+      "tags": [
+        "slice",
+        "saved-artifacts",
+        "frozen-viable-baseline"
+      ]
+    },
+    {
+      "entryId": "1c8136cda03240aa8324f676c9bbf99a",
+      "label": "Saved slice 1c8136cd",
+      "sourceType": "saved_match_artifacts",
+      "matchId": "1c8136cda03240aa8324f676c9bbf99a",
+      "sourceClipId": "trimed-5min.mp4",
+      "videoPath": "/root/WorkSpace/fotball-analyst/videos/trimed-5min.mp4",
+      "notes": "Auto-discovered from saved match artifacts.",
+      "tags": [
+        "slice",
+        "saved-artifacts",
+        "frozen-viable-baseline"
+      ]
+    },
+    {
+      "entryId": "23609904ee944d638fd24bc7c7157570",
+      "label": "Saved slice 23609904",
+      "sourceType": "saved_match_artifacts",
+      "matchId": "23609904ee944d638fd24bc7c7157570",
+      "sourceClipId": "trimed-5min.mp4",
+      "videoPath": "/root/WorkSpace/fotball-analyst/videos/trimed-5min.mp4",
+      "notes": "Auto-discovered from saved match artifacts.",
+      "tags": [
+        "slice",
+        "saved-artifacts",
+        "frozen-viable-baseline"
+      ]
+    },
+    {
+      "entryId": "3bd522457a1344569e4b128ecb55b29e",
+      "label": "Saved slice 3bd52245",
+      "sourceType": "saved_match_artifacts",
+      "matchId": "3bd522457a1344569e4b128ecb55b29e",
+      "sourceClipId": "trimed-5min.mp4",
+      "videoPath": "/root/WorkSpace/fotball-analyst/videos/trimed-5min.mp4",
+      "notes": "Auto-discovered from saved match artifacts.",
+      "tags": [
+        "slice",
+        "saved-artifacts",
+        "frozen-viable-baseline"
+      ]
+    },
+    {
+      "entryId": "407c0b0388554cf8a1006384f4c3b522",
+      "label": "Saved slice 407c0b03",
+      "sourceType": "saved_match_artifacts",
+      "matchId": "407c0b0388554cf8a1006384f4c3b522",
+      "sourceClipId": "trimed-5min.mp4",
+      "videoPath": "/root/WorkSpace/fotball-analyst/videos/trimed-5min.mp4",
+      "notes": "Auto-discovered from saved match artifacts.",
+      "tags": [
+        "slice",
+        "saved-artifacts",
+        "frozen-viable-baseline"
+      ]
+    },
+    {
+      "entryId": "4284c1a503b14c509d98f8d9c7fa9951",
+      "label": "Saved slice 4284c1a5",
+      "sourceType": "saved_match_artifacts",
+      "matchId": "4284c1a503b14c509d98f8d9c7fa9951",
+      "sourceClipId": "trimed-5min.mp4",
+      "videoPath": "/root/WorkSpace/fotball-analyst/videos/trimed-5min.mp4",
+      "notes": "Auto-discovered from saved match artifacts.",
+      "tags": [
+        "slice",
+        "saved-artifacts",
+        "frozen-viable-baseline"
+      ]
+    },
+    {
+      "entryId": "44e55d44f3664b5ba2551891cbc22631",
+      "label": "Saved slice 44e55d44",
+      "sourceType": "saved_match_artifacts",
+      "matchId": "44e55d44f3664b5ba2551891cbc22631",
+      "sourceClipId": "trimed-5min.mp4",
+      "videoPath": "/root/WorkSpace/fotball-analyst/videos/trimed-5min.mp4",
+      "notes": "Auto-discovered from saved match artifacts.",
+      "tags": [
+        "slice",
+        "saved-artifacts",
+        "frozen-viable-baseline"
+      ]
+    },
+    {
+      "entryId": "4a629fc1766141cfaaafe62affda2908",
+      "label": "Saved slice 4a629fc1",
+      "sourceType": "saved_match_artifacts",
+      "matchId": "4a629fc1766141cfaaafe62affda2908",
+      "sourceClipId": "trimed-5min.mp4",
+      "videoPath": "/root/WorkSpace/fotball-analyst/videos/trimed-5min.mp4",
+      "notes": "Auto-discovered from saved match artifacts.",
+      "tags": [
+        "slice",
+        "saved-artifacts",
+        "frozen-viable-baseline"
+      ]
+    },
+    {
+      "entryId": "5a21d4f83c4747f6bb62db1a9dba7422",
+      "label": "Saved slice 5a21d4f8",
+      "sourceType": "saved_match_artifacts",
+      "matchId": "5a21d4f83c4747f6bb62db1a9dba7422",
+      "sourceClipId": "trimed-5min.mp4",
+      "videoPath": "/root/WorkSpace/fotball-analyst/videos/trimed-5min.mp4",
+      "notes": "Auto-discovered from saved match artifacts.",
+      "tags": [
+        "slice",
+        "saved-artifacts",
+        "frozen-viable-baseline"
+      ]
+    }
+  ]
+}

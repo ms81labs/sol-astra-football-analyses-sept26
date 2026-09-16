@@ -1,0 +1,419 @@
+import { findNearestFrameIndex } from './videoSync';
+import type {
+  AnalyticsPayload,
+  BackendEvent,
+  CreateBundleInput,
+  DashboardResponse,
+  EventTag,
+  EventType,
+  FrameData,
+  MatchIssue,
+  MatchRecord,
+  MatchBenchmarkSummary,
+  MatchStats,
+  ProcessingJob,
+  ReviewBundle,
+  TacticalAnnotation,
+  TrustCropsResponse,
+  UpdateBundleInput,
+  UploadConfig,
+} from '../types';
+
+interface CreateMatchUploadInput {
+  name: string;
+  inputMode: 'tracking_json' | 'video';
+  file: File;
+  config?: UploadConfig;
+  signal?: AbortSignal;
+}
+
+interface CreateMatchUploadResponse {
+  matchId: string;
+  jobId: string;
+  status: string;
+}
+
+interface MatchWorkspace {
+  detail: MatchRecord;
+  frames: FrameData[];
+  analytics: AnalyticsPayload;
+  events: BackendEvent[];
+  benchmark: MatchBenchmarkSummary | null;
+}
+
+async function parseJson<T>(response: Response): Promise<T> {
+  if (!response.ok) {
+    let message = `Request failed with status ${response.status}`;
+    try {
+      const payload = await response.json();
+      message = payload.detail || payload.error || message;
+    } catch {
+      // Ignore JSON parse issues and keep the default message.
+    }
+    throw new Error(message);
+  }
+  return response.json() as Promise<T>;
+}
+
+function mapFrame(frame: Record<string, unknown>): FrameData {
+  return {
+    Frame_ID: Number(frame.frameId),
+    Timestamp: Number(frame.timestamp),
+    Ball: frame.ball
+      ? {
+          x: Number((frame.ball as Record<string, unknown>).x),
+          y: Number((frame.ball as Record<string, unknown>).y),
+          conf: Number((frame.ball as Record<string, unknown>).confidence ?? 0),
+        }
+      : null,
+    My_Team: ((frame.myTeam as Array<Record<string, unknown>> | undefined) ?? []).map((player) => ({
+      id: Number(player.id),
+      x: Number(player.x),
+      y: Number(player.y),
+      conf: Number(player.confidence ?? 0),
+    })),
+    Enemies: ((frame.enemies as Array<Record<string, unknown>> | undefined) ?? []).map((player) => ({
+      enemy_id: Number(player.id),
+      x: Number(player.x),
+      y: Number(player.y),
+      conf: Number(player.confidence ?? 0),
+    })),
+    unassignedPlayers: ((frame.unassignedPlayers as Array<Record<string, unknown>> | undefined) ?? []).map((player) => ({
+      id: Number(player.id),
+      x: Number(player.x),
+      y: Number(player.y),
+      conf: Number(player.confidence ?? 0),
+    })),
+    possession: frame.possession
+      ? {
+          frameId: Number((frame.possession as Record<string, unknown>).frameId),
+          timestamp: Number((frame.possession as Record<string, unknown>).timestamp),
+          team: ((frame.possession as Record<string, unknown>).team as FrameData['possession'] extends infer T
+            ? T extends { team: infer Team }
+              ? Team
+              : never
+            : never) ?? 'unassigned',
+          trackId: ((frame.possession as Record<string, unknown>).trackId as number | null) ?? null,
+          distance: Number((frame.possession as Record<string, unknown>).distance ?? 0),
+        }
+      : null,
+  };
+}
+
+export async function createMatchUpload({
+  name,
+  inputMode,
+  file,
+  config = {},
+  signal,
+}: CreateMatchUploadInput): Promise<CreateMatchUploadResponse> {
+  const formData = new FormData();
+  formData.append('name', name);
+  formData.append('inputMode', inputMode);
+  formData.append('config', JSON.stringify(config));
+  formData.append('file', file);
+
+  const response = await fetch('/api/matches', {
+    method: 'POST',
+    body: formData,
+    signal,
+  });
+
+  return parseJson<CreateMatchUploadResponse>(response);
+}
+
+async function fetchJob(jobId: string, signal?: AbortSignal): Promise<ProcessingJob> {
+  const response = await fetch(`/api/jobs/${jobId}`, { signal });
+  return parseJson<ProcessingJob>(response);
+}
+
+export function buildMatchVideoUrl(matchId: string): string {
+  return `/api/matches/${matchId}/video`;
+}
+
+export function buildMatchReportExportUrl(matchId: string): string {
+  return `/api/matches/${matchId}/report/html`;
+}
+
+export async function fetchMatches(): Promise<MatchRecord[]> {
+  const response = await fetch('/api/matches');
+  return parseJson<MatchRecord[]>(response);
+}
+
+async function fetchMatchBenchmark(matchId: string, signal?: AbortSignal): Promise<MatchBenchmarkSummary | null> {
+  const response = await fetch(`/api/matches/${matchId}/benchmark`, { signal });
+  if (response.status === 404) return null;
+  return parseJson<MatchBenchmarkSummary>(response);
+}
+
+export async function updateMatchConfig(matchId: string, payload: Record<string, unknown>): Promise<MatchRecord> {
+  const response = await fetch(`/api/matches/${matchId}/config`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+  return parseJson<MatchRecord>(response);
+}
+
+export async function fetchMatchWorkspace(matchId: string, signal?: AbortSignal): Promise<MatchWorkspace> {
+  const [detail, framesPayload, analyticsPayload, eventsPayload, benchmark] = await Promise.all([
+    fetch(`/api/matches/${matchId}`, { signal }).then((response) => parseJson<MatchRecord>(response)),
+    fetch(`/api/matches/${matchId}/frames`, { signal }).then((response) =>
+      parseJson<{ matchId: string; frames: Array<Record<string, unknown>> }>(response),
+    ),
+    fetch(`/api/matches/${matchId}/analytics`, { signal }).then((response) =>
+      parseJson<{
+        matchId: string;
+        summary: MatchStats;
+        ballAssignments: AnalyticsPayload['ballAssignments'];
+        formationTimeline?: AnalyticsPayload['formationTimeline'];
+        shots?: AnalyticsPayload['shots'];
+      }>(response),
+    ),
+    fetch(`/api/matches/${matchId}/events`, { signal }).then((response) =>
+      parseJson<{ matchId: string; events: BackendEvent[] }>(response),
+    ),
+    fetchMatchBenchmark(matchId, signal),
+  ]);
+
+  return {
+    detail,
+    frames: framesPayload.frames.map(mapFrame),
+    analytics: {
+      summary: analyticsPayload.summary,
+      ballAssignments: analyticsPayload.ballAssignments,
+      formationTimeline: analyticsPayload.formationTimeline ?? [],
+      shots: analyticsPayload.shots ?? [],
+    },
+    events: eventsPayload.events,
+    benchmark,
+  };
+}
+
+export function mapBackendEventsToTags(events: BackendEvent[], frames: FrameData[]): EventTag[] {
+  const supportedEventTypes = new Set<EventType>(['pass', 'cross', 'shot', 'tackle', 'recovery', 'turnover', 'through_ball', 'interception']);
+  const indicesById = new Map(frames.map((frame, index) => [frame.Frame_ID, index]));
+  const timestamps = frames.map(frame => frame.Timestamp);
+  return events.map((event) => ({
+    frame: indicesById.get(event.frameId) ?? findNearestFrameIndex(timestamps, event.timestamp),
+    timestamp: event.timestamp,
+    label: event.description,
+    type: supportedEventTypes.has(event.type as EventType) ? (event.type as EventType) : 'custom',
+  }));
+}
+
+function waitForJobDelay(signal: AbortSignal, durationMs: number): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) {
+      reject(new Error('Job polling was cancelled.'));
+      return;
+    }
+
+    const timer = window.setTimeout(() => finish(resolve), durationMs);
+    const onAbort = () => finish(() => reject(new Error('Job polling was cancelled.')));
+    signal.addEventListener('abort', onAbort, { once: true });
+
+    function finish(callback: () => void) {
+      window.clearTimeout(timer);
+      signal.removeEventListener('abort', onAbort);
+      callback();
+    }
+  });
+}
+
+export async function waitForJobCompletion(
+  jobId: string,
+  intervalMs = 2_000,
+  maxDurationMs = 60 * 60 * 1000,  // 60 minutes — CPU video processing is slow
+  signal?: AbortSignal,
+  onUpdate?: (job: ProcessingJob) => void,
+): Promise<ProcessingJob> {
+  const deadline = Date.now() + maxDurationMs;
+  if (signal?.aborted) throw new Error('Job polling was cancelled.');
+
+  const controller = new AbortController();
+  const cancel = () => controller.abort();
+  let timedOut = false;
+  signal?.addEventListener('abort', cancel, { once: true });
+  const deadlineTimer = window.setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, Math.max(0, deadline - Date.now()));
+
+  try {
+    while (true) {
+      if (controller.signal.aborted) throw new Error('Job polling was cancelled.');
+      if (Date.now() >= deadline) {
+        timedOut = true;
+        controller.abort();
+        throw new Error('Timed out waiting for job to complete.');
+      }
+
+      const job = await fetchJob(jobId, controller.signal);
+      if (controller.signal.aborted) throw new Error('Job polling was cancelled.');
+      if (Date.now() >= deadline) {
+        timedOut = true;
+        controller.abort();
+        throw new Error('Timed out waiting for job to complete.');
+      }
+
+      onUpdate?.(job);
+      if (job.status === 'completed') {
+        return job;
+      }
+      if (job.status === 'failed') {
+        throw new Error(job.error || job.message || 'Processing job failed.');
+      }
+      await waitForJobDelay(controller.signal, Math.min(intervalMs, deadline - Date.now()));
+    }
+  } catch (error) {
+    if (signal?.aborted) throw new Error('Job polling was cancelled.');
+    if (timedOut || Date.now() >= deadline) throw new Error('Timed out waiting for job to complete.');
+    throw error;
+  } finally {
+    window.clearTimeout(deadlineTimer);
+    signal?.removeEventListener('abort', cancel);
+  }
+}
+
+export async function runMatchAnalysis(
+  matchId: string,
+  analysisType: string,
+  provider: 'local' | 'cloud',
+  currentFrameIndex: number,
+): Promise<Record<string, unknown>> {
+  const response = await fetch(`/api/matches/${matchId}/analysis/${analysisType}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ provider, currentFrameIndex }),
+  });
+  return parseJson<Record<string, unknown>>(response);
+}
+
+// ===== Review Bundle API =====
+
+export async function fetchBundles(tags?: string[]): Promise<ReviewBundle[]> {
+  const url = tags?.length ? `/api/bundles?tags=${encodeURIComponent(tags.join(','))}` : '/api/bundles';
+  const response = await fetch(url);
+  return parseJson<ReviewBundle[]>(response);
+}
+
+export async function fetchBundle(bundleId: string): Promise<ReviewBundle> {
+  const response = await fetch(`/api/bundles/${bundleId}`);
+  return parseJson<ReviewBundle>(response);
+}
+
+export async function createBundle(input: CreateBundleInput): Promise<ReviewBundle> {
+  const response = await fetch('/api/bundles', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(input),
+  });
+  return parseJson<ReviewBundle>(response);
+}
+
+export async function updateBundle(bundleId: string, input: UpdateBundleInput): Promise<ReviewBundle> {
+  const response = await fetch(`/api/bundles/${bundleId}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(input),
+  });
+  return parseJson<ReviewBundle>(response);
+}
+
+export async function deleteBundle(bundleId: string): Promise<void> {
+  const response = await fetch(`/api/bundles/${bundleId}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to delete bundle: ${response.status}`);
+  }
+}
+
+// ===== Dashboard =====
+
+export async function fetchDashboardData(): Promise<DashboardResponse> {
+  const response = await fetch('/api/aggregate/dashboard');
+  if (!response.ok) {
+    throw new Error(`Failed to load dashboard data: ${response.status}`);
+  }
+  return parseJson<DashboardResponse>(response);
+}
+
+// ===== Match Annotations =====
+
+export async function fetchMatchAnnotations(matchId: string): Promise<TacticalAnnotation[]> {
+  const response = await fetch(`/api/matches/${matchId}/annotations`);
+  if (response.status === 404) return [];
+  const payload = await parseJson<{ matchId: string; annotations: TacticalAnnotation[] }>(response);
+  return payload.annotations;
+}
+
+export async function createMatchAnnotation(
+  matchId: string,
+  payload: Omit<TacticalAnnotation, 'id' | 'matchId' | 'createdAt' | 'updatedAt'>,
+): Promise<TacticalAnnotation> {
+  const response = await fetch(`/api/matches/${matchId}/annotations`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  return parseJson<TacticalAnnotation>(response);
+}
+
+export async function deleteMatchAnnotation(matchId: string, annotationId: string): Promise<void> {
+  const response = await fetch(`/api/matches/${matchId}/annotations/${annotationId}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to delete annotation: ${response.status}`);
+  }
+}
+
+// ===== Trust Crops =====
+
+export async function fetchTrustCrops(matchId: string, limit = 20): Promise<TrustCropsResponse> {
+    const response = await fetch(`/api/matches/${matchId}/trust-crops?limit=${encodeURIComponent(String(limit))}`);
+    if (!response.ok) {
+        throw new Error(`Failed to load trust crops: ${response.status}`);
+    }
+    return parseJson<TrustCropsResponse>(response);
+}
+
+// ===== Match Issues =====
+
+export async function fetchMatchIssues(matchId: string): Promise<MatchIssue[]> {
+  const response = await fetch(`/api/matches/${matchId}/issues`);
+  if (response.status === 404) return [];
+  const payload = await parseJson<{ matchId: string; issues: MatchIssue[] }>(response);
+  return payload.issues;
+}
+
+export async function createMatchIssue(
+  matchId: string,
+  payload: Omit<MatchIssue, 'id' | 'matchId' | 'createdAt' | 'updatedAt'>,
+): Promise<MatchIssue> {
+  const response = await fetch(`/api/matches/${matchId}/issues`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  return parseJson<MatchIssue>(response);
+}
+
+export async function deleteMatchIssue(matchId: string, issueId: string): Promise<void> {
+  const response = await fetch(`/api/matches/${matchId}/issues/${issueId}`, {
+    method: 'DELETE',
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to delete match issue: ${response.status}`);
+  }
+}

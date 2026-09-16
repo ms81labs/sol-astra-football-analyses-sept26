@@ -1,0 +1,60 @@
+﻿📄 Product Requirements Document (PRD)
+Nume Produs: Guerilla Analytics V1
+Status: Draft / Ready for Development
+Versiune: 1.0
+Document: Master Plan & Technical Specification
+1. 🎯 Viziunea Produsului & Obiective (Executive Summary)
+Problema: Sistemele de analiză video și tracking spațial în fotbal (ex: Opta, Metrica, Veo) sunt prohibitiv de scumpe pentru echipele de amatori, academii mici sau ligi inferioare, necesitând abonamente lunare mari și hardware proprietar.
+Soluția: Un sistem software "DIY / Guerilla" care rulează 100% offline, pe hardware de larg consum (GoPro + PC personal). Sistemul transformă înregistrările video brute în date spațiale pure (Time-Series JSON) și folosește un LLM (Large Language Model) rulat local pentru a extrage automat insight-uri tactice complexe.
+Obiective V1:
+* Eliminarea costurilor recurente (SaaS) și a hardware-ului scump (fără camere cu multiple lentile și stitching).
+* Obținerea unei acurateți de tracking de >90% pentru echipa proprie.
+* Automatizarea rapoartelor tactice folosind inteligența artificială generativă (LLM).
+2. 👤 Profilul Utilizatorului (User Personas)
+* The Guerilla Coach (Antrenorul): Nu are competențe tehnice. Vrea o interfață simplă (Tactical Panel) luni dimineața, unde să vadă greșelile de ofsaid, distanțele dintre linii și jucătorii care nu au respectat formația.
+* The DIY Analyst (Analistul/Tehnicul): Persoana care montează camera la meci, scoate cardul SD, pornește scriptul de procesare duminică noaptea pe PC-ul personal și validează datele (bucla de învățare).
+3. 🏗️ Arhitectura Sistemului (Tech Stack)
+* Hardware Captură: Cameră de acțiune (ex. GoPro Hero 7/8 Black) cu unghi Ultra-Wide + Tijă telescopică 6-8m.
+* Computer Vision & Tracking: Python, OpenCV, YOLOv8x / RT-DETR (Object Detection), DeepSORT / ByteTrack (Tracking).
+* OCR & Multimodal: EasyOCR sau Qwen-VL / LLaVA-mini (pentru citirea numerelor de pe tricouri).
+* Data Layer: JSON (pentru seriile de timp / frame-uri).
+* Creierul Tactic (LLM): Llama 3 (8B) rulat local prin Ollama.
+* Frontend (Tactical Panel): React.js + Tailwind CSS + HTML5 Canvas (pentru randarea terenului 2D).
+4. ⚙️ Cerințe Funcționale (Functional Requirements)
+EPIC 1: Captura Hardware & Setup (Faza 1 & 2)
+* REQ-1.1: Camera trebuie montată la linia de centru, la minim 6 metri înălțime, setată pe unghi Ultra-Wide (4K, 30fps) pentru a acoperi ambele jumătăți de teren cu o minimă mișcare de panoramare (sau deloc).
+* REQ-1.2 [Mugshot Database]: Sistemul trebuie să permită încărcarea unui set de poze (față/spate) cu jucătorii echipei proprii în echipamentul de joc pentru a genera o "semnătură vizuală".
+* REQ-1.3 [Re-ID Filtering]: Sistemul va clasifica detectările în: My_Team, Enemy_Team, Referee, Ball.
+EPIC 2: Motorul de Procesare Offline (Faza 3)
+* REQ-2.1 [Heavy-Duty Detection]: Scriptul va procesa fișierul .mp4 extrăgând bounding boxes pentru toți actorii de pe teren și minge.
+* REQ-2.2 [Bidirectional Tracking]: Algoritmul trebuie să mențină ID-ul jucătorilor echipei proprii, rulând validări retroactive (dacă un jucător dispare din cadru, se recalculează traseul după re-apariție).
+* REQ-2.3 [OCR Fallback]: Dacă numărul de pe tricoul unui jucător (My_Team) nu poate fi citit cu certitudine (>80%), frame-ul este trimis către un modul LLM vizual/OCR pentru procesare intensivă offline.
+* REQ-2.4 [Homography 2D Mapping]: Sistemul trebuie să ofere o metodă (manuală în V1: click pe 4 intersecții de pe teren în primul cadru) pentru a calcula matricea de proiecție, transformând coordonatele pixelilor (cameră curbată) în coordonate X/Y plane (0-100 lungime, 0-100 lățime).
+EPIC 3: Arhitectura Datelor - The JSON Engine (Faza 4)
+* REQ-3.1 [Time-Series Output]: La finalul procesării, sistemul NU va genera un video nou, ci un fișier .json structurat.
+* REQ-3.2 [Data Resolution]: Datele vor fi salvate la o rezoluție de minim 2 până la 5 frame-uri pe secundă (fps_rate setabil).
+* REQ-3.3 [Data Schema]: Fiecare intrare va conține: Timestamp, Frame_ID, Ball (x, y, status), My_Team [{id, x, y, speed}], Enemies [{enemy_id, x, y}].
+EPIC 4: Tactical Panel & Integrări LLM (Faza 5)
+* REQ-4.1 [2D Player]: Frontend-ul trebuie să citească fișierul .json și să animeze pozițiile jucătorilor (dots) pe un teren de fotbal virtual 2D. Controale necesare: Play, Pause, Timeline slider.
+* REQ-4.2 [LLM Querying]: Interfața va avea un panou "Tactical Brain" cu scenarii predefinite (Prompts).
+* REQ-4.3 [Offside Scenario]: La declanșare, aplicația trimite ultimele 'N' secunde de date către Ollama (Llama 3 local). LLM-ul trebuie să identifice ultimul apărător, să verifice ofsaidul la momentul pasei și să returneze un payload JSON.
+* REQ-4.4 [Render Actions]: Frontend-ul trebuie să poată interpreta comenzi primite de la LLM (ex: [DRAW_LINE_X_RED: 18.5]) și să deseneze grafica corespunzătoare pe terenul 2D.
+EPIC 5: Active Learning Loop (Faza 6)
+* REQ-5.1 [Low-Confidence Flagging]: Scriptul Python va salva într-un folder local ../review/ orice cadru (frame decupat) în care detecția mingii sau a unui ID a avut o încredere sub pragul setat (ex: < 50%).
+* REQ-5.2 [Annotation UI]: O interfață simplă (sau compatibilitate cu tool-uri gen CVAT/LabelImg) pentru ca utilizatorul uman să corecteze manual aceste erori (ex: "Asta e o gheată, nu mingea").
+* REQ-5.3 [Micro Fine-Tuning]: Un script secundar train_custom.py care preia noile adnotări și rulează o re-antrenare rapidă (transfer learning) a modelului YOLO de bază, specific pentru condițiile de iluminare și echipamentul echipei respective.
+5. 📉 Cerințe Non-Funcționale (Non-Functional Requirements)
+* Performanță Procesare (SLA): Fiind un sistem offline, procesarea unui meci de 90 de minute (aprox. 162.000 frame-uri la 30fps) trebuie să se finalizeze în maxim 8-10 ore pe un sistem cu GPU dedicat (Nvidia RTX 3060 sau echivalent), pentru a rula peste noapte.
+* Privacy & Securitate: Totul rulează 100% offline (Localhost). Datele meciurilor și videoclipurile nu părăsesc computerul utilizatorului (fără API-uri Cloud OpenAI/Google).
+* Toleranță la Erori: LLM-ul local trebuie constrâns (prin parameter tuning / JSON schema) să răspundă DOAR cu formatul valid, fără halucinații narative.
+6. 🚫 Out of Scope pentru V1 (Excluse din versiunea curentă)
+* Procesare Live / Real-Time: Cerințele hardware pentru ranzare și tracking complex 4K în timp real depășesc un laptop standard de pe marginea terenului.
+* Stitching Video din Multiple Camere: V1 se bazează pe o singură cameră Wide pentru a menține complexitatea la minimum.
+* Identificarea Individuală a Adversarilor: AI-ul va urmări adversarii doar spațial (punct roșu), nu și după numărul de pe tricou.
+* Proiectarea 3D pe Video Original (Render final): Deși homografia permite acest lucru, în V1 analiza se va face primar în spațiul 2D (Tactical Panel) pentru a economisi timp de procesare video (export/rendering mp4).
+7. 🚀 Workflow Utilizator (User Journey)
+1. Sâmbătă: Echipa joacă meciul. Analistul instalează GoPro-ul la centrul terenului pe catarg.
+2. Duminică seară: Analistul descarcă fișierul match.mp4 pe PC. Deschide terminalul și tastează python run_guerilla.py --video match.mp4. Merge la culcare.
+3. Luni dimineață: PC-ul a terminat. A generat fișierul meci_data.json.
+4. Luni la cafea (Active Learning): Analistul deschide folderul Review, corectează 20-30 de poze ambigue în 5 minute și apasă Run Fine-Tune. Sistemul devine mai inteligent pentru săptămâna viitoare.
+5. Luni la antrenament: Antrenorul deschide Tactical Panel (Frontend React), încarcă meci_data.json, apasă Play, se uită la fazele suspecte, apasă butonul "Ask Llama" pentru rapoarte tactice pe ofsaid și pressing, și prezintă datele echipei.

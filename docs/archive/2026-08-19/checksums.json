@@ -1,0 +1,14 @@
+{
+  "SESSION-HANDOFF.md": {
+    "sha256": "e4e87f334308e520ef6c09b4ca3e8e6a8511a55e1f234797dd0227275ce07199",
+    "sizeBytes": 401136
+  },
+  "activeContext.md": {
+    "sha256": "b3f014148c8ae9afdc80040bff536408b363c98de0bf69deb7c313b47c280ee5",
+    "sizeBytes": 269528
+  },
+  "currentRoadmap.md": {
+    "sha256": "4a75c90509ed37187eca6bba062dd4efae104cf7102008acd5ca6e5b01e55e6e",
+    "sizeBytes": 204765
+  }
+}

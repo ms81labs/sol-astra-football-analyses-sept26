@@ -1,0 +1,86 @@
+{
+  "evaluationMode": "validation_only_leave_one_keypoint_out",
+  "generatedAt": "2026-09-15T04:14:22.930856+00:00",
+  "heldOutSourceAccessed": false,
+  "pipelineInferenceRun": false,
+  "resultsBySource": {
+    "soccertrack-v2-117092": {
+      "assignmentToleranceMeters": 5.0,
+      "fitAndScoreUseSameKeypoint": false,
+      "foldCount": 65,
+      "fullFitCalibratedToPitchHomography": [
+        [
+          -0.015713274169185713,
+          -0.06261491169756332,
+          80.030398235012
+        ],
+        [
+          -0.004307378092280684,
+          -0.0960324282443487,
+          84.66646465896436
+        ],
+        [
+          -4.9709030128426915e-05,
+          -0.00119088528776549,
+          1.0
+        ]
+      ],
+      "inputs": {
+        "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_external_soccertrack_google_drive_bounded_fixture_fetch_v1/sample_fixture_files/selected_match_117092/raw__117092__117092_camera_intrinsics.npz": "4f6db409ac8f5b36b62898ac279247add16cc1ff905583440ac71f45c6a167fb",
+        "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_external_soccertrack_google_drive_bounded_fixture_fetch_v1/sample_fixture_files/selected_match_117092/raw__117092__117092_homography.npy": "26dcb723a362e9be1acad852313e9f55565d49260a2a68f6e39481e4e0bf2cc3",
+        "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_external_soccertrack_google_drive_bounded_fixture_fetch_v1/sample_fixture_files/selected_match_117092/raw__117092__117092_keypoints.json": "910c20d8883e689e740557e96037b4681ce75b60d94e1a800c09cab0da305aa7"
+      },
+      "maxWithheldErrorMeters": 12.441299697308253,
+      "meanWithheldErrorMeters": 4.217276446812955,
+      "medianWithheldErrorMeters": 3.7055928274679015,
+      "method": "leave_one_keypoint_out",
+      "p95WithheldErrorMeters": 8.327500399604691,
+      "shippedHomographyInputRetainedForProvenanceOnly": "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_external_soccertrack_google_drive_bounded_fixture_fetch_v1/sample_fixture_files/selected_match_117092/raw__117092__117092_homography.npy",
+      "shippedHomographyUsedForFit": false,
+      "trainingKeypointsPerFold": 64,
+      "withinAssignmentTolerance": false
+    },
+    "soccertrack-v2-117093": {
+      "assignmentToleranceMeters": 5.0,
+      "fitAndScoreUseSameKeypoint": false,
+      "foldCount": 65,
+      "fullFitCalibratedToPitchHomography": [
+        [
+          -0.022907553276368748,
+          -0.13386436045660124,
+          93.0044774816591
+        ],
+        [
+          -0.002874461411113412,
+          -0.22401955574693913,
+          96.72502982223727
+        ],
+        [
+          -3.263270740890146e-05,
+          -0.002608428903021581,
+          1.0
+        ]
+      ],
+      "inputs": {
+        "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_analysis_pilot_corpus_v1/soccertrack/117093/calibration/117093_camera_intrinsics.npz": "fe3f14a96495aa6706e6bf716490d599e0818ed0a48e7bf8e4387e7fe985c720",
+        "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_analysis_pilot_corpus_v1/soccertrack/117093/calibration/117093_homography.npy": "deb667816e2b0a98c536cf65d08d03d0c5d300cc0027425eb1bcee8f0e0426f7",
+        "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_analysis_pilot_corpus_v1/soccertrack/117093/calibration/117093_keypoints.json": "bcc874620cfa1bcbd49b33a6132abf51f35525f25cafb677084e8ce3e803a94f"
+      },
+      "maxWithheldErrorMeters": 5.802728301127413,
+      "meanWithheldErrorMeters": 2.5437048821075483,
+      "medianWithheldErrorMeters": 2.7462684406327624,
+      "method": "leave_one_keypoint_out",
+      "p95WithheldErrorMeters": 4.675471663237044,
+      "shippedHomographyInputRetainedForProvenanceOnly": "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_analysis_pilot_corpus_v1/soccertrack/117093/calibration/117093_homography.npy",
+      "shippedHomographyUsedForFit": false,
+      "trainingKeypointsPerFold": 64,
+      "withinAssignmentTolerance": true
+    }
+  },
+  "runtimeCalibrationChanged": false,
+  "schemaVersion": "football_analysis_pilot_soccertrack_calibration_cv_v1",
+  "validationSourceIds": [
+    "soccertrack-v2-117092",
+    "soccertrack-v2-117093"
+  ]
+}

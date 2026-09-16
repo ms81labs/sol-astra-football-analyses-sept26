@@ -1,0 +1,125 @@
+from __future__ import annotations
+
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+from .settings import ProcessingSettings
+
+
+class JobDispatchError(RuntimeError):
+    """Raised when the selected processing backend cannot be dispatched safely."""
+
+    def __init__(self, message: str, *, child_may_have_started: bool = False):
+        super().__init__(message)
+        self.child_may_have_started = child_may_have_started
+
+
+def run_job(storage_root: Path, job_id: str) -> None:
+    from .worker import run_job as execute_job
+
+    execute_job(storage_root, job_id)
+
+
+class JobRunner:
+    def __init__(self, storage_root: Path, run_jobs_inline: bool = False, settings: ProcessingSettings | None = None):
+        self.storage_root = Path(storage_root)
+        self.run_jobs_inline = run_jobs_inline
+        self.settings = settings or ProcessingSettings.from_env()
+
+    def start(self, job_id: str) -> None:
+        backend = self.settings.processing_backend
+        if backend == "daytona":
+            if self.run_jobs_inline:
+                from .remote_worker import run_remote_job
+
+                try:
+                    run_remote_job(self.storage_root, job_id, settings=self.settings)
+                except Exception:
+                    raise JobDispatchError(
+                        "inline job dispatch outcome is uncertain",
+                        child_may_have_started=True,
+                    ) from None
+            else:
+                self._spawn_daytona_worker(job_id)
+            return
+        if backend == "local":
+            if self.run_jobs_inline:
+                try:
+                    run_job(self.storage_root, job_id)
+                except Exception:
+                    raise JobDispatchError(
+                        "inline job dispatch outcome is uncertain",
+                        child_may_have_started=True,
+                    ) from None
+                return
+
+            self._spawn_local_worker(job_id)
+            return
+        raise JobDispatchError("selected processing backend is not available")
+
+    def _spawn_daytona_worker(self, job_id: str) -> None:
+        self._spawn_worker(
+            job_id,
+            module="backend.app.remote_worker",
+            backend="daytona",
+            daytona_api_key=self.settings.daytona_api_key,
+        )
+
+    def _spawn_local_worker(self, job_id: str) -> None:
+        self._spawn_worker(
+            job_id,
+            module="backend.app.worker",
+            backend="local",
+        )
+
+    def _spawn_worker(
+        self,
+        job_id: str,
+        *,
+        module: str,
+        backend: str,
+        daytona_api_key: str | None = None,
+    ) -> None:
+        log_path = self.storage_root / "logs" / f"job_{job_id}.log"
+        if backend == "daytona":
+            if not isinstance(daytona_api_key, str) or not daytona_api_key.strip():
+                raise JobDispatchError("Daytona job configuration is unavailable")
+        child_started = False
+        try:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            env = {
+                key: value
+                for key, value in os.environ.items()
+                if not key.startswith(("RUNPOD_", "DAYTONA_"))
+            }
+            repo_root = str(Path(__file__).resolve().parents[2])
+            current_pythonpath = env.get("PYTHONPATH", "")
+            env["PYTHONPATH"] = repo_root if not current_pythonpath else f"{repo_root}:{current_pythonpath}"
+            env["QT_QPA_PLATFORM"] = "offscreen"
+            env["PROCESSING_BACKEND"] = backend
+            if backend == "daytona":
+                env["DAYTONA_API_KEY"] = daytona_api_key
+            with open(log_path, "w") as log_file:
+                subprocess.Popen(
+                    [
+                        sys.executable,
+                        "-m",
+                        module,
+                        "--storage-root",
+                        str(self.storage_root),
+                        "--job-id",
+                        job_id,
+                    ],
+                    cwd=repo_root,
+                    env=env,
+                    stdout=log_file,
+                    stderr=subprocess.STDOUT,
+                )
+                child_started = True
+        except Exception:
+            raise JobDispatchError(
+                "job dispatch failed",
+                child_may_have_started=child_started,
+            ) from None

@@ -1,0 +1,616 @@
+{
+  "schemaVersion": 1,
+  "suiteName": "football-analysis-pilot-corpus",
+  "purpose": "Fail-closed inventory for the proposed six-match analyst pilot",
+  "target": {
+    "disjointWholeMatches": 6,
+    "panoramicOrTacticalMatches": 3,
+    "broadcastMatches": 2,
+    "difficultTargetDomainClubMatches": 1,
+    "labeledMinutes": 30
+  },
+  "labelingProtocol": {
+    "status": "frozen",
+    "frozenAt": "2026-09-14",
+    "selectionRule": "For each whole match, label three 100-second intervals centered at 25%, 40%, and 75% of its verified duration; derive timestamps before viewing labels or pipeline output. The asymmetric middle sample avoids the predictable halftime boundary.",
+    "minutesPerMatch": 5,
+    "intervalsPerMatch": 3,
+    "secondsPerInterval": 100,
+    "annotationScope": [
+      "visible ball bounding box and visibility state",
+      "visible player and referee bounding boxes with task-local persistent track identity",
+      "team when visually determinable, otherwise unknown",
+      "pitch position only where an independent calibration reference exists",
+      "possession as observed, inferred, or unknown",
+      "supported pass and shot events with start and end timestamps"
+    ],
+    "acceptanceBars": {
+      "ballPrecisionMinimum": 0.95,
+      "visibleBallRecallMinimum": 0.85,
+      "pitchMedianErrorMetersMaximum": 1.0,
+      "pitchP95ErrorMetersMaximum": 3.0,
+      "supportedEventPrecisionMinimum": 0.8,
+      "supportedEventRecallMinimum": 0.8,
+      "eventToleranceSeconds": 2.0
+    },
+    "scoringProtocol": {
+      "version": 3,
+      "status": "frozen",
+      "frozenAt": "2026-09-15",
+      "evaluationFrames": {
+        "targetFps": 5,
+        "frameStepFormula": "max(1, floor(sourceFps / targetFps))",
+        "inclusionRule": "sourceStartFrame <= frameId < sourceEndFrameExclusive and frameId modulo frameStep equals 0",
+        "predictionFrameIdentity": "pipeline Frame_ID is the original zero-based source-video frame index, not a compact sampled-frame ordinal; interval-only runs must add sourceStartFrame before scoring",
+        "labelCoverage": "labels contain exactly the evaluation frames; the full 100-second task duration remains the reporting denominator"
+      },
+      "ball": {
+        "truthPositiveVisibility": [
+          "visible"
+        ],
+        "truthNegativeVisibility": [
+          "not_visible"
+        ],
+        "ignoredVisibility": [
+          "occluded",
+          "unknown"
+        ],
+        "predictionSet": "all accepted pipeline ball boxes, with observed and inferred strata also reported separately",
+        "association": "per evaluation frame, maximum-IoU one-to-one matching with deterministic input-order tie break",
+        "iouThreshold": 0.5,
+        "truePositive": "matched prediction and visible truth at IoU >= threshold",
+        "falsePositive": "unmatched prediction on a visible or not_visible truth frame",
+        "falseNegative": "unmatched visible truth",
+        "localization": "report IoU and source-pixel center error over true positives",
+        "falsePositivesPerMinuteDenominator": "non-ignored evaluation-frame duration"
+      },
+      "players": {
+        "detectionAssociation": "per evaluation frame and entity kind, maximum-total-IoU one-to-one assignment at IoU >= 0.50 with truth trackId then predicted trackId as tie break",
+        "detectionIouThreshold": 0.5,
+        "trackingImplementation": {
+          "repository": "JonathonLuiten/TrackEval",
+          "commit": "12c8791b303e0a0b50f753af204249e622d0281a",
+          "policy": "use HOTA and Identity defaults on evaluation frames, plus CLEAR defaults for identity switches; task-local identities reset only at task boundaries",
+          "longestTrackGapFrames": "maximum consecutive evaluation frames where a visible truth identity has no IoU-qualified match; absence from truth breaks the run"
+        },
+        "reportedTrackingMetrics": [
+          "HOTA",
+          "DetA",
+          "AssA",
+          "IDF1",
+          "identitySwitches",
+          "longestTrackGapFrames"
+        ],
+        "teamAndRole": "score exact agreement on matched detections; exclude unknown truth from agreement denominator and report unknown coverage separately"
+      },
+      "pitch": {
+        "truthInput": "football_analysis_pilot_labels_v3 pitchPositionMeters values backed by the payload pitchReference source ID, SHA-256 and approved association method",
+        "association": "predeclared source identity mapping or withheld control keypoints fixed without predictions; nearest-neighbor matching and fit-and-score-on-same-points are diagnostic only",
+        "error": "Euclidean distance in metres; report matched count, reference coverage, median, p95 and maximum per source",
+        "acceptance": "pitch bars cannot pass when independent association is unavailable or calibration is rejected"
+      },
+      "possession": {
+        "teamMapping": "declare the match-specific my_team/enemy to home/away mapping before predictions are opened; unresolved predictions score as unknown",
+        "frameScoring": "exact home or away agreement on evaluation frames; unknown truth is excluded from agreement and reported separately",
+        "entityScoring": "possession track identity is compared only through that frame's accepted player association",
+        "transitionDefinition": "on evaluation frames and available prediction frames, bridge unknown states and timestamp a home-away change at the first controlled frame for the new team; truth timing resolution is the evaluation cadence",
+        "transitionError": "within each direction, minimum-total-absolute-distance one-to-one matching; report signed seconds and absolute seconds"
+      },
+      "events": {
+        "classes": [
+          "pass",
+          "shot"
+        ],
+        "predictionTime": "pipeline event timestamp",
+        "truthWindow": "labeled startFrame inclusive through endFrameExclusive, converted with sourceFps",
+        "association": "within each class, maximize one-to-one matches then minimize distance from prediction time to the truth window; known truth team must agree; break ties by truth start, prediction time, eventId",
+        "toleranceSeconds": 2.0,
+        "truePositive": "matched prediction inside the truth window expanded by tolerance",
+        "falsePositive": "unmatched prediction",
+        "falseNegative": "unmatched truth event"
+      },
+      "confidenceIntervals": {
+        "level": 0.95,
+        "proportions": "Wilson score interval without continuity correction",
+        "continuousMetrics": "10,000-sample nonparametric percentile bootstrap",
+        "bootstrapSamples": 10000,
+        "percentileMethod": "linear",
+        "bootstrapSeed": "unsigned base-16 value of the first 16 lower-case hex digits of SHA-256 over scoringProtocolVersion + newline + sourceId + newline + metricName"
+      },
+      "acceptance": {
+        "unit": "sourceId",
+        "decisionStatistic": "point estimate; confidence interval is mandatory context",
+        "requiredResult": "every applicable frozen bar passes for every source; aggregate results are informational only",
+        "zeroDenominator": "a class is not_applicable only when truth and prediction counts are both zero; precision is null when prediction count is zero and recall is null when truth count is zero; every non-null component is gated, so a one-sided nonzero class fails its defined counterpart at 0.0",
+        "missingRequiredMetric": "not_passed"
+      }
+    },
+    "reporting": "Report every metric per match with confidence intervals; do not use an aggregate to hide a failed source.",
+    "isolation": "Tune only on validation matches. Do not inspect held-out labels or pipeline output until all selected intervals are annotated and locked.",
+    "selectedIntervalsBySource": {
+      "soccertrack-v2-117092": [[1299.25, 1399.25], [2108.8, 2208.8], [3997.75, 4097.75]],
+      "soccertrack-v2-117093": [[1331.0, 1431.0], [2159.6, 2259.6], [4093.0, 4193.0]],
+      "soccertrack-v2-118575": [[1402.75, 1502.75], [2274.4, 2374.4], [4308.25, 4408.25]],
+      "belmont-melrose-2024-09-03": [[1315.917, 1415.917], [2135.467, 2235.467], [4047.75, 4147.75]],
+      "belmont-watertown-soccer-night-2023-09-23": [[1953.877, 2053.877], [3156.203, 3256.203], [5961.63, 6061.63]],
+      "pcac-lakewood-largo-1997-01-24": [[1325.425, 1425.425], [2150.68, 2250.68], [4076.275, 4176.275]]
+    },
+    "pendingSourceSlots": []
+  },
+  "validationCalibrationRepairProbe": {
+    "method": "Undistort the 65 validation keypoints with the official fisheye intrinsics, then fit calibrated-image pixels directly to corner-origin pitch meters with cv2.findHomography(method=0).",
+    "purpose": "Measure inverse-homography fitting bias before changing the runtime projection path.",
+    "fitAndScoreUseSameKeypoints": true,
+    "independentValidation": false,
+    "pipelineInferenceRun": false,
+    "withheldControlPointValidation": {
+      "artifactPath": "backend/benchmark_suites/football_analysis_pilot_soccertrack_calibration_cv.json",
+      "method": "Leave one official keypoint out, fit the direct calibrated-image-to-pitch homography on the other 64, and score only the withheld point; repeat for all 65 points.",
+      "fitAndScoreUseSameKeypoint": false,
+      "heldOutSourceAccessed": false,
+      "runtimeCalibrationChanged": false,
+      "resultsBySource": {
+        "soccertrack-v2-117092": {
+          "medianWithheldErrorMeters": 3.7055928275,
+          "p95WithheldErrorMeters": 8.3275003996,
+          "maxWithheldErrorMeters": 12.4412996973,
+          "withinFiveMeterP95": false
+        },
+        "soccertrack-v2-117093": {
+          "medianWithheldErrorMeters": 2.7462684406,
+          "p95WithheldErrorMeters": 4.6754716632,
+          "maxWithheldErrorMeters": 5.8027283011,
+          "withinFiveMeterP95": true
+        }
+      }
+    },
+    "resultsBySource": {
+      "soccertrack-v2-117092": {
+        "meanFitErrorMeters": 3.9561269283,
+        "medianFitErrorMeters": 3.4231572151,
+        "p95FitErrorMeters": 8.1187496185,
+        "maxFitErrorMeters": 11.3900852203,
+        "withinFiveMeterP95": false
+      },
+      "soccertrack-v2-117093": {
+        "meanFitErrorMeters": 2.3827826977,
+        "medianFitErrorMeters": 2.5858571529,
+        "p95FitErrorMeters": 4.3743739128,
+        "maxFitErrorMeters": 5.2001194954,
+        "withinFiveMeterP95": true
+      }
+    },
+    "decision": "Leave-one-keypoint-out validation confirms that direct-direction fitting clears the 5 m p95 bar for 117093 but not 117092. Keep runtime unchanged; use the repaired 117093 calibration for validation-only downstream scoring, and repair or replace the 117092 camera model before scoring its pitch outputs."
+  },
+  "validationRepairedPitchDiagnostic": {
+    "artifactPath": "backend/benchmark_suites/football_analysis_pilot_soccertrack_pitch_diagnostic.json",
+    "sourceId": "soccertrack-v2-117093",
+    "calibrationMode": "validated direct calibrated-image-to-pitch mapping",
+    "associationThresholdMeters": 5.0,
+    "pilotAcceptanceEligible": false,
+    "heldOutSourceAccessed": false,
+    "runtimeCalibrationChanged": false,
+    "pooledCounts": {
+      "predictedEntityCount": 17381,
+      "referenceEntityCount": 33000,
+      "matchedEntityCount": 12511,
+      "precision": 0.7198089868,
+      "recall": 0.3791212121,
+      "outOfPitchReferenceCount": 235
+    },
+    "resultsByTask": {
+      "soccertrack-v2-117093-01": {
+        "medianMatchedErrorMeters": 0.8252005058,
+        "p95MatchedErrorMeters": 3.5904358421,
+        "precision": 0.6476304125,
+        "recall": 0.3453636364,
+        "medianPilotBarPassed": true,
+        "p95PilotBarPassed": false
+      },
+      "soccertrack-v2-117093-02": {
+        "medianMatchedErrorMeters": 0.8277936709,
+        "p95MatchedErrorMeters": 3.0706243771,
+        "precision": 0.7776106934,
+        "recall": 0.4230909091,
+        "medianPilotBarPassed": true,
+        "p95PilotBarPassed": false
+      },
+      "soccertrack-v2-117093-03": {
+        "medianMatchedErrorMeters": 0.8057580842,
+        "p95MatchedErrorMeters": 3.5440853789,
+        "precision": 0.7338155515,
+        "recall": 0.3689090909,
+        "medianPilotBarPassed": true,
+        "p95PilotBarPassed": false
+      }
+    },
+    "decision": "Correcting the second-half video-to-tracker clock mismatch raises diagnostic matching without changing inference. All three frozen tasks still fail the 3 m p95 pilot bar and recall remains low; do not promote the repaired mapping to runtime."
+  },
+  "validationResolutionDiagnostic": {
+    "artifactPath": "backend/benchmark_suites/football_analysis_pilot_soccertrack_resolution_diagnostic.json",
+    "sourceId": "soccertrack-v2-117093",
+    "sampledTaskIds": [
+      "soccertrack-v2-117093-01",
+      "soccertrack-v2-117093-03"
+    ],
+    "sampledFramesPerTask": 25,
+    "sourceFrameStride": 100,
+    "imageSizes": [1280, 1920],
+    "tiled1280TileWidthPixels": 1024,
+    "tiled1280TileOverlapPixels": 0,
+    "tiled1280ConfidenceCutoffsPostInference": [0.25, 0.4, 0.6],
+    "trackingAppliedToFreshDetections": false,
+    "referenceLabelsUsedForInference": false,
+    "heldOutSourceAccessed": false,
+    "runtimeChanged": false,
+    "resultsByTask": {
+      "soccertrack-v2-117093-01": {
+        "savedProductionRecall": 0.3490909091,
+        "fresh1280Precision": 0.7219387755,
+        "fresh1280Recall": 0.5145454545,
+        "fresh1920Precision": 0.6672051696,
+        "fresh1920Recall": 0.7509090909,
+        "fresh1920P95MatchedErrorMeters": 3.8578627148,
+        "tiled1280Precision": 0.6488946684,
+        "tiled1280Recall": 0.9072727273,
+        "tiled1280P95MatchedErrorMeters": 3.9666971788,
+        "tiled1280Conf25Precision": 0.7364341085,
+        "tiled1280Conf25Recall": 0.8636363636,
+        "tiled1280Conf60Precision": 0.8310810811,
+        "tiled1280Conf60Recall": 0.6709090909
+      },
+      "soccertrack-v2-117093-03": {
+        "savedProductionRecall": 0.3690909091,
+        "fresh1280Precision": 0.6438356164,
+        "fresh1280Recall": 0.5127272727,
+        "fresh1920Precision": 0.6233552632,
+        "fresh1920Recall": 0.6890909091,
+        "fresh1920P95MatchedErrorMeters": 3.7955652520,
+        "tiled1280Precision": 0.7456647399,
+        "tiled1280Recall": 0.9381818182,
+        "tiled1280P95MatchedErrorMeters": 3.7894088392,
+        "tiled1280Conf25Precision": 0.7799352751,
+        "tiled1280Conf25Recall": 0.8763636364,
+        "tiled1280Conf60Precision": 0.8340707965,
+        "tiled1280Conf60Recall": 0.6854545455
+      }
+    },
+    "decision": "Correcting the second-half reference clock reveals higher pitch-space precision and recall than the stale diagnostic reported. Whole-frame 1920 and tiling recover more sampled players but still fail the 3 m pitch p95 bar; higher tiled confidence improves precision at a recall cost. Promote neither detector scale nor threshold before independent labels and camera repair."
+  },
+  "validationPitchReferenceMaterialization": {
+    "schemaVersion": "football_analysis_pilot_pitch_reference_intervals_v2",
+    "sourceIds": ["soccertrack-v2-117092", "soccertrack-v2-117093"],
+    "selectedDurationSeconds": 600.0,
+    "pitchPositionReferenceMinutes": 10.0,
+    "ballStateReferenceMinutes": 10.0,
+    "visibleBallBoxReferenceMinutes": 0.0,
+    "manualLabelMinutesCompleted": 0.0,
+    "imageBoundingBoxesPresent": false,
+    "heldOutLabelsAccessed": false,
+    "pipelineInferenceRun": false,
+    "limitations": "The raw tracker XML contains source-normalized pitch locations and ball state, not image-space ground-truth boxes. It cannot establish visible-ball precision/recall or MOT HOTA/IDF1.",
+    "resultsBySource": {
+      "soccertrack-v2-117092": {
+        "trackerXmlPath": "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_external_soccertrack_google_drive_bounded_fixture_fetch_v1/sample_fixture_files/selected_match_117092/raw__117092__117092_tracker_box_data.xml",
+        "trackerXmlFileId": "1ECWD7AO9rPaJcul8p1Rn-VgftPTxIWn5",
+        "trackerXmlSha256": "61cb708aef9b399417596c631e83c8f686bc9ab4ccba97b9edb574f7f0442f09",
+        "metadataXmlPath": "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_external_soccertrack_google_drive_bounded_fixture_fetch_v1/sample_fixture_files/selected_match_117092/raw__117092__117092_tracker_box_metadata.xml",
+        "metadataXmlFileId": "1Zn_9cW060RzdqtQ61PKxrfKI_DN3i2TK",
+        "metadataXmlSha256": "1cd20ca19cd927d187938ef07734b583f58d6486b1385be67a43fe9b3be591b6",
+        "outputPath": "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_analysis_pilot_corpus_v1/soccertrack/117092/pilot_reference_intervals.jsonl.gz",
+        "outputSha256": "f9fe410dc2991c041cc8a587e5dd63b8383232faeb5ee40cb62cc2ed70222edf",
+        "outputSizeBytes": 278059,
+        "referenceClockOffsetsSeconds": [0.0, 0.0, 5.0],
+        "referenceIntervals": [[1299.25, 1399.25], [2108.8, 2208.8], [4002.75, 4102.75]],
+        "frameCount": 7500,
+        "playerEntityCount": 164978,
+        "ballEntityCount": 7500,
+        "malformedLocationCount": 0,
+        "excludedPeriodFrameCount": 0
+      },
+      "soccertrack-v2-117093": {
+        "trackerXmlPath": "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_analysis_pilot_corpus_v1/soccertrack/117093/raw_tracking/117093_tracker_box_data.xml",
+        "trackerXmlFileId": "1GxWRmygnKGEXIm2SITyhGP8aWPig9wOp",
+        "trackerXmlSha256": "43f45382e667959f2fc5904f87f65b597de103eb225616c0e6309b2144a9a7c1",
+        "metadataXmlPath": "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_analysis_pilot_corpus_v1/soccertrack/117093/raw_tracking/117093_tracker_box_metadata.xml",
+        "metadataXmlFileId": "1If6eYkFtOccIp6n34DlW_qyLQ8_wtvmG",
+        "metadataXmlSha256": "088c599ac76f4174bbc904fa804be50be58ae054b0931870c5adfb67a4fb1889",
+        "outputPath": "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_analysis_pilot_corpus_v1/soccertrack/117093/pilot_reference_intervals.jsonl.gz",
+        "outputSha256": "507f34f548d799d70c21dd5b5f6841a98dd015f1f535b32159f3d0ac5d0a89ed",
+        "outputSizeBytes": 283448,
+        "referenceClockOffsetsSeconds": [0.0, 0.0, -5.033],
+        "referenceIntervals": [[1331.0, 1431.0], [2159.6, 2259.6], [4087.967, 4187.967]],
+        "frameCount": 7500,
+        "playerEntityCount": 165000,
+        "ballEntityCount": 7500,
+        "malformedLocationCount": 0,
+        "excludedPeriodFrameCount": 0
+      }
+    }
+  },
+  "readiness": {
+    "eligibleDisjointWholeMatches": 6,
+    "selectedPilotIntervalsLabeledMinutes": 0,
+    "pilotReady": false,
+    "blockers": [
+      "The four user-supplied tactical files are trimmed derivatives of SoccerTrack 117093 first half and cannot add a disjoint whole match",
+      "trimed-football-2-1minute.mp4 duplicates the opening of trimed-5min.mp4",
+      "The frozen cross-match protocol has zero completed minutes",
+      "The SoccerNet video is NDA-gated and non-commercial"
+    ]
+  },
+  "candidates": [
+    {
+      "sourceId": "local-tactical-trimed-5min",
+      "path": "videos/trimed-5min.mp4",
+      "sha256": "cd7532baf8c075d6b8e7bbc99d03ae3e16d2778be49791d8d9a4245b6586465f",
+      "cameraType": "tactical",
+      "durationSeconds": 303.2,
+      "wholeMatch": false,
+      "matchIdentityVerified": true,
+      "rightsStatus": "CC-BY-4.0",
+      "sourceMatchId": "soccertrack-v2-117093",
+      "sourceHalf": 1,
+      "sourceFrameOffset": 0,
+      "provenanceEvidence": "Local frames 0, 100, 1,895, 3,790 and 5,685 are pixel-identical to the same-numbered official source frames",
+      "pilotEligible": false
+    },
+    {
+      "sourceId": "local-tactical-trimed-football-2-1minute",
+      "path": "videos/trimed-football-2-1minute.mp4",
+      "sha256": "e1b83d4231787978f70672910febe8acc3ab39589db154967f58935b48ca379b",
+      "cameraType": "tactical",
+      "durationSeconds": 71.88,
+      "wholeMatch": false,
+      "matchIdentityVerified": true,
+      "rightsStatus": "CC-BY-4.0",
+      "sourceMatchId": "soccertrack-v2-117093",
+      "sourceHalf": 1,
+      "sourceFrameOffset": 0,
+      "provenanceEvidence": "Local frames 0, 100, 449, 898 and 1,347 are pixel-identical to the same-numbered official source frames",
+      "duplicateOf": "local-tactical-trimed-5min",
+      "duplicateEvidence": "All 1,796 decodable frames are byte-identical to the first 1,796 frames of trimed-5min.mp4",
+      "pilotEligible": false
+    },
+    {
+      "sourceId": "local-tactical-trimed-11min",
+      "path": "videos/trimed-11min.mp4",
+      "sha256": "d416b6da5da3c320d345addf004b99106c77f427abf5216325a02a0bc4b952ca",
+      "cameraType": "tactical",
+      "durationSeconds": 674.28,
+      "wholeMatch": false,
+      "matchIdentityVerified": true,
+      "rightsStatus": "CC-BY-4.0",
+      "sourceMatchId": "soccertrack-v2-117093",
+      "sourceHalf": 1,
+      "sourceFrameOffset": 7849,
+      "provenanceEvidence": "Five distributed local anchors are pixel-identical to official source frames at a constant +7,849-frame offset",
+      "pilotEligible": false
+    },
+    {
+      "sourceId": "local-tactical-trimed-15min",
+      "path": "videos/trimed-15min.mp4",
+      "sha256": "64181ca3eb17aa1ba2282c6b77e6cf2bb670f459b1a2cdddc7c5787b09ee2ccc",
+      "cameraType": "tactical",
+      "durationSeconds": 897.36,
+      "wholeMatch": false,
+      "matchIdentityVerified": true,
+      "rightsStatus": "CC-BY-4.0",
+      "sourceMatchId": "soccertrack-v2-117093",
+      "sourceHalf": 1,
+      "sourceFrameOffset": 24577,
+      "provenanceEvidence": "Five distributed local anchors are pixel-identical to official source frames at a constant +24,577-frame offset",
+      "pilotEligible": false
+    },
+    {
+      "sourceId": "soccertrack-v2-117092",
+      "paths": [
+        "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_external_soccertrack_google_drive_bounded_fixture_fetch_v1/sample_fixture_files/selected_match_117092/videos__117092__117092_panorama_1st_half.mp4",
+        "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_external_soccertrack_google_drive_bounded_fixture_fetch_v1/sample_fixture_files/selected_match_117092/videos__117092__117092_panorama_2nd_half.mp4"
+      ],
+      "sha256ByPath": {
+        "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_external_soccertrack_google_drive_bounded_fixture_fetch_v1/sample_fixture_files/selected_match_117092/videos__117092__117092_panorama_1st_half.mp4": "9fabe074b0c6fc5812a602dd4119f3e6cb724e2f06b8a3a1eb9358b9734c036e",
+        "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_external_soccertrack_google_drive_bounded_fixture_fetch_v1/sample_fixture_files/selected_match_117092/videos__117092__117092_panorama_2nd_half.mp4": "eb088f442ca0ca30abb86b6c402b381ad6707d9eb1c40c62785e84e34aecc459"
+      },
+      "cameraType": "panoramic",
+      "durationSeconds": 5397.0,
+      "wholeMatch": true,
+      "matchIdentityVerified": true,
+      "rightsStatus": "CC-BY-4.0",
+      "evaluationRole": "validation",
+      "independentFromTraining": true,
+      "heldOutTestEligible": false,
+      "heldOutTestExclusionReason": "The first half already informed detector and calibration diagnostics",
+      "downloadProvenance": {
+        "driveListingAudit": "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_external_soccertrack_google_drive_fixture_access_probe_v1/drive_folder_listing_audit.json",
+        "firstHalfFileId": "1QMqmairWx_U8TCCPZ4ke56p_vkmLa1Ea",
+        "secondHalfFileId": "1UThd91AkBiQAogezNnJoOB4kKAz0p6IS"
+      },
+      "pilotEligible": true
+    },
+    {
+      "sourceId": "soccertrack-v2-117093",
+      "paths": [
+        "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_analysis_pilot_corpus_v1/soccertrack/117093/117093_panorama_1st_half.mp4",
+        "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_analysis_pilot_corpus_v1/soccertrack/117093/117093_panorama_2nd_half.mp4"
+      ],
+      "referenceLabelPaths": [
+        "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_analysis_pilot_corpus_v1/soccertrack/117093/117093_gsr_1st.json",
+        "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_analysis_pilot_corpus_v1/soccertrack/117093/117093_gsr_2nd.json"
+      ],
+      "sha256ByPath": {
+        "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_analysis_pilot_corpus_v1/soccertrack/117093/117093_panorama_1st_half.mp4": "f50dfebc70743439a8c778abe06953885a50be8b47e3c9d3d1ce8d533fe315c8",
+        "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_analysis_pilot_corpus_v1/soccertrack/117093/117093_panorama_2nd_half.mp4": "3b0ba32ae638e0f52714388b23e08dff41e9bd282b318f7fb6da8eba867fa8fb",
+        "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_analysis_pilot_corpus_v1/soccertrack/117093/117093_gsr_1st.json": "c487f9917fc7906cf16317cda559bb6e92037f445b33f9734b341c67e9e6650e",
+        "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_analysis_pilot_corpus_v1/soccertrack/117093/117093_gsr_2nd.json": "3a9268d3d77e435c398960850e80dafa1c5910e9ed843eb1901490b966fcb529"
+      },
+      "cameraType": "panoramic",
+      "durationSeconds": 5524.0,
+      "wholeMatch": true,
+      "matchIdentityVerified": true,
+      "rightsStatus": "CC-BY-4.0",
+      "evaluationRole": "validation",
+      "independentFromTraining": false,
+      "heldOutTestEligible": false,
+      "heldOutTestExclusionReason": "Existing local derivatives of the first half already informed training and diagnostics",
+      "referenceLabelsInspectedForEvaluation": false,
+      "calibrationArtifacts": {
+        "cameraIntrinsicsPath": "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_analysis_pilot_corpus_v1/soccertrack/117093/calibration/117093_camera_intrinsics.npz",
+        "cameraIntrinsicsSha256": "fe3f14a96495aa6706e6bf716490d599e0818ed0a48e7bf8e4387e7fe985c720",
+        "cameraIntrinsicsFileId": "19s0CeO4_xhegQKXuDq0LHBHVILvqDDul",
+        "homographyPath": "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_analysis_pilot_corpus_v1/soccertrack/117093/calibration/117093_homography.npy",
+        "homographySha256": "deb667816e2b0a98c536cf65d08d03d0c5d300cc0027425eb1bcee8f0e0426f7",
+        "homographyFileId": "1siwm0NkMxowCOwDs3b2Wdw1GyAHLfenC",
+        "keypointsPath": "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_analysis_pilot_corpus_v1/soccertrack/117093/calibration/117093_keypoints.json",
+        "keypointsSha256": "bcc874620cfa1bcbd49b33a6132abf51f35525f25cafb677084e8ce3e803a94f",
+        "keypointsFileId": "1k5hl4jVzlgB4AN-lSs35VpPW7elz4cha"
+      },
+      "calibrationDiagnostic": {
+        "keypointCount": 65,
+        "assignmentToleranceMeters": 5.0,
+        "meanRoundTripErrorMeters": 2.9211707522,
+        "medianRoundTripErrorMeters": 1.7897477544,
+        "p95RoundTripErrorMeters": 9.9507998563,
+        "maxRoundTripErrorMeters": 12.6535090216,
+        "withinAssignmentTolerance": false,
+        "referenceUse": "validation_calibration_only",
+        "pipelineInferenceRun": false
+      },
+      "downloadProvenance": {
+        "driveListingAudit": "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_external_soccertrack_google_drive_fixture_access_probe_v1/drive_folder_listing_audit.json",
+        "firstHalfVideoFileId": "1gPoN2h2SxEjWORK6FwKTEsCuKPylar53",
+        "secondHalfVideoFileId": "1dJNSKYtiuynakFDO7Hj7dCp7yjb2iMXy",
+        "firstHalfGsrFileId": "18fRzxM5vEExz0WXOxVqGoOIPeEEFaur2",
+        "secondHalfGsrFileId": "1hMhlqrg5E28NSvYkGb4P_mlZmRO0IaZ6"
+      },
+      "pilotEligible": true
+    },
+    {
+      "sourceId": "soccertrack-v2-118575",
+      "paths": [
+        "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_analysis_pilot_corpus_v1/soccertrack/118575/118575_panorama_1st_half.mp4",
+        "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_analysis_pilot_corpus_v1/soccertrack/118575/118575_panorama_2nd_half.mp4"
+      ],
+      "referenceLabelPaths": [
+        "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_analysis_pilot_corpus_v1/soccertrack/118575/118575_gsr_1st.json",
+        "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_analysis_pilot_corpus_v1/soccertrack/118575/118575_gsr_2nd.json"
+      ],
+      "sha256ByPath": {
+        "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_analysis_pilot_corpus_v1/soccertrack/118575/118575_panorama_1st_half.mp4": "0971da538a5572a95bae843d14276af7ec95a0fd45bb630fdf80ae8ab0321d8a",
+        "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_analysis_pilot_corpus_v1/soccertrack/118575/118575_panorama_2nd_half.mp4": "52af490c3f09b2ee491bfcc15516b830932f18ed1e87861c659fed353cade6c1",
+        "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_analysis_pilot_corpus_v1/soccertrack/118575/118575_gsr_1st.json": "46f5aa862c05eba4c25d3f95801615be5c55c8501a69eec3cb828afd17544472",
+        "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_analysis_pilot_corpus_v1/soccertrack/118575/118575_gsr_2nd.json": "f5cb559f8301e7fd93056aa17818d580ef00f8875adb05eb46cdbea8489ce82f"
+      },
+      "cameraType": "panoramic",
+      "durationSeconds": 5811.0,
+      "wholeMatch": true,
+      "matchIdentityVerified": true,
+      "rightsStatus": "CC-BY-4.0",
+      "evaluationRole": "held_out_test",
+      "independentFromTraining": true,
+      "heldOutTestEligible": true,
+      "referenceLabelsInspectedForEvaluation": false,
+      "downloadProvenance": {
+        "driveListingAudit": "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_external_soccertrack_google_drive_fixture_access_probe_v1/drive_folder_listing_audit.json",
+        "firstHalfVideoFileId": "1-FZNCqVSx8YleM2E7UK90-SAdNAlTeSD",
+        "secondHalfVideoFileId": "1p6N77kKsZZffpzX2IfipLHCt7mZMoPiK",
+        "firstHalfGsrFileId": "1yXFIt_LmqjD0UjJ9A_bpSvxYq91-ffpD",
+        "secondHalfGsrFileId": "1XnQcFw3dRjz-r6lDQ40kPdOGeyKtVxYC"
+      },
+      "pilotEligible": true
+    },
+    {
+      "sourceId": "belmont-melrose-2024-09-03",
+      "path": "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_analysis_pilot_corpus_v1/broadcast/belmont-melrose-2024-09-03/soccer-boys_090324-vs-melrose.mp4",
+      "sha256": "df6544a5d512aef5eac19da9d6435180e5aa527ca94431091e30ac6d3979c487",
+      "cameraType": "broadcast",
+      "resolution": "854x480",
+      "durationSeconds": 5463.667,
+      "wholeMatch": true,
+      "matchIdentityVerified": true,
+      "rightsStatus": "CC0-1.0",
+      "labelsStatus": "not_labeled",
+      "evaluationRole": "held_out_test",
+      "independentFromTraining": true,
+      "heldOutTestEligible": true,
+      "downloadProvenance": {
+        "archiveItem": "https://archive.org/details/snafuinfinitysoccer-boys_090324-vs-melrose",
+        "archiveMetadata": "https://archive.org/metadata/snafuinfinitysoccer-boys_090324-vs-melrose",
+        "fileName": "soccer-boys_090324-vs-melrose.mp4",
+        "archiveFileSha1": "28ef1e740d2be9e9ebb0aef6ce46ef9ab15f4ef6",
+        "archiveFileMd5": "a9f0b425367910c5c9a893bf4c8139d9"
+      },
+      "pilotEligible": true
+    },
+    {
+      "sourceId": "belmont-watertown-soccer-night-2023-09-23",
+      "path": "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_analysis_pilot_corpus_v1/broadcast/belmont-watertown-2023-09-23/soccer-night_092323-boys-vs-watertown-1.mp4",
+      "sha256": "95736e1dd9a6b7167f19a34422c65a3f4d737fd23d299d07db28981b6a9a8746",
+      "cameraType": "broadcast",
+      "resolution": "854x480",
+      "durationSeconds": 8015.507,
+      "wholeMatch": true,
+      "matchIdentityVerified": true,
+      "rightsStatus": "CC0-1.0",
+      "labelsStatus": "not_labeled",
+      "evaluationRole": "held_out_test",
+      "independentFromTraining": true,
+      "heldOutTestEligible": true,
+      "difficultConditions": [
+        "night lighting",
+        "extended pregame and ceremony context"
+      ],
+      "downloadProvenance": {
+        "archiveItem": "https://archive.org/details/snafuinfinitysoccer-night_092323-boys-vs-watertown-1",
+        "archiveMetadata": "https://archive.org/metadata/snafuinfinitysoccer-night_092323-boys-vs-watertown-1",
+        "fileName": "soccer-night_092323-boys-vs-watertown-1.mp4",
+        "archiveFileSha1": "e3c08313876b79c1e6a669e6357fd8013920912e",
+        "archiveFileMd5": "2fe8276a05c8a40906f87b2d792497b0"
+      },
+      "pilotEligible": true
+    },
+    {
+      "sourceId": "pcac-lakewood-largo-1997-01-24",
+      "path": "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_analysis_pilot_corpus_v1/target_club/pcac-lakewood-largo-1997-01-24/lakewood-vs-largo-1997-01-24.mp4",
+      "sha256": "0d5049a3bedf3bcc17313c6d2af1efaddeeb24a614d369926739f4893bf8ff71",
+      "cameraType": "legacy_single_camera_club_broadcast",
+      "resolution": "640x480",
+      "durationSeconds": 5501.7,
+      "wholeMatch": true,
+      "matchIdentityVerified": true,
+      "matchIdentityEvidence": "The halftime graphic visibly identifies Lakewood vs Largo; distributed start, 25%, 40%, 75%, 90%, and end checks show the same night match.",
+      "archiveTitleMismatch": "Internet Archive metadata and filename incorrectly say St. Petersburg vs Lakewood.",
+      "rightsStatus": "CC0-1.0",
+      "labelsStatus": "not_labeled",
+      "evaluationRole": "held_out_test",
+      "independentFromTraining": true,
+      "heldOutTestEligible": true,
+      "difficultConditions": [
+        "night lighting",
+        "VHS analog noise",
+        "low resolution",
+        "camera pans and zooms",
+        "broadcast cuts and graphics"
+      ],
+      "downloadProvenance": {
+        "archiveItem": "https://archive.org/details/pcac-boys-soccer-st.-petersburg-vs.-lakewood-1997.01.24",
+        "archiveMetadata": "https://archive.org/metadata/pcac-boys-soccer-st.-petersburg-vs.-lakewood-1997.01.24",
+        "archiveFileName": "PCAC Boys Soccer - St. Petersburg vs. Lakewood 1997.01.24.mp4",
+        "archiveFileSha1": "a8a1883f030afc43ca1995fbc507aaa6e13a82d5",
+        "archiveFileMd5": "4c07ad9a13dc824bb3d0cb59d915a93a"
+      },
+      "pilotEligible": true
+    },
+    {
+      "sourceId": "soccernet-middlesbrough-preston-2019-10-01",
+      "path": "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_external_soccernet_video_member_extract_v1/extracted_video/england_efl/2019-2020/2019-10-01 - Middlesbrough - Preston North End/224p.mp4",
+      "sha256": "e0acd859287f444bfabe1234e60b9634552543923aa03865856afb9be9395d78",
+      "cameraType": "broadcast",
+      "durationSeconds": 5875.72,
+      "wholeMatch": true,
+      "matchIdentityVerified": true,
+      "rightsStatus": "NDA-gated research-only non-commercial",
+      "pilotEligible": false
+    }
+  ]
+}

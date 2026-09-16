@@ -1,0 +1,79 @@
+{
+  "artifacts": [
+    {
+      "containerPath": "/app/models/yolov10n.pt",
+      "id": "yolov10n-base-model",
+      "localRelativePath": "yolov10n.pt",
+      "origin": "local-recovery-evidence",
+      "retentionClass": "required-local-ignored-model",
+      "sha256": "11287ed0735678e7ba1ac2a9b3098c049155b3fde123992e724c1264bcc16b6f",
+      "sizeBytes": 5860383
+    },
+    {
+      "containerPath": "/app/models/touchline-detector-v7.3-best.pt",
+      "id": "touchline-detector-v7.3-bounded-retrain-best",
+      "localRelativePath": "backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/v7_3_bounded_retrain_v1/train_run/weights/best.pt",
+      "origin": "bounded-retrain-evidence",
+      "retentionClass": "required-local-ignored-checkpoint",
+      "sha256": "e7724403223429691e051ef946af1808413808349d6730bdca935da743d79cc0",
+      "sizeBytes": 5711162
+    },
+    {
+      "containerPath": "/app/release-inputs/baseline-guided-rescue-reference.json",
+      "id": "baseline-guided-rescue-reference",
+      "localRelativePath": "backend/storage/benchmark_suites/frozen-viable-baseline-slice-suite/promoted_touchline_detector_candidate_robustness_validation_v1/baseline_guided_rescue_reference.json",
+      "origin": "validated-runtime-evidence",
+      "retentionClass": "required-local-ignored-reference",
+      "sha256": "173d27512a4e33b86ab3cd732e6a698e799fb5b1fc42b672974becdf48775606",
+      "sizeBytes": 3490
+    },
+    {
+      "containerPath": "/app/release-inputs/proposal-selection-truth-seed.json",
+      "id": "proposal-selection-truth-seed",
+      "localRelativePath": "backend/storage/benchmark_suites/frozen-viable-baseline-slice-suite/promoted_v6_source_manifest_and_gold_truth_refresh_v1/gold_truth_bootstrap_attempt_v1/accepted_controlled_truth_seed.json",
+      "origin": "validated-runtime-evidence",
+      "retentionClass": "required-local-ignored-seed",
+      "sha256": "52634cc77be1a936537b2de4d1eb89ec3f68fbd92d5b1670b75482a49cada418",
+      "sizeBytes": 822951
+    },
+    {
+      "containerPath": "/app/release-inputs/reviewed-positive-anchor-seed.json",
+      "id": "reviewed-positive-anchor-seed",
+      "localRelativePath": "backend/storage/benchmark_suites/frozen-viable-baseline-slice-suite/reviewed_positive_proposal_generation_fix_v1/reviewed_positive_anchor_seed.json",
+      "origin": "validated-runtime-evidence",
+      "retentionClass": "required-local-ignored-seed",
+      "sha256": "7145034892b851300fd543f11935b9e659b5da05eafdd7f8fee10e8e882f674a",
+      "sizeBytes": 35706
+    }
+  ],
+  "candidateVersion": "v7.3",
+  "createdAt": "2026-09-16T08:49:16Z",
+  "releaseVersion": "v7.3",
+  "requiredContracts": [
+    "video_to_analysis_product_api_v1",
+    "video_to_analysis_report_v1"
+  ],
+  "runtimeOptions": {
+    "auxiliary_ball_model": {
+      "artifactId": "touchline-detector-v7.3-bounded-retrain-best"
+    },
+    "auxiliary_ball_model_profile": "ball_probe_only_v7_3_crop_256",
+    "baseline_guided_rescue_reference": {
+      "artifactId": "baseline-guided-rescue-reference"
+    },
+    "edge_share_repair_profile": null,
+    "primary_acquisition_mode": "anchored_player_ranked_context_960",
+    "primary_model": {
+      "artifactId": "yolov10n-base-model"
+    },
+    "proposal_selection_truth_seed": {
+      "artifactId": "proposal-selection-truth-seed"
+    },
+    "reviewed_positive_anchor_seed": {
+      "artifactId": "reviewed-positive-anchor-seed"
+    }
+  },
+  "runtimeVersion": "v7.3",
+  "schemaVersion": 1,
+  "sourceCommit": "40eade8727c0eed69cbb6b397bac0ea693103f02"
+}

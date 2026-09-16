@@ -1,0 +1,166 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fotball-analyst.invalid/schemas/release-verification-v2.json",
+  "title": "Fotball Analyst release verification evidence v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "phase",
+    "sourceCommit",
+    "verificationCommit",
+    "manifestSha256",
+    "createdAt",
+    "toolVersions",
+    "gates",
+    "overallPassed",
+    "remoteExecution"
+  ],
+  "properties": {
+    "schemaVersion": {"const": 2},
+    "phase": {"enum": ["pre_cloud", "final"]},
+    "sourceCommit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "verificationCommit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "manifestSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "createdAt": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$"
+    },
+    "toolVersions": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {"type": "string", "minLength": 1},
+      "propertyNames": {"minLength": 1}
+    },
+    "gates": {
+      "type": "array",
+      "minItems": 13,
+      "maxItems": 13,
+      "items": false,
+      "prefixItems": [
+        {"$ref": "#/$defs/gate", "properties": {"name": {"const": "backend"}, "command": {"const": "python3 -m pytest -q backend/tests"}}},
+        {"$ref": "#/$defs/gate", "properties": {"name": {"const": "sidecar"}, "command": {"const": "python3 -m pytest -q research-addon/tests"}}},
+        {"$ref": "#/$defs/gate", "properties": {"name": {"const": "frontend-tests"}, "command": {"const": "npm --prefix frontend test -- --run"}}},
+        {"$ref": "#/$defs/gate", "properties": {"name": {"const": "lint"}, "command": {"const": "npm --prefix frontend run lint"}}},
+        {"$ref": "#/$defs/gate", "properties": {"name": {"const": "typecheck-app"}, "command": {"const": "cd frontend && npx tsc -p tsconfig.app.json --noEmit --incremental false"}}},
+        {"$ref": "#/$defs/gate", "properties": {"name": {"const": "typecheck-node"}, "command": {"const": "cd frontend && npx tsc -p tsconfig.node.json --noEmit --incremental false"}}},
+        {"$ref": "#/$defs/gate", "properties": {"name": {"const": "build"}, "command": {"const": "npm --prefix frontend run build"}}},
+        {"$ref": "#/$defs/gate", "properties": {"name": {"const": "backend-startup"}, "command": {"const": "python3 -c 'from backend.app.main import app'"}}},
+        {"$ref": "#/$defs/gate", "properties": {"name": {"const": "manifest"}, "command": {"const": "python3 -m pytest -q backend/tests/test_release_manifest.py backend/tests/test_write_release_manifest.py"}}},
+        {"$ref": "#/$defs/gate", "properties": {"name": {"const": "runtime-options"}, "command": {"const": "python3 -m pytest -q backend/tests/test_runtime_options.py"}}},
+        {"$ref": "#/$defs/gate", "properties": {"name": {"const": "preflight-negatives"}, "command": {"const": "python3 -m pytest -q backend/tests/test_release_preflight.py -k reject"}}},
+        {"$ref": "#/$defs/gate", "properties": {"name": {"const": "prod-audit"}, "command": {"const": "npm --prefix frontend audit --omit=dev --audit-level=high"}}},
+        {"$ref": "#/$defs/gate", "properties": {"name": {"const": "daytona-gpu-smoke"}, "command": {"const": "python3 -m backend.scripts.run_daytona_gpu_smoke --real-smoke"}}}
+      ]
+    },
+    "overallPassed": {"type": "boolean"},
+    "remoteExecution": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/remoteExecution"}]}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"phase": {"const": "pre_cloud"}}, "required": ["phase"]},
+      "then": {
+        "properties": {
+          "overallPassed": {"const": false}, "remoteExecution": {"type": "null"},
+          "gates": {
+            "prefixItems": [
+              {"properties": {"status": {"const": "passed"}, "completedAt": {"type": "string"}}},
+              {"properties": {"status": {"const": "passed"}, "completedAt": {"type": "string"}}},
+              {"properties": {"status": {"const": "passed"}, "completedAt": {"type": "string"}}},
+              {"properties": {"status": {"const": "passed"}, "completedAt": {"type": "string"}}},
+              {"properties": {"status": {"const": "passed"}, "completedAt": {"type": "string"}}},
+              {"properties": {"status": {"const": "passed"}, "completedAt": {"type": "string"}}},
+              {"properties": {"status": {"const": "passed"}, "completedAt": {"type": "string"}}},
+              {"properties": {"status": {"const": "passed"}, "completedAt": {"type": "string"}}},
+              {"properties": {"status": {"const": "passed"}, "completedAt": {"type": "string"}}},
+              {"properties": {"status": {"const": "passed"}, "completedAt": {"type": "string"}}},
+              {"properties": {"status": {"const": "passed"}, "completedAt": {"type": "string"}}},
+              {"properties": {"status": {"const": "passed"}, "completedAt": {"type": "string"}}},
+              {"properties": {"status": {"const": "pending"}, "completedAt": {"type": "null"}}}
+            ]
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "overallPassed": {"const": true}, "remoteExecution": {"$ref": "#/$defs/remoteExecution"},
+          "gates": {
+            "prefixItems": [
+              {"properties": {"status": {"const": "passed"}, "completedAt": {"type": "string"}}},
+              {"properties": {"status": {"const": "passed"}, "completedAt": {"type": "string"}}},
+              {"properties": {"status": {"const": "passed"}, "completedAt": {"type": "string"}}},
+              {"properties": {"status": {"const": "passed"}, "completedAt": {"type": "string"}}},
+              {"properties": {"status": {"const": "passed"}, "completedAt": {"type": "string"}}},
+              {"properties": {"status": {"const": "passed"}, "completedAt": {"type": "string"}}},
+              {"properties": {"status": {"const": "passed"}, "completedAt": {"type": "string"}}},
+              {"properties": {"status": {"const": "passed"}, "completedAt": {"type": "string"}}},
+              {"properties": {"status": {"const": "passed"}, "completedAt": {"type": "string"}}},
+              {"properties": {"status": {"const": "passed"}, "completedAt": {"type": "string"}}},
+              {"properties": {"status": {"const": "passed"}, "completedAt": {"type": "string"}}},
+              {"properties": {"status": {"const": "passed"}, "completedAt": {"type": "string"}}},
+              {"properties": {"status": {"const": "passed"}, "completedAt": {"type": "string"}}}
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "remoteExecution": {
+      "type": "object", "additionalProperties": false,
+      "required": ["sourceCommit", "verificationCommit", "manifestSha256", "workerContextSha256", "sdkVersion", "imageDigest", "requestedTarget", "requestedGpuOrder", "observedGpu", "sandboxId", "createdAt", "startedAt", "completedAt", "deletedAt", "commandResults", "uploads", "downloads", "cleanupAttempts", "deletionConfirmed", "runpodMutationOccurred", "registryMutationOccurred"],
+      "properties": {
+        "sourceCommit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "verificationCommit": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+        "manifestSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "workerContextSha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "sdkVersion": {"const": "0.207.0"},
+        "imageDigest": {"const": "docker.io/pytorch/pytorch@sha256:417bd75df6365104c283ea4c1651fb3530d9eb5a4c2fafa51943cff2a94e6385"},
+        "requestedTarget": {"const": "us"},
+        "requestedGpuOrder": {"const": ["RTX-PRO-6000", "H100"]},
+        "observedGpu": {"enum": ["RTX-PRO-6000", "H100"]}, "sandboxId": {"type": "string", "minLength": 1, "maxLength": 65536},
+        "createdAt": {"$ref": "#/$defs/timestamp"}, "startedAt": {"$ref": "#/$defs/timestamp"}, "completedAt": {"$ref": "#/$defs/timestamp"}, "deletedAt": {"$ref": "#/$defs/timestamp"},
+        "commandResults": {"type": "array", "minItems": 1, "maxItems": 32, "uniqueItems": true, "items": {"$ref": "#/$defs/commandResult"}},
+        "uploads": {"type": "array", "minItems": 1, "maxItems": 1024, "uniqueItems": true, "items": {"$ref": "#/$defs/identity"}},
+        "downloads": {"type": "array", "minItems": 1, "maxItems": 1024, "uniqueItems": true, "items": {"$ref": "#/$defs/identity"}},
+        "cleanupAttempts": {"type": "integer", "minimum": 1, "maximum": 3}, "deletionConfirmed": {"const": true},
+        "runpodMutationOccurred": {"const": false}, "registryMutationOccurred": {"const": false}
+      }
+    },
+    "commandResult": {"type": "object", "additionalProperties": false, "required": ["command", "exitCode", "stdout", "stderr"], "properties": {"command": {"allOf": [{"$ref": "#/$defs/nonemptySafeText"}]}, "exitCode": {"type": "integer", "const": 0}, "stdout": {"$ref": "#/$defs/safeText"}, "stderr": {"$ref": "#/$defs/safeText"}}},
+    "identity": {"type": "object", "additionalProperties": false, "required": ["name", "sha256", "sizeBytes"], "properties": {"name": {"$ref": "#/$defs/nonemptySafeText"}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}, "sizeBytes": {"type": "integer", "minimum": 0, "maximum": 1125899906842624}}},
+    "safeText": {"type": "string", "maxLength": 65536, "not": {"pattern": "\\u0000|[Dd][Aa][Yy][Tt][Oo][Nn][Aa][ _-]?[Aa][Pp][Ii][ _-]?[Kk][Ee][Yy]|[Bb][Ee][Aa][Rr][Ee][Rr]\\s+\\S|(?:[Ss][Ee][Tt][ _-]?)?[Cc][Oo][Oo][Kk][Ii][Ee][Ss]?\\s*[:=]|(?:[Aa][Pp][Ii][ _-]?[Kk][Ee][Yy]|(?:[Aa][Cc][Cc][Ee][Ss][Ss]|[Rr][Ee][Ff][Rr][Ee][Ss][Hh]|[Aa][Uu][Tt][Hh]|[Ii][Dd])[ _-]?[Tt][Oo][Kk][Ee][Nn]|[Tt][Oo][Kk][Ee][Nn]|[Ss][Ee][Cc][Rr][Ee][Tt][Ss]?|[Pp][Aa][Ss][Ss](?:[ _-]?[Ww][Oo][Rr][Dd]|[Ww][Dd])|[Aa][Uu][Tt][Hh][Oo][Rr][Ii][Zz][Aa][Tt][Ii][Oo][Nn]|[Aa][Uu][Tt][Hh][Ee][Nn][Tt][Ii][Cc][Aa][Tt][Ii][Oo][Nn]|[Aa][Uu][Tt][Hh]|(?:[Aa][Uu][Tt][Hh]|[Aa][Uu][Tt][Hh][Oo][Rr][Ii][Zz][Aa][Tt][Ii][Oo][Nn])[ _-]?[Hh][Ee][Aa][Dd][Ee][Rr]|[Cc][Oo][Oo][Kk][Ii][Ee][Ss]?|[Cc][Rr][Ee][Dd][Ee][Nn][Tt][Ii][Aa][Ll][Ss]?|(?:[Aa][Ww][Ss][ _-]?)?[Ss][Ee][Cc][Rr][Ee][Tt][ _-]?[Aa][Cc][Cc][Ee][Ss][Ss][ _-]?[Kk][Ee][Yy]|[Ss][Ee][Cc][Rr][Ee][Tt][ _-]?[Kk][Ee][Yy]|[Pp][Rr][Ii][Vv][Aa][Tt][Ee][ _-]?[Kk][Ee][Yy]|[Aa][Cc][Cc][Ee][Ss][Ss][ _-]?[Kk][Ee][Yy][ _-]?[Ii][Dd])\\s*[:=]"}},
+    "nonemptySafeText": {"allOf": [{"$ref": "#/$defs/safeText"}, {"minLength": 1}]},
+    "timestamp": {"type": "string", "format": "date-time", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$"},
+    "gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "command", "status", "completedAt", "logSha256"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "command": {"type": "string", "minLength": 1},
+        "status": {"enum": ["passed", "failed", "pending"]},
+        "completedAt": {
+          "oneOf": [
+            {"type": "string", "format": "date-time", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$"},
+            {"type": "null"}
+          ]
+        },
+        "logSha256": {
+          "oneOf": [
+            {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+            {"type": "null"}
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "pending"}}, "required": ["status"]},
+          "then": {"properties": {"completedAt": {"type": "null"}, "logSha256": {"type": "null"}}},
+          "else": {"properties": {"completedAt": {"type": "string"}, "logSha256": {"type": "string"}}}
+        }
+      ]
+    }
+  }
+}
