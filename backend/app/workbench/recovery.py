@@ -53,3 +53,21 @@ def support_bundle(*, consented: bool, ttl_seconds: float, now: float) -> dict[s
 
     expired_fn: Callable[[float], bool] = expired
     return {"released": True, "scoped": True, "expired": expired_fn, "expiresAt": expires_at}
+
+
+def unresolved_incidents() -> dict[str, Any]:
+    return {
+        "items": [],
+        "operatorVisible": True,
+        "enterpriseUptimePromised": False,
+        "syntheticTestsAreNotDeploymentAssessment": True,
+    }
+
+
+def recovery_objectives(*, data_volume_measured: bool, disruption_measured: bool) -> dict[str, Any]:
+    defined = data_volume_measured and disruption_measured
+    return {
+        "defined": defined,
+        "enterpriseUptimePromised": False,
+        "reasonCodes": [] if defined else ["RECOVERY_OBJECTIVES_UNMEASURED"],
+    }

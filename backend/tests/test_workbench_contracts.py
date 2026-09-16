@@ -2401,3 +2401,30 @@ def test_distributed_broker_and_vector_database_stay_unadmitted() -> None:
     assert vectors["admitted"] is False
     assert vectors["embeddingsProveTacticalWeakness"] is False
 
+
+def test_access_deletion_stale_permissions_and_unresolved_incidents_stay_honest() -> None:
+    from backend.app.workbench.access import access_deletion_procedure, stale_permissions
+    from backend.app.workbench.recovery import recovery_objectives, unresolved_incidents
+
+    missing_roles = access_deletion_procedure(requested=True, controller_recorded=False)
+    assert missing_roles["executed"] is False
+    assert missing_roles["trackIdsDoNotAnonymise"] is True
+    assert "CONTROLLER_PROCESSOR_ROLES_REQUIRED" in missing_roles["reasonCodes"]
+    ready = access_deletion_procedure(requested=True, controller_recorded=True)
+    assert ready["available"] is True
+    assert ready["executed"] is True
+    stale = stale_permissions(permission_expires_at=10.0, now=11.0)
+    assert stale["stale"] is True
+    assert stale["admitted"] is False
+    assert "STALE_PERMISSION" in stale["reasonCodes"]
+    current = stale_permissions(permission_expires_at=20.0, now=11.0)
+    assert current["admitted"] is True
+    incidents = unresolved_incidents()
+    assert incidents["operatorVisible"] is True
+    assert incidents["enterpriseUptimePromised"] is False
+    assert incidents["syntheticTestsAreNotDeploymentAssessment"] is True
+    objectives = recovery_objectives(data_volume_measured=False, disruption_measured=False)
+    assert objectives["defined"] is False
+    assert objectives["enterpriseUptimePromised"] is False
+    assert "RECOVERY_OBJECTIVES_UNMEASURED" in objectives["reasonCodes"]
+

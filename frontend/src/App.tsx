@@ -14,6 +14,7 @@ import IncidentReview from './components/IncidentReview';
 import ChangeHistory from './components/ChangeHistory';
 import AiUnavailableBanner from './components/AiUnavailableBanner';
 import LoopbackBanner from './components/LoopbackBanner';
+import RecoveryPanel from './components/RecoveryPanel';
 import QualityTimeline from './components/QualityTimeline';
 import WorkbenchPanel from './components/WorkbenchPanel';
 import DemoMatchIssuePanel from './components/DemoMatchIssuePanel';
@@ -1049,6 +1050,9 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           </div>
           <div className="mb-3 shrink-0">
             <LoopbackBanner deploymentBoundary="loopback" />
+          </div>
+          <div className="mb-3 shrink-0">
+            <RecoveryPanel controllerRecorded={false} unresolvedIncidents={[]} recoveryObjectivesDefined={false} />
           </div>
           <div className="mb-3 shrink-0">
             <DrawingToolbar

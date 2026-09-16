@@ -38,3 +38,26 @@ def upload_quota(*, byte_size: int, duration_seconds: float) -> dict[str, Any]:
     if duration_seconds > DURATION_QUOTA_SECONDS:
         reasons.append("DURATION_QUOTA")
     return {"admitted": not reasons, "reasonCodes": reasons}
+
+
+def access_deletion_procedure(*, requested: bool, controller_recorded: bool) -> dict[str, Any]:
+    available = controller_recorded
+    executed = bool(requested and controller_recorded)
+    reasons: list[str] = []
+    if not controller_recorded:
+        reasons.append("CONTROLLER_PROCESSOR_ROLES_REQUIRED")
+    return {
+        "available": available,
+        "executed": executed,
+        "trackIdsDoNotAnonymise": True,
+        "reasonCodes": reasons,
+    }
+
+
+def stale_permissions(*, permission_expires_at: float, now: float) -> dict[str, Any]:
+    stale = now >= permission_expires_at
+    return {
+        "stale": stale,
+        "admitted": not stale,
+        "reasonCodes": ["STALE_PERMISSION"] if stale else [],
+    }

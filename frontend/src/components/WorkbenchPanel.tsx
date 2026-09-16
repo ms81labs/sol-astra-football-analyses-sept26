@@ -9,6 +9,7 @@ import IncidentReview from './IncidentReview';
 import ChangeHistory from './ChangeHistory';
 import AiUnavailableBanner from './AiUnavailableBanner';
 import LoopbackBanner from './LoopbackBanner';
+import RecoveryPanel from './RecoveryPanel';
 import QualityTimeline from './QualityTimeline';
 import SetupWizard from './SetupWizard';
 import TrainingSuggestions from './TrainingSuggestions';
@@ -202,6 +203,11 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
                 {' '}· native {dossier.native.approved ? 'approved' : 'gated'}
               </p>
               <LoopbackBanner deploymentBoundary={dossier.release.deploymentBoundary} />
+              <RecoveryPanel
+                controllerRecorded={false}
+                unresolvedIncidents={[]}
+                recoveryObjectivesDefined={false}
+              />
               <div className="rounded-lg border border-slate-700 p-3">
                 <h4 className="text-xs uppercase tracking-wide text-slate-500 mb-2">Capability matrix</h4>
                 <ul className="space-y-2">
