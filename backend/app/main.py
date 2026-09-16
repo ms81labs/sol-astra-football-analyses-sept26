@@ -56,15 +56,18 @@ from .workbench.access import (
     constrained_decoder,
     deployment_encryption,
     least_privilege_storage,
+    mint_sharing_link,
     object_access_decision,
     protocol_network_allowlist,
     public_exposure_gate,
     untrusted_model_output,
+    upload_quota,
 )
 from .workbench.admission import admit_camera, admit_media
 from .workbench.artifacts import (
     columnar_observation_store,
     cross_tenant_cache_reuse,
+    import_worker_output,
     object_storage_adapter,
     secrets_in_artifacts,
 )
@@ -92,6 +95,7 @@ from .workbench.jobs import (
     deployment_mode,
     distributed_broker,
     egress_policy,
+    pause_experiment,
     signed_scoped_job_access,
     vector_database,
 )
@@ -108,16 +112,19 @@ from .workbench.costs import (
 from .workbench.benchmarks import experiment_receipt, quality_gate_holds
 from .workbench.decisions import architecture_decisions
 from .workbench.dossier import http_dossier
-from .workbench.evaluation import evaluation_measures, score_hota_idf1
+from .workbench.evaluation import analyst_workflow_measures, evaluation_measures, score_hota_idf1
 from .workbench.events import learned_temporal
 from .workbench.geometry import ground_contact_point, project_to_pitch
 from .workbench.evidence import inspect_metric, metric_dictionary
-from .workbench.flags import feature_flags
+from .workbench.flags import feature_flags, shadow_metric
 from .workbench.identity import (
+    IdentityRecord,
     appearance_embedding_policy,
     candidate_rejoin,
+    cluster_mapping,
     cross_season_identity,
     face_recognition,
+    promote_identity,
     reconnect_across_cut,
 )
 from .workbench.milestones import milestone_plan, owners, progress_signal
@@ -133,11 +140,12 @@ from .workbench.native import (
     quantized_weight_memory,
 )
 from .workbench.privacy import dpia_screen, residency_claim
-from .workbench.quantities import pitch_axes
+from .workbench.perception import DetectorAdapter, merge_tiled_detections, tile_to_source
+from .workbench.quantities import pitch_axes, transform_legacy_display
 from .workbench.recovery import full_disk, recovery_objectives, support_bundle, unresolved_incidents
 from .workbench.repository import RepositoryAdapter, http_may_run_gpu, vector_broker_required
 from .workbench.reports import held_out_questions
-from .workbench.research import execute_track, research_lane
+from .workbench.research import execute_track, may_write_product_paths, research_lane
 from .workbench.retention import PROTECTED, may_delete
 from .workbench.media import decode_memory_policy, vid_stride_policy
 from .workbench.review import collaboration_lock, correction_api_payload, playlist_export_interval
@@ -149,7 +157,7 @@ from .workbench.routes import create_workbench_router
 from .workbench.shot_model import tree_challenger
 from .workbench.timing import gpu_timing_scope, stage_timing
 from .workbench.targets import metadata_api_targets
-from .workbench.training import drill_library
+from .workbench.training import admit_example, data_pools, drill_library
 from .workbench.xt import xt_deferred_plan
 
 
@@ -1287,6 +1295,15 @@ def create_app(
     def get_evaluation_measures() -> dict:
         return evaluation_measures()
 
+    @app.get("/api/evaluation/workflow")
+    def get_evaluation_workflow() -> dict:
+        return analyst_workflow_measures()
+
+    @app.post("/api/evaluation/workflow")
+    def post_evaluation_workflow(payload: dict | None = None) -> dict:
+        del payload
+        return analyst_workflow_measures()
+
     @app.get("/api/research/lane")
     def get_research_lane() -> dict:
         return research_lane()
@@ -1738,6 +1755,113 @@ def create_app(
             overlapped=True,
         ).model_dump(mode="json")
 
+    @app.post("/api/identity/promote")
+    def post_identity_promote(payload: dict | None = None) -> dict:
+        body = payload or {}
+        record = IdentityRecord(kind="tracklet", trackId=str(body.get("trackId") or "t-0"))
+        return promote_identity(record, target="roster_player", reviewed=False, rosterId=None).model_dump(mode="json")
+
+    @app.get("/api/identity/clusters/{cluster_id}")
+    def get_identity_cluster(cluster_id: int) -> dict:
+        return cluster_mapping(cluster_id=cluster_id, selected_semantic=None).model_dump(mode="json")
+
+    @app.post("/api/identity/clusters/{cluster_id}")
+    def post_identity_cluster(cluster_id: int, payload: dict | None = None) -> dict:
+        del payload
+        return cluster_mapping(cluster_id=cluster_id, selected_semantic=None).model_dump(mode="json")
+
+    @app.post("/api/pause")
+    def post_pause_experiment(payload: dict | None = None) -> dict:
+        del payload
+        return {"paused": pause_experiment(remaining=1_000_000.0, termination_and_recovery=0.0)}
+
+    @app.post("/api/quota")
+    def post_upload_quota(payload: dict | None = None) -> dict:
+        body = payload or {}
+        return upload_quota(
+            byte_size=int(body.get("byteSize") or 0),
+            duration_seconds=float(body.get("durationSeconds") or 0),
+        )
+
+    @app.post("/api/worker/import")
+    def post_worker_import(payload: dict | None = None) -> dict:
+        body = payload or {}
+        return import_worker_output(
+            {
+                "path": str(body.get("path") or ""),
+                "bytes": int(body.get("bytes") or 0),
+                "kind": str(body.get("kind") or ""),
+                "jobSucceeded": bool(body.get("jobSucceeded")),
+            },
+            quality_accepted=False,
+        )
+
+    @app.get("/api/training/pools")
+    def get_training_pools() -> dict:
+        return {"pools": list(data_pools())}
+
+    @app.post("/api/training/admit")
+    def post_training_admit(payload: dict | None = None) -> dict:
+        body = payload or {}
+        source = str(body.get("sourcePool") or "locked_evaluation")
+        destination = str(body.get("destination") or "training")
+        return admit_example(
+            {"id": str(body.get("id") or ""), "rights": str(body.get("rights") or "")},
+            source_pool=source,  # type: ignore[arg-type]
+            destination=destination,  # type: ignore[arg-type]
+        ).model_dump(mode="json")
+
+    @app.post("/api/research/paths")
+    def post_research_paths(payload: dict | None = None) -> dict:
+        body = payload or {}
+        return {"allowed": may_write_product_paths(list(body.get("paths") or []))}
+
+    @app.get("/api/flags/shadow/{name}")
+    def get_shadow_metric(name: str) -> dict:
+        return shadow_metric(name)
+
+    @app.get("/api/quantities/display")
+    def get_legacy_display() -> dict:
+        return transform_legacy_display(x=0.0, y=0.0, from_display=True)
+
+    @app.post("/api/detector")
+    def post_detector(payload: dict | None = None) -> dict:
+        body = payload or {}
+        return DetectorAdapter().detect(
+            {"colourOrder": str(body.get("colourOrder") or "bgr")},
+            requested_backend=str(body.get("requestedBackend") or "cuda"),
+            video_engine_capability=False,
+        )
+
+    @app.post("/api/perception/tiles")
+    def post_perception_tiles(payload: dict | None = None) -> dict:
+        body = payload or {}
+        origin = body.get("origin") or [0.0, 0.0]
+        scale = float(body.get("scale") or 1.0)
+        mapped = []
+        for item in list(body.get("detections") or []):
+            bbox = tile_to_source(tuple(item.get("bbox") or (0, 0, 0, 0)), origin=(float(origin[0]), float(origin[1])), scale=scale)
+            mapped.append({**item, "bbox": list(bbox)})
+        merged = merge_tiled_detections(mapped, iou_threshold=0.5)
+        return {
+            "merged": merged,
+            "sourceCoordinates": True,
+            "productQualityPass": False,
+        }
+
+    @app.post("/api/sharing")
+    def post_sharing_link(payload: dict | None = None) -> dict:
+        body = payload or {}
+        now = float(body.get("now") or 0.0)
+        ttl = float(body.get("ttlSeconds") or 0.0)
+        link = mint_sharing_link(object_id=str(body.get("objectId") or ""), now=now, ttl_seconds=ttl)
+        return {
+            "objectId": link["objectId"],
+            "expiresAt": link["expiresAt"],
+            "expiredAtNow": link["expired"](now),
+            "expiredAtTtl": link["expired"](now + ttl),
+        }
+
     @app.post("/api/search")
     def post_typed_search(payload: dict | None = None) -> dict:
         body = payload or {}
@@ -2056,6 +2180,19 @@ def create_app(
     @app.get("/api/matches/{match_id}/identity")
     def get_match_identity(match: MatchRecord = Depends(require_match)) -> dict:
         return storage.identity_for_match(match.id)
+
+    @app.get("/api/matches/{match_id}/history")
+    def get_match_history(match: MatchRecord = Depends(require_match)) -> dict:
+        return storage.history_for_match(match.id)
+
+    @app.get("/api/matches/{match_id}/cache")
+    def get_match_cache(match: MatchRecord = Depends(require_match)) -> dict:
+        return storage.cache_identity_for_match(match.id)
+
+    @app.post("/api/matches/{match_id}/cache")
+    def post_match_cache(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+        del payload
+        return storage.cache_identity_for_match(match.id)
 
     @app.get("/api/matches/{match_id}/formation")
     def get_match_formation(match: MatchRecord = Depends(require_match)) -> dict:

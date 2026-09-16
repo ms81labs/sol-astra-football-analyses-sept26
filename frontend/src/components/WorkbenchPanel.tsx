@@ -19,6 +19,7 @@ import TrainingSuggestions from './TrainingSuggestions';
 import {
   exportPlaylistInterval,
   fetchAssistance,
+  fetchAnalystWorkflow,
   fetchCapacity,
   fetchCorrectionHistory,
   fetchExperiment,
@@ -44,8 +45,10 @@ import {
   fetchRecovery,
   fetchRepository,
   fetchSecurity,
+  fetchShadowMetric,
   fetchSupportBundle,
   fetchTrainingDrills,
+  fetchTrainingPools,
   fetchWorkbenchDossier,
   fetchWorkbenchFlags,
   recoverMatchCorrection,
@@ -53,6 +56,7 @@ import {
   searchMatchLibrary,
   searchWorkbenchEvents,
   undoMatchCorrection,
+  type AnalystWorkflowSnapshot,
   type CapacitySnapshot,
   type EditListSnapshot,
   type ExperimentReceiptSnapshot,
@@ -71,7 +75,9 @@ import {
   type RecoverySnapshot,
   type RepositorySnapshot,
   type SecuritySnapshot,
+  type ShadowMetricSnapshot,
   type SupportBundleSnapshot,
+  type TrainingPoolsSnapshot,
   type WorkbenchDossier,
 } from '../utils/workbench';
 
@@ -147,6 +153,9 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
   const [labelProducts, setLabelProducts] = useState<LabelProductsSnapshot | null>(null);
   const [proxyAssets, setProxyAssets] = useState<ProxyAssetsSnapshot | null>(null);
   const [editList, setEditList] = useState<EditListSnapshot | null>(null);
+  const [workflow, setWorkflow] = useState<AnalystWorkflowSnapshot | null>(null);
+  const [shadowMetric, setShadowMetric] = useState<ShadowMetricSnapshot | null>(null);
+  const [trainingPools, setTrainingPools] = useState<TrainingPoolsSnapshot | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -254,6 +263,27 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
       })
       .catch(() => {
         if (!cancelled) setLabelProducts(null);
+      });
+    fetchAnalystWorkflow()
+      .then((payload) => {
+        if (!cancelled && payload.measured === false) setWorkflow(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setWorkflow(null);
+      });
+    fetchShadowMetric('experimental_shot_quality')
+      .then((payload) => {
+        if (!cancelled && payload.shadowed === true) setShadowMetric(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setShadowMetric(null);
+      });
+    fetchTrainingPools()
+      .then((payload) => {
+        if (!cancelled && payload.pools?.includes('locked_evaluation')) setTrainingPools(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setTrainingPools(null);
       });
     return () => {
       cancelled = true;
@@ -542,6 +572,15 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
               )}
               {editList?.reencodeFullMatch === false && (
                 <p className="text-xs text-slate-400">Edit lists render on demand instead of re-encoding the match.</p>
+              )}
+              {workflow?.measured === false && (
+                <p className="text-xs text-slate-400">Analyst workflow measures remain unmeasured.</p>
+              )}
+              {shadowMetric?.shadowed === true && (
+                <p className="text-xs text-slate-400">Experimental shot quality stays shadowed off defaults.</p>
+              )}
+              {trainingPools?.pools?.includes('locked_evaluation') && (
+                <p className="text-xs text-slate-400">Locked evaluation labels cannot enter training.</p>
               )}
               <div className="rounded-lg border border-slate-700 p-3">
                 <h4 className="text-xs uppercase tracking-wide text-slate-500 mb-2">Capability matrix</h4>

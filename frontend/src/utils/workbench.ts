@@ -566,3 +566,43 @@ export async function fetchMatchEdits(matchId: string) {
   }
   return response.json() as Promise<EditListSnapshot>;
 }
+
+export interface AnalystWorkflowSnapshot {
+  measured?: boolean;
+  analystCompletedReviewedMatch?: boolean;
+  reasonCodes?: string[];
+}
+
+export async function fetchAnalystWorkflow() {
+  const response = await fetch('/api/evaluation/workflow');
+  if (!response.ok) {
+    throw new Error(`Failed to load analyst workflow measures: ${response.status}`);
+  }
+  return response.json() as Promise<AnalystWorkflowSnapshot>;
+}
+
+export interface ShadowMetricSnapshot {
+  default?: boolean;
+  shadowed?: boolean;
+  published?: boolean;
+}
+
+export async function fetchShadowMetric(name: string) {
+  const response = await fetch(`/api/flags/shadow/${name}`);
+  if (!response.ok) {
+    throw new Error(`Failed to load shadowed metric: ${response.status}`);
+  }
+  return response.json() as Promise<ShadowMetricSnapshot>;
+}
+
+export interface TrainingPoolsSnapshot {
+  pools?: string[];
+}
+
+export async function fetchTrainingPools() {
+  const response = await fetch('/api/training/pools');
+  if (!response.ok) {
+    throw new Error(`Failed to load training pools: ${response.status}`);
+  }
+  return response.json() as Promise<TrainingPoolsSnapshot>;
+}

@@ -1702,6 +1702,42 @@ class Storage:
 
         return restore_exercise(self.storage_root / "restore-source", self.storage_root / "restore-dest")
 
+    def history_for_match(self, match_id: str) -> dict:
+        from .workbench.review import change_history
+
+        self.get_match(match_id)
+        return change_history(self.list_corrections(match_id))
+
+    def cache_identity_for_match(self, match_id: str) -> dict:
+        from .workbench.cache import cache_compatible, cache_identity
+
+        sha = self.source_sha256(match_id)
+        production = cache_identity(
+            source_sha256=sha,
+            interval_start=0.0,
+            interval_end=0.0,
+            decoder_version="opencv",
+            model_hash="weights-v1",
+            temporal_policy="source_global_grid",
+            output_schema="evidence_v1",
+            namespace="production",
+        )
+        development = cache_identity(
+            source_sha256=sha,
+            interval_start=0.0,
+            interval_end=0.0,
+            decoder_version="opencv",
+            model_hash="weights-v1",
+            temporal_policy="source_global_grid",
+            output_schema="evidence_v1",
+            namespace="development",
+        )
+        return {
+            "namespace": "production",
+            "identity": production,
+            "compatibleWithDevelopment": cache_compatible(production, development),
+        }
+
     def load_raw_rows(self, match_id: str) -> list[dict]:
         payload = self._read_json(self._match_dir(match_id) / "raw_rows.json")
         return [dict(item) for item in payload]

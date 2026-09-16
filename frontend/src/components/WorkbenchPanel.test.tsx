@@ -300,6 +300,15 @@ it('loads recovery and landmark preview from production routes and posts deletio
     if (url.endsWith('/api/matches/m1/edits')) {
       return new Response(JSON.stringify({ reencodeFullMatch: false, renderOnDemand: true }), { status: 200 });
     }
+    if (url.endsWith('/api/evaluation/workflow')) {
+      return new Response(JSON.stringify({ measured: false, analystCompletedReviewedMatch: false, reasonCodes: ['ANALYST_ACCEPTANCE_MISSING'] }), { status: 200 });
+    }
+    if (url.endsWith('/api/flags/shadow/experimental_shot_quality')) {
+      return new Response(JSON.stringify({ default: false, shadowed: true, published: false }), { status: 200 });
+    }
+    if (url.endsWith('/api/training/pools')) {
+      return new Response(JSON.stringify({ pools: ['operational_corrections', 'training', 'development_validation', 'locked_evaluation'] }), { status: 200 });
+    }
     return new Response(JSON.stringify({ query: { unanswerable: true, reason: 'x', eventFamily: 'pass' }, results: [] }), { status: 200 });
   });
   vi.stubGlobal('fetch', fetchMock);
@@ -320,6 +329,9 @@ it('loads recovery and landmark preview from production routes and posts deletio
   expect(screen.getByText(/independent labels are not the same product/i)).toBeTruthy();
   expect(screen.getByText(/derived proxies retain the original source/i)).toBeTruthy();
   expect(screen.getByText(/edit lists render on demand/i)).toBeTruthy();
+  expect(await screen.findByText(/analyst workflow measures remain unmeasured/i)).toBeTruthy();
+  expect(screen.getByText(/experimental shot quality stays shadowed/i)).toBeTruthy();
+  expect(screen.getByText(/locked evaluation labels cannot enter training/i)).toBeTruthy();
   await fireEvent.click(screen.getByRole('button', { name: /request deletion/i }));
   const deletionCall = fetchMock.mock.calls.find(([url, init]) => String(url).endsWith('/api/access/deletion') && init?.method === 'POST');
   expect(deletionCall).toBeTruthy();

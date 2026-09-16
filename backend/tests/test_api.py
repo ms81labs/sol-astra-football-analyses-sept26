@@ -2015,3 +2015,120 @@ async def _test_production_proxy_edits_artifacts_tracklets_experiments_and_recov
         assert corrupted.json()["accepted"] is False
         assert "CORRUPTED_ARTIFACT" in corrupted.json()["reasonCodes"]
 
+
+def test_production_workflow_identity_sharing_training_cache_and_detector_surfaces(tmp_path: Path):
+    _run(_test_production_workflow_identity_sharing_training_cache_and_detector_surfaces, tmp_path)
+
+
+async def _test_production_workflow_identity_sharing_training_cache_and_detector_surfaces(tmp_path: Path):
+    async with api_client(tmp_path) as (_, client):
+        workflow = await client.get("/api/evaluation/workflow")
+        assert workflow.status_code == 200
+        assert workflow.json()["measured"] is False
+        assert workflow.json()["analystCompletedReviewedMatch"] is False
+        assert "ANALYST_ACCEPTANCE_MISSING" in workflow.json()["reasonCodes"]
+        injected_workflow = await client.post("/api/evaluation/workflow", json={"measured": True, "analystCompletedReviewedMatch": True})
+        assert injected_workflow.status_code == 200
+        assert injected_workflow.json()["measured"] is False
+
+        promoted = await client.post(
+            "/api/identity/promote",
+            json={"kind": "tracklet", "trackId": "t-4", "target": "roster_player", "reviewed": True, "rosterId": "shirt-9"},
+        )
+        assert promoted.status_code == 200
+        assert promoted.json()["kind"] == "tracklet"
+        assert promoted.json()["rosterId"] is None
+
+        cluster = await client.get("/api/identity/clusters/2")
+        assert cluster.status_code == 200
+        assert cluster.json()["suggestion"] is True
+        assert cluster.json()["semanticTeam"] is None
+        forced_cluster = await client.post("/api/identity/clusters/2", json={"selectedSemantic": "my_team", "suggestion": False})
+        assert forced_cluster.status_code == 200
+        assert forced_cluster.json()["suggestion"] is True
+        assert forced_cluster.json()["semanticTeam"] is None
+
+        pause = await client.post("/api/pause", json={"remaining": 0, "terminationAndRecovery": 100})
+        assert pause.status_code == 200
+        assert pause.json()["paused"] is False
+
+        quota = await client.post("/api/quota", json={"byteSize": 9_000_000_000, "durationSeconds": 9_000, "admitted": True})
+        assert quota.status_code == 200
+        assert quota.json()["admitted"] is False
+        assert "SIZE_QUOTA" in quota.json()["reasonCodes"]
+
+        worker = await client.post(
+            "/api/worker/import",
+            json={"path": "../secrets.env", "bytes": 12, "kind": "observations", "qualityAccepted": True, "jobSucceeded": True},
+        )
+        assert worker.status_code == 200
+        assert worker.json()["imported"] is False
+        assert worker.json()["productQualityPass"] is False
+        assert "PATH_TRAVERSAL" in worker.json()["reasonCodes"]
+
+        pools = await client.get("/api/training/pools")
+        assert pools.status_code == 200
+        assert "locked_evaluation" in pools.json()["pools"]
+        admitted = await client.post(
+            "/api/training/admit",
+            json={"id": "lab-1", "rights": "granted", "sourcePool": "locked_evaluation", "destination": "training"},
+        )
+        assert admitted.status_code == 200
+        assert admitted.json()["admitted"] is False
+        assert "LOCKED_EVALUATION_ISOLATION" in admitted.json()["reasonCodes"]
+
+        paths = await client.post("/api/research/paths", json={"paths": ["backend/app/main.py"], "allowed": True})
+        assert paths.status_code == 200
+        assert paths.json()["allowed"] is False
+
+        shadow = await client.get("/api/flags/shadow/experimental_shot_quality")
+        assert shadow.status_code == 200
+        assert shadow.json()["default"] is False
+        assert shadow.json()["shadowed"] is True
+        assert shadow.json()["published"] is False
+
+        display = await client.get("/api/quantities/display")
+        assert display.status_code == 200
+        assert display.json()["legacyDisplay"] == "transform_explicitly"
+        assert display.json()["transformedExplicitly"] is True
+
+        detector = await client.post(
+            "/api/detector",
+            json={"requestedBackend": "cuda", "videoEngineCapability": True, "colourOrder": "rgb"},
+        )
+        assert detector.status_code == 200
+        assert detector.json()["selectedBackend"] == "cpu"
+        assert detector.json()["exportFpsEqualsInferenceFps"] is False
+
+        tiles = await client.post(
+            "/api/perception/tiles",
+            json={"detections": [{"bbox": [10, 20, 30, 40], "score": 0.9, "tileId": "a"}], "origin": [100, 50], "scale": 2},
+        )
+        assert tiles.status_code == 200
+        assert tiles.json()["sourceCoordinates"] is True
+        assert tiles.json()["productQualityPass"] is False
+        assert tiles.json()["merged"][0]["bbox"] == [120.0, 90.0, 160.0, 130.0]
+
+        sharing = await client.post("/api/sharing", json={"objectId": "clip-1", "now": 100, "ttlSeconds": 10, "expired": False})
+        assert sharing.status_code == 200
+        assert sharing.json()["expiredAtNow"] is False
+        assert sharing.json()["expiredAtTtl"] is True
+        assert "expired" not in sharing.json() or not callable(sharing.json().get("expired"))
+
+        response = await _upload_tracking_match(client)
+        assert response.status_code == 202
+        match_id = response.json()["matchId"]
+
+        history = await client.get(f"/api/matches/{match_id}/history")
+        assert history.status_code == 200
+        assert history.json()["undoable"] is True
+        assert history.json()["rewrotePastOutcomes"] is False
+
+        cache = await client.post(
+            f"/api/matches/{match_id}/cache",
+            json={"namespace": "development", "decoderVersion": "other"},
+        )
+        assert cache.status_code == 200
+        assert cache.json()["namespace"] == "production"
+        assert cache.json()["compatibleWithDevelopment"] is False
+
