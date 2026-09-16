@@ -108,6 +108,24 @@ describe('StatsPanel', () => {
     expect(scoped.getAllByText('2 through balls, 0.54 experimental shot quality created')).toHaveLength(2);
   });
 
+  it('renders null player experimental shot quality as unavailable rather than a measured zero', () => {
+    const { container } = render(
+      <StatsPanel
+        stats={baseStats}
+        shotSummary={{ ...shotSummary, myTeamXg: null, enemyXg: null }}
+        playerProfiles={[{
+          ...sampleProfiles[0],
+          xgCreated: null,
+          xgTaken: null,
+          summaryLine: '2 through balls, experimental shot quality unavailable',
+        }]}
+      />,
+    );
+    const scoped = within(container);
+    expect(scoped.getAllByText(/experimental shot quality unavailable/).length).toBeGreaterThanOrEqual(1);
+    expect(scoped.queryByText(/0\.00 experimental shot quality/)).toBeNull();
+  });
+
   it('labels player shot quality as experimental instead of xGC/xGT', () => {
     const { container } = render(<StatsPanel stats={baseStats} shotSummary={shotSummary} playerProfiles={sampleProfiles} />);
     const scoped = within(container);

@@ -23,8 +23,8 @@ class _FocusPlayer(_ProviderPayload):
     label: str = ""
     summary: str = ""
     involvements: int = Field(default=0, ge=0)
-    xgCreated: float = Field(default=0, ge=0)
-    xgTaken: float = Field(default=0, ge=0)
+    xgCreated: float | None = Field(default=None, ge=0)
+    xgTaken: float | None = Field(default=None, ge=0)
     ballWins: int = Field(default=0, ge=0)
     actions: dict[str, int] = Field(default_factory=dict)
 
@@ -165,9 +165,11 @@ def _build_event_summary(events: list[DetectedEvent], shots: list[ShotAnalytics]
 
 
 def _select_player_label(player: dict) -> str:
-    if player["xgCreated"] >= 0.15 or player["actions"].get("through_ball", 0) > 0:
+    created = player.get("xgCreated")
+    taken = player.get("xgTaken")
+    if (created is not None and created >= 0.15) or player["actions"].get("through_ball", 0) > 0:
         return "Primary Creator"
-    if player["xgTaken"] >= 0.15 or player["actions"].get("shot", 0) > 0:
+    if (taken is not None and taken >= 0.15) or player["actions"].get("shot", 0) > 0:
         return "Shot Threat"
     if player["ballWins"] > 0:
         return "Ball Winner"
@@ -180,9 +182,19 @@ def _select_player_label(player: dict) -> str:
 
 def _build_player_summary(player: dict, label: str) -> str:
     if label == "Primary Creator":
-        return f"{_format_count(player['actions'].get('through_ball', 0), 'through ball')}, {player['xgCreated']:.2f} experimental shot quality created"
+        quality = (
+            "experimental shot quality unavailable"
+            if player["xgCreated"] is None
+            else f"{player['xgCreated']:.2f} experimental shot quality created"
+        )
+        return f"{_format_count(player['actions'].get('through_ball', 0), 'through ball')}, {quality}"
     if label == "Shot Threat":
-        return f"{_format_count(player['actions'].get('shot', 0), 'shot')}, {player['xgTaken']:.2f} experimental shot quality"
+        quality = (
+            "experimental shot quality unavailable"
+            if player["xgTaken"] is None
+            else f"{player['xgTaken']:.2f} experimental shot quality"
+        )
+        return f"{_format_count(player['actions'].get('shot', 0), 'shot')}, {quality}"
     if label == "Ball Winner":
         return f"{_format_count(player['ballWins'], 'ball win')}, {_format_count(player['actions'].get('interception', 0), 'interception')}"
     if label == "Wide Threat":
@@ -258,18 +270,22 @@ def _build_player_focus(events: list[DetectedEvent] | None, shots: list[ShotAnal
         player = ensure(shot.team, creator.fromTrackId)
         player["xgCreated"] = _round_two(player["xgCreated"] + shot.xg)
 
+    labelled_shots = bool(shots)
     ranked_players = []
     for player in players.values():
-        label = _select_player_label(player)
+        published_created = None if not labelled_shots else _round_two(player["xgCreated"])
+        published_taken = None if not labelled_shots else _round_two(player["xgTaken"])
+        published = {**player, "xgCreated": published_created, "xgTaken": published_taken}
+        label = _select_player_label(published)
         ranked_players.append(
             {
                 "trackId": player["trackId"],
                 "team": player["team"],
                 "label": label,
-                "summary": _build_player_summary(player, label),
+                "summary": _build_player_summary(published, label),
                 "involvements": player["involvements"],
-                "xgCreated": _round_two(player["xgCreated"]),
-                "xgTaken": _round_two(player["xgTaken"]),
+                "xgCreated": published_created,
+                "xgTaken": published_taken,
                 "ballWins": player["ballWins"],
                 "actions": dict(player["actions"]),
             }
@@ -281,8 +297,8 @@ def _build_player_focus(events: list[DetectedEvent] | None, shots: list[ShotAnal
     top_creator = next(
         iter(
             sorted(
-                [player for player in ranked_players if player["xgCreated"] > 0 or player["actions"].get("through_ball", 0) > 0],
-                key=lambda player: (-player["xgCreated"], -player["actions"].get("through_ball", 0), player["trackId"]),
+                [player for player in ranked_players if (player["xgCreated"] or 0) > 0 or player["actions"].get("through_ball", 0) > 0],
+                key=lambda player: (-(player["xgCreated"] or 0), -player["actions"].get("through_ball", 0), player["trackId"]),
             )
         ),
         None,
@@ -290,8 +306,8 @@ def _build_player_focus(events: list[DetectedEvent] | None, shots: list[ShotAnal
     top_finisher = next(
         iter(
             sorted(
-                [player for player in ranked_players if player["xgTaken"] > 0 or player["actions"].get("shot", 0) > 0],
-                key=lambda player: (-player["xgTaken"], -player["actions"].get("shot", 0), player["trackId"]),
+                [player for player in ranked_players if (player["xgTaken"] or 0) > 0 or player["actions"].get("shot", 0) > 0],
+                key=lambda player: (-(player["xgTaken"] or 0), -player["actions"].get("shot", 0), player["trackId"]),
             )
         ),
         None,
@@ -315,7 +331,7 @@ def _build_player_focus(events: list[DetectedEvent] | None, shots: list[ShotAnal
         player
         for player in sorted(
             ranked_players,
-            key=lambda item: (-item["involvements"], -(item["xgCreated"] + item["xgTaken"]), item["trackId"]),
+            key=lambda item: (-item["involvements"], -((item["xgCreated"] or 0) + (item["xgTaken"] or 0)), item["trackId"]),
         )
         if (player["team"], player["trackId"]) not in used_keys
     ][:3]

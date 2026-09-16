@@ -300,8 +300,8 @@ export interface PlayerContribution {
     interceptions: number;
     ballWins: number;
     involvements: number;
-    xgCreated: number;
-    xgTaken: number;
+    xgCreated: number | null;
+    xgTaken: number | null;
     impactScore: number;
 }
 

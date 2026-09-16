@@ -85,11 +85,11 @@ export default function StatsPanel({
 }: StatsPanelProps) {
     const [topCreator, topFinisher, topBallWinner] = useMemo(() => [
         [...playerProfiles]
-            .filter((player) => player.xgCreated > 0 || player.throughBalls > 0)
-            .sort((left, right) => right.xgCreated - left.xgCreated || right.throughBalls - left.throughBalls || left.playerId - right.playerId)[0],
+            .filter((player) => (player.xgCreated != null && player.xgCreated > 0) || player.throughBalls > 0)
+            .sort((left, right) => (right.xgCreated ?? 0) - (left.xgCreated ?? 0) || right.throughBalls - left.throughBalls || left.playerId - right.playerId)[0],
         [...playerProfiles]
-            .filter((player) => player.xgTaken > 0 || player.shots > 0)
-            .sort((left, right) => right.xgTaken - left.xgTaken || right.shots - left.shots || left.playerId - right.playerId)[0],
+            .filter((player) => (player.xgTaken != null && player.xgTaken > 0) || player.shots > 0)
+            .sort((left, right) => (right.xgTaken ?? 0) - (left.xgTaken ?? 0) || right.shots - left.shots || left.playerId - right.playerId)[0],
         [...playerProfiles]
             .filter((player) => player.ballWins > 0)
             .sort((left, right) => right.ballWins - left.ballWins || right.interceptions - left.interceptions || left.playerId - right.playerId)[0],
@@ -430,7 +430,7 @@ export default function StatsPanel({
                                     <span>{player.passes} passes, {player.crosses} crosses</span>
                                     <span>{player.throughBalls} through balls, {player.shots} shots</span>
                                     <span>{player.ballWins} ball wins, {player.interceptions} interceptions</span>
-                                    <span>{player.xgCreated.toFixed(2)} experimental shot quality created, {player.xgTaken.toFixed(2)} experimental shot quality taken</span>
+                                    <span>{player.xgCreated == null ? 'Unavailable' : `${player.xgCreated.toFixed(2)} experimental shot quality created`}, {player.xgTaken == null ? 'Unavailable' : `${player.xgTaken.toFixed(2)} experimental shot quality taken`}</span>
                                     <span>{player.involvements} involvements</span>
                                     <span>{player.physicalTotalsWithheld || player.totalDistance == null || player.topSpeed == null ? 'Physical totals withheld' : `${player.totalDistance} m, ${player.topSpeed} km/h`}</span>
                                 </div>

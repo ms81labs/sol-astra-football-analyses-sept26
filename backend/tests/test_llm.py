@@ -111,6 +111,21 @@ def test_match_signals_omit_unknown_ppda_and_label_experimental_shot_quality():
     assert "xG taken" not in line
 
 
+def test_player_focus_keeps_shot_quality_unknown_without_labelled_shots():
+    from backend.app.llm import _build_player_focus
+
+    events = [
+        DetectedEvent(type="shot", frameId=3, timestamp=0.6, team="my_team", fromTrackId=9, description="9 shot"),
+        DetectedEvent(type="pass", frameId=1, timestamp=0.2, team="my_team", fromTrackId=7, toTrackId=9, description="7 pass"),
+    ]
+    focus = _build_player_focus(events, shots=[])
+    finisher = focus["topFinisher"]
+    assert finisher["xgTaken"] is None
+    assert finisher["xgCreated"] is None
+    assert "unavailable" in finisher["summary"].lower()
+    assert "0.00" not in finisher["summary"]
+
+
 def test_drills_prompt_includes_player_focus_and_contextual_signals():
     summary = MatchSummary(
         possession=54,

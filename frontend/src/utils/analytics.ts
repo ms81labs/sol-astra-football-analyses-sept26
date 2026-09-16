@@ -211,8 +211,8 @@ function formatCount(count: number, singular: string, plural = `${singular}s`): 
 }
 
 function selectProfileLabel(player: PlayerContribution): string {
-    if (player.xgCreated >= 0.15 || player.throughBalls > 0) return 'Primary Creator';
-    if (player.xgTaken >= 0.15 || player.shots > 0) return 'Shot Threat';
+    if ((player.xgCreated != null && player.xgCreated >= 0.15) || player.throughBalls > 0) return 'Primary Creator';
+    if ((player.xgTaken != null && player.xgTaken >= 0.15) || player.shots > 0) return 'Shot Threat';
     if (player.ballWins > 0) return 'Ball Winner';
     if (player.crosses > 0) return 'Wide Threat';
     if (player.passes >= 3) return 'Connector';
@@ -221,10 +221,16 @@ function selectProfileLabel(player: PlayerContribution): string {
 
 function buildSummaryLine(player: PlayerContribution, profileLabel: string): string {
     if (profileLabel === 'Primary Creator') {
-        return `${formatCount(player.throughBalls, 'through ball')}, ${player.xgCreated.toFixed(2)} experimental shot quality created`;
+        const quality = player.xgCreated == null
+            ? 'experimental shot quality unavailable'
+            : `${player.xgCreated.toFixed(2)} experimental shot quality created`;
+        return `${formatCount(player.throughBalls, 'through ball')}, ${quality}`;
     }
     if (profileLabel === 'Shot Threat') {
-        return `${formatCount(player.shots, 'shot')}, ${player.xgTaken.toFixed(2)} experimental shot quality`;
+        const quality = player.xgTaken == null
+            ? 'experimental shot quality unavailable'
+            : `${player.xgTaken.toFixed(2)} experimental shot quality`;
+        return `${formatCount(player.shots, 'shot')}, ${quality}`;
     }
     if (profileLabel === 'Ball Winner') {
         return `${formatCount(player.ballWins, 'ball win')}, ${formatCount(player.interceptions, 'interception')}`;
@@ -292,7 +298,7 @@ export function buildPlayerContributions(events: BackendEvent[], shotMarkers: Sh
 
     for (const marker of shotMarkers) {
         const contribution = ensureContribution(marker.team, marker.playerId);
-        contribution.xgTaken = roundTwo(contribution.xgTaken + marker.xg);
+        contribution.xgTaken = roundTwo((contribution.xgTaken ?? 0) + marker.xg);
     }
 
     const creatorEvents = events
@@ -319,7 +325,7 @@ export function buildPlayerContributions(events: BackendEvent[], shotMarkers: Sh
 
         if (!creator || creator.fromTrackId == null || creator.fromTrackId === marker.playerId) continue;
         const contribution = ensureContribution(marker.team, creator.fromTrackId);
-        contribution.xgCreated = roundTwo(contribution.xgCreated + marker.xg);
+        contribution.xgCreated = roundTwo((contribution.xgCreated ?? 0) + marker.xg);
     }
 
     return Array.from(contributions.values())
@@ -334,12 +340,17 @@ export function buildPlayerContributions(events: BackendEvent[], shotMarkers: Sh
                 entry.recoveries +
                 entry.interceptions;
 
+            const labelledShots = shotMarkers.length > 0;
+            const xgCreated = labelledShots ? roundTwo(entry.xgCreated ?? 0) : null;
+            const xgTaken = labelledShots ? roundTwo(entry.xgTaken ?? 0) : null;
+            const xgImpact = labelledShots ? Math.round(((entry.xgTaken ?? 0) + (entry.xgCreated ?? 0)) * 10) : 0;
+
             return {
                 ...entry,
                 ballWins,
                 involvements,
-                xgCreated: roundTwo(entry.xgCreated),
-                xgTaken: roundTwo(entry.xgTaken),
+                xgCreated,
+                xgTaken,
                 impactScore:
                     entry.passes +
                     (entry.crosses * 2) +
@@ -348,14 +359,14 @@ export function buildPlayerContributions(events: BackendEvent[], shotMarkers: Sh
                     (entry.tacklesWon * 2) +
                     (entry.recoveries * 2) +
                     (entry.interceptions * 2) +
-                    Math.round((entry.xgTaken + entry.xgCreated) * 10),
+                    xgImpact,
             };
         })
         .filter((entry) => entry.impactScore > 0)
         .sort((left, right) => {
             if (right.impactScore !== left.impactScore) return right.impactScore - left.impactScore;
-            const rightXg = right.xgTaken + right.xgCreated;
-            const leftXg = left.xgTaken + left.xgCreated;
+            const rightXg = (right.xgTaken ?? 0) + (right.xgCreated ?? 0);
+            const leftXg = (left.xgTaken ?? 0) + (left.xgCreated ?? 0);
             if (rightXg !== leftXg) return rightXg - leftXg;
             if (right.throughBalls !== left.throughBalls) return right.throughBalls - left.throughBalls;
             if (right.shots !== left.shots) return right.shots - left.shots;
@@ -455,8 +466,8 @@ export function buildPlayerProfiles(
         })
         .sort((left, right) => {
             if (right.impactScore !== left.impactScore) return right.impactScore - left.impactScore;
-            const rightXg = right.xgTaken + right.xgCreated;
-            const leftXg = left.xgTaken + left.xgCreated;
+            const rightXg = (right.xgTaken ?? 0) + (right.xgCreated ?? 0);
+            const leftXg = (left.xgTaken ?? 0) + (left.xgCreated ?? 0);
             if (rightXg !== leftXg) return rightXg - leftXg;
             if (right.totalDistance != null && left.totalDistance != null && right.totalDistance !== left.totalDistance) return right.totalDistance - left.totalDistance;
             if (right.topSpeed != null && left.topSpeed != null && right.topSpeed !== left.topSpeed) return right.topSpeed - left.topSpeed;
