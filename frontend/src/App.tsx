@@ -31,7 +31,7 @@ import UploadCalibrationPanel from './components/UploadCalibrationPanel';
 import { useCoachAnalysis } from './hooks/useCoachAnalysis';
 import { useReviewSurface } from './features/review/useReviewSurface';
 import type { BackendEvent, CameraProfile, EventTag, FormationSegment, FrameData, MatchBenchmarkSummary, MatchRecord, MatchStats, ProcessingJob, RuntimeCapabilities, ShotMarker } from './types';
-import { buildPassingNetwork, buildPlayerProfiles, computeHeatmap, heatmapAvailability, physicalMetricAvailability, playerPhysicalTotalsAvailability, speedAvailability, computeSpeedsForFrame, summarizeShots } from './utils/analytics';
+import { buildPassingNetwork, buildPlayerProfiles, computeHeatmap, physicalMetricAvailability, playerPhysicalTotalsAvailability, speedAvailability, computeSpeedsForFrame, summarizeShots } from './utils/analytics';
 import {
   buildMatchVideoUrl,
   createMatchUpload,
@@ -47,7 +47,7 @@ import { buildUploadConfig, createEmptyPointInputs } from './utils/uploadConfig'
 import { getUploadFailureGuidance } from './utils/uploadErrors';
 import { findNearestFrameIndex } from './utils/videoSync';
 import { applyReviewShortcut, type ReviewAction } from './utils/reviewShortcuts';
-import { fetchAssistance, fetchIncidentReview, fetchMatchFormation, fetchNative, fetchNativeMemory, fetchQualityTimeline, fetchRecovery, fetchSecurity, fetchWorkbenchDossier, requestAccessDeletion, submitMatchCorrection, undoMatchCorrection, type FormationAvailability } from './utils/workbench';
+import { fetchAssistance, fetchHeatmap, fetchIncidentReview, fetchMatchFormation, fetchNative, fetchNativeMemory, fetchQualityTimeline, fetchRecovery, fetchSecurity, fetchWorkbenchDossier, requestAccessDeletion, submitMatchCorrection, undoMatchCorrection, type FormationAvailability } from './utils/workbench';
 import { windowedTimelineProps } from './utils/windowedTimeline';
 import { splitScores } from './utils/quantities';
 
@@ -148,6 +148,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
   const [showNetwork, setShowNetwork] = useState(false);
   const [showShots, setShowShots] = useState(false);
   const [showHeatmap, setShowHeatmap] = useState(false);
+  const [heatmapAvail, setHeatmapAvail] = useState({ wholeMatch: false, intervalLimited: true, withheld: true });
   const [selectedPlayer, setSelectedPlayer] = useState<import('./types').PlayerProfile | null>(null);
   const [showIssuePanel, setShowIssuePanel] = useState(false);
   const [showDashboard, setShowDashboard] = useState(false);
@@ -195,6 +196,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
       setStoredIncident(null);
       setQualityItems([]);
       setFormationAvailability(null);
+      setHeatmapAvail({ wholeMatch: false, intervalLimited: true, withheld: true });
       return;
     }
     let cancelled = false;
@@ -226,6 +228,18 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
       })
       .catch(() => {
         if (!cancelled) setFormationAvailability(null);
+      });
+    fetchHeatmap()
+      .then((payload) => {
+        if (cancelled) return;
+        setHeatmapAvail({
+          wholeMatch: payload.wholeMatch === true,
+          intervalLimited: payload.intervalLimited !== false,
+          withheld: payload.withheld !== false,
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setHeatmapAvail({ wholeMatch: false, intervalLimited: true, withheld: true });
       });
     return () => {
       cancelled = true;
@@ -454,7 +468,6 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
     return () => window.removeEventListener('add-event', handler);
   }, [handleAddEvent]);
 
-  const heatmapAvail = heatmapAvailability(false);
   const speedAvail = speedAvailability(false);
   const playerTotalsAvail = playerPhysicalTotalsAvailability(false);
   const heatmapData = useMemo(() => {

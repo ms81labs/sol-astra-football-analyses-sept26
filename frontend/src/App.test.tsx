@@ -218,6 +218,40 @@ describe('App match workspace loading', () => {
     expect(zones.getAttribute('aria-pressed')).toBe('true');
   });
 
+  it('loads heatmap availability from production HTTP and ignores claimed identity continuity', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      void init;
+      const url = String(input);
+      if (url.includes('/api/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/api/heatmap'))).toBe(true);
+    });
+    const heatmapCall = fetchMock.mock.calls.find(([input]) => String(input).includes('/api/heatmap'));
+    expect(heatmapCall?.[1]?.method).toBe('POST');
+    expect(heatmapCall?.[1]?.body).toContain('identityContinuous');
+    expect(screen.getByText(/whole-match heatmap withheld until identity continuity/i)).toBeTruthy();
+  });
+
   it('loads a selected match once and does not reload the active match', async () => {
     stubPitchCanvas();
     const listedMatches = [readyMatch('match-a', 'Match A'), readyMatch('match-b', 'Match B')];
