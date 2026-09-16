@@ -111,15 +111,16 @@ def _detect_themes_from_summary(summary: dict) -> list[tuple[str, float]]:
         summary_text_parts.append("low press passive press ppda")
     
     # Defensive line height
-    def_line = summary.get("myTeamDefensiveLineHeight", 50)
-    if def_line > 60:
+    def_line = summary.get("myTeamDefensiveLineHeight")
+    if def_line is not None and def_line > 60:
         summary_text_parts.append("high defensive line high block")
-    elif def_line < 40:
+    elif def_line is not None and def_line < 40:
         summary_text_parts.append("low defensive line deep defense low block")
     
     # Block height
-    block_height = summary.get("myTeamBlockHeight", "mid_block")
-    summary_text_parts.append(block_height.replace("_", " "))
+    block_height = summary.get("myTeamBlockHeight")
+    if block_height:
+        summary_text_parts.append(block_height.replace("_", " "))
     
     # Regain zones
     regain_zones = summary.get("myTeamRegainZones", {})
@@ -257,7 +258,7 @@ def _generate_match_summary_text(summary: dict, matched_themes: list[str]) -> st
     elif possession is not None and possession < 35:
         parts.append(f"Low possession ({possession}%)")
     
-    block = summary.get("myTeamBlockHeight", "mid_block")
+    block = summary.get("myTeamBlockHeight")
     if block:
         parts.append(f"{block.replace('_', ' ')}")
     

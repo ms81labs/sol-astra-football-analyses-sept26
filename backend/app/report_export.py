@@ -22,6 +22,24 @@ def _format_number(value: float | int | None, digits: int = 1) -> str:
     return f"{value:.{digits}f}"
 
 
+def _format_measured(value: float | int | None, digits: int = 1) -> str:
+    if value is None:
+        return "Unavailable"
+    return _format_number(value, digits)
+
+
+def _format_duration_seconds(value: float | int | None) -> str:
+    if value is None:
+        return "Unavailable"
+    return f"{_format_number(value, 1)}s"
+
+
+def _format_named_shape(value: str | None) -> str:
+    if not value:
+        return "Unavailable"
+    return value.replace("_", " ").title()
+
+
 def _availability_lookup(summary: dict, metric: str) -> dict | None:
     for item in summary.get("metricAvailability") or []:
         if item.get("metric") == metric:
@@ -226,20 +244,20 @@ def render_match_report_html(
           {_render_kv_card("Formation", str(summary.get("formation", "-")))}
           {_render_kv_card("My Team PPDA", _format_available_metric(summary, "my_team_ppda", "myTeamPpda", 1))}
           {_render_kv_card("Enemy PPDA", _format_available_metric(summary, "enemy_ppda", "enemyPpda", 1))}
-          {_render_kv_card("My Team Defensive Line", _format_number(summary.get("myTeamDefensiveLineHeight"), 1))}
-          {_render_kv_card("Enemy Defensive Line", _format_number(summary.get("enemyDefensiveLineHeight"), 1))}
+          {_render_kv_card("My Team Defensive Line", _format_measured(summary.get("myTeamDefensiveLineHeight"), 1))}
+          {_render_kv_card("Enemy Defensive Line", _format_measured(summary.get("enemyDefensiveLineHeight"), 1))}
           {_render_kv_card("My Team High Press Regains", _format_number(summary.get("myTeamHighPressRegains"), 0))}
           {_render_kv_card("Enemy High Press Regains", _format_number(summary.get("enemyHighPressRegains"), 0))}
-          {_render_kv_card("My Team Counterpress Recovery", _format_number(summary.get("myTeamCounterpressRecoverySeconds"), 1) + "s")}
-          {_render_kv_card("Enemy Counterpress Recovery", _format_number(summary.get("enemyCounterpressRecoverySeconds"), 1) + "s")}
+          {_render_kv_card("My Team Counterpress Recovery", _format_duration_seconds(summary.get("myTeamCounterpressRecoverySeconds")))}
+          {_render_kv_card("Enemy Counterpress Recovery", _format_duration_seconds(summary.get("enemyCounterpressRecoverySeconds")))}
         </div>
       </section>
 
       <section>
         <h2>Defensive Context</h2>
         <div class="grid-3">
-          {_render_kv_card("My Team Block Height", str(summary.get("myTeamBlockHeight", "mid_block").replace("_", " ").title()))}
-          {_render_kv_card("Enemy Block Height", str(summary.get("enemyBlockHeight", "mid_block").replace("_", " ").title()))}
+          {_render_kv_card("My Team Block Height", _format_named_shape(summary.get("myTeamBlockHeight")))}
+          {_render_kv_card("Enemy Block Height", _format_named_shape(summary.get("enemyBlockHeight")))}
           {_render_kv_card("My Team Transition Exposure", _format_number(summary.get("myTeamTransitionExposure"), 2))}
           {_render_kv_card("Enemy Transition Exposure", _format_number(summary.get("enemyTransitionExposure"), 2))}
         </div>

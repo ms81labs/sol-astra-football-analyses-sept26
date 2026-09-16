@@ -127,20 +127,20 @@ class MatchSummary(BaseModel):
     enemySprints: int | None
     myTeamXg: float = 0.0
     enemyXg: float = 0.0
-    myTeamDefensiveLineHeight: float = 0.0
-    enemyDefensiveLineHeight: float = 0.0
-    myTeamDefensiveTeamLength: float = 0.0
-    enemyDefensiveTeamLength: float = 0.0
+    myTeamDefensiveLineHeight: float | None = None
+    enemyDefensiveLineHeight: float | None = None
+    myTeamDefensiveTeamLength: float | None = None
+    enemyDefensiveTeamLength: float | None = None
     myTeamPpda: float | None = None
     enemyPpda: float | None = None
     myTeamHighPressRegains: int = 0
     enemyHighPressRegains: int = 0
-    myTeamCounterpressRecoverySeconds: float = 0.0
-    enemyCounterpressRecoverySeconds: float = 0.0
+    myTeamCounterpressRecoverySeconds: float | None = None
+    enemyCounterpressRecoverySeconds: float | None = None
     formation: str
     # Defensive context metrics
-    myTeamBlockHeight: str = "mid_block"
-    enemyBlockHeight: str = "mid_block"
+    myTeamBlockHeight: str | None = None
+    enemyBlockHeight: str | None = None
     myTeamRegainZones: dict[str, int] = Field(default_factory=lambda: {"defensive_third": 0, "middle_third": 0, "attacking_third": 0})
     enemyRegainZones: dict[str, int] = Field(default_factory=lambda: {"defensive_third": 0, "middle_third": 0, "attacking_third": 0})
     myTeamTransitionExposure: float = 0.0

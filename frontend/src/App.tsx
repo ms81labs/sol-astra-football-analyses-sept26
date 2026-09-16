@@ -85,16 +85,16 @@ function emptyStats(): MatchStats {
     enemySprints: null,
     myTeamXg: 0,
     enemyXg: 0,
-    myTeamDefensiveLineHeight: 0,
-    enemyDefensiveLineHeight: 0,
-    myTeamDefensiveTeamLength: 0,
-    enemyDefensiveTeamLength: 0,
+    myTeamDefensiveLineHeight: null,
+    enemyDefensiveLineHeight: null,
+    myTeamDefensiveTeamLength: null,
+    enemyDefensiveTeamLength: null,
     myTeamPpda: null,
     enemyPpda: null,
     myTeamHighPressRegains: 0,
     enemyHighPressRegains: 0,
-    myTeamCounterpressRecoverySeconds: 0,
-    enemyCounterpressRecoverySeconds: 0,
+    myTeamCounterpressRecoverySeconds: null,
+    enemyCounterpressRecoverySeconds: null,
     formation: '-',
   };
 }
@@ -149,6 +149,9 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
   const [showShots, setShowShots] = useState(false);
   const [showHeatmap, setShowHeatmap] = useState(false);
   const [heatmapAvail, setHeatmapAvail] = useState({ wholeMatch: false, intervalLimited: true, withheld: true });
+  const [speedAvail, setSpeedAvail] = useState({ wholeMatch: false, intervalLimited: true, withheld: true });
+  const [playerTotalsAvail, setPlayerTotalsAvail] = useState({ wholeMatch: false, intervalLimited: true, withheld: true });
+  const [identityContinuous, setIdentityContinuous] = useState(false);
   const [selectedPlayer, setSelectedPlayer] = useState<import('./types').PlayerProfile | null>(null);
   const [showIssuePanel, setShowIssuePanel] = useState(false);
   const [showDashboard, setShowDashboard] = useState(false);
@@ -197,6 +200,9 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
       setQualityItems([]);
       setFormationAvailability(null);
       setHeatmapAvail({ wholeMatch: false, intervalLimited: true, withheld: true });
+      setSpeedAvail({ wholeMatch: false, intervalLimited: true, withheld: true });
+      setPlayerTotalsAvail({ wholeMatch: false, intervalLimited: true, withheld: true });
+      setIdentityContinuous(false);
       return;
     }
     let cancelled = false;
@@ -232,14 +238,23 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
     fetchHeatmap()
       .then((payload) => {
         if (cancelled) return;
+        const identity = payload.identityContinuous === true;
+        setIdentityContinuous(identity);
         setHeatmapAvail({
           wholeMatch: payload.wholeMatch === true,
           intervalLimited: payload.intervalLimited !== false,
           withheld: payload.withheld !== false,
         });
+        setSpeedAvail(speedAvailability(identity));
+        setPlayerTotalsAvail(playerPhysicalTotalsAvailability(identity));
       })
       .catch(() => {
-        if (!cancelled) setHeatmapAvail({ wholeMatch: false, intervalLimited: true, withheld: true });
+        if (!cancelled) {
+          setIdentityContinuous(false);
+          setHeatmapAvail({ wholeMatch: false, intervalLimited: true, withheld: true });
+          setSpeedAvail({ wholeMatch: false, intervalLimited: true, withheld: true });
+          setPlayerTotalsAvail({ wholeMatch: false, intervalLimited: true, withheld: true });
+        }
       });
     return () => {
       cancelled = true;
@@ -468,8 +483,6 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
     return () => window.removeEventListener('add-event', handler);
   }, [handleAddEvent]);
 
-  const speedAvail = speedAvailability(false);
-  const playerTotalsAvail = playerPhysicalTotalsAvailability(false);
   const heatmapData = useMemo(() => {
     if (matchData.length === 0 || heatmapAvail.withheld) return null;
     return computeHeatmap(matchData, 'my_team');
@@ -488,8 +501,8 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
 
   const playerProfiles = useMemo(() => {
     if (!activeMatch) return [];
-    return buildPlayerProfiles(activeMatch.data, activeMatch.backendEvents, shotMarkers, false);
-  }, [activeMatch, shotMarkers]);
+    return buildPlayerProfiles(activeMatch.data, activeMatch.backendEvents, shotMarkers, identityContinuous);
+  }, [activeMatch, identityContinuous, shotMarkers]);
 
   const speedData = useMemo(() => {
     if (matchData.length === 0 || speedAvail.withheld) return null;

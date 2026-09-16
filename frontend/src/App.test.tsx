@@ -86,16 +86,16 @@ const reviewStats: MatchStats = {
   enemySprints: null,
   myTeamXg: 0,
   enemyXg: 0,
-  myTeamDefensiveLineHeight: 0,
-  enemyDefensiveLineHeight: 0,
-  myTeamDefensiveTeamLength: 0,
-  enemyDefensiveTeamLength: 0,
+  myTeamDefensiveLineHeight: null,
+  enemyDefensiveLineHeight: null,
+  myTeamDefensiveTeamLength: null,
+  enemyDefensiveTeamLength: null,
   myTeamPpda: null,
   enemyPpda: null,
   myTeamHighPressRegains: 0,
   enemyHighPressRegains: 0,
-  myTeamCounterpressRecoverySeconds: 0,
-  enemyCounterpressRecoverySeconds: 0,
+  myTeamCounterpressRecoverySeconds: null,
+  enemyCounterpressRecoverySeconds: null,
   formation: '-',
 };
 
@@ -250,6 +250,37 @@ describe('App match workspace loading', () => {
     expect(heatmapCall?.[1]?.method).toBe('POST');
     expect(heatmapCall?.[1]?.body).toContain('identityContinuous');
     expect(screen.getByText(/whole-match heatmap withheld until identity continuity/i)).toBeTruthy();
+  });
+
+  it('derives speed and player-total overlays from production identity continuity', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo, init?: RequestInit) => {
+      void init;
+      const url = String(input);
+      if (url.includes('/api/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: true,
+            wholeMatch: true,
+            intervalLimited: false,
+            withheld: false,
+            reasonCodes: [],
+          }),
+        } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    }));
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => {
+      expect(screen.queryByText(/whole-match heatmap withheld until identity continuity/i)).toBeNull();
+    });
+    expect(screen.queryByText(/derived speeds withheld until identity continuity/i)).toBeNull();
+    expect(screen.queryByText(/player physical totals withheld until identity continuity/i)).toBeNull();
   });
 
   it('loads a selected match once and does not reload the active match', async () => {

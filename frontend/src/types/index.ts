@@ -98,16 +98,16 @@ export interface MatchStats {
     enemySprints: number | null;
     myTeamXg: number;
     enemyXg: number;
-    myTeamDefensiveLineHeight: number;
-    enemyDefensiveLineHeight: number;
-    myTeamDefensiveTeamLength: number;
-    enemyDefensiveTeamLength: number;
+    myTeamDefensiveLineHeight: number | null;
+    enemyDefensiveLineHeight: number | null;
+    myTeamDefensiveTeamLength: number | null;
+    enemyDefensiveTeamLength: number | null;
     myTeamPpda: number | null;
     enemyPpda: number | null;
     myTeamHighPressRegains: number;
     enemyHighPressRegains: number;
-    myTeamCounterpressRecoverySeconds: number;
-    enemyCounterpressRecoverySeconds: number;
+    myTeamCounterpressRecoverySeconds: number | null;
+    enemyCounterpressRecoverySeconds: number | null;
     formation: string;         // e.g. "4-4-2"
     metricAvailability?: Array<{
         metric: string;

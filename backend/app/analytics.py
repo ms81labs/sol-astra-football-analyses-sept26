@@ -236,7 +236,7 @@ def _estimate_shot_xg(team: str, position: tuple[float, float]) -> tuple[float, 
 def _summarize_defensive_shape(
     frames: list[FrameData],
     assignments: list[BallOwnership],
-) -> tuple[float, float, float, float]:
+) -> tuple[float | None, float | None, float | None, float | None]:
     accumulators = {
         "my_team": {"line_height": 0.0, "team_length": 0.0, "count": 0},
         "enemy": {"line_height": 0.0, "team_length": 0.0, "count": 0},
@@ -266,10 +266,10 @@ def _summarize_defensive_shape(
         accumulators[defending_team]["team_length"] += team_length
         accumulators[defending_team]["count"] += 1
 
-    def average(team: str, metric: str) -> float:
+    def average(team: str, metric: str) -> float | None:
         count = accumulators[team]["count"]
         if count == 0:
-            return 0.0
+            return None
         return round(accumulators[team][metric] / count, 1)
 
     return (
@@ -289,7 +289,7 @@ def _is_pressing_zone(team: str, x: float) -> bool:
 def _summarize_pressing_metrics(
     frames: list[FrameData],
     events: list[DetectedEvent],
-) -> tuple[float | None, float | None, int, int, float, float]:
+) -> tuple[float | None, float | None, int, int, float | None, float | None]:
     frame_by_id = {frame.frameId: frame for frame in frames}
     regain_types = {"turnover", "recovery", "tackle"}
     teams = ("my_team", "enemy")
@@ -351,10 +351,10 @@ def _summarize_pressing_metrics(
             counterpress_samples[losing_team].append(round(follow_up.timestamp - event.timestamp, 1))
             break
 
-    def average_recovery(team: str) -> float:
+    def average_recovery(team: str) -> float | None:
         samples = counterpress_samples[team]
         if not samples:
-            return 0.0
+            return None
         return round(sum(samples) / len(samples), 1)
 
     return (
@@ -406,13 +406,13 @@ def _summarize_defensive_context(
     frames: list[FrameData],
     assignments: list[BallOwnership],
     events: list[DetectedEvent],
-    my_team_defensive_line_height: float,
-    enemy_defensive_line_height: float,
-) -> tuple[str, str, dict[str, int], dict[str, int], float, float]:
+    my_team_defensive_line_height: float | None,
+    enemy_defensive_line_height: float | None,
+) -> tuple[str | None, str | None, dict[str, int], dict[str, int], float, float]:
     """Compute block height classification, regain zones, and transition exposure."""
     # Block height classification
-    my_team_block_height = _classify_block_height(my_team_defensive_line_height)
-    enemy_block_height = _classify_block_height(enemy_defensive_line_height)
+    my_team_block_height = None if my_team_defensive_line_height is None else _classify_block_height(my_team_defensive_line_height)
+    enemy_block_height = None if enemy_defensive_line_height is None else _classify_block_height(enemy_defensive_line_height)
     
     # Regain zones - count recoveries by pitch third
     my_team_regain_zones = {"defensive_third": 0, "middle_third": 0, "attacking_third": 0}

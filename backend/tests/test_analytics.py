@@ -1645,7 +1645,7 @@ def test_summarize_match_tracks_pressing_metrics_from_events_and_quick_regains()
     summary = summarize_match(frames, assignments, events=events)
 
     assert summary.myTeamPpda == 1.0
-    assert summary.enemyPpda == 0.0
+    assert summary.enemyPpda is None
     assert summary.myTeamHighPressRegains == 2
     assert summary.enemyHighPressRegains == 0
     assert summary.myTeamCounterpressRecoverySeconds == 0.4
@@ -1781,6 +1781,14 @@ def test_summarize_match_marks_ppda_unknown_when_pressing_denominator_is_zero():
     assert enemy_ppda.availability == "unknown"
     assert summary.myTeamPpda is None
     assert summary.enemyPpda is None
+    assert summary.myTeamCounterpressRecoverySeconds is None
+    assert summary.enemyCounterpressRecoverySeconds is None
+    assert summary.myTeamDefensiveLineHeight is None
+    assert summary.enemyDefensiveLineHeight is None
+    assert summary.myTeamDefensiveTeamLength is None
+    assert summary.enemyDefensiveTeamLength is None
+    assert summary.myTeamBlockHeight is None
+    assert summary.enemyBlockHeight is None
     shot_quality = _metric(summary, "experimental_shot_quality")
     assert shot_quality.availability == "experimental"
     assert shot_quality.publishedLabel == "experimental_shot_quality"

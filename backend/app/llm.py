@@ -352,7 +352,11 @@ def _build_match_signals(summary: MatchSummary | None, formation_timeline: list[
         "xgBalance": _round_two(summary.myTeamXg - summary.enemyXg),
         "pressingEdge": pressing_edge,
         "shotQualityLabel": "experimental_shot_quality",
-        "defensiveLineEdge": _round_two(summary.myTeamDefensiveLineHeight - summary.enemyDefensiveLineHeight),
+        "defensiveLineEdge": (
+            None
+            if summary.myTeamDefensiveLineHeight is None or summary.enemyDefensiveLineHeight is None
+            else _round_two(summary.myTeamDefensiveLineHeight - summary.enemyDefensiveLineHeight)
+        ),
         "recentFormations": [
             {
                 "formation": segment.formation,

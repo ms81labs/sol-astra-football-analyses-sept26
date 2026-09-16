@@ -271,11 +271,11 @@ export default function StatsPanel({
                                 <div className="grid grid-cols-2 gap-3 text-xs">
                                     <div>
                                         <p className="text-slate-500">Line Height</p>
-                                        <p className="text-emerald-400 font-mono font-semibold">{stats.myTeamDefensiveLineHeight}</p>
+                                        <p className="text-emerald-400 font-mono font-semibold">{stats.myTeamDefensiveLineHeight == null ? 'Unavailable' : stats.myTeamDefensiveLineHeight}</p>
                                     </div>
                                     <div>
                                         <p className="text-slate-500">Team Length</p>
-                                        <p className="text-slate-300 font-mono font-semibold">{stats.myTeamDefensiveTeamLength}</p>
+                                        <p className="text-slate-300 font-mono font-semibold">{stats.myTeamDefensiveTeamLength == null ? 'Unavailable' : stats.myTeamDefensiveTeamLength}</p>
                                     </div>
                                 </div>
                             </div>
@@ -288,11 +288,11 @@ export default function StatsPanel({
                                 <div className="grid grid-cols-2 gap-3 text-xs">
                                     <div>
                                         <p className="text-slate-500">Line Height</p>
-                                        <p className="text-emerald-400 font-mono font-semibold">{stats.enemyDefensiveLineHeight}</p>
+                                        <p className="text-emerald-400 font-mono font-semibold">{stats.enemyDefensiveLineHeight == null ? 'Unavailable' : stats.enemyDefensiveLineHeight}</p>
                                     </div>
                                     <div>
                                         <p className="text-slate-500">Team Length</p>
-                                        <p className="text-slate-300 font-mono font-semibold">{stats.enemyDefensiveTeamLength}</p>
+                                        <p className="text-slate-300 font-mono font-semibold">{stats.enemyDefensiveTeamLength == null ? 'Unavailable' : stats.enemyDefensiveTeamLength}</p>
                                     </div>
                                 </div>
                             </div>
@@ -318,7 +318,7 @@ export default function StatsPanel({
                                     </div>
                                     <div>
                                         <p className="text-slate-500">Counterpress</p>
-                                        <p className="text-slate-300 font-mono font-semibold">{stats.myTeamCounterpressRecoverySeconds}s</p>
+                                        <p className="text-slate-300 font-mono font-semibold">{stats.myTeamCounterpressRecoverySeconds == null ? 'Unavailable' : `${stats.myTeamCounterpressRecoverySeconds}s`}</p>
                                     </div>
                                 </div>
                             </div>
@@ -339,7 +339,7 @@ export default function StatsPanel({
                                     </div>
                                     <div>
                                         <p className="text-slate-500">Counterpress</p>
-                                        <p className="text-slate-300 font-mono font-semibold">{stats.enemyCounterpressRecoverySeconds}s</p>
+                                        <p className="text-slate-300 font-mono font-semibold">{stats.enemyCounterpressRecoverySeconds == null ? 'Unavailable' : `${stats.enemyCounterpressRecoverySeconds}s`}</p>
                                     </div>
                                 </div>
                             </div>
