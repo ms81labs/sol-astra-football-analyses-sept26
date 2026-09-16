@@ -51,7 +51,7 @@ import { buildUploadConfig, createEmptyPointInputs } from './utils/uploadConfig'
 import { getUploadFailureGuidance } from './utils/uploadErrors';
 import { findNearestFrameIndex } from './utils/videoSync';
 import { applyReviewShortcut, type ReviewAction } from './utils/reviewShortcuts';
-import { fetchAssistance, fetchHeatmap, fetchIncidentReview, fetchMatchFormation, fetchNative, fetchNativeMemory, fetchQualityTimeline, fetchRecovery, fetchSecurity, fetchWorkbenchDossier, promoteMatchIdentity, repairMatchIdentity, requestAccessDeletion, submitMatchCorrection, undoMatchCorrection, type FormationAvailability } from './utils/workbench';
+import { fetchAssistance, fetchHeatmap, fetchIncidentReview, fetchMatchFormation, fetchNative, fetchNativeMemory, fetchPendingCorrections, fetchQualityTimeline, fetchRecovery, fetchSecurity, fetchWorkbenchDossier, promoteMatchIdentity, recoverMatchCorrection, repairMatchIdentity, requestAccessDeletion, submitMatchCorrection, undoMatchCorrection, type FormationAvailability } from './utils/workbench';
 import { windowedTimelineProps } from './utils/windowedTimeline';
 import { splitScores } from './utils/quantities';
 
@@ -207,6 +207,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
       setSpeedAvail({ wholeMatch: false, intervalLimited: true, withheld: true });
       setPlayerTotalsAvail({ wholeMatch: false, intervalLimited: true, withheld: true });
       setIdentityContinuous(false);
+      setPendingCorrection(null);
       return;
     }
     let cancelled = false;
@@ -259,6 +260,18 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           setSpeedAvail({ wholeMatch: false, intervalLimited: true, withheld: true });
           setPlayerTotalsAvail({ wholeMatch: false, intervalLimited: true, withheld: true });
         }
+      });
+    fetchPendingCorrections(activeMatch.id)
+      .then((payload) => {
+        if (cancelled) return;
+        const pending = payload.items.find((item) => item.saveState === 'pending') ?? payload.items[0] ?? null;
+        setPendingCorrection(pending);
+        if (pending) {
+          setCorrectionSaveState('pending');
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setPendingCorrection(null);
       });
     return () => {
       cancelled = true;
@@ -349,6 +362,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
   );
   const [correctionSaveState, setCorrectionSaveState] = useState<'saved' | 'pending' | 'conflicted' | 'unavailable' | null>(null);
   const [correctionHistory, setCorrectionHistory] = useState<Array<{ correctionId: string; kind: string; saveState: string; undoOf?: string | null }>>([]);
+  const [pendingCorrection, setPendingCorrection] = useState<{ correctionId: string; kind: string; saveState: string } | null>(null);
   const [storedIncident, setStoredIncident] = useState<{
     touchStart: number;
     touchEnd: number;
@@ -697,6 +711,40 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
     },
     [beginLoadingOperation, finishLoadingOperation, resetCoachAnalysis],
   );
+
+  const handleRecoverPendingCorrection = useCallback(() => {
+    if (!activeMatch || !pendingCorrection) return;
+    const matchId = activeMatch.id;
+    const frames = activeMatch.data;
+    const pending = pendingCorrection;
+    setCorrectionSaveState('pending');
+    void recoverMatchCorrection(matchId, pending.correctionId)
+      .then(async (saved) => {
+        setPendingCorrection(null);
+        setCorrectionSaveState(saved.saveState === 'saved' ? 'saved' : 'pending');
+        setCorrectionHistory((previous) => {
+          const next = [
+            ...previous,
+            {
+              correctionId: saved.correctionId,
+              kind: pending.kind,
+              saveState: saved.saveState,
+              undoOf: null,
+            },
+          ];
+          correctionHistoryRef.current = next;
+          return next;
+        });
+        if (pending.kind === 'event_accept' || pending.kind === 'event_reject') {
+          await applyStoredMatchEvents(matchId, frames);
+          return;
+        }
+        await loadWorkspaceIntoState(matchId, { prepend: true, force: true });
+      })
+      .catch(() => {
+        setCorrectionSaveState('unavailable');
+      });
+  }, [activeMatch, applyStoredMatchEvents, loadWorkspaceIntoState, pendingCorrection]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1463,6 +1511,18 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
               onShortcut={handleReviewShortcut}
               saveState={correctionSaveState}
             />
+            {pendingCorrection && (
+              <div className="mt-2 rounded-lg border border-amber-700/50 bg-amber-950/30 p-3 space-y-2">
+                <p className="text-xs text-amber-200">Pending correction ({pendingCorrection.kind})</p>
+                <button
+                  type="button"
+                  onClick={handleRecoverPendingCorrection}
+                  className="px-3 py-1.5 rounded bg-amber-700 text-xs font-semibold text-white"
+                >
+                  Recover pending correction
+                </button>
+              </div>
+            )}
           </div>
           <div className="mb-3 shrink-0">
             <ChangeHistory
