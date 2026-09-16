@@ -59,6 +59,51 @@ def cuda_visibility_is_not_video_capability(*, cuda_visible: bool) -> dict[str, 
     }
 
 
+def pinned_native_artifacts() -> dict[str, Any]:
+    return {
+        "universallyPortable": False,
+        "admitted": False,
+        "acceleratorEnginesQualified": False,
+        "reasonCodes": ["NATIVE_WHEELS_NOT_UNIVERSALLY_PORTABLE"],
+    }
+
+
+def qualified_os_profiles(*, profile: str) -> dict[str, Any]:
+    del profile
+    return {
+        "independentlyTested": False,
+        "admitted": False,
+        "supportedProfiles": ["macos", "ubuntu"],
+        "reasonCodes": ["OS_PROFILE_UNTESTED"],
+    }
+
+
+def ffmpeg_build_review() -> dict[str, Any]:
+    return {
+        "exactConfigurationReviewed": False,
+        "wrapperRemovesLicenceObligations": False,
+        "codecNoticesRequired": True,
+        "reasonCodes": ["FFMPEG_BUILD_UNREVIEWED"],
+    }
+
+
+def no_rpc_fleet() -> dict[str, Any]:
+    return {
+        "enabled": False,
+        "movesFullResolutionFrames": False,
+        "admitted": False,
+    }
+
+
+def custom_native_justification(*, measured_savings: bool, required_capability: bool) -> dict[str, Any]:
+    approved = bool(measured_savings or required_capability)
+    return {
+        "approved": approved,
+        "pythonPlusDependenciesAcceptable": True,
+        "reasonCodes": [] if approved else ["CUSTOM_NATIVE_UNJUSTIFIED"],
+    }
+
+
 def native_gate(*, repo_root: Path, approval_env: dict[str, str] | None = None) -> NativeGate:
     env = approval_env if approval_env is not None else {}
     native_dir = repo_root / DEFAULT_NATIVE_DIR

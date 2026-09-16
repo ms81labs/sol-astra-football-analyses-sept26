@@ -2512,3 +2512,36 @@ def test_network_allowlist_constrained_decoder_and_egress_stay_fail_closed() -> 
     assert loopback_ok["admitted"] is True
     assert loopback_ok["publicExposureAllowed"] is False
 
+
+def test_native_wheels_os_profiles_and_ffmpeg_builds_stay_unportable() -> None:
+    from backend.app.workbench.native import (
+        custom_native_justification,
+        ffmpeg_build_review,
+        no_rpc_fleet,
+        pinned_native_artifacts,
+        qualified_os_profiles,
+    )
+
+    wheels = pinned_native_artifacts()
+    assert wheels["universallyPortable"] is False
+    assert wheels["admitted"] is False
+    assert "NATIVE_WHEELS_NOT_UNIVERSALLY_PORTABLE" in wheels["reasonCodes"]
+    macos = qualified_os_profiles(profile="macos")
+    ubuntu = qualified_os_profiles(profile="ubuntu")
+    assert macos["independentlyTested"] is False
+    assert ubuntu["independentlyTested"] is False
+    assert macos["admitted"] is False
+    windows = qualified_os_profiles(profile="windows")
+    assert windows["admitted"] is False
+    ffmpeg = ffmpeg_build_review()
+    assert ffmpeg["exactConfigurationReviewed"] is False
+    assert ffmpeg["wrapperRemovesLicenceObligations"] is False
+    assert "FFMPEG_BUILD_UNREVIEWED" in ffmpeg["reasonCodes"]
+    rpc = no_rpc_fleet()
+    assert rpc["enabled"] is False
+    assert rpc["movesFullResolutionFrames"] is False
+    native = custom_native_justification(measured_savings=False, required_capability=False)
+    assert native["approved"] is False
+    assert native["pythonPlusDependenciesAcceptable"] is True
+    assert "CUSTOM_NATIVE_UNJUSTIFIED" in native["reasonCodes"]
+
