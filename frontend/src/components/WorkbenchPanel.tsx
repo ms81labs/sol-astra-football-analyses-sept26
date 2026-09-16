@@ -63,6 +63,10 @@ import {
   fetchHeatmap,
   fetchAssembleReport,
   fetchStalePermissions,
+  fetchProviders,
+  fetchRightsEvaluate,
+  fetchTelestration,
+  fetchReleaseDossier,
   fetchWorkbenchDossier,
   fetchWorkbenchFlags,
   recoverMatchCorrection,
@@ -107,6 +111,10 @@ import {
   type HeatmapSnapshot,
   type AssembleReportSnapshot,
   type StalePermissionsSnapshot,
+  type ProviderRosterSnapshot,
+  type RightsEvaluateSnapshot,
+  type TelestrationSnapshot,
+  type ReleaseDossierSnapshot,
   type WorkbenchDossier,
 } from '../utils/workbench';
 
@@ -200,6 +208,10 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
   const [heatmap, setHeatmap] = useState<HeatmapSnapshot | null>(null);
   const [assembleReport, setAssembleReport] = useState<AssembleReportSnapshot | null>(null);
   const [stalePermissions, setStalePermissions] = useState<StalePermissionsSnapshot | null>(null);
+  const [providers, setProviders] = useState<ProviderRosterSnapshot | null>(null);
+  const [rightsEvaluate, setRightsEvaluate] = useState<RightsEvaluateSnapshot | null>(null);
+  const [telestration, setTelestration] = useState<TelestrationSnapshot | null>(null);
+  const [releaseDossier, setReleaseDossier] = useState<ReleaseDossierSnapshot | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -433,6 +445,34 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
       })
       .catch(() => {
         if (!cancelled) setStalePermissions(null);
+      });
+    fetchProviders()
+      .then((payload) => {
+        if (!cancelled && payload.roster?.default === 'disabled') setProviders(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setProviders(null);
+      });
+    fetchRightsEvaluate()
+      .then((payload) => {
+        if (!cancelled && payload.allowed === false) setRightsEvaluate(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setRightsEvaluate(null);
+      });
+    fetchTelestration()
+      .then((payload) => {
+        if (!cancelled && payload.blenderEnabled === false) setTelestration(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setTelestration(null);
+      });
+    fetchReleaseDossier()
+      .then((payload) => {
+        if (!cancelled && payload.deploymentBoundary === 'loopback') setReleaseDossier(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setReleaseDossier(null);
       });
     return () => {
       cancelled = true;
@@ -775,6 +815,18 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
               )}
               {stalePermissions?.admitted === false && (
                 <p className="text-xs text-slate-400">Stale permissions are not admitted.</p>
+              )}
+              {providers?.roster?.default === 'disabled' && (
+                <p className="text-xs text-slate-400">Language providers stay disabled by default.</p>
+              )}
+              {rightsEvaluate?.allowed === false && (
+                <p className="text-xs text-slate-400">Uncertain commercial permission blocks the use.</p>
+              )}
+              {telestration?.blenderEnabled === false && (
+                <p className="text-xs text-slate-400">Telestration stays 2D before 3D.</p>
+              )}
+              {releaseDossier?.nativeCode === 'gated_inert' && (
+                <p className="text-xs text-slate-400">Release dossier keeps native code gated and loopback-only.</p>
               )}
               <div className="rounded-lg border border-slate-700 p-3">
                 <h4 className="text-xs uppercase tracking-wide text-slate-500 mb-2">Capability matrix</h4>

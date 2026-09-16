@@ -1352,18 +1352,16 @@ class Storage:
 
     def preview_landmark_for_match(self, match_id: str) -> dict:
         from .workbench.cache import REBUILD_FOR
+        from .workbench.geometry import preview_landmark_fit
 
         self.get_match(match_id)
-        return {
-            "preview": True,
-            "committed": False,
-            "accepted": False,
-            "visionRerun": False,
-            "residualP95M": None,
-            "measured": False,
-            "rebuild": list(REBUILD_FOR["calibration"]),
-            "reasonCodes": ["LANDMARK_RESIDUAL_UNMEASURED"],
-        }
+        preview = preview_landmark_fit(residual_p95_m=float("inf"), max_p95_m=3.0)
+        preview["residualP95M"] = None
+        preview["measured"] = False
+        preview["accepted"] = False
+        preview["rebuild"] = list(REBUILD_FOR["calibration"])
+        preview["reasonCodes"] = ["LANDMARK_RESIDUAL_UNMEASURED"]
+        return preview
 
     def recompute_for_match(self, match_id: str, change: str) -> dict:
         from .video_pipeline import IMAGE_SPACE_SAFE_CHANGES, reprocess_for_change

@@ -51,7 +51,7 @@ from .schemas import (
 )
 from .semantic_search import search_matches_by_tactical_themes, search_bundles_by_tactical_themes, detect_themes_for_match
 from .storage import AdmissionOutcomeUncertainError, Storage, UploadTooLargeError
-from .ai_policy import ground_output
+from .ai_policy import ground_output, select_evidence
 from .workbench.access import (
     access_deletion_procedure,
     authorize_object,
@@ -119,7 +119,7 @@ from .workbench.jobs import (
     vector_database,
     worker_environment,
 )
-from .workbench.contracts import SourceClockIdentity, unknown_metric
+from .workbench.contracts import SourceClockIdentity, migrate_legacy_zero, unknown_metric
 from .workbench.costs import (
     credit_allocation,
     decimal_gb_to_gib,
@@ -132,10 +132,11 @@ from .workbench.costs import (
 )
 from .workbench.benchmarks import experiment_receipt, quality_gate_holds
 from .workbench.decisions import architecture_decisions
-from .workbench.dossier import http_dossier
+from .workbench.dossier import build_baseline_dossier, build_release_dossier, http_dossier
 from .workbench.evaluation import (
     analyst_workflow_measures,
     current_repository_evaluation_gate,
+    evaluate_protocol_prerequisites,
     evaluation_measures,
     score_hota_idf1,
 )
@@ -146,6 +147,7 @@ from .workbench.geometry import (
     evaluate_landmarks,
     from_legacy_four_points,
     ground_contact_point,
+    preview_landmark_fit,
     project_to_pitch,
     withhold_if_invalid,
 )
@@ -225,8 +227,10 @@ from .workbench.media import (
     wrap_decoded_frame,
 )
 from .workbench.review import collaboration_lock, correction_api_payload, playlist_export_interval
-from .workbench.rights import rights_register
-from .workbench.risks import independent_reviewer, risk_register, worked_match_flow
+from .workbench.adoption import dependency_register
+from .workbench.providers import cloud_adapter, local_adapter, provider_roster
+from .workbench.rights import dataset_manifest, evaluate_rights, incident_response, licence_register, rights_register
+from .workbench.risks import independent_reviewer, risk_register, telestration_before_3d, worked_match_flow
 from .workbench.rollback import rollback_release
 from .workbench.roster import frontier_provider_role, label_products, model_roster, promotion_gate, video_model_roster
 from .workbench.routes import create_workbench_router
@@ -457,6 +461,15 @@ def _production_decode_frames(storage_root: Path) -> dict:
         "indexes": [frame.source_frame_index for frame in decoded],
         "firstIndex": None if first is None else first.source_frame_index,
     }
+
+
+def _unmeasured_landmark_preview() -> dict:
+    preview = preview_landmark_fit(residual_p95_m=float("inf"), max_p95_m=3.0)
+    preview["residualP95M"] = None
+    preview["measured"] = False
+    preview["accepted"] = False
+    preview["reasonCodes"] = ["LANDMARK_RESIDUAL_UNMEASURED"]
+    return preview
 
 
 class BrowserOriginMiddleware:
@@ -1605,6 +1618,29 @@ def create_app(
         del payload
         return current_repository_evaluation_gate().model_dump(mode="json")
 
+    @app.get("/api/evaluation/prerequisites")
+    def get_evaluation_prerequisites() -> dict:
+        return evaluate_protocol_prerequisites(
+            complete_tasks=0,
+            complete_minutes=0.0,
+            locked_labels_present=False,
+            native_predictions_present=False,
+            team_declarations_present=False,
+            scorer_replayable=True,
+        ).model_dump(mode="json")
+
+    @app.post("/api/evaluation/prerequisites")
+    def post_evaluation_prerequisites(payload: dict | None = None) -> dict:
+        del payload
+        return evaluate_protocol_prerequisites(
+            complete_tasks=0,
+            complete_minutes=0.0,
+            locked_labels_present=False,
+            native_predictions_present=False,
+            team_declarations_present=False,
+            scorer_replayable=True,
+        ).model_dump(mode="json")
+
     @app.get("/api/research/lane")
     def get_research_lane() -> dict:
         return research_lane()
@@ -1678,6 +1714,59 @@ def create_app(
     @app.get("/api/rights")
     def get_rights() -> dict:
         return rights_register()
+
+    @app.post("/api/rights/evaluate")
+    def post_rights_evaluate(payload: dict | None = None) -> dict:
+        body = payload or {}
+        return evaluate_rights(
+            {
+                "asset": str(body.get("asset") or "match_recording"),
+                "commercialPermission": "uncertain",
+                "cloudPermitted": False,
+            }
+        ).model_dump(mode="json")
+
+    @app.get("/api/rights/licences")
+    def get_licence_register() -> dict:
+        return licence_register()
+
+    @app.get("/api/rights/datasets")
+    def get_dataset_manifest() -> dict:
+        return dataset_manifest()
+
+    @app.get("/api/rights/incident")
+    def get_incident_response() -> dict:
+        return incident_response()
+
+    @app.get("/api/providers")
+    def get_providers() -> dict:
+        return {
+            "roster": provider_roster(),
+            "local": local_adapter(enabled=False),
+            "cloud": cloud_adapter(enabled=False),
+        }
+
+    @app.post("/api/providers")
+    def post_providers(payload: dict | None = None) -> dict:
+        del payload
+        return {
+            "roster": provider_roster(),
+            "local": local_adapter(enabled=False),
+            "cloud": cloud_adapter(enabled=False),
+        }
+
+    @app.get("/api/dependencies")
+    def get_dependencies() -> dict:
+        return dependency_register()
+
+    @app.post("/api/dependencies")
+    def post_dependencies(payload: dict | None = None) -> dict:
+        del payload
+        return dependency_register()
+
+    @app.get("/api/telestration")
+    def get_telestration() -> dict:
+        return telestration_before_3d()
 
     @app.get("/api/roster")
     def get_roster() -> dict:
@@ -1996,6 +2085,15 @@ def create_app(
     def post_geometry_landmarks(payload: dict | None = None) -> dict:
         del payload
         return evaluate_landmarks(_legacy_geometry_profile(), max_p95_m=3.0)
+
+    @app.get("/api/geometry/preview")
+    def get_geometry_preview() -> dict:
+        return _unmeasured_landmark_preview()
+
+    @app.post("/api/geometry/preview")
+    def post_geometry_preview(payload: dict | None = None) -> dict:
+        del payload
+        return _unmeasured_landmark_preview()
 
     @app.post("/api/geometry/zoom-cut")
     def post_geometry_zoom_cut(payload: dict | None = None) -> dict:
@@ -2576,6 +2674,37 @@ def create_app(
         body = payload or {}
         claimed = list(body.get("evidence") or body.get("claimedEvidenceIds") or [])
         return ground_output({"evidence": claimed}, known_ids=set())
+
+    @app.post("/api/assistance/select-evidence")
+    def post_select_evidence(payload: dict | None = None) -> dict:
+        body = payload or {}
+        claimed = list(body.get("claimedIds") or body.get("claimedEvidenceIds") or [])
+        try:
+            evidence = select_evidence(claimed, known_ids=set())
+        except ValueError:
+            return {"accepted": False, "evidence": [], "reasonCodes": ["FABRICATED_EVIDENCE"]}
+        return {"accepted": True, "evidence": evidence, "reasonCodes": ["GROUNDED"]}
+
+    @app.post("/api/metrics/legacy-zero")
+    def post_legacy_zero(payload: dict | None = None) -> dict:
+        body = payload or {}
+        migrated = migrate_legacy_zero(
+            str(body.get("metric") or "possession_pct"),
+            body.get("value"),
+            definition_version=DEFINITION_VERSION,
+            measured=False,
+            reason_if_unmeasured="UNMEASURED_LEGACY_DEFAULT",
+        )
+        return migrated.model_dump(mode="json")
+
+    @app.get("/api/dossier/release")
+    def get_release_dossier() -> dict:
+        return build_release_dossier(build_baseline_dossier(), loopback_only=True)
+
+    @app.post("/api/dossier/release")
+    def post_release_dossier(payload: dict | None = None) -> dict:
+        del payload
+        return build_release_dossier(build_baseline_dossier(), loopback_only=True)
 
     @app.get("/api/rates/four")
     def get_four_rates() -> dict:

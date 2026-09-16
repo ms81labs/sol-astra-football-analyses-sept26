@@ -355,6 +355,18 @@ it('loads recovery and landmark preview from production routes and posts deletio
     if (url.endsWith('/api/permissions/stale')) {
       return new Response(JSON.stringify({ stale: true, admitted: false, reasonCodes: ['STALE_PERMISSION'] }), { status: 200 });
     }
+    if (url.endsWith('/api/providers')) {
+      return new Response(JSON.stringify({ roster: { default: 'disabled' }, local: { route: 'disabled' }, cloud: { route: 'disabled' } }), { status: 200 });
+    }
+    if (url.endsWith('/api/rights/evaluate')) {
+      return new Response(JSON.stringify({ allowed: false, cloudPermitted: false, reasonCodes: ['UNCERTAIN_COMMERCIAL_PERMISSION'] }), { status: 200 });
+    }
+    if (url.endsWith('/api/telestration')) {
+      return new Response(JSON.stringify({ blenderEnabled: false, pitchView: '2d' }), { status: 200 });
+    }
+    if (url.endsWith('/api/dossier/release')) {
+      return new Response(JSON.stringify({ deploymentBoundary: 'loopback', nativeCode: 'gated_inert' }), { status: 200 });
+    }
     return new Response(JSON.stringify({ query: { unanswerable: true, reason: 'x', eventFamily: 'pass' }, results: [] }), { status: 200 });
   });
   vi.stubGlobal('fetch', fetchMock);
@@ -393,6 +405,10 @@ it('loads recovery and landmark preview from production routes and posts deletio
   expect(screen.getByText(/heatmaps stay interval-limited without identity continuity/i)).toBeTruthy();
   expect(screen.getByText(/report assembly rejects fabricated evidence/i)).toBeTruthy();
   expect(screen.getByText(/stale permissions are not admitted/i)).toBeTruthy();
+  expect(await screen.findByText(/language providers stay disabled by default/i)).toBeTruthy();
+  expect(screen.getByText(/uncertain commercial permission blocks the use/i)).toBeTruthy();
+  expect(screen.getByText(/telestration stays 2d before 3d/i)).toBeTruthy();
+  expect(screen.getByText(/release dossier keeps native code gated and loopback-only/i)).toBeTruthy();
   await fireEvent.click(screen.getByRole('button', { name: /request deletion/i }));
   const deletionCall = fetchMock.mock.calls.find(([url, init]) => String(url).endsWith('/api/access/deletion') && init?.method === 'POST');
   expect(deletionCall).toBeTruthy();

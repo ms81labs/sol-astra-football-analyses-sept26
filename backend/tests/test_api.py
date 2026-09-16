@@ -2738,3 +2738,103 @@ async def _test_production_decode_challengers_heatmap_and_grounding_surfaces(tmp
         assert ladder.json()["level1"]["singleExactFrame"] is False
         assert "IFAB_LAW_11_NOT_APPLIED" in ladder.json()["level0"]["reasonCodes"]
 
+
+def test_production_providers_rights_dependencies_preview_and_legacy_zero_surfaces(tmp_path: Path):
+    _run(_test_production_providers_rights_dependencies_preview_and_legacy_zero_surfaces, tmp_path)
+
+
+async def _test_production_providers_rights_dependencies_preview_and_legacy_zero_surfaces(tmp_path: Path):
+    async with api_client(tmp_path) as (_, client):
+        providers = await client.post(
+            "/api/providers",
+            json={"enabled": True, "default": "cloud", "cloud": True},
+        )
+        assert providers.status_code == 200
+        assert providers.json()["roster"]["default"] == "disabled"
+        assert providers.json()["local"]["route"] == "disabled"
+        assert providers.json()["cloud"]["route"] == "disabled"
+
+        rights = await client.post(
+            "/api/rights/evaluate",
+            json={"commercialPermission": "granted", "cloudPermitted": True, "allowed": True, "asset": "match_recording"},
+        )
+        assert rights.status_code == 200
+        assert rights.json()["allowed"] is False
+        assert rights.json()["cloudPermitted"] is False
+        assert "UNCERTAIN_COMMERCIAL_PERMISSION" in rights.json()["reasonCodes"]
+
+        licences = await client.get("/api/rights/licences")
+        assert licences.status_code == 200
+        assert licences.json()["ultralytics"]["generalisedToEveryYoloNamedModel"] is False
+        datasets = await client.get("/api/rights/datasets")
+        assert datasets.status_code == 200
+        assert datasets.json()["soccernet"]["commercialProduct"] is False
+        incident = await client.get("/api/rights/incident")
+        assert incident.status_code == 200
+        assert incident.json()["faceRecognition"] is False
+        assert incident.json()["crossSeasonIdentity"] is False
+
+        deps = await client.post("/api/dependencies", json={"fashionableOnly": True})
+        assert deps.status_code == 200
+        assert deps.json()["ultralytics"]["fashionableOnly"] is False
+        assert deps.json()["opencv"]["rollbackPath"] == "fixture_frame_source"
+
+        preview = await client.post(
+            "/api/geometry/preview",
+            json={"residualP95M": 0.4, "accepted": True, "committed": True, "measured": True},
+        )
+        assert preview.status_code == 200
+        assert preview.json()["preview"] is True
+        assert preview.json()["committed"] is False
+        assert preview.json()["accepted"] is False
+        assert preview.json()["measured"] is False
+        assert preview.json()["residualP95M"] is None
+        assert preview.json()["visionRerun"] is False
+        assert "LANDMARK_RESIDUAL_UNMEASURED" in preview.json()["reasonCodes"]
+
+        prerequisites = await client.post(
+            "/api/evaluation/prerequisites",
+            json={
+                "completeTasks": 18,
+                "completeMinutes": 30,
+                "lockedLabelsPresent": True,
+                "nativePredictionsPresent": True,
+                "teamDeclarationsPresent": True,
+                "accepted": True,
+            },
+        )
+        assert prerequisites.status_code == 200
+        assert prerequisites.json()["accepted"] is False
+        assert prerequisites.json()["completeTasks"] == 0
+        assert prerequisites.json()["lockedLabelsPresent"] is False
+        assert "LABELS_INCOMPLETE" in prerequisites.json()["reasonCodes"]
+
+        legacy = await client.post(
+            "/api/metrics/legacy-zero",
+            json={"metric": "possession_pct", "value": 0, "measured": True, "availability": "available"},
+        )
+        assert legacy.status_code == 200
+        assert legacy.json()["availability"] != "available"
+        assert legacy.json()["value"] is None
+        assert "LEGACY_ZERO_DEFAULT" in legacy.json()["reasonCodes"]
+
+        telestration = await client.get("/api/telestration")
+        assert telestration.status_code == 200
+        assert telestration.json()["blenderEnabled"] is False
+        assert telestration.json()["pitchView"] == "2d"
+
+        selected = await client.post(
+            "/api/assistance/select-evidence",
+            json={"claimedIds": ["forged"], "knownIds": ["forged"]},
+        )
+        assert selected.status_code == 200
+        assert selected.json()["accepted"] is False
+        assert selected.json()["evidence"] == []
+        assert "FABRICATED_EVIDENCE" in selected.json()["reasonCodes"]
+
+        release = await client.post("/api/dossier/release", json={"loopbackOnly": False, "nativeCode": "approved"})
+        assert release.status_code == 200
+        assert release.json()["deploymentBoundary"] == "loopback"
+        assert release.json()["nativeCode"] == "gated_inert"
+        assert release.json()["gNetworkRequiredForNonLocal"] is True
+

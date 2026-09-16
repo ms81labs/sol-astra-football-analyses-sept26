@@ -872,3 +872,69 @@ export async function fetchStalePermissions() {
   }
   return response.json() as Promise<StalePermissionsSnapshot>;
 }
+
+export interface ProviderRosterSnapshot {
+  roster?: { default?: string };
+  local?: { route?: string };
+  cloud?: { route?: string };
+}
+
+export async function fetchProviders() {
+  const response = await fetch('/api/providers', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled: true, default: 'cloud' }),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to load providers: ${response.status}`);
+  }
+  return response.json() as Promise<ProviderRosterSnapshot>;
+}
+
+export interface RightsEvaluateSnapshot {
+  allowed?: boolean;
+  cloudPermitted?: boolean;
+  reasonCodes?: string[];
+}
+
+export async function fetchRightsEvaluate() {
+  const response = await fetch('/api/rights/evaluate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ commercialPermission: 'granted', allowed: true }),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to evaluate rights: ${response.status}`);
+  }
+  return response.json() as Promise<RightsEvaluateSnapshot>;
+}
+
+export interface TelestrationSnapshot {
+  blenderEnabled?: boolean;
+  pitchView?: string;
+}
+
+export async function fetchTelestration() {
+  const response = await fetch('/api/telestration');
+  if (!response.ok) {
+    throw new Error(`Failed to load telestration: ${response.status}`);
+  }
+  return response.json() as Promise<TelestrationSnapshot>;
+}
+
+export interface ReleaseDossierSnapshot {
+  deploymentBoundary?: string;
+  nativeCode?: string;
+}
+
+export async function fetchReleaseDossier() {
+  const response = await fetch('/api/dossier/release', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ loopbackOnly: false, nativeCode: 'approved' }),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to load release dossier: ${response.status}`);
+  }
+  return response.json() as Promise<ReleaseDossierSnapshot>;
+}
