@@ -316,7 +316,17 @@ def _four_rates_view() -> dict:
         audit.record_recovery_inference()
     for _ in range(5):
         audit.record_export_sample()
-    return four_rates_receipt(audit).model_dump(mode="json")
+    receipt = four_rates_receipt(audit)
+    return {
+        "decodeCount": receipt.decodeCount,
+        "detectorPrimaryCount": receipt.detectorPrimaryCount,
+        "detectorRecoveryCount": receipt.detectorRecoveryCount,
+        "trackerUpdateCount": receipt.trackerUpdateCount,
+        "exportCount": receipt.exportCount,
+        "exportFpsEqualsInferenceFps": receipt.exportFpsEqualsInferenceFps,
+        "decodeFpsEqualsExportFps": receipt.decodeFpsEqualsExportFps,
+        "notes": list(receipt.notes),
+    }
 
 
 def _unpromoted_receipt() -> dict:
