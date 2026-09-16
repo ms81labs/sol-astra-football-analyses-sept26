@@ -195,6 +195,30 @@ def apply_track_join(frames: list[Any], *, left_track_id: str, right_track_id: s
     return [_remap_frame_track(frame, source=right_track_id, dest=dest) for frame in frames]
 
 
+def apply_team_swap(frames: list[Any]) -> list[Any]:
+    """Swap labeled my_team and enemy sides. Does not rerun vision."""
+
+    updated: list[Any] = []
+    for frame in frames:
+        possession = getattr(frame, "possession", None)
+        if possession is not None:
+            team = getattr(possession, "team", None)
+            if team == "my_team":
+                possession = possession.model_copy(update={"team": "enemy"})
+            elif team == "enemy":
+                possession = possession.model_copy(update={"team": "my_team"})
+        updated.append(
+            frame.model_copy(
+                update={
+                    "myTeam": list(getattr(frame, "enemies", None) or []),
+                    "enemies": list(getattr(frame, "myTeam", None) or []),
+                    "possession": possession,
+                }
+            )
+        )
+    return updated
+
+
 def frames_have_identity_overlap(frames: list[Any], left_track_id: str, right_track_id: str) -> bool:
     for frame in frames:
         ids = {

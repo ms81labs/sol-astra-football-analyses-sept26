@@ -1295,6 +1295,91 @@ async def _test_match_event_review_updates_stored_events_and_undo_restores_statu
         assert by_type["recovery"]["reviewStatus"] == "unreviewed"
 
 
+def test_match_team_mapping_correction_swaps_stored_teams_without_vision(tmp_path: Path):
+    _run(_test_match_team_mapping_correction_swaps_stored_teams_without_vision, tmp_path)
+
+
+async def _test_match_team_mapping_correction_swaps_stored_teams_without_vision(tmp_path: Path):
+    async with api_client(tmp_path) as (_, client):
+        response = await _upload_tracking_match(client)
+        assert response.status_code == 202
+        match_id = response.json()["matchId"]
+
+        frames = (await client.get(f"/api/matches/{match_id}/frames")).json()["frames"]
+        assert frames[0]["myTeam"][0]["id"] == 7
+        assert frames[0]["enemies"][0]["id"] == 18
+        events = (await client.get(f"/api/matches/{match_id}/events")).json()["events"]
+        assert any(
+            item["type"] == "turnover" and item["team"] == "enemy" and item["fromTrackId"] == 7 and item["toTrackId"] == 18
+            for item in events
+        )
+
+        forged = await client.post(
+            f"/api/matches/{match_id}/corrections",
+            json={
+                "kind": "team_mapping",
+                "payload": {
+                    "cluster": 99,
+                    "visionRerun": True,
+                    "frames": [{"frameId": 0, "myTeam": [{"id": 999, "x": 50.0, "y": 50.0}]}],
+                },
+            },
+        )
+        assert forged.status_code == 200
+        assert forged.json()["saveState"] == "saved"
+        frames = (await client.get(f"/api/matches/{match_id}/frames")).json()["frames"]
+        assert frames[0]["myTeam"][0]["id"] == 7
+        assert frames[0]["enemies"][0]["id"] == 18
+        assert all(player["id"] != 999 for player in frames[0]["myTeam"])
+
+        pending = await client.post(
+            f"/api/matches/{match_id}/corrections",
+            json={"kind": "team_mapping", "payload": {"swap": True}, "crashBeforeCommit": True},
+        )
+        assert pending.status_code == 200
+        assert pending.json()["saveState"] == "pending"
+        frames = (await client.get(f"/api/matches/{match_id}/frames")).json()["frames"]
+        assert frames[0]["myTeam"][0]["id"] == 7
+
+        mapped = await client.post(
+            f"/api/matches/{match_id}/corrections",
+            json={
+                "kind": "team_mapping",
+                "payload": {
+                    "swap": True,
+                    "visionRerun": True,
+                    "frames": [{"frameId": 0, "myTeam": [{"id": 999, "x": 50.0, "y": 50.0}]}],
+                },
+            },
+        )
+        assert mapped.status_code == 200
+        assert mapped.json()["saveState"] == "saved"
+        assert mapped.json()["rebuild"] == ["team_state", "events", "metrics", "report"]
+        frames = (await client.get(f"/api/matches/{match_id}/frames")).json()["frames"]
+        assert frames[0]["myTeam"][0]["id"] == 18
+        assert frames[0]["enemies"][0]["id"] == 7
+        assert all(player["id"] != 999 for player in frames[0]["myTeam"])
+        events = (await client.get(f"/api/matches/{match_id}/events")).json()["events"]
+        assert any(
+            item["type"] == "turnover"
+            and item["team"] == "my_team"
+            and item["fromTrackId"] == 7
+            and item["toTrackId"] == 18
+            for item in events
+        )
+
+        undone = await client.post(f"/api/matches/{match_id}/corrections/{mapped.json()['correctionId']}/undo")
+        assert undone.status_code == 200
+        frames = (await client.get(f"/api/matches/{match_id}/frames")).json()["frames"]
+        assert frames[0]["myTeam"][0]["id"] == 7
+        assert frames[0]["enemies"][0]["id"] == 18
+        events = (await client.get(f"/api/matches/{match_id}/events")).json()["events"]
+        assert any(
+            item["type"] == "turnover" and item["team"] == "enemy" and item["fromTrackId"] == 7 and item["toTrackId"] == 18
+            for item in events
+        )
+
+
 def test_match_jobs_are_idempotent_and_cancel_is_a_request(tmp_path: Path):
     _run(_test_match_jobs_are_idempotent_and_cancel_is_a_request, tmp_path)
 

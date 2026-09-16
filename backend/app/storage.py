@@ -1051,6 +1051,8 @@ class Storage:
                 )
         elif original is not None and original.kind in {"event_accept", "event_reject"}:
             self._restore_event_review(match_id, list((original.payload or {}).get("previous") or []))
+        elif original is not None and original.kind == "team_mapping":
+            self._apply_team_mapping(match_id, dict(original.payload or {}))
         return saved
 
     def list_corrections(self, match_id: str, *, state: str | None = None) -> list[dict]:
@@ -1080,21 +1082,36 @@ class Storage:
         return previous
 
     def _apply_saved_correction(self, match_id: str, saved) -> None:
-        if saved.kind not in {"event_accept", "event_reject"}:
+        if saved.kind in {"event_accept", "event_reject"}:
+            from .workbench.events import apply_event_review
+
+            try:
+                events = self.load_events(match_id)
+            except FileNotFoundError:
+                return
+            updated, _previous = apply_event_review(
+                events,
+                kind=saved.kind,
+                payload=dict(saved.payload or {}),
+                match_id=match_id,
+            )
+            self.save_events(match_id, updated)
             return
-        from .workbench.events import apply_event_review
+        if saved.kind == "team_mapping":
+            self._apply_team_mapping(match_id, dict(saved.payload or {}))
+
+    def _apply_team_mapping(self, match_id: str, payload: dict) -> None:
+        if payload.get("swap") is not True:
+            return
+        from .processor import reprocess_video_match
+        from .workbench.identity import apply_team_swap
 
         try:
-            events = self.load_events(match_id)
+            frames = self.load_frames(match_id)
         except FileNotFoundError:
             return
-        updated, _previous = apply_event_review(
-            events,
-            kind=saved.kind,
-            payload=dict(saved.payload or {}),
-            match_id=match_id,
-        )
-        self.save_events(match_id, updated)
+        self.save_frames(match_id, apply_team_swap(frames))
+        reprocess_video_match(self, match_id)
 
     def _restore_event_review(self, match_id: str, previous: list[dict]) -> None:
         from .workbench.events import restore_event_review
