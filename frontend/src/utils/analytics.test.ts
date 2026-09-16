@@ -348,18 +348,34 @@ describe('buildPlayerProfiles', () => {
     expect(withheld).toEqual([
       expect.objectContaining({
         playerId: 7,
-        totalDistance: 0,
-        topSpeed: 0,
+        totalDistance: null,
+        topSpeed: null,
         physicalTotalsWithheld: true,
       }),
     ]);
-    expect(withheld[0].totalDistance).not.toBeGreaterThan(0);
-    expect(withheld[0].topSpeed).not.toBeGreaterThan(0);
+    expect(withheld[0].totalDistance).toBeNull();
+    expect(withheld[0].topSpeed).toBeNull();
 
     const continuous = buildPlayerProfiles(frames, events, [], true);
     expect(continuous[0].physicalTotalsWithheld).toBe(false);
     expect(continuous[0].totalDistance).toBeGreaterThan(0);
     expect(continuous[0].topSpeed).toBeGreaterThan(0);
+  });
+
+  it('does not invent a midfield average when a player has no position samples', () => {
+    const profiles = buildPlayerProfiles(
+      [],
+      [{ type: 'pass', frameId: 1, timestamp: 0.5, team: 'my_team', fromTrackId: 7, toTrackId: 11, description: 'Pass' }],
+    );
+    expect(profiles).toEqual([
+      expect.objectContaining({
+        playerId: 7,
+        avgX: null,
+        avgY: null,
+        totalDistance: null,
+        topSpeed: null,
+      }),
+    ]);
   });
 });
 

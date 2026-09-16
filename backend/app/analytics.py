@@ -1118,10 +1118,10 @@ def summarize_match(
         sprinting = current_sprints
 
     formation = _select_primary_formation(formation_timeline)
-    my_team_avg_x = my_team_pos_sum["x"] / my_team_pos_sum["count"] if my_team_pos_sum["count"] else 50.0
-    my_team_avg_y = my_team_pos_sum["y"] / my_team_pos_sum["count"] if my_team_pos_sum["count"] else 50.0
-    enemy_avg_x = enemy_pos_sum["x"] / enemy_pos_sum["count"] if enemy_pos_sum["count"] else 50.0
-    enemy_avg_y = enemy_pos_sum["y"] / enemy_pos_sum["count"] if enemy_pos_sum["count"] else 50.0
+    my_team_avg_x = my_team_pos_sum["x"] / my_team_pos_sum["count"] if my_team_pos_sum["count"] else None
+    my_team_avg_y = my_team_pos_sum["y"] / my_team_pos_sum["count"] if my_team_pos_sum["count"] else None
+    enemy_avg_x = enemy_pos_sum["x"] / enemy_pos_sum["count"] if enemy_pos_sum["count"] else None
+    enemy_avg_y = enemy_pos_sum["y"] / enemy_pos_sum["count"] if enemy_pos_sum["count"] else None
     labelled_shots = shots or []
     my_team_shot_quality = [shot.xg for shot in labelled_shots if shot.team == "my_team"]
     enemy_shot_quality = [shot.xg for shot in labelled_shots if shot.team == "enemy"]
@@ -1160,8 +1160,8 @@ def summarize_match(
         possession=possession,
         myTeamDistance=round(my_team_total_dist) if identity_continuous else None,
         enemyDistance=round(enemy_total_dist) if identity_continuous else None,
-        myTeamAvgPos={"x": round(my_team_avg_x, 1), "y": round(my_team_avg_y, 1)},
-        enemyAvgPos={"x": round(enemy_avg_x, 1), "y": round(enemy_avg_y, 1)},
+        myTeamAvgPos={"x": round(my_team_avg_x, 1), "y": round(my_team_avg_y, 1)} if my_team_avg_x is not None and my_team_avg_y is not None else None,
+        enemyAvgPos={"x": round(enemy_avg_x, 1), "y": round(enemy_avg_y, 1)} if enemy_avg_x is not None and enemy_avg_y is not None else None,
         myTeamTopSpeed=round(my_team_top_speed, 1) if identity_continuous else None,
         enemyTopSpeed=round(enemy_top_speed, 1) if identity_continuous else None,
         myTeamSprints=my_team_sprints if identity_continuous else None,

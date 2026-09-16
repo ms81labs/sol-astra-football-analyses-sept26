@@ -432,10 +432,10 @@ export default function StatsPanel({
                                     <span>{player.ballWins} ball wins, {player.interceptions} interceptions</span>
                                     <span>{player.xgCreated.toFixed(2)} experimental shot quality created, {player.xgTaken.toFixed(2)} experimental shot quality taken</span>
                                     <span>{player.involvements} involvements</span>
-                                    <span>{player.physicalTotalsWithheld ? 'Physical totals withheld' : `${player.totalDistance} m, ${player.topSpeed} km/h`}</span>
+                                    <span>{player.physicalTotalsWithheld || player.totalDistance == null || player.topSpeed == null ? 'Physical totals withheld' : `${player.totalDistance} m, ${player.topSpeed} km/h`}</span>
                                 </div>
                                 <p className="text-[11px] text-slate-500 mt-1 font-mono">
-                                    Avg position {player.avgX}, {player.avgY}
+                                    {player.avgX == null || player.avgY == null ? 'Avg position unavailable' : `Avg position ${player.avgX}, ${player.avgY}`}
                                 </p>
                                 <p className="text-xs text-slate-300 mt-1">{player.summaryLine}</p>
                             </div>

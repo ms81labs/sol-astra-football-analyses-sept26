@@ -444,10 +444,10 @@ export function buildPlayerProfiles(
             const profileLabel = selectProfileLabel(contribution);
             return {
                 ...contribution,
-                avgX: metric && metric.count > 0 ? Math.round((metric.sumX / metric.count) * 10) / 10 : 50,
-                avgY: metric && metric.count > 0 ? Math.round((metric.sumY / metric.count) * 10) / 10 : 50,
-                totalDistance: identityContinuous ? Math.round((metric?.totalDistance ?? 0) * 10) / 10 : 0,
-                topSpeed: identityContinuous ? Math.round((metric?.topSpeed ?? 0) * 10) / 10 : 0,
+                avgX: metric && metric.count > 0 ? Math.round((metric.sumX / metric.count) * 10) / 10 : null,
+                avgY: metric && metric.count > 0 ? Math.round((metric.sumY / metric.count) * 10) / 10 : null,
+                totalDistance: identityContinuous && metric ? Math.round(metric.totalDistance * 10) / 10 : null,
+                topSpeed: identityContinuous && metric ? Math.round(metric.topSpeed * 10) / 10 : null,
                 physicalTotalsWithheld: !identityContinuous,
                 profileLabel,
                 summaryLine: buildSummaryLine(contribution, profileLabel),
@@ -458,8 +458,8 @@ export function buildPlayerProfiles(
             const rightXg = right.xgTaken + right.xgCreated;
             const leftXg = left.xgTaken + left.xgCreated;
             if (rightXg !== leftXg) return rightXg - leftXg;
-            if (right.totalDistance !== left.totalDistance) return right.totalDistance - left.totalDistance;
-            if (right.topSpeed !== left.topSpeed) return right.topSpeed - left.topSpeed;
+            if (right.totalDistance != null && left.totalDistance != null && right.totalDistance !== left.totalDistance) return right.totalDistance - left.totalDistance;
+            if (right.topSpeed != null && left.topSpeed != null && right.topSpeed !== left.topSpeed) return right.topSpeed - left.topSpeed;
             if (left.team !== right.team) return left.team.localeCompare(right.team);
             return left.playerId - right.playerId;
         });

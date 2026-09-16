@@ -119,8 +119,8 @@ class MatchSummary(BaseModel):
     possession: int | None
     myTeamDistance: int | None
     enemyDistance: int | None
-    myTeamAvgPos: dict[str, float]
-    enemyAvgPos: dict[str, float]
+    myTeamAvgPos: dict[str, float] | None = None
+    enemyAvgPos: dict[str, float] | None = None
     myTeamTopSpeed: float | None
     enemyTopSpeed: float | None
     myTeamSprints: int | None

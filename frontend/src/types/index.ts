@@ -90,8 +90,8 @@ export interface MatchStats {
     ballSignalMessage: string | null;
     myTeamDistance: number | null;
     enemyDistance: number | null;
-    myTeamAvgPos: { x: number; y: number };
-    enemyAvgPos: { x: number; y: number };
+    myTeamAvgPos: { x: number; y: number } | null;
+    enemyAvgPos: { x: number; y: number } | null;
     myTeamTopSpeed: number | null;
     enemyTopSpeed: number | null;
     myTeamSprints: number | null;
@@ -306,10 +306,10 @@ export interface PlayerContribution {
 }
 
 export interface PlayerProfile extends PlayerContribution {
-    avgX: number;
-    avgY: number;
-    totalDistance: number;
-    topSpeed: number;
+    avgX: number | null;
+    avgY: number | null;
+    totalDistance: number | null;
+    topSpeed: number | null;
     physicalTotalsWithheld?: boolean;
     profileLabel: string;
     summaryLine: string;

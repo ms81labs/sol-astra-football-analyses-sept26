@@ -178,6 +178,21 @@ describe('StatsPanel', () => {
     expect(scoped.getByRole('heading', { name: 'Formation' })).toBeTruthy();
   });
 
+  it('does not invent a midfield average position on player cards', () => {
+    const { container } = render(
+      <StatsPanel
+        stats={baseStats}
+        benchmark={benchmarkTruthReady}
+        shotSummary={shotSummary}
+        playerProfiles={[{ ...sampleProfiles[0], avgX: null, avgY: null, totalDistance: null, topSpeed: null, physicalTotalsWithheld: true }]}
+      />,
+    );
+    const scoped = within(container);
+    expect(scoped.getByText(/avg position unavailable/i)).toBeTruthy();
+    expect(container.textContent).not.toContain('Avg position 50');
+    expect(scoped.getByText(/physical totals withheld/i)).toBeTruthy();
+  });
+
   it('withholds a placeholder formation and unpublished experimental shot quality', () => {
     const { container } = render(
       <StatsPanel

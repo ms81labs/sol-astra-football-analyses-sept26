@@ -1511,6 +1511,17 @@ def test_summarize_match_does_not_publish_a_single_last_frame_as_formation():
     assert summary.formation is None
 
 
+def test_summarize_match_does_not_invent_midfield_average_without_players():
+    frames = [
+        {"frameId": 0, "timestamp": 0.0, "ball": None, "myTeam": [], "enemies": []},
+    ]
+
+    summary = summarize_match(frames, [])
+
+    assert summary.myTeamAvgPos is None
+    assert summary.enemyAvgPos is None
+
+
 def test_summarize_match_does_not_publish_zero_experimental_shot_quality_without_labelled_shots():
     frames = [
         {
