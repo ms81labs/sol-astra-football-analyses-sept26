@@ -1387,6 +1387,8 @@ async def _test_match_identity_promote_validates_stored_continuity_without_clien
         assert distance.json()["availability"] == "withheld"
         assert distance.json()["value"] is None
         assert distance.json()["bridged"] is False
+        assert "CALIBRATION_UNAVAILABLE" in distance.json()["reasonCodes"]
+        assert "IDENTITY_DISCONTINUITY" not in distance.json()["reasonCodes"]
 
         undone = await client.post(
             f"/api/matches/{match_id}/corrections/{saved['correction']['correctionId']}/undo"
@@ -1518,8 +1520,15 @@ async def _test_match_calibration_holdout_measures_residual_and_ignores_client_a
         assert "CALIBRATION_UNAVAILABLE" not in by_name["my_team_distance_m"]["reasonCodes"]
         assert by_name["my_team_distance_m"]["availability"] == "available"
         distance = await client.get(f"/api/matches/{match_id}/geometry/distance")
-        assert distance.json()["availability"] == "withheld"
-        assert distance.json()["value"] is None
+        assert distance.json()["availability"] == "available"
+        assert distance.json()["value"] is not None
+        assert distance.json()["value"] != 0.0
+        assert distance.json()["value"] > 0.0
+        assert distance.json()["bridged"] is False
+        assert distance.json()["uncertaintyM"] == saved["residualP95M"]
+        assert "IDENTITY_DISCONTINUITY" not in distance.json()["reasonCodes"]
+        assert "CAMERA_CUT" not in distance.json()["reasonCodes"]
+        assert "CALIBRATION_UNAVAILABLE" not in distance.json()["reasonCodes"]
 
         undone = await client.post(f"/api/matches/{match_id}/corrections/{saved['correction']['correctionId']}/undo")
         assert undone.status_code == 200
@@ -1527,6 +1536,10 @@ async def _test_match_calibration_holdout_measures_residual_and_ignores_client_a
         assert restored.json()["evaluation"]["accepted"] is False
         by_name = {item["metric"]: item for item in (await client.get(f"/api/matches/{match_id}/metrics")).json()["metrics"]}
         assert "CALIBRATION_UNAVAILABLE" in by_name["my_team_distance_m"]["reasonCodes"]
+        restored_distance = await client.get(f"/api/matches/{match_id}/geometry/distance")
+        assert restored_distance.json()["availability"] == "withheld"
+        assert restored_distance.json()["value"] is None
+        assert "CALIBRATION_UNAVAILABLE" in restored_distance.json()["reasonCodes"]
 
 
 def test_match_event_review_updates_stored_events_and_undo_restores_status(tmp_path: Path):

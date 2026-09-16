@@ -2060,17 +2060,36 @@ class Storage:
         }
 
     def derived_distance_for_match(self, match_id: str) -> dict:
-        from .workbench.geometry import derived_distance
+        from .workbench.geometry import derived_distance, from_legacy_four_points, path_distance_m
         from .workbench.media import detect_camera_cuts
 
-        self.get_match(match_id)
+        match = self.get_match(match_id)
         try:
             frames = self.load_frames(match_id)
             times = [float(frame.timestamp) for frame in frames]
             cuts = detect_camera_cuts(times) if len(times) > 1 else []
         except FileNotFoundError:
+            frames = []
             cuts = []
-        return derived_distance(delta_m=0.0, uncertainty_m=0.0, cut_bridged=bool(cuts), identity_gap=True)
+        identity_gap = not self._stored_identity_continuous(match_id)
+        calibration_missing = not self._stored_calibration_accepted(match_id)
+        evaluation = self._load_calibration_evaluation(match_id)
+        residual = evaluation.get("p95M")
+        uncertainty_m = float(residual) if residual is not None else 0.0
+        points = [{"x": float(point.x), "y": float(point.y)} for point in match.config.manualHomographyPoints]
+        if len(points) != 4:
+            points = [{"x": 0.0, "y": 0.0}, {"x": 1.0, "y": 0.0}, {"x": 1.0, "y": 1.0}, {"x": 0.0, "y": 1.0}]
+        profile = from_legacy_four_points(points, calibration_id=match_id)
+        delta_m = 0.0
+        if frames and not identity_gap and not calibration_missing and not cuts:
+            delta_m = path_distance_m(frames, profile)
+        return derived_distance(
+            delta_m=delta_m,
+            uncertainty_m=uncertainty_m,
+            cut_bridged=bool(cuts),
+            identity_gap=identity_gap,
+            calibration_missing=calibration_missing,
+        )
 
     def shot_features_for_match(self, match_id: str) -> dict:
         from .workbench.shot_model import missing_shot_features

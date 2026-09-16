@@ -204,6 +204,7 @@ def derived_distance(
     uncertainty_m: float,
     cut_bridged: bool,
     identity_gap: bool,
+    calibration_missing: bool = False,
 ) -> dict[str, Any]:
     """Never bridge camera cuts or identity gaps to create physical totals."""
 
@@ -223,6 +224,14 @@ def derived_distance(
             "bridged": False,
             "reasonCodes": ["IDENTITY_DISCONTINUITY"],
         }
+    if calibration_missing:
+        return {
+            "availability": "withheld",
+            "value": None,
+            "uncertaintyM": uncertainty_m,
+            "bridged": False,
+            "reasonCodes": ["CALIBRATION_UNAVAILABLE"],
+        }
     return {
         "availability": "available",
         "value": delta_m,
@@ -230,6 +239,34 @@ def derived_distance(
         "bridged": False,
         "reasonCodes": [],
     }
+
+
+def path_distance_m(frames: list[Any], profile: CalibrationProfile) -> float:
+    """Sum accepted same-identity steps in metres without bridging missing tracks."""
+
+    from math import hypot
+
+    total = 0.0
+    for index, frame in enumerate(frames):
+        if index == 0:
+            continue
+        previous_by_id = {int(player.id): player for player in _frame_players(frames[index - 1])}
+        for player in _frame_players(frame):
+            previous = previous_by_id.get(int(player.id))
+            if previous is None:
+                continue
+            x0, y0 = _project(profile, float(previous.x), float(previous.y))
+            x1, y1 = _project(profile, float(player.x), float(player.y))
+            total += hypot(x1 - x0, y1 - y0)
+    return total
+
+
+def _frame_players(frame: Any) -> list[Any]:
+    return [
+        *list(getattr(frame, "myTeam", None) or []),
+        *list(getattr(frame, "enemies", None) or []),
+        *list(getattr(frame, "unassignedPlayers", None) or []),
+    ]
 
 
 def detect_zoom_or_cut(previous: CalibrationProfile, current: CalibrationProfile) -> bool:

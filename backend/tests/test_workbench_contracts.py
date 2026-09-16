@@ -644,6 +644,17 @@ def test_derived_distance_does_not_bridge_camera_cuts_or_identity_gaps() -> None
     assert gap["availability"] == "withheld"
     assert gap["value"] is None
     assert "IDENTITY_DISCONTINUITY" in gap["reasonCodes"]
+    missing = derived_distance(
+        delta_m=12.0,
+        uncertainty_m=0.4,
+        cut_bridged=False,
+        identity_gap=False,
+        calibration_missing=True,
+    )
+    assert missing["availability"] == "withheld"
+    assert missing["value"] is None
+    assert "CALIBRATION_UNAVAILABLE" in missing["reasonCodes"]
+    assert "IDENTITY_DISCONTINUITY" not in missing["reasonCodes"]
     ok = derived_distance(delta_m=12.0, uncertainty_m=0.4, cut_bridged=False, identity_gap=False)
     assert ok["availability"] == "available"
     assert ok["value"] == 12.0
