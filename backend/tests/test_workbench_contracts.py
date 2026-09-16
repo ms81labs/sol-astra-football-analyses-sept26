@@ -2801,7 +2801,8 @@ def test_escalation_json_repair_and_cancellation_charges_stay_bounded() -> None:
 def test_frontend_types_are_compatible_with_backend_schemas() -> None:
     from backend.app.schemas import DetectedEvent, JobRecord, MatchConfig, MatchRecord, MetricAvailabilityRecord, ShotAnalytics
 
-    types_text = Path("/workspace/frontend/src/types/index.ts").read_text(encoding="utf-8")
+    types_path = Path(__file__).resolve().parents[2] / "frontend" / "src" / "types" / "index.ts"
+    types_text = types_path.read_text(encoding="utf-8")
     contracts = {
         "BackendEvent": DetectedEvent,
         "ProcessingJob": JobRecord,

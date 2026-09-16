@@ -185,12 +185,26 @@ def build_release_dossier(baseline: BaselineDossier, *, loopback_only: bool = Tr
 
 
 def _git_head() -> str | None:
-    head = Path("/workspace/.git/HEAD")
+    start = Path(__file__).resolve()
+    git_dir = None
+    for parent in [start.parent, *start.parents]:
+        candidate = parent / ".git"
+        if (candidate / "HEAD").exists():
+            git_dir = candidate
+            break
+        if candidate.is_file():
+            text = candidate.read_text(encoding="utf-8").strip()
+            if text.startswith("gitdir:"):
+                git_dir = (parent / text.split(":", 1)[1].strip()).resolve()
+                break
+    if git_dir is None:
+        return None
+    head = git_dir / "HEAD"
     if not head.exists():
         return None
     text = head.read_text(encoding="utf-8").strip()
     if text.startswith("ref:"):
-        ref = Path("/workspace/.git") / text.split(" ", 1)[1]
+        ref = git_dir / text.split(" ", 1)[1]
         if ref.exists():
             return ref.read_text(encoding="utf-8").strip()
         return None
