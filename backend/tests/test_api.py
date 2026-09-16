@@ -751,3 +751,33 @@ async def _test_video_route_rejects_tracking_json_matches(tmp_path: Path):
         video_response = await client.get(f"/api/matches/{match_id}/video")
 
         assert video_response.status_code == 409
+
+
+def test_frames_endpoint_pages_with_cursor_and_preserves_count(tmp_path: Path):
+    _run(_test_frames_endpoint_pages_with_cursor_and_preserves_count, tmp_path)
+
+
+async def _test_frames_endpoint_pages_with_cursor_and_preserves_count(tmp_path: Path):
+    async with api_client(tmp_path) as (_, client):
+        response = await _upload_tracking_match(client)
+        assert response.status_code == 202
+        match_id = response.json()["matchId"]
+
+        first = await client.get(f"/api/matches/{match_id}/frames?limit=2")
+        assert first.status_code == 200
+        payload = first.json()
+        assert len(payload["frames"]) == 2
+        assert payload["frameCount"] == 3
+        assert payload["nextCursor"] == "2"
+        assert payload["intervalEndpoint"] == "half_open"
+        assert [frame["frameId"] for frame in payload["frames"]] == [0, 1]
+
+        second = await client.get(f"/api/matches/{match_id}/frames?cursor={payload['nextCursor']}&limit=2")
+        assert second.status_code == 200
+        remainder = second.json()
+        assert [frame["frameId"] for frame in remainder["frames"]] == [2]
+        assert remainder["frameCount"] == 3
+        assert remainder["nextCursor"] is None
+
+        after = await client.get(f"/api/matches/{match_id}/frames?afterFrame=1&limit=2")
+        assert [frame["frameId"] for frame in after.json()["frames"]] == [1, 2]

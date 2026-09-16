@@ -43,6 +43,8 @@ function workspace(id: string, name: string, eventLabel?: string, possession = 5
   return {
     detail: readyMatch(id, name),
     frames: [],
+    frameCount: 0,
+    nextCursor: null,
     analytics: { summary: { ...reviewStats, possession }, formationTimeline: [], shots: [], ballAssignments: [] },
     events: eventLabel
       ? [{ type: 'turnover', frameId: 0, timestamp: 0, description: eventLabel }]
@@ -55,6 +57,7 @@ function loadedWorkspace(id: string, name: string, eventLabel?: string, possessi
   return {
     ...workspace(id, name, eventLabel, possession),
     frames: [{ Frame_ID: 0, Timestamp: 0, Ball: null, My_Team: [], Enemies: [] }],
+    frameCount: 1,
   };
 }
 
@@ -112,6 +115,8 @@ function reviewWorkspace(): Workspace {
       originalFilename: 'review.json',
     },
     frames: [frame],
+    frameCount: 1,
+    nextCursor: null,
     analytics: { summary: reviewStats, formationTimeline: [], shots: [], ballAssignments: [] },
     events: [],
     benchmark: null,
@@ -765,12 +770,13 @@ it('normalizes event and imported playlist timestamps before timeline navigation
   vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('m', 'Sparse Match')]);
   vi.mocked(api.fetchMatchWorkspace).mockResolvedValue({ ...loadedWorkspace('m', 'Sparse Match'),
     frames: [100, 200].map((Frame_ID, index) => ({ Frame_ID, Timestamp: index * 2, Ball: null, My_Team: [], Enemies: [] })),
+    frameCount: 201,
     events: [{ frameId: 200, timestamp: 2, type: 'shot', description: 'Sparse shot' }],
   });
   render(<App />);
   fireEvent.click(await screen.findByTitle(/Sparse shot @ 2s/));
-  expect((screen.getByLabelText('Timeline scrubber') as HTMLInputElement).value).toBe('1');
+  expect((screen.getByLabelText('Timeline scrubber') as HTMLInputElement).value).toBe('200');
   act(() => { window.dispatchEvent(new CustomEvent('add-event', { detail: { frame: 100, timestamp: 0, label: 'Imported playlist', type: 'custom' } })); });
   fireEvent.click(screen.getByTitle(/Imported playlist @ 0s/));
-  expect((screen.getByLabelText('Timeline scrubber') as HTMLInputElement).value).toBe('0');
+  expect((screen.getByLabelText('Timeline scrubber') as HTMLInputElement).value).toBe('100');
 });

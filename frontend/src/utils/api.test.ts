@@ -180,6 +180,9 @@ describe('fetchMatchWorkspace', () => {
               possession: { frameId: 0, timestamp: 0, team: 'my_team', trackId: 7, distance: 2 },
             },
           ],
+          nextCursor: '240',
+          frameCount: 27000,
+          intervalEndpoint: 'half_open',
         }),
       })
       .mockResolvedValueOnce({
@@ -284,6 +287,8 @@ describe('fetchMatchWorkspace', () => {
 
     expect(workspace.detail.id).toBe('match-1');
     expect(workspace.frames[0].possession?.team).toBe('my_team');
+    expect(workspace.frameCount).toBe(27000);
+    expect(workspace.nextCursor).toBe('240');
     expect(workspace.analytics.summary.possession).toBe(67);
     expect(workspace.analytics.summary.myTeamXg).toBe(0.42);
     expect(workspace.analytics.summary.myTeamDefensiveLineHeight).toBe(21);
@@ -293,6 +298,7 @@ describe('fetchMatchWorkspace', () => {
     expect(workspace.events[0].type).toBe('turnover');
     expect(workspace.benchmark?.truthGateReasons).toEqual(['Need at least 3 event families']);
     expect(fetchMock).toHaveBeenCalledTimes(5);
+    expect(String(fetchMock.mock.calls[1][0])).toContain('/api/matches/match-1/frames?limit=240');
     expect(fetchMock.mock.calls.map(([, init]) => (init as RequestInit).signal)).toEqual([
       controller.signal,
       controller.signal,
@@ -379,5 +385,5 @@ it('maps source event IDs to displayed indices with a timestamp fallback', () =>
   expect(mapBackendEventsToTags([
     { type: 'shot', frameId: 100, timestamp: 0, description: 'First' },
     { type: 'shot', frameId: 999, timestamp: 1.9, description: 'Nearest' },
-  ], frames).map(tag => tag.frame)).toEqual([0, 1]);
+  ], frames).map(tag => tag.frame)).toEqual([100, 999]);
 });

@@ -945,12 +945,23 @@ def create_app(
         return FileResponse(video_path, media_type="video/mp4", filename=match.originalFilename)
 
     @app.get("/api/matches/{match_id}/frames")
-    def get_frames(match_id: str) -> dict:
+    def get_frames(
+        match_id: str,
+        afterFrame: int | None = None,
+        cursor: str | None = None,
+        limit: int | None = None,
+    ) -> dict:
         try:
-            frames = storage.load_frames(match_id)
+            page = storage.load_frames_page(match_id, after_frame=afterFrame, cursor=cursor, limit=limit)
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail="Frames not ready") from exc
-        response = MatchFramesResponse(matchId=match_id, frames=frames)
+        response = MatchFramesResponse(
+            matchId=match_id,
+            frames=page["frames"],
+            nextCursor=page["nextCursor"],
+            frameCount=page["frameCount"],
+            intervalEndpoint=page["intervalEndpoint"],
+        )
         return response.model_dump(mode="json")
 
     @app.get("/api/matches/{match_id}/analytics")

@@ -39,6 +39,33 @@ interface MatchWorkspace {
   analytics: AnalyticsPayload;
   events: BackendEvent[];
   benchmark: MatchBenchmarkSummary | null;
+  frameCount: number;
+  nextCursor: string | null;
+}
+
+export const WORKSPACE_FRAME_LIMIT = 240;
+
+export async function fetchMatchFrames(
+  matchId: string,
+  options: { afterFrame?: number; cursor?: string; limit?: number; signal?: AbortSignal } = {},
+): Promise<{ frames: FrameData[]; frameCount: number; nextCursor: string | null }> {
+  const params = new URLSearchParams();
+  if (options.afterFrame != null) params.set('afterFrame', String(options.afterFrame));
+  if (options.cursor) params.set('cursor', options.cursor);
+  params.set('limit', String(options.limit ?? WORKSPACE_FRAME_LIMIT));
+  const response = await fetch(`/api/matches/${matchId}/frames?${params.toString()}`, { signal: options.signal });
+  const payload = await parseJson<{
+    matchId: string;
+    frames: Array<Record<string, unknown>>;
+    nextCursor?: string | null;
+    frameCount?: number;
+  }>(response);
+  const frames = payload.frames.map(mapFrame);
+  return {
+    frames,
+    frameCount: payload.frameCount ?? frames.length,
+    nextCursor: payload.nextCursor ?? null,
+  };
 }
 
 async function parseJson<T>(response: Response): Promise<T> {
@@ -160,9 +187,7 @@ export async function updateMatchConfig(matchId: string, payload: Record<string,
 export async function fetchMatchWorkspace(matchId: string, signal?: AbortSignal): Promise<MatchWorkspace> {
   const [detail, framesPayload, analyticsPayload, eventsPayload, benchmark] = await Promise.all([
     fetch(`/api/matches/${matchId}`, { signal }).then((response) => parseJson<MatchRecord>(response)),
-    fetch(`/api/matches/${matchId}/frames`, { signal }).then((response) =>
-      parseJson<{ matchId: string; frames: Array<Record<string, unknown>> }>(response),
-    ),
+    fetchMatchFrames(matchId, { limit: WORKSPACE_FRAME_LIMIT, signal }),
     fetch(`/api/matches/${matchId}/analytics`, { signal }).then((response) =>
       parseJson<{
         matchId: string;
@@ -180,7 +205,9 @@ export async function fetchMatchWorkspace(matchId: string, signal?: AbortSignal)
 
   return {
     detail,
-    frames: framesPayload.frames.map(mapFrame),
+    frames: framesPayload.frames,
+    frameCount: framesPayload.frameCount,
+    nextCursor: framesPayload.nextCursor,
     analytics: {
       summary: analyticsPayload.summary,
       ballAssignments: analyticsPayload.ballAssignments,
@@ -194,10 +221,9 @@ export async function fetchMatchWorkspace(matchId: string, signal?: AbortSignal)
 
 export function mapBackendEventsToTags(events: BackendEvent[], frames: FrameData[]): EventTag[] {
   const supportedEventTypes = new Set<EventType>(['pass', 'cross', 'shot', 'tackle', 'recovery', 'turnover', 'through_ball', 'interception']);
-  const indicesById = new Map(frames.map((frame, index) => [frame.Frame_ID, index]));
-  const timestamps = frames.map(frame => frame.Timestamp);
+  const timestamps = frames.map((frame) => frame.Timestamp);
   return events.map((event) => ({
-    frame: indicesById.get(event.frameId) ?? findNearestFrameIndex(timestamps, event.timestamp),
+    frame: Number.isFinite(event.frameId) ? event.frameId : findNearestFrameIndex(timestamps, event.timestamp),
     timestamp: event.timestamp,
     label: event.description,
     type: supportedEventTypes.has(event.type as EventType) ? (event.type as EventType) : 'custom',

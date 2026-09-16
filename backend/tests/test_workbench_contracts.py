@@ -2018,6 +2018,32 @@ def test_repository_adapter_does_not_replace_storage_and_http_cannot_run_gpu() -
     assert vector_broker_required() is False
 
 
+def test_repository_page_frames_bounds_payload_and_preserves_count() -> None:
+    from backend.app.schemas import FrameData
+    from backend.app.workbench.repository import DEFAULT_FRAME_PAGE_LIMIT, RepositoryAdapter
+
+    frames = [FrameData(frameId=index, timestamp=index / 5) for index in range(500)]
+    adapter = RepositoryAdapter()
+    page = adapter.page_frames(frames, limit=10)
+    assert [item.frameId for item in page["frames"]] == list(range(10))
+    assert page["nextCursor"] == "10"
+    assert page["frameCount"] == 500
+    assert page["intervalEndpoint"] == "half_open"
+    assert DEFAULT_FRAME_PAGE_LIMIT == 240
+
+    next_page = adapter.page_frames(frames, cursor=page["nextCursor"], limit=10)
+    assert [item.frameId for item in next_page["frames"]] == list(range(10, 20))
+    assert next_page["nextCursor"] == "20"
+
+    after = adapter.page_frames(frames, after_frame=100, limit=5)
+    assert [item.frameId for item in after["frames"]] == list(range(100, 105))
+    assert after["nextCursor"] == "105"
+
+    capped = adapter.page_frames(frames, limit=10_000)
+    assert len(capped["frames"]) == DEFAULT_FRAME_PAGE_LIMIT
+    assert capped["nextCursor"] == str(DEFAULT_FRAME_PAGE_LIMIT)
+
+
 def test_llm_execution_is_delegated_to_provider_adapters() -> None:
     from backend.app import llm
     from backend.app import provider_adapters

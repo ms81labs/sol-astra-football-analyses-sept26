@@ -908,6 +908,23 @@ class Storage:
         payload = self._read_json(self._match_dir(match_id) / "frames.json")
         return [FrameData.model_validate(item) for item in payload]
 
+    def load_frames_page(
+        self,
+        match_id: str,
+        *,
+        after_frame: int | None = None,
+        cursor: str | None = None,
+        limit: int | None = None,
+    ) -> dict:
+        from .workbench.repository import RepositoryAdapter
+
+        return RepositoryAdapter().page_frames(
+            self.load_frames(match_id),
+            after_frame=after_frame,
+            cursor=cursor,
+            limit=limit,
+        )
+
     def load_raw_rows(self, match_id: str) -> list[dict]:
         payload = self._read_json(self._match_dir(match_id) / "raw_rows.json")
         return [dict(item) for item in payload]

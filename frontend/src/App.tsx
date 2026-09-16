@@ -36,6 +36,7 @@ import {
   buildMatchVideoUrl,
   createMatchUpload,
   fetchMatches,
+  fetchMatchFrames,
   fetchMatchWorkspace,
   mapBackendEventsToTags,
   runMatchAnalysis,
@@ -55,6 +56,7 @@ interface MatchEntry {
   name: string;
   detail: MatchRecord;
   data: FrameData[];
+  frameCount: number;
   stats: MatchStats;
   benchmark: MatchBenchmarkSummary | null;
   formationTimeline: FormationSegment[];
@@ -102,6 +104,7 @@ function workspaceToEntry(workspace: Awaited<ReturnType<typeof fetchMatchWorkspa
     name: workspace.detail.name,
     detail: workspace.detail,
     data: workspace.frames,
+    frameCount: workspace.frameCount ?? workspace.frames.length,
     stats: workspace.analytics.summary,
     benchmark: workspace.benchmark,
     formationTimeline: workspace.analytics.formationTimeline,
@@ -186,7 +189,11 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
     activeMatchIdRef.current = activeMatch?.id ?? null;
   }, [activeMatch?.id]);
   const matchData = useMemo(() => activeMatch?.data || [], [activeMatch]);
-  const timelineWindow = useMemo(() => windowedTimelineProps(matchData, currentFrame), [matchData, currentFrame]);
+  const totalFrameCount = activeMatch?.frameCount ?? matchData.length;
+  const timelineWindow = useMemo(
+    () => windowedTimelineProps(matchData, currentFrame, totalFrameCount),
+    [matchData, currentFrame, totalFrameCount],
+  );
   const [correctionSaveState, setCorrectionSaveState] = useState<'saved' | 'pending' | 'conflicted' | 'unavailable' | null>(null);
   const [correctionHistory, setCorrectionHistory] = useState<Array<{ correctionId: string; kind: string; saveState: string; undoOf?: string | null }>>([]);
   const correctionVersionRef = useRef(0);
@@ -208,9 +215,9 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
   const comparisonName = comparisonMatch?.name ?? null;
   const isVideoMatch = activeMatch?.detail.inputMode === 'video';
   const frameTimestamps = useMemo(() => matchData.map((frame) => frame.Timestamp), [matchData]);
-  const currentTimestamp = matchData[currentFrame]?.Timestamp ?? 0;
+  const currentFrameRecord = matchData.find((frame) => frame.Frame_ID === currentFrame) ?? matchData[currentFrame] ?? null;
+  const currentTimestamp = currentFrameRecord?.Timestamp ?? 0;
   const currentEvent = events.find((event) => event.frame === currentFrame) ?? events.find((event) => Math.abs(event.timestamp - currentTimestamp) < 0.2) ?? null;
-  const currentFrameRecord = matchData[currentFrame] ?? null;
   const incidentTouchStart = currentEvent?.intervalStart ?? currentTimestamp;
   const incidentTouchEnd = currentEvent?.intervalEnd ?? Number((currentTimestamp + 0.12).toFixed(2));
   const matchVideoUrl = activeMatch ? buildMatchVideoUrl(activeMatch.id) : '';
@@ -237,10 +244,10 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
-    if (isPlaying && matchData.length > 0 && !isVideoMatch) {
+    if (isPlaying && totalFrameCount > 0 && !isVideoMatch) {
       interval = setInterval(() => {
         setCurrentFrame((prev) => {
-          if (prev >= matchData.length - 1) {
+          if (prev >= totalFrameCount - 1) {
             setIsPlaying(false);
             return prev;
           }
@@ -249,7 +256,26 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
       }, 1000 / fps);
     }
     return () => clearInterval(interval);
-  }, [fps, isPlaying, isVideoMatch, matchData.length]);
+  }, [fps, isPlaying, isVideoMatch, totalFrameCount]);
+
+  useEffect(() => {
+    if (!activeMatch) return;
+    const loaded = matchData.some((frame) => frame.Frame_ID === currentFrame);
+    if (loaded || totalFrameCount <= matchData.length) return;
+    const matchId = activeMatch.id;
+    let cancelled = false;
+    void fetchMatchFrames(matchId, { afterFrame: currentFrame }).then((page) => {
+      if (cancelled) return;
+      setActiveMatch((previous) => (
+        previous && previous.id === matchId
+          ? { ...previous, data: page.frames, frameCount: page.frameCount || previous.frameCount }
+          : previous
+      ));
+    }).catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [activeMatch, currentFrame, matchData, totalFrameCount]);
 
   useEffect(() => {
     return () => {
@@ -262,9 +288,12 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
   useEffect(() => () => uploadAbortControllerRef.current?.abort(), []);
 
   const handleAddEvent = useCallback((event: EventTag) => {
-    const frame = findNearestFrameIndex(activeFrameTimestampsRef.current, event.timestamp);
-    setEvents((prev) => [...prev, { ...event, frame }]);
-  }, []);
+    const nearestIndex = findNearestFrameIndex(activeFrameTimestampsRef.current, event.timestamp);
+    const mappedFrame = Number.isFinite(event.frame)
+      ? event.frame
+      : (matchData[nearestIndex]?.Frame_ID ?? nearestIndex);
+    setEvents((prev) => [...prev, { ...event, frame: mappedFrame }]);
+  }, [matchData]);
 
   // Bridge CustomEvent('add-event') from Timeline.tsx to App state
   useEffect(() => {
@@ -307,16 +336,17 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
   const togglePlay = useCallback(() => setIsPlaying((playing) => !playing), []);
 
   const handleSeek = useCallback((frame: number) => {
-    setCurrentFrame(Math.max(0, Math.min(matchData.length - 1, Math.trunc(frame))));
+    const last = Math.max(totalFrameCount, 1) - 1;
+    setCurrentFrame(Math.max(0, Math.min(last, Math.trunc(frame))));
     setSeekVersion(version => version + 1);
     coach.clearResponse();
-  }, [coach, matchData.length]);
+  }, [coach, totalFrameCount]);
 
   const handleReviewShortcut = useCallback((action: ReviewAction) => {
     const next = applyReviewShortcut(action, {
       isPlaying,
       currentFrame,
-      frameCount: Math.max(matchData.length, 1),
+      frameCount: Math.max(totalFrameCount, 1),
       events,
       reviewRange: review.reviewRange,
     });
@@ -358,7 +388,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           setCorrectionSaveState('unavailable');
         });
     }
-  }, [activeMatch?.id, currentFrame, events, handleSeek, isPlaying, matchData.length, review]);
+  }, [activeMatch?.id, currentFrame, events, handleSeek, isPlaying, totalFrameCount, review]);
 
   const handleDrawingAnnotation = useCallback(
     (x: number, y: number, x2?: number, y2?: number) => {
@@ -403,7 +433,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
         comparisonWorkspaceRequestRef.current += 1;
         setComparisonMatch(null);
         setComparisonLoadError(null);
-        setCurrentFrame(0);
+        setCurrentFrame(entry.data[0]?.Frame_ID ?? 0);
         setIsPlaying(false);
         setSelectedPlayer(null);
         setEvents(entry.baseEvents);
@@ -653,9 +683,10 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
   const handleVideoTimeChange = useCallback(
     (time: number) => {
       if (frameTimestamps.length === 0) return;
-      setCurrentFrame(findNearestFrameIndex(frameTimestamps, time));
+      const index = findNearestFrameIndex(frameTimestamps, time);
+      setCurrentFrame(matchData[index]?.Frame_ID ?? index);
     },
-    [frameTimestamps],
+    [frameTimestamps, matchData],
   );
 
   return (
@@ -834,7 +865,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
                 />
                 <div className="overflow-hidden rounded-lg border border-slate-700 bg-green-800">
                   <TacticalPitch
-                    frameData={matchData[currentFrame] || null}
+                    frameData={currentFrameRecord}
                     annotations={coach.llmResponse}
                     showZones={showZones}
                     showNetwork={showNetwork}
@@ -855,7 +886,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
               </div>
             ) : (
               <TacticalPitch
-                frameData={matchData[currentFrame] || null}
+                frameData={currentFrameRecord}
                 annotations={coach.llmResponse}
                 showZones={showZones}
                 showNetwork={showNetwork}
@@ -1273,7 +1304,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
             setShowWorkbench(false);
             setIsPlaying(false);
             const index = findNearestFrameIndex(matchData.map((frame) => frame.Timestamp), timestamp);
-            if (index >= 0) handleSeek(index);
+            if (index >= 0) handleSeek(matchData[index]?.Frame_ID ?? index);
           }}
         />
       )}

@@ -231,6 +231,9 @@ class JobRecord(BaseModel):
 class MatchFramesResponse(BaseModel):
     matchId: str
     frames: list[FrameData]
+    nextCursor: str | None = None
+    frameCount: int | None = None
+    intervalEndpoint: str = "half_open"
 
 
 class MatchAnalyticsResponse(BaseModel):
