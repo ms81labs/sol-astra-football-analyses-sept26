@@ -1392,8 +1392,9 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
               items={correctionHistory}
               onUndo={(correctionId) => {
                 if (!activeMatch?.id) return;
+                const matchId = activeMatch.id;
                 const original = correctionHistory.find((item) => item.correctionId === correctionId);
-                void undoMatchCorrection(activeMatch.id, correctionId).then((saved) => {
+                void undoMatchCorrection(matchId, correctionId).then(async (saved) => {
                   setCorrectionHistory((previous) => [
                     ...previous,
                     {
@@ -1403,6 +1404,19 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
                       undoOf: saved.undoOf,
                     },
                   ]);
+                  await loadWorkspaceIntoState(matchId, { prepend: true, force: true });
+                  const heatmap = await fetchHeatmap(matchId);
+                  const identity = heatmap.identityContinuous === true;
+                  setIdentityContinuous(identity);
+                  setHeatmapAvail({
+                    wholeMatch: heatmap.wholeMatch === true,
+                    intervalLimited: heatmap.intervalLimited !== false,
+                    withheld: heatmap.withheld !== false,
+                  });
+                  setSpeedAvail(speedAvailability(identity));
+                  setPlayerTotalsAvail(playerPhysicalTotalsAvailability(identity));
+                }).catch(() => {
+                  setCorrectionSaveState('unavailable');
                 });
               }}
             />

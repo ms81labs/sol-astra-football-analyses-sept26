@@ -607,6 +607,70 @@ describe('App match workspace loading', () => {
     });
   });
 
+  it('reloads stored workspace after undoing a team mapping without rewriting the original correction', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections/swap-1/undo') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            correctionId: 'undo-1',
+            saveState: 'saved',
+            undoOf: 'swap-1',
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            correctionId: 'swap-1',
+            saveState: 'saved',
+            kind: 'team_mapping',
+            rebuild: ['team_state', 'events', 'metrics', 'report'],
+            visionRerun: false,
+          }),
+        } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    fireEvent.click(screen.getByRole('button', { name: /swap teams/i }));
+    const undo = await screen.findByRole('button', { name: 'Undo swap-1' });
+    await waitFor(() => {
+      expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(2);
+    });
+    fireEvent.click(undo);
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/corrections/swap-1/undo'))).toBe(true);
+    });
+    const undoCall = fetchMock.mock.calls.find(([url]) => String(url).includes('/corrections/swap-1/undo'));
+    expect(undoCall?.[1]?.method).toBe('POST');
+    await waitFor(() => {
+      expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(3);
+    });
+    expect(screen.getByText(/undo of swap-1/i)).toBeTruthy();
+    expect(screen.getByText(/original correction retained/i)).toBeTruthy();
+  });
+
   it('loads a selected match once and does not reload the active match', async () => {
     stubPitchCanvas();
     const listedMatches = [readyMatch('match-a', 'Match A'), readyMatch('match-b', 'Match B')];
