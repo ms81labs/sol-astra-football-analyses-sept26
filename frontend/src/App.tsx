@@ -1329,7 +1329,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
             <QualityTimeline items={qualityItems} />
           </div>
           <div className="mb-3 shrink-0">
-            <PlaylistBuilder />
+            <PlaylistBuilder matchId={activeMatch?.id} />
           </div>
           <div className="mb-3 flex-1 overflow-y-auto">
             <AnnotationList

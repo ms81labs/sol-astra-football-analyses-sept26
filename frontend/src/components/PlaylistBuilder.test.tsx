@@ -42,3 +42,31 @@ it('exports time-bounded clips with notes and refuses whole-match frequency clai
   expect(screen.getByText(/second-half turnover then shot/)).toBeTruthy();
   expect(screen.getByText(/do not establish a whole-match frequency/i)).toBeTruthy();
 });
+
+it('assembles a deterministic match report that does not claim whole-match frequency', async () => {
+  const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+    void init;
+    const url = String(input);
+    if (url.includes('/api/matches/match-a/reports')) {
+      return Promise.resolve({
+        ok: true,
+        json: async () => ({
+          factualCheck: { accepted: true, reasonCodes: ['GROUNDED'] },
+          publication: { accepted: true, requiresAnalyst: true, wholeMatchFrequency: false, frequencyRequiresDenominator: true },
+        }),
+      } as Response);
+    }
+    return Promise.reject(new Error(`unexpected ${url}`));
+  });
+  vi.stubGlobal('fetch', fetchMock);
+
+  render(<PlaylistBuilder matchId="match-a" />);
+  fireEvent.click(screen.getByRole('button', { name: /assemble report/i }));
+  await waitFor(() => {
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/api/matches/match-a/reports'))).toBe(true);
+  });
+  const reportCall = fetchMock.mock.calls.find(([input]) => String(input).includes('/api/matches/match-a/reports'));
+  expect(reportCall?.[1]?.method).toBe('POST');
+  expect(await screen.findByText(/does not claim whole-match frequency/i)).toBeTruthy();
+  expect(screen.getByText(/frequency requires a denominator/i)).toBeTruthy();
+});

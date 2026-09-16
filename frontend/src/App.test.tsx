@@ -217,6 +217,7 @@ describe('App match workspace loading', () => {
     fireEvent.click(zones);
     expect(zones.getAttribute('aria-pressed')).toBe('true');
     expect(screen.getByRole('region', { name: /playlist builder/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /assemble report/i })).toBeTruthy();
     expect(screen.getByText(/do not establish a whole-match frequency/i)).toBeTruthy();
   });
 

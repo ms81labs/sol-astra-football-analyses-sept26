@@ -841,6 +841,24 @@ export async function fetchHeatmap() {
 
 export interface AssembleReportSnapshot {
   factualCheck?: { accepted?: boolean; reasonCodes?: string[] };
+  publication?: {
+    accepted?: boolean;
+    requiresAnalyst?: boolean;
+    wholeMatchFrequency?: boolean;
+    frequencyRequiresDenominator?: boolean;
+  };
+}
+
+export async function assembleMatchReport(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/reports`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to assemble match report: ${response.status}`);
+  }
+  return response.json() as Promise<AssembleReportSnapshot>;
 }
 
 export async function fetchAssembleReport() {

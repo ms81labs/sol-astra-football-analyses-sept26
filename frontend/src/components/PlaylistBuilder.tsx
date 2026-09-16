@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { exportPlaylistInterval } from '../utils/workbench';
+import { assembleMatchReport, exportPlaylistInterval } from '../utils/workbench';
 
 interface PlaylistClip {
   start: number;
@@ -9,12 +9,18 @@ interface PlaylistClip {
   sourceEndFrameExclusive: number;
 }
 
-export default function PlaylistBuilder() {
+interface PlaylistBuilderProps {
+  matchId?: string;
+}
+
+export default function PlaylistBuilder({ matchId }: PlaylistBuilderProps) {
   const [start, setStart] = useState('12');
   const [end, setEnd] = useState('14');
   const [notes, setNotes] = useState('');
   const [clips, setClips] = useState<PlaylistClip[]>([]);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [reportNote, setReportNote] = useState<string | null>(null);
+  const [reportError, setReportError] = useState<string | null>(null);
 
   async function addClip() {
     const from = Number(start);
@@ -31,6 +37,24 @@ export default function PlaylistBuilder() {
       }]);
     } catch (error) {
       setExportError(error instanceof Error ? error.message : 'Failed to export playlist interval');
+    }
+  }
+
+  async function assembleReport() {
+    if (!matchId) return;
+    try {
+      const report = await assembleMatchReport(matchId);
+      setReportError(null);
+      const notesForReport: string[] = [];
+      if (report.publication?.wholeMatchFrequency === false) {
+        notesForReport.push('does not claim whole-match frequency');
+      }
+      if (report.publication?.frequencyRequiresDenominator) {
+        notesForReport.push('frequency requires a denominator');
+      }
+      setReportNote(notesForReport.join('. ') || 'Report assembled');
+    } catch (error) {
+      setReportError(error instanceof Error ? error.message : 'Failed to assemble report');
     }
   }
 
@@ -52,12 +76,19 @@ export default function PlaylistBuilder() {
       <button type="button" onClick={() => void addClip()} className="px-3 py-1.5 rounded bg-slate-700 text-xs font-semibold text-white">
         Add clip
       </button>
+      {matchId ? (
+        <button type="button" onClick={() => void assembleReport()} className="ml-2 px-3 py-1.5 rounded bg-slate-700 text-xs font-semibold text-white">
+          Assemble report
+        </button>
+      ) : null}
       {exportError && <p className="text-xs text-amber-200">{exportError}</p>}
+      {reportError && <p className="text-xs text-amber-200">{reportError}</p>}
       {clips.map((clip) => (
         <p key={`${clip.start}-${clip.end}-${clip.sourceEndFrameExclusive}-${clip.notes}`} className="text-xs text-slate-300">
           {clip.start}s to {clip.end}s (frame {clip.sourceEndFrameExclusive} exclusive){clip.notes ? ` · ${clip.notes}` : ''}
         </p>
       ))}
+      {reportNote && <p className="text-xs text-slate-300">{reportNote}</p>}
       <p className="text-xs text-slate-500">Reviewed passages do not establish a whole-match frequency.</p>
     </section>
   );
