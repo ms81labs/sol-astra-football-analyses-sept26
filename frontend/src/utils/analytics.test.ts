@@ -5,6 +5,7 @@ import {
   heatmapAvailability,
   speedAvailability,
   playerPhysicalTotalsAvailability,
+  physicalMetricAvailability,
   buildPassingNetwork,
   buildPlayerProfiles,
   buildPlayerContributions,
@@ -386,5 +387,23 @@ describe('computeHeatmap boundaries', () => {
     const continuous = playerPhysicalTotalsAvailability(true);
     expect(continuous.withheld).toBe(false);
     expect(continuous.wholeMatch).toBe(true);
+  });
+
+  it('emits withheld availability for every physical family metric until identity is continuous', () => {
+    const withheld = physicalMetricAvailability(false);
+    expect(withheld.map((item) => item.metric)).toEqual([
+      'my_team_distance_m',
+      'enemy_distance_m',
+      'my_team_top_speed_kmh',
+      'enemy_top_speed_kmh',
+      'my_team_sprints',
+      'enemy_sprints',
+    ]);
+    expect(withheld.every((item) => item.availability === 'withheld')).toBe(true);
+    expect(withheld.every((item) => item.reasonCodes.includes('IDENTITY_DISCONTINUITY'))).toBe(true);
+    expect(withheld.every((item) => item.value === null)).toBe(true);
+    const continuous = physicalMetricAvailability(true);
+    expect(continuous.every((item) => item.availability === 'available')).toBe(true);
+    expect(continuous.every((item) => item.reasonCodes.length === 0)).toBe(true);
   });
 });

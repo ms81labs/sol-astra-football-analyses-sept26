@@ -98,8 +98,12 @@ export default function StatsPanel({
     const isBenchmarkTruthGateFailed = benchmark ? !benchmark.fiveMinuteTruthReady : false;
     const showTacticalInterpretation = !isBallSignalUntrusted && !isBenchmarkTruthGateFailed;
     const maxDist = Math.max(stats.myTeamDistance, stats.enemyDistance, 1);
+    const withheld = (record?: MetricAvailability) => record != null && record.availability !== 'available' && record.availability !== 'experimental';
     const physical = metricAvailability.find((metric) => metric.metric === 'my_team_distance_m');
-    const physicalUnavailable = physical != null && physical.availability !== 'available';
+    const speed = metricAvailability.find((metric) => metric.metric === 'my_team_top_speed_kmh');
+    const sprints = metricAvailability.find((metric) => metric.metric === 'my_team_sprints');
+    const physicalUnavailable = withheld(physical);
+    const speedUnavailable = withheld(speed) || withheld(sprints) || physicalUnavailable;
     const myPpda = metricAvailability.find((metric) => metric.metric === 'my_team_ppda');
     const enemyPpda = metricAvailability.find((metric) => metric.metric === 'enemy_ppda');
     const ppdaHidden = (record?: { availability: string }) => record != null && record.availability !== 'available' && record.availability !== 'experimental';
@@ -169,6 +173,9 @@ export default function StatsPanel({
 
                 <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm">
                     <h4 className="text-xs text-slate-400 mb-2 font-medium uppercase tracking-wide">Speed & Sprints</h4>
+                    {speedUnavailable ? (
+                        <p className="text-xs text-slate-400">Unavailable</p>
+                    ) : (
                     <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
                         <div>
                             <span className="text-slate-500">Top Speed</span>
@@ -187,6 +194,7 @@ export default function StatsPanel({
                             <p className="text-red-400 font-mono font-semibold">{stats.enemySprints}</p>
                         </div>
                     </div>
+                    )}
                 </div>
 
                 {showTacticalInterpretation && (

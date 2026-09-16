@@ -31,7 +31,7 @@ import UploadCalibrationPanel from './components/UploadCalibrationPanel';
 import { useCoachAnalysis } from './hooks/useCoachAnalysis';
 import { useReviewSurface } from './features/review/useReviewSurface';
 import type { BackendEvent, CameraProfile, EventTag, FormationSegment, FrameData, MatchBenchmarkSummary, MatchRecord, MatchStats, ProcessingJob, RuntimeCapabilities, ShotMarker } from './types';
-import { buildPassingNetwork, buildPlayerProfiles, computeHeatmap, heatmapAvailability, playerPhysicalTotalsAvailability, speedAvailability, computeSpeedsForFrame, summarizeShots } from './utils/analytics';
+import { buildPassingNetwork, buildPlayerProfiles, computeHeatmap, heatmapAvailability, physicalMetricAvailability, playerPhysicalTotalsAvailability, speedAvailability, computeSpeedsForFrame, summarizeShots } from './utils/analytics';
 import {
   buildMatchVideoUrl,
   createMatchUpload,
@@ -48,6 +48,7 @@ import { findNearestFrameIndex } from './utils/videoSync';
 import { applyReviewShortcut, type ReviewAction } from './utils/reviewShortcuts';
 import { submitMatchCorrection, undoMatchCorrection } from './utils/workbench';
 import { windowedTimelineProps } from './utils/windowedTimeline';
+import { splitScores } from './utils/quantities';
 
 interface MatchEntry {
   id: string;
@@ -998,13 +999,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
                 (matchStats as MatchStats | null)?.metricAvailability?.length
                   ? matchStats?.metricAvailability
                   : activeMatch?.detail.requiresTeamSelection || matchBenchmark?.fiveMinuteTruthReady === false
-                    ? [{
-                        metric: 'my_team_distance_m',
-                        definitionVersion: '1',
-                        value: null,
-                        availability: 'unknown',
-                        reasonCodes: ['IDENTITY_DISCONTINUITY'],
-                      }]
+                    ? physicalMetricAvailability(false)
                     : []
               }
             />
@@ -1088,9 +1083,11 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
               frame={currentFrameRecord}
               cameraProfile={activeMatch?.detail.config?.cameraProfile ?? uploadCameraProfile}
               reviewStatus={currentEvent?.reviewStatus ?? 'unreviewed'}
-              detectorScore={currentFrameRecord?.Ball?.conf ?? null}
-              calibratedProbability={null}
-              confidenceInterval={null}
+              {...splitScores({
+                detectorScore: currentFrameRecord?.Ball?.conf ?? null,
+                calibratedProbability: null,
+                interval: null,
+              })}
             />
           </div>
           <div className="mb-3 shrink-0">

@@ -804,6 +804,26 @@ def reprocess_match_for_change(
 def reprocess_video_match(storage: Storage, match_id: str, *, config: MatchConfig | None = None) -> None:
     match = storage.get_match(match_id)
     config = config or match.config
+    if config.myTeamCluster != match.config.myTeamCluster:
+        change = "team_mapping"
+    elif config.attackDirection != match.config.attackDirection:
+        change = "ownership"
+    else:
+        change = "report"
+
+    def refuse_vision() -> dict[str, object]:
+        raise RuntimeError("image-space-safe reprocess must not invoke vision")
+
+    plan = reprocess_for_change(
+        change=change,
+        previous_identity=None,
+        current_identity=match.id,
+        vision=refuse_vision,
+    )
+    if plan.get("visionInvoked"):
+        raise RuntimeError("image-space-safe reprocess invoked vision")
+    storage.save_analysis_artifact(match.id, "reprocess_plan", plan)
+
     try:
         raw_rows = storage.load_raw_rows(match_id)
     except FileNotFoundError:

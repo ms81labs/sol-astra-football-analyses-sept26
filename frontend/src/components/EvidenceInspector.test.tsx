@@ -3,6 +3,7 @@ import { afterEach, expect, it } from 'vitest';
 
 import EvidenceInspector from './EvidenceInspector';
 import type { FrameData } from '../types';
+import { splitScores } from '../utils/quantities';
 
 afterEach(cleanup);
 
@@ -50,4 +51,18 @@ it('keeps detector score, calibrated probability and confidence interval as dist
   expect(screen.getByText('0.22')).toBeTruthy();
   expect(screen.getByText(/confidence interval/i)).toBeTruthy();
   expect(screen.queryByText(/confidence(?! interval)/i)).toBeNull();
+});
+
+it('does not copy an uncalibrated detector score into calibrated probability', () => {
+  const scores = splitScores({
+    detectorScore: 0.81,
+    calibratedProbability: null,
+    interval: null,
+  });
+  render(<EvidenceInspector frame={frame} {...scores} />);
+  expect(screen.getByText(/detector score/i)).toBeTruthy();
+  expect(screen.getByText('0.81')).toBeTruthy();
+  expect(screen.queryByText(/calibrated probability/i)).toBeNull();
+  expect(scores.calibratedProbability).toBeNull();
+  expect(scores.detectorScore).toBe(0.81);
 });

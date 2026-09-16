@@ -61,6 +61,27 @@ export function playerPhysicalTotalsAvailability(identityContinuous: boolean) {
     return physicalTotalsAvailability(identityContinuous);
 }
 
+export const PHYSICAL_METRICS = [
+    'my_team_distance_m',
+    'enemy_distance_m',
+    'my_team_top_speed_kmh',
+    'enemy_top_speed_kmh',
+    'my_team_sprints',
+    'enemy_sprints',
+] as const;
+
+export function physicalMetricAvailability(identityContinuous: boolean) {
+    return PHYSICAL_METRICS.map((metric) => ({
+        metric,
+        definitionVersion: '1',
+        value: null as number | null,
+        availability: identityContinuous ? 'available' : 'withheld',
+        reasonCodes: identityContinuous ? [] : ['IDENTITY_DISCONTINUITY'],
+        denominator: 'identity_continuous_eligible_seconds',
+        unit: metric.includes('distance') ? 'metres' : metric.includes('speed') ? 'km/h' : 'sprints',
+    }));
+}
+
 function physicalTotalsAvailability(identityContinuous: boolean) {
     return {
         wholeMatch: identityContinuous,

@@ -204,6 +204,41 @@ describe('StatsPanel', () => {
     expect(scoped.getByText(/metres/)).toBeTruthy();
   });
 
+  it('does not publish speed and sprints when identity-continuous physical metrics are withheld', () => {
+    const withheld = (metric: string, unit: string) => ({
+      metric,
+      definitionVersion: '1',
+      value: null,
+      availability: 'withheld' as const,
+      reasonCodes: ['IDENTITY_DISCONTINUITY'],
+      unit,
+      denominator: 'identity_continuous_eligible_seconds',
+      eligibleSeconds: 0,
+    });
+    const { container } = render(
+      <StatsPanel
+        stats={baseStats}
+        metricAvailability={[
+          withheld('my_team_distance_m', 'metres'),
+          withheld('enemy_distance_m', 'metres'),
+          withheld('my_team_top_speed_kmh', 'km/h'),
+          withheld('enemy_top_speed_kmh', 'km/h'),
+          withheld('my_team_sprints', 'sprints'),
+          withheld('enemy_sprints', 'sprints'),
+        ]}
+      />,
+    );
+    const speedCard = within(container).getByText('Speed & Sprints').closest('div');
+    expect(speedCard).toBeTruthy();
+    expect(speedCard!.textContent).not.toContain('29.4');
+    expect(speedCard!.textContent).not.toContain('28.2');
+    expect(speedCard!.textContent).not.toMatch(/\b12\b/);
+    expect(speedCard!.textContent).not.toMatch(/\b10\b/);
+    expect(within(speedCard as HTMLElement).getByText('Unavailable')).toBeTruthy();
+    expect(container.textContent).not.toContain('29.4 km/h');
+    expect(container.textContent).not.toContain('28.2 km/h');
+  });
+
   it('renders unknown PPDA as unavailable and labels shot quality as experimental', () => {
     const { container } = render(
       <StatsPanel
