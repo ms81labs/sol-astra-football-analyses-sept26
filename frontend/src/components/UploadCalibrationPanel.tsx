@@ -1,11 +1,12 @@
 import type { PointInput } from '../utils/uploadConfig';
-import type { UploadConfig } from '../types';
+import type { CameraProfile, UploadConfig } from '../types';
 import CalibrationFramePicker from './CalibrationFramePicker';
 
 interface UploadCalibrationPanelProps {
   autoHomography: boolean;
   loadedVideoConfig?: UploadConfig | null;
   attackDirection: 'left_to_right' | 'right_to_left';
+  cameraProfile?: CameraProfile;
   pointInputs: PointInput[];
   previewUrl: string | null;
   canRetryUpload: boolean;
@@ -13,6 +14,7 @@ interface UploadCalibrationPanelProps {
   uploadFailureGuidance: string | null;
   onAutoHomographyChange: (value: boolean) => void;
   onAttackDirectionChange: (value: 'left_to_right' | 'right_to_left') => void;
+  onCameraProfileChange?: (value: CameraProfile) => void;
   onPointChange: (index: number, axis: 'x' | 'y', value: string) => void;
   onResetPoints: () => void;
   onRetryUpload: () => void;
@@ -25,6 +27,7 @@ export default function UploadCalibrationPanel({
   autoHomography,
   loadedVideoConfig,
   attackDirection,
+  cameraProfile = 'stitched_panoramic_view',
   pointInputs,
   previewUrl,
   canRetryUpload,
@@ -32,6 +35,7 @@ export default function UploadCalibrationPanel({
   uploadFailureGuidance,
   onAutoHomographyChange,
   onAttackDirectionChange,
+  onCameraProfileChange,
   onPointChange,
   onResetPoints,
   onRetryUpload,
@@ -58,6 +62,20 @@ export default function UploadCalibrationPanel({
               className="w-4 h-4 accent-emerald-500"
             />
             Auto-detect pitch
+          </label>
+          <label className="text-xs text-slate-400 flex items-center gap-2">
+            Camera profile
+            <select
+              aria-label="Camera profile"
+              value={cameraProfile}
+              onChange={(event) => onCameraProfileChange?.(event.target.value as CameraProfile)}
+              className="bg-slate-900 text-slate-200 text-xs px-3 py-2 rounded border border-slate-700 font-mono"
+            >
+              <option value="stitched_panoramic_view">Stitched panoramic</option>
+              <option value="stable_elevated_wide">Stable elevated wide</option>
+              <option value="broadcast_cuts_zoom">Broadcast with cuts</option>
+              <option value="handheld_low_angle">Handheld / low angle</option>
+            </select>
           </label>
           <label className="text-xs text-slate-400 flex items-center gap-2">
             Attack direction

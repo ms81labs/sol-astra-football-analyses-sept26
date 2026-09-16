@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from backend.app.schemas import MatchConfig
 from backend.app.workbench.assistance import (
     AssistancePolicy,
     AssistanceRouter,
@@ -34,6 +35,12 @@ from backend.app.workbench.media import (
 from backend.app.workbench.native import native_gate, probe_gpu
 from backend.app.workbench.perception import Detection, IdentityRepair, Label, TrackerAdapter, score_detections, separate_ball_states
 from backend.app.workbench.review import CorrectionLog, new_correction, playlist_export_interval
+
+
+def test_match_config_defaults_to_declared_panoramic_profile() -> None:
+    config = MatchConfig()
+    assert config.cameraProfile == "stitched_panoramic_view"
+    assert config.pitchLengthM is None
 
 
 def test_baseline_dossier_names_inspected_source_and_capability_matrix() -> None:

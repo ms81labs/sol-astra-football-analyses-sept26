@@ -14,6 +14,7 @@ describe('buildUploadConfig', () => {
     expect(config.attackDirection).toBe('left_to_right');
     expect(config.llmProvider).toBe('local');
     expect(config.manualHomographyPoints).toEqual([]);
+    expect(config.cameraProfile).toBe('stitched_panoramic_view');
   });
 
   it('requires four complete points for video uploads', () => {

@@ -18,6 +18,14 @@ class MatchConfig(BaseModel):
     myTeamCluster: int | None = None
     llmProvider: Literal["local", "cloud"] = "local"
     autoHomography: bool = False  # if True, skip manualHomographyPoints and try pitch_detector.py first
+    cameraProfile: Literal[
+        "stable_elevated_wide",
+        "stitched_panoramic_view",
+        "broadcast_cuts_zoom",
+        "handheld_low_angle",
+    ] = "stitched_panoramic_view"
+    pitchLengthM: float | None = None
+    pitchWidthM: float | None = None
 
 
 class BallData(BaseModel):

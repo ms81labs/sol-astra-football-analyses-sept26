@@ -187,12 +187,21 @@ export interface ProcessingJob {
     durationSeconds?: number | null;
 }
 
+export type CameraProfile =
+    | 'stable_elevated_wide'
+    | 'stitched_panoramic_view'
+    | 'broadcast_cuts_zoom'
+    | 'handheld_low_angle';
+
 export interface UploadConfig {
     attackDirection?: 'left_to_right' | 'right_to_left';
     manualHomographyPoints?: Array<{ x: number; y: number }>;
     myTeamCluster?: number | null;
     llmProvider?: 'local' | 'cloud';
     autoHomography?: boolean;
+    cameraProfile?: CameraProfile;
+    pitchLengthM?: number | null;
+    pitchWidthM?: number | null;
 }
 
 export interface AnalyticsPayload {

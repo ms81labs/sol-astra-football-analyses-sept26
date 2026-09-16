@@ -389,7 +389,7 @@ describe('App match workspace loading', () => {
     ));
 
     const { container } = render(<App />);
-    await waitFor(() => expect(screen.getAllByRole('combobox')).toHaveLength(3));
+    await waitFor(() => expect(screen.getAllByRole('combobox')).toHaveLength(4));
     const activeSelector = screen.getAllByRole('combobox')[0] as HTMLSelectElement;
     const uploadInput = container.querySelector('input[type="file"]') as HTMLInputElement;
     fireEvent.change(activeSelector, { target: { value: 'match-b' } });

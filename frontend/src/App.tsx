@@ -9,6 +9,7 @@ import ReviewToolbar from './components/ReviewToolbar';
 import TacticalPitch from './components/TacticalPitch';
 import CoachInsights from './components/CoachInsights';
 import DashboardPanel from './components/DashboardPanel';
+import EvidenceInspector from './components/EvidenceInspector';
 import WorkbenchPanel from './components/WorkbenchPanel';
 import DemoMatchIssuePanel from './components/DemoMatchIssuePanel';
 import MatchVideoPanel from './components/MatchVideoPanel';
@@ -20,7 +21,7 @@ import TrustCropPanel from './components/TrustCropPanel';
 import UploadCalibrationPanel from './components/UploadCalibrationPanel';
 import { useCoachAnalysis } from './hooks/useCoachAnalysis';
 import { useReviewSurface } from './features/review/useReviewSurface';
-import type { BackendEvent, EventTag, FormationSegment, FrameData, MatchBenchmarkSummary, MatchRecord, MatchStats, ProcessingJob, RuntimeCapabilities, ShotMarker } from './types';
+import type { BackendEvent, CameraProfile, EventTag, FormationSegment, FrameData, MatchBenchmarkSummary, MatchRecord, MatchStats, ProcessingJob, RuntimeCapabilities, ShotMarker } from './types';
 import { buildPassingNetwork, buildPlayerProfiles, computeHeatmap, computeSpeedsForFrame, summarizeShots } from './utils/analytics';
 import {
   buildMatchVideoUrl,
@@ -146,6 +147,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
   const activeFrameTimestampsRef = useRef<number[]>([]);
   const loadingOperationRef = useRef(0);
   const [uploadAttackDirection, setUploadAttackDirection] = useState<'left_to_right' | 'right_to_left'>('left_to_right');
+  const [uploadCameraProfile, setUploadCameraProfile] = useState<CameraProfile>('stitched_panoramic_view');
   const [uploadPointInputs, setUploadPointInputs] = useState(createEmptyPointInputs);
   const [uploadAutoHomography, setUploadAutoHomography] = useState(true);
   const [uploadVideoFile, setUploadVideoFile] = useState<File | null>(null);
@@ -393,6 +395,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           isVideo,
           llmProvider: coach.llmProvider,
           attackDirection: uploadAttackDirection,
+          cameraProfile: uploadCameraProfile,
           pointInputs: uploadPointInputs,
           autoHomography: uploadAutoHomography,
         });
@@ -442,7 +445,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
         }
       }
     },
-    [beginLoadingOperation, coach.llmProvider, finishLoadingOperation, loadWorkspaceIntoState, uploadAttackDirection, uploadPointInputs, uploadAutoHomography],
+    [beginLoadingOperation, coach.llmProvider, finishLoadingOperation, loadWorkspaceIntoState, uploadAttackDirection, uploadCameraProfile, uploadPointInputs, uploadAutoHomography],
   );
 
   const handleFileUpload = useCallback(
@@ -624,6 +627,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
         autoHomography={uploadAutoHomography}
         loadedVideoConfig={isVideoMatch ? activeMatch?.detail.config ?? null : undefined}
         attackDirection={uploadAttackDirection}
+        cameraProfile={uploadCameraProfile}
         pointInputs={uploadPointInputs}
         previewUrl={uploadVideoPreviewUrl}
         canRetryUpload={canRetryUpload}
@@ -631,6 +635,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
         uploadFailureGuidance={uploadFailureGuidance}
         onAutoHomographyChange={setUploadAutoHomography}
         onAttackDirectionChange={setUploadAttackDirection}
+        onCameraProfileChange={setUploadCameraProfile}
         onPointChange={updateUploadPoint}
         onResetPoints={resetUploadPoints}
         onRetryUpload={handleRetryUpload}
@@ -928,6 +933,12 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
             />
           </div>
 
+          <div className="mb-3 shrink-0">
+            <EvidenceInspector
+              frame={matchData[currentFrame] || null}
+              cameraProfile={activeMatch?.detail.config?.cameraProfile ?? uploadCameraProfile}
+            />
+          </div>
           <div className="mb-3 flex-1 overflow-y-auto">
             <AnnotationList
               annotations={review.annotations}

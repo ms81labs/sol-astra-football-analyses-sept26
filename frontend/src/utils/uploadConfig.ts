@@ -1,4 +1,4 @@
-import type { UploadConfig } from '../types';
+import type { CameraProfile, UploadConfig } from '../types';
 
 export interface PointInput {
   x: string;
@@ -10,6 +10,7 @@ interface BuildUploadConfigInput {
   llmProvider: 'local' | 'cloud';
   attackDirection: 'left_to_right' | 'right_to_left';
   pointInputs: PointInput[];
+  cameraProfile?: CameraProfile;
 }
 
 export function createEmptyPointInputs(): PointInput[] {
@@ -22,12 +23,14 @@ export function buildUploadConfig({
   attackDirection,
   pointInputs,
   autoHomography = false,
+  cameraProfile = 'stitched_panoramic_view',
 }: BuildUploadConfigInput & { autoHomography?: boolean }): UploadConfig {
   if (!isVideo) {
     return {
       attackDirection,
       llmProvider,
       manualHomographyPoints: [],
+      cameraProfile,
     };
   }
 
@@ -38,6 +41,7 @@ export function buildUploadConfig({
       llmProvider,
       manualHomographyPoints: [],
       autoHomography: true,
+      cameraProfile,
     };
   }
 
@@ -58,5 +62,6 @@ export function buildUploadConfig({
     attackDirection,
     llmProvider,
     manualHomographyPoints: points,
+    cameraProfile,
   };
 }
