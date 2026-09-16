@@ -21,6 +21,7 @@ from .incidents import level0_incident_package
 from .jobs import DurableJobLedger, JobRequest
 from .library import search_match_library
 from .media import FourRatesReceipt
+from .milestones import milestone_plan, owners, progress_signal
 from .native import native_gate, probe_gpu
 from .ownership import classify_ownership
 from .package import assemble_match_package
@@ -32,6 +33,8 @@ from .risks import risk_register
 from .roster import model_roster
 from .setup import assess_match_setup, create_match
 from .store import WorkbenchStore
+from .targets import metadata_api_targets
+from .training import drill_library
 from .xt import xt_deferred_plan
 
 _correction_log = CorrectionLog()
@@ -484,5 +487,25 @@ def create_workbench_router(storage_root: Path) -> APIRouter:
     @router.get("/risks")
     def get_risks() -> dict:
         return {"items": risk_register()}
+
+    @router.get("/milestones")
+    def get_milestones() -> dict:
+        return {
+            "items": milestone_plan(),
+            "owners": owners(),
+            "progress": progress_signal(
+                completed_analyst_tasks=0,
+                validated_capability_gates=0,
+                merged_files=0,
+            ),
+        }
+
+    @router.get("/training/drills")
+    def get_training_drills() -> dict:
+        return drill_library()
+
+    @router.get("/targets")
+    def get_targets() -> dict:
+        return metadata_api_targets()
 
     return router

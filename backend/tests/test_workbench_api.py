@@ -211,6 +211,13 @@ def test_workbench_corrections_search_jobs_and_unknown_metrics(tmp_path: Path) -
             assert created.json()["manualTaggingPermitted"] is True
             risks = await client.get("/api/workbench/risks")
             assert any(item["id"] == "labels_incomplete" for item in risks.json()["items"])
+            milestones = await client.get("/api/workbench/milestones")
+            assert [item["id"] for item in milestones.json()["items"]] == ["M0", "M1", "M2", "M3", "M4", "M5"]
+            drills = await client.get("/api/workbench/training/drills")
+            assert drills.json()["prescribesMedicalLoad"] is False
+            targets = await client.get("/api/workbench/targets")
+            assert targets.json()["measured"] is False
+            assert targets.json()["p95MetadataApiReadMs"] == 500
 
     _run(body)
 

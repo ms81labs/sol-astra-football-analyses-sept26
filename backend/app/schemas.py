@@ -183,6 +183,9 @@ class DetectedEvent(BaseModel):
     description: str
     reviewStatus: Literal["unreviewed", "accepted", "rejected"] = "unreviewed"
     heuristicName: str = "provisional_event_suggestion"
+    evidenceVersion: str | None = None
+    intervalStart: float | None = None
+    intervalEnd: float | None = None
 
 
 class ColorClusterSummary(BaseModel):

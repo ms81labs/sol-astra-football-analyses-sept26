@@ -10,6 +10,7 @@ import TacticalPitch from './components/TacticalPitch';
 import CoachInsights from './components/CoachInsights';
 import DashboardPanel from './components/DashboardPanel';
 import EvidenceInspector from './components/EvidenceInspector';
+import QualityTimeline from './components/QualityTimeline';
 import WorkbenchPanel from './components/WorkbenchPanel';
 import DemoMatchIssuePanel from './components/DemoMatchIssuePanel';
 import MatchVideoPanel from './components/MatchVideoPanel';
@@ -964,6 +965,16 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
             <EvidenceInspector
               frame={matchData[currentFrame] || null}
               cameraProfile={activeMatch?.detail.config?.cameraProfile ?? uploadCameraProfile}
+            />
+          </div>
+          <div className="mb-3 shrink-0">
+            <QualityTimeline
+              items={[
+                { id: 'team', label: 'incorrect team selection', impact: 'high' },
+                { id: 'calibration', label: 'calibration drift', impact: 'high' },
+                { id: 'identity', label: 'identity switches', impact: 'high' },
+                { id: 'possession', label: 'ambiguous possession around a shot', impact: 'high' },
+              ]}
             />
           </div>
           <div className="mb-3 flex-1 overflow-y-auto">

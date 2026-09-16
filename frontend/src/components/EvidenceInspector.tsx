@@ -27,8 +27,14 @@ export default function EvidenceInspector({
   return (
     <section aria-label="Evidence inspector" className="rounded-lg border border-slate-700 bg-slate-900 p-3 text-xs text-slate-300 space-y-1">
       <h3 className="text-[11px] uppercase tracking-wide text-slate-500">Evidence inspector</h3>
-      <p>Observation source: <span className="font-mono text-emerald-300">{sourceLabel(frame)}</span></p>
-      <p>Review status: <span className="font-mono text-amber-300">{reviewStatus}</span></p>
+      <p>
+        <span aria-label="observation source icon" role="img">◎</span>
+        {' '}Observation source: <span className="font-mono text-emerald-300">{sourceLabel(frame)}</span>
+      </p>
+      <p>
+        <span aria-label="review status icon" role="img">✓</span>
+        {' '}Review status: <span className="font-mono text-amber-300">{reviewStatus}</span>
+      </p>
       {cameraProfile && <p>Camera profile: <span className="font-mono">{cameraProfile}</span></p>}
       {modelHash && <p>Model: <span className="font-mono">{modelHash}</span></p>}
       {configVersion && <p>Config: <span className="font-mono">{configVersion}</span></p>}

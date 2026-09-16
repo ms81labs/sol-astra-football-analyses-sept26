@@ -698,6 +698,8 @@ def test_feature_flags_keep_experimental_metrics_and_native_code_shadowed() -> N
     assert feature_enabled("experimental_shot_quality", env={}) is False
     assert feature_enabled("gpu_default", env={}) is False
     assert feature_enabled("native_code", env={}) is False
+    assert feature_enabled("experimental_ui", env={}) is False
+    assert feature_enabled("embeddings_search", env={}) is False
     assert feature_enabled("experimental_shot_quality", env={"GA_FLAG_EXPERIMENTAL_SHOT_QUALITY": "1"}) is True
 
 
@@ -1008,6 +1010,119 @@ def test_locked_evaluation_labels_cannot_enter_training() -> None:
         destination="training",
     )
     assert allowed.admitted is True
+
+
+def test_experiment_cycle_isolates_pools_and_rejects_pseudo_labels_as_truth() -> None:
+    from backend.app.workbench.training import (
+        drill_library,
+        experiment_cycle,
+        experiment_ledger,
+        promote_candidate,
+        pseudo_label,
+        sampling_policy,
+    )
+
+    diagnose = experiment_cycle("diagnose", measurable_failure=False)
+    assert diagnose["proceed"] is False
+    train = experiment_cycle("train", budget_remaining=0.0, development_benefit=False)
+    assert train["proceed"] is False
+    label = pseudo_label(suggestion="player", human_change=None, approved=False)
+    assert label["independentGroundTruth"] is False
+    ledger = experiment_ledger()
+    first = ledger.append({"run": "exp-1", "config": "baseline"})
+    second = ledger.append({"run": "exp-2", "config": "candidate"})
+    assert [item["run"] for item in ledger.entries] == ["exp-1", "exp-2"]
+    assert first != second
+    policy = sampling_policy()
+    assert policy["uncertaintyOnly"] is False
+    assert "random_representative" in policy["mix"]
+    drills = drill_library()
+    assert drills["prescribesMedicalLoad"] is False
+    assert drills["diagnosesFatigueOrInjury"] is False
+    promotion = promote_candidate(independent_accepted=False, rollback_artifact=True)
+    assert promotion["promoted"] is False
+
+
+def test_coverage_aware_selector_and_held_out_questions_include_unanswerable() -> None:
+    from backend.app.workbench.reports import coverage_aware_selector, held_out_questions
+
+    selected = coverage_aware_selector(
+        frames=[{"t": 1.0}, {"t": 45.0}, {"t": 89.0}],
+        events=[{"id": "e1", "t": 12.0, "evidenceIds": ["ev-1"]}],
+        max_frames=2,
+    )
+    assert selected["representsWholeMatch"] is False
+    assert selected["coverageAware"] is True
+    questions = held_out_questions()
+    assert any(item["unanswerable"] for item in questions)
+    assert all("expectedFilter" in item for item in questions)
+
+
+def test_milestones_are_planning_estimates_and_progress_counts_gates_not_files() -> None:
+    from backend.app.workbench.milestones import milestone_plan, owners, progress_signal
+
+    plan = milestone_plan()
+    ids = [item["id"] for item in plan]
+    assert ids == ["M0", "M1", "M2", "M3", "M4", "M5"]
+    m1 = next(item for item in plan if item["id"] == "M1")
+    assert m1["analystAccepted"] is False
+    assert m1["llmRequired"] is False
+    assert plan[0]["planningEstimateNotCommitment"] is True
+    named = owners()
+    assert set(named) >= {"backend_media", "frontend", "cv", "independent_evaluation", "operations"}
+    signal = progress_signal(completed_analyst_tasks=0, validated_capability_gates=0, merged_files=400)
+    assert signal["complete"] is False
+    assert signal["usesMergedFilesAsSuccess"] is False
+
+
+def test_detected_event_carries_evidence_version_and_half_open_interval() -> None:
+    from backend.app.schemas import DetectedEvent
+
+    event = DetectedEvent(
+        type="shot",
+        frameId=12,
+        timestamp=12.4,
+        description="provisional shot",
+        evidenceVersion="evidence_v1",
+        intervalStart=12.0,
+        intervalEnd=13.0,
+    )
+    dumped = event.model_dump()
+    assert dumped["reviewStatus"] == "unreviewed"
+    assert dumped["evidenceVersion"] == "evidence_v1"
+    assert dumped["intervalStart"] == 12.0
+    assert dumped["intervalEnd"] == 13.0
+
+
+def test_metadata_api_p95_is_a_planning_target_not_a_measurement() -> None:
+    from backend.app.workbench.targets import metadata_api_targets
+
+    target = metadata_api_targets()
+    assert target["p95MetadataApiReadMs"] == 500
+    assert target["measured"] is False
+    assert target["planningTargetNotMeasurement"] is True
+    assert target["doesNotPromiseVideoDecodeLatency"] is True
+    assert target["timelineLoadsAllFrameRecords"] is False
+
+
+def test_selective_recompute_reuses_identical_cache_identity() -> None:
+    from backend.app.workbench.cache import cache_identity, recompute_plan
+
+    identity = cache_identity(
+        source_sha256="a" * 64,
+        interval_start=0.0,
+        interval_end=10.0,
+        decoder_version="opencv",
+        model_hash="weights-v1",
+        temporal_policy="clip_local_index_modulo",
+        output_schema="evidence_v1",
+    )
+    reused = recompute_plan(previous_identity=identity, current_identity=identity, change="calibration")
+    assert reused["reuse"] is True
+    assert reused["rebuild"] == []
+    rebuilt = recompute_plan(previous_identity=None, current_identity=identity, change="calibration")
+    assert rebuilt["reuse"] is False
+    assert "pitch_positions" in rebuilt["rebuild"]
 
 
 def test_match_cost_includes_review_labour_and_does_not_use_export_fps() -> None:

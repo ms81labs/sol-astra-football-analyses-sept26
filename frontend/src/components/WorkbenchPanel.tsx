@@ -3,6 +3,8 @@ import { useEffect, useState } from 'react';
 import MetricInspector from './MetricInspector';
 import ModalDialog from './ModalDialog';
 import PlaylistBuilder from './PlaylistBuilder';
+import QualityTimeline from './QualityTimeline';
+import TrainingSuggestions from './TrainingSuggestions';
 import {
   exportPlaylistInterval,
   fetchJobCost,
@@ -43,7 +45,11 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
   const [playlistStart, setPlaylistStart] = useState('3');
   const [playlistEnd, setPlaylistEnd] = useState('5');
   const [playlistMessage, setPlaylistMessage] = useState<string | null>(null);
-  const [flags, setFlags] = useState<{ experimental_shot_quality?: boolean } | null>(null);
+  const [flags, setFlags] = useState<{
+    experimental_shot_quality?: boolean;
+    experimental_ui?: boolean;
+    embeddings_search?: boolean;
+  } | null>(null);
   const [jobCost, setJobCost] = useState<{ reservedTotal: number } | null>(null);
   const [libraryQuery, setLibraryQuery] = useState('');
   const [libraryHits, setLibraryHits] = useState<Array<{ id: string; title?: string }>>([]);
@@ -82,7 +88,7 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
     let cancelled = false;
     fetchWorkbenchFlags()
       .then((payload) => {
-        if (!cancelled && typeof payload.experimental_shot_quality === 'boolean') {
+        if (!cancelled) {
           setFlags(payload);
         }
       })
@@ -248,6 +254,12 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
                 {flags && flags.experimental_shot_quality === false && (
                   <p className="text-xs text-slate-400">experimental shot quality: shadowed</p>
                 )}
+                {flags && flags.experimental_ui === false && (
+                  <p className="text-xs text-slate-400">experimental UI: shadowed</p>
+                )}
+                {flags && flags.embeddings_search === false && (
+                  <p className="text-xs text-slate-400">embeddings search: shadowed</p>
+                )}
                 {jobCost && <p className="text-xs text-slate-300">Live job cost reserved {jobCost.reservedTotal}</p>}
               </div>
               <div className="rounded-lg border border-slate-700 p-3 space-y-2">
@@ -269,6 +281,19 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
                 {playersLimited && <p className="text-xs text-amber-200">Interval-limited player observations. Totals withheld.</p>}
               </div>
               <PlaylistBuilder />
+              {flags?.experimental_ui ? (
+                <QualityTimeline
+                  items={[
+                    { id: 'possession', label: 'ambiguous possession around a shot', impact: 'high' },
+                    { id: 'team', label: 'incorrect team selection', impact: 'high' },
+                    { id: 'far', label: 'far-side miss', impact: 'medium' },
+                  ]}
+                />
+              ) : null}
+              <TrainingSuggestions
+                observations={[{ id: 'o1', label: 'near-side recovery' }]}
+                drills={[{ name: 'near-side recovery 2v2', coachReviewed: true }]}
+              />
               <MetricInspector
                 metric="my_team_distance_m"
                 unit="metres"

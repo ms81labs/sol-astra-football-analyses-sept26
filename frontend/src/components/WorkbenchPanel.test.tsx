@@ -144,3 +144,42 @@ it('shows feature flags, live job cost, match library hits and interval-limited 
   expect(await screen.findByText(/elevated training/i)).toBeTruthy();
   expect(await screen.findByText(/interval-limited player observations/i)).toBeTruthy();
 });
+
+it('shows the quality timeline only when experimental UI is enabled', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo) => {
+    const url = String(input);
+    if (url.endsWith('/api/workbench/dossier')) {
+      return new Response(JSON.stringify({
+        baseline: {
+          selectedCommit: '5099e1f',
+          declaredCameraProfile: 'stitched_panoramic_view',
+          declaredWorkflow: 'manual_review_plus_declared_camera_setup',
+          unresolvedGates: [],
+          permittedNextActions: [],
+          forbiddenActions: [],
+          capabilities: [],
+          evidenceClasses: {},
+        },
+        release: { deploymentBoundary: 'loopback', gNetworkRequiredForNonLocal: true, nativeCode: 'gated_inert' },
+        evaluation: { accepted: false, completeTasks: 0, requiredTasks: 18, reasonCodes: ['LABELS_INCOMPLETE'] },
+        gpu: { available: false, canPromoteDefault: false, reasonCodes: ['HARDWARE_UNAVAILABLE'] },
+        native: { approved: false, reasonCodes: ['NATIVE_GATE_CLOSED'] },
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    if (url.endsWith('/api/workbench/flags')) {
+      return new Response(JSON.stringify({
+        experimental_shot_quality: false,
+        gpu_default: false,
+        native_code: false,
+        experimental_ui: true,
+        embeddings_search: false,
+      }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ query: { unanswerable: true, reason: 'x', eventFamily: 'pass' }, results: [] }), { status: 200 });
+  }));
+
+  render(<WorkbenchPanel onClose={() => undefined} matchId="m1" events={[]} />);
+  expect(await screen.findByText(/review first/i)).toBeTruthy();
+  expect(screen.getByText(/incorrect team selection/i)).toBeTruthy();
+  expect(screen.getByText(/does not prescribe medical load/i)).toBeTruthy();
+});

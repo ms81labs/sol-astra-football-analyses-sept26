@@ -51,6 +51,9 @@ export interface EventTag {
     type: EventType;
     reviewStatus?: 'unreviewed' | 'accepted' | 'rejected';
     heuristicName?: string;
+    evidenceVersion?: string;
+    intervalStart?: number;
+    intervalEnd?: number;
 }
 
 // ===== LLM Types =====
@@ -241,6 +244,9 @@ export interface BackendEvent {
     description: string;
     reviewStatus?: 'unreviewed' | 'accepted' | 'rejected';
     heuristicName?: string;
+    evidenceVersion?: string;
+    intervalStart?: number;
+    intervalEnd?: number;
 }
 
 export interface PassNetworkEdge {

@@ -38,3 +38,28 @@ def cache_identity(
 
 def cache_compatible(left: str, right: str) -> bool:
     return left == right
+
+
+REBUILD_FOR: dict[str, list[str]] = {
+    "report": ["report"],
+    "team_mapping": ["team_state", "events", "metrics", "report"],
+    "track_edit": ["ownership", "player_events", "metrics", "report"],
+    "calibration": ["pitch_positions", "physical_metrics", "tactical_metrics", "report"],
+    "perception": ["observations", "tracking", "dependants"],
+    "ownership": ["events", "metrics", "report"],
+}
+
+
+def recompute_plan(
+    *,
+    previous_identity: str | None,
+    current_identity: str,
+    change: str,
+) -> dict[str, Any]:
+    if previous_identity == current_identity:
+        return {"reuse": True, "rebuild": [], "reason": "identical_cache_identity"}
+    return {
+        "reuse": False,
+        "rebuild": list(REBUILD_FOR[change]),
+        "reason": "cache_identity_changed",
+    }

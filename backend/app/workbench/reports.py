@@ -70,3 +70,35 @@ def claim_provenance(
         "reasonCodes": reasons,
         "missingEvidenceIds": missing,
     }
+
+
+def coverage_aware_selector(
+    *,
+    frames: list[dict[str, Any]],
+    events: list[dict[str, Any]],
+    max_frames: int,
+) -> dict[str, Any]:
+    picked = frames[: max(0, max_frames)]
+    if frames:
+        picked = [frames[0], frames[len(frames) // 2], frames[-1]][:max_frames]
+    return {
+        "frames": picked,
+        "events": events,
+        "coverageAware": True,
+        "representsWholeMatch": False,
+    }
+
+
+def held_out_questions() -> list[dict[str, Any]]:
+    return [
+        {
+            "text": "show our second-half turnovers followed by a shot within 10 seconds",
+            "unanswerable": False,
+            "expectedFilter": {"eventFamily": "turnover", "successorEvent": "shot", "maxGapSeconds": 10},
+        },
+        {
+            "text": "how tired was player 7 in the 89th minute",
+            "unanswerable": True,
+            "expectedFilter": {"reason": "medical_inference_refused"},
+        },
+    ]

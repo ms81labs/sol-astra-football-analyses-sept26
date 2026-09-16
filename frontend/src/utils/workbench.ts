@@ -54,6 +54,8 @@ export interface WorkbenchFlags {
   experimental_shot_quality: boolean;
   gpu_default: boolean;
   native_code: boolean;
+  experimental_ui: boolean;
+  embeddings_search: boolean;
 }
 
 export interface JobCostSummary {

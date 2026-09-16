@@ -26,6 +26,8 @@ it('keeps observation source separate from review status', () => {
   expect(screen.getByText(/Observation source/)).toBeTruthy();
   expect(screen.getByText('observed')).toBeTruthy();
   expect(screen.getByText('unreviewed')).toBeTruthy();
+  expect(screen.getByLabelText(/observation source icon/i)).toBeTruthy();
+  expect(screen.getByLabelText(/review status icon/i)).toBeTruthy();
   expect(screen.getByText(/weights-v1/)).toBeTruthy();
   expect(screen.getByText(/evidence_v1/)).toBeTruthy();
   expect(screen.getByText(/does not convert an inferred location/)).toBeTruthy();

@@ -7,7 +7,7 @@ from typing import Any, Literal
 
 from pydantic import Field
 
-from .cache import cache_identity
+from .cache import REBUILD_FOR, cache_identity
 from .contracts import JobPhase, StrictModel
 
 MAX_ATTEMPTS = 3
@@ -137,15 +137,7 @@ class DurableJobLedger:
         return attempt
 
     def invalidate_for(self, change: Literal["report", "team_mapping", "track_edit", "calibration", "perception", "ownership"]) -> list[str]:
-        rebuild = {
-            "report": ["report"],
-            "team_mapping": ["team_state", "events", "metrics", "report"],
-            "track_edit": ["ownership", "player_events", "metrics", "report"],
-            "calibration": ["pitch_positions", "physical_metrics", "tactical_metrics", "report"],
-            "perception": ["observations", "tracking", "dependants"],
-            "ownership": ["events", "metrics", "report"],
-        }[change]
-        return rebuild
+        return list(REBUILD_FOR[change])
 
     def receipt(self, request_id: str) -> JobPhase:
         attempt = self.attempts[request_id][-1]
