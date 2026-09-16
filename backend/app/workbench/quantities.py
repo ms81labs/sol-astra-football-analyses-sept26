@@ -41,6 +41,17 @@ def formation_availability(*, eligible_windows: int, role_context: bool) -> dict
     return {"availability": "available", "reasonCodes": [], "value": "computed"}
 
 
+def heatmap_availability(*, identity_continuous: bool) -> dict[str, Any]:
+    withheld = not identity_continuous
+    return {
+        "identityContinuous": identity_continuous,
+        "wholeMatch": identity_continuous,
+        "intervalLimited": withheld,
+        "withheld": withheld,
+        "reasonCodes": [] if identity_continuous else ["IDENTITY_DISCONTINUITY"],
+    }
+
+
 def transform_legacy_display(*, x: float, y: float, from_display: bool) -> dict[str, Any]:
     del x, y
     return {

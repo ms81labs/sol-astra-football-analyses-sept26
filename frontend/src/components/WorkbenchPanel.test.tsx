@@ -339,6 +339,21 @@ it('loads recovery and landmark preview from production routes and posts deletio
     if (url.endsWith('/api/rates/four')) {
       return new Response(JSON.stringify({ exportFpsEqualsInferenceFps: false, notes: ['EXPORT_FPS_IS_NOT_INFERENCE_FPS'] }), { status: 200 });
     }
+    if (url.endsWith('/api/decode/frames')) {
+      return new Response(JSON.stringify({ backend: 'fixture', defaultBackend: 'opencv', pyavDefault: false, torchcodecDefault: false, device: 'cpu', indexes: [0, 1] }), { status: 200 });
+    }
+    if (url.endsWith('/api/challengers')) {
+      return new Response(JSON.stringify({ kloppy: { enabled: false, replacesInternalProvenance: false }, roboflow: { enabled: false, name: 'roboflow_trackers' }, mcbyte: { enabled: false, default: false } }), { status: 200 });
+    }
+    if (url.endsWith('/api/heatmap')) {
+      return new Response(JSON.stringify({ identityContinuous: false, wholeMatch: false, intervalLimited: true, withheld: true, reasonCodes: ['IDENTITY_DISCONTINUITY'] }), { status: 200 });
+    }
+    if (url.endsWith('/api/reports/assemble')) {
+      return new Response(JSON.stringify({ factualCheck: { accepted: false, reasonCodes: ['FABRICATED_EVIDENCE'] } }), { status: 200 });
+    }
+    if (url.endsWith('/api/permissions/stale')) {
+      return new Response(JSON.stringify({ stale: true, admitted: false, reasonCodes: ['STALE_PERMISSION'] }), { status: 200 });
+    }
     return new Response(JSON.stringify({ query: { unanswerable: true, reason: 'x', eventFamily: 'pass' }, results: [] }), { status: 200 });
   });
   vi.stubGlobal('fetch', fetchMock);
@@ -372,6 +387,11 @@ it('loads recovery and landmark preview from production routes and posts deletio
   expect(await screen.findByText(/frozen evaluation protocol remains incomplete/i)).toBeTruthy();
   expect(screen.getByText(/gpu default flag stays off/i)).toBeTruthy();
   expect(screen.getByText(/export fps is not inference fps/i)).toBeTruthy();
+  expect(await screen.findByText(/production decode stays on the fixture framesource/i)).toBeTruthy();
+  expect(screen.getByText(/kloppy, roboflow, and mcbyte stay unadmitted challengers/i)).toBeTruthy();
+  expect(screen.getByText(/heatmaps stay interval-limited without identity continuity/i)).toBeTruthy();
+  expect(screen.getByText(/report assembly rejects fabricated evidence/i)).toBeTruthy();
+  expect(screen.getByText(/stale permissions are not admitted/i)).toBeTruthy();
   await fireEvent.click(screen.getByRole('button', { name: /request deletion/i }));
   const deletionCall = fetchMock.mock.calls.find(([url, init]) => String(url).endsWith('/api/access/deletion') && init?.method === 'POST');
   expect(deletionCall).toBeTruthy();

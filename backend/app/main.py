@@ -51,6 +51,7 @@ from .schemas import (
 )
 from .semantic_search import search_matches_by_tactical_themes, search_bundles_by_tactical_themes, detect_themes_for_match
 from .storage import AdmissionOutcomeUncertainError, Storage, UploadTooLargeError
+from .ai_policy import ground_output
 from .workbench.access import (
     access_deletion_procedure,
     authorize_object,
@@ -62,8 +63,19 @@ from .workbench.access import (
     protocol_network_allowlist,
     public_exposure_gate,
     signed_scoped_object_access,
+    stale_permissions,
     untrusted_model_output,
     upload_quota,
+)
+from .workbench.challengers import (
+    gstreamer_adapter,
+    kloppy_boundary,
+    mcbyte_adapter,
+    onnx_runtime_adapter,
+    pynv_adapter,
+    roboflow_trackers_adapter,
+    tensorrt_adapter,
+    trackeval_adapter,
 )
 from .workbench.admission import admit_camera, admit_media
 from .workbench.artifacts import (
@@ -88,6 +100,8 @@ from .workbench.incidents import (
     broadcast_replay_not_simultaneous,
     elevated_body_part_homography,
     invisible_entity_not_repaired_by_larger_model,
+    level0_incident_package,
+    level1_positional_aid,
     level2_schematic_replay,
     level3_multiview,
     vlm_confidence_is_not_referee,
@@ -175,23 +189,31 @@ from .workbench.perception import (
     separate_ball_states,
     tile_to_source,
 )
-from .workbench.quantities import pitch_axes, split_scores, transform_legacy_display
+from .workbench.quantities import heatmap_availability, pitch_axes, split_scores, transform_legacy_display
 from .workbench.recovery import full_disk, recovery_objectives, support_bundle, unresolved_incidents
 from .workbench.repository import RepositoryAdapter, http_may_run_gpu, vector_broker_required
-from .workbench.reports import held_out_questions
+from .workbench.reports import assemble_report, held_out_questions
 from .workbench.research import execute_track, may_write_product_paths, research_lane
 from .workbench.retention import PROTECTED, may_delete
 from .workbench.media import (
     DecodedFrame,
+    FfmpegFrameSource,
+    FfmpegProbe,
+    FixtureFrameSource,
+    OpenCvFrameSource,
+    PyAvFrameSource,
     SamplingAudit,
+    TorchCodecFrameSource,
     apply_crop_and_rotation,
     align_clip_start_to_grid,
     colour_round_trip,
     cpu_fallback,
     decode_memory_policy,
     detect_camera_cuts,
+    first_bgr_frame,
     four_rates_receipt,
     frame_interval_for_target_fps,
+    iter_bgr_frames,
     map_decoded_to_sample,
     map_original_to_proxy_pts,
     pixels_from_decoded_frame,
@@ -349,6 +371,92 @@ def _unpromoted_receipt() -> dict:
         allocated_spend=0.0,
         fallback_event="cpu_local",
     )
+
+
+def _fixture_frame_source() -> tuple[list[DecodedFrame], FixtureFrameSource]:
+    identity = SourceClockIdentity(sourceSha256="a" * 64, byteSize=3)
+    frames = [
+        DecodedFrame(0, 0, 0.0, 1, 1, "bgr", 0, b"\x00\x00\x00", "fixture"),
+        DecodedFrame(1, 1, 0.04, 1, 1, "bgr", 0, b"\x00\x00\x00", "fixture"),
+    ]
+    return frames, FixtureFrameSource(frames, identity)
+
+
+def _stale_permissions_view() -> dict:
+    return stale_permissions(permission_expires_at=0.0, now=1.0)
+
+
+def _challenger_adapters_view() -> dict:
+    return {
+        "kloppy": kloppy_boundary(),
+        "roboflow": roboflow_trackers_adapter(),
+        "mcbyte": mcbyte_adapter(),
+        "onnx": onnx_runtime_adapter(),
+        "tensorrt": tensorrt_adapter(),
+        "pynv": pynv_adapter(),
+        "gstreamer": gstreamer_adapter(),
+        "trackeval": trackeval_adapter(),
+    }
+
+
+def _decoder_challengers_view(storage_root: Path) -> dict:
+    path = Path(storage_root) / "decode-fixture.bin"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"src")
+    pyav = PyAvFrameSource()
+    torchcodec = TorchCodecFrameSource()
+    ffmpeg = FfmpegFrameSource(
+        frames=[],
+        identity=SourceClockIdentity(sourceSha256="a" * 64, byteSize=0),
+    )
+    pyav_error = None
+    torch_error = None
+    try:
+        list(pyav.iter_frames(path))
+    except RuntimeError as exc:
+        pyav_error = str(exc)
+    try:
+        list(torchcodec.iter_frames(path))
+    except RuntimeError as exc:
+        torch_error = str(exc)
+    return {
+        "pyav": {
+            "name": pyav.name,
+            "default": False,
+            "enabled": False,
+            "role": "challenger",
+            "error": pyav_error,
+        },
+        "torchcodec": {
+            "name": torchcodec.name,
+            "default": False,
+            "enabled": False,
+            "role": "challenger",
+            "error": torch_error,
+        },
+        "ffmpeg": {"name": ffmpeg.name, "default": False, "enabled": False, "role": "challenger"},
+        "selected": cpu_fallback("cuda", {"opencv", "fixture"}),
+    }
+
+
+def _production_decode_frames(storage_root: Path) -> dict:
+    path = Path(storage_root) / "decode-fixture.bin"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"src")
+    _, source = _fixture_frame_source()
+    decoded = list(iter_bgr_frames(path, source))
+    first = first_bgr_frame(path, source)
+    buffer = decoded[0].buffer if decoded else None
+    return {
+        "backend": source.name,
+        "defaultBackend": OpenCvFrameSource.name,
+        "pyavDefault": False,
+        "torchcodecDefault": False,
+        "device": "cpu" if buffer is None else buffer.device,
+        "gpuPromoted": False,
+        "indexes": [frame.source_frame_index for frame in decoded],
+        "firstIndex": None if first is None else first.source_frame_index,
+    }
 
 
 class BrowserOriginMiddleware:
@@ -1645,11 +1753,7 @@ def create_app(
             "deletion": access_deletion_procedure(requested=False, controller_recorded=False),
             "unresolvedIncidents": unresolved_incidents(),
             "recoveryObjectives": recovery_objectives(data_volume_measured=False, disruption_measured=False),
-            "stalePermissions": {
-                "stale": True,
-                "admitted": False,
-                "reasonCodes": ["PERMISSION_EXPIRY_UNRECORDED"],
-            },
+            "stalePermissions": _stale_permissions_view(),
         }
 
     @app.post("/api/access/deletion")
@@ -1769,6 +1873,13 @@ def create_app(
     @app.get("/api/incidents/ladder")
     def get_incident_ladder() -> dict:
         return {
+            "level0": level0_incident_package(clips=[], notes=[], bookmarks=[]),
+            "level1": level1_positional_aid(
+                touch_interval=(0.0, 0.12),
+                attacker_x=0.0,
+                offside_line_x=0.0,
+                uncertainty_m=3.0,
+            ),
             "level2": level2_schematic_replay(coordinates=[]),
             "level3": level3_multiview(),
             "vlm": vlm_confidence_is_not_referee(confidence=0.99),
@@ -2364,6 +2475,107 @@ def create_app(
             list(body.get("mapping") or []),
         )
         return {"interval": [start, end]}
+
+    @app.get("/api/decode/frames")
+    def get_decode_frames() -> dict:
+        return _production_decode_frames(storage.storage_root)
+
+    @app.post("/api/decode/frames")
+    def post_decode_frames(payload: dict | None = None) -> dict:
+        del payload
+        return _production_decode_frames(storage.storage_root)
+
+    @app.post("/api/decode/first")
+    def post_decode_first(payload: dict | None = None) -> dict:
+        del payload
+        view = _production_decode_frames(storage.storage_root)
+        return {
+            "backend": view["backend"],
+            "sourceFrameIndex": view["firstIndex"],
+            "device": view["device"],
+            "gpuPromoted": False,
+        }
+
+    @app.get("/api/decode/challengers")
+    def get_decode_challengers() -> dict:
+        return _decoder_challengers_view(storage.storage_root)
+
+    @app.post("/api/decode/challengers")
+    def post_decode_challengers(payload: dict | None = None) -> dict:
+        del payload
+        return _decoder_challengers_view(storage.storage_root)
+
+    @app.post("/api/decode/probe")
+    def post_decode_probe(payload: dict | None = None) -> dict:
+        del payload
+        source = FfmpegFrameSource(
+            frames=[],
+            identity=SourceClockIdentity(sourceSha256="a" * 64, byteSize=0),
+        )
+        return {"name": source.name, "default": False, "role": "challenger"}
+
+    @app.post("/api/decode/export")
+    def post_decode_export(payload: dict | None = None) -> dict:
+        body = payload or {}
+        source_url = str(body.get("sourceUrl") or "http://evil.test/clip.mp4")
+        probe = FfmpegProbe()
+        try:
+            probe.export_clip(
+                Path(source_url),
+                storage.storage_root / "export-refused.mp4",
+                start_seconds=0.0,
+                duration_seconds=1.0,
+                runner=lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("ffmpeg must not run")),
+            )
+        except ValueError as exc:
+            return {"admitted": False, "reasonCodes": [str(exc)]}
+        except Exception:
+            return {"admitted": False, "reasonCodes": ["UNCONSTRAINED_DECODER"]}
+        return {"admitted": False, "reasonCodes": ["FFMPEG_EXPORT_NOT_DEFAULT"]}
+
+    @app.get("/api/challengers")
+    def get_challengers() -> dict:
+        return _challenger_adapters_view()
+
+    @app.post("/api/challengers")
+    def post_challengers(payload: dict | None = None) -> dict:
+        del payload
+        return _challenger_adapters_view()
+
+    @app.get("/api/permissions/stale")
+    def get_stale_permissions() -> dict:
+        return _stale_permissions_view()
+
+    @app.post("/api/permissions/stale")
+    def post_stale_permissions(payload: dict | None = None) -> dict:
+        del payload
+        return _stale_permissions_view()
+
+    @app.get("/api/heatmap")
+    def get_heatmap() -> dict:
+        return heatmap_availability(identity_continuous=False)
+
+    @app.post("/api/heatmap")
+    def post_heatmap(payload: dict | None = None) -> dict:
+        del payload
+        return heatmap_availability(identity_continuous=False)
+
+    @app.post("/api/reports/assemble")
+    def post_assemble_report(payload: dict | None = None) -> dict:
+        body = payload or {}
+        claimed = list(body.get("claimedEvidenceIds") or [])
+        return assemble_report(
+            metrics=[],
+            events=[],
+            claimed_evidence_ids=claimed,
+            known_evidence_ids=set(),
+        )
+
+    @app.post("/api/assistance/ground")
+    def post_ground_output(payload: dict | None = None) -> dict:
+        body = payload or {}
+        claimed = list(body.get("evidence") or body.get("claimedEvidenceIds") or [])
+        return ground_output({"evidence": claimed}, known_ids=set())
 
     @app.get("/api/rates/four")
     def get_four_rates() -> dict:

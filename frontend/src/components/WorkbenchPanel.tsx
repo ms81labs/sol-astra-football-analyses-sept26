@@ -58,6 +58,11 @@ import {
   fetchEvaluationProtocol,
   fetchGpuDefaultFlag,
   fetchFourRates,
+  fetchDecodeFrames,
+  fetchChallengers,
+  fetchHeatmap,
+  fetchAssembleReport,
+  fetchStalePermissions,
   fetchWorkbenchDossier,
   fetchWorkbenchFlags,
   recoverMatchCorrection,
@@ -97,6 +102,11 @@ import {
   type EvaluationProtocolSnapshot,
   type FeatureEnabledSnapshot,
   type FourRatesSnapshot,
+  type DecodeFramesSnapshot,
+  type ChallengerAdaptersSnapshot,
+  type HeatmapSnapshot,
+  type AssembleReportSnapshot,
+  type StalePermissionsSnapshot,
   type WorkbenchDossier,
 } from '../utils/workbench';
 
@@ -185,6 +195,11 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
   const [evaluationProtocol, setEvaluationProtocol] = useState<EvaluationProtocolSnapshot | null>(null);
   const [gpuDefaultFlag, setGpuDefaultFlag] = useState<FeatureEnabledSnapshot | null>(null);
   const [fourRates, setFourRates] = useState<FourRatesSnapshot | null>(null);
+  const [decodeFrames, setDecodeFrames] = useState<DecodeFramesSnapshot | null>(null);
+  const [challengers, setChallengers] = useState<ChallengerAdaptersSnapshot | null>(null);
+  const [heatmap, setHeatmap] = useState<HeatmapSnapshot | null>(null);
+  const [assembleReport, setAssembleReport] = useState<AssembleReportSnapshot | null>(null);
+  const [stalePermissions, setStalePermissions] = useState<StalePermissionsSnapshot | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -383,6 +398,41 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
       })
       .catch(() => {
         if (!cancelled) setFourRates(null);
+      });
+    fetchDecodeFrames()
+      .then((payload) => {
+        if (!cancelled && payload.backend === 'fixture' && payload.pyavDefault === false) setDecodeFrames(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setDecodeFrames(null);
+      });
+    fetchChallengers()
+      .then((payload) => {
+        if (!cancelled && payload.kloppy?.enabled === false) setChallengers(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setChallengers(null);
+      });
+    fetchHeatmap()
+      .then((payload) => {
+        if (!cancelled && payload.withheld === true) setHeatmap(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setHeatmap(null);
+      });
+    fetchAssembleReport()
+      .then((payload) => {
+        if (!cancelled && payload.factualCheck?.accepted === false) setAssembleReport(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setAssembleReport(null);
+      });
+    fetchStalePermissions()
+      .then((payload) => {
+        if (!cancelled && payload.admitted === false) setStalePermissions(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setStalePermissions(null);
       });
     return () => {
       cancelled = true;
@@ -710,6 +760,21 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
               )}
               {fourRates?.exportFpsEqualsInferenceFps === false && (
                 <p className="text-xs text-slate-400">Export fps is not inference fps.</p>
+              )}
+              {decodeFrames?.backend === 'fixture' && decodeFrames.pyavDefault === false && (
+                <p className="text-xs text-slate-400">Production decode stays on the fixture FrameSource; PyAV and TorchCodec stay challengers.</p>
+              )}
+              {challengers?.kloppy?.enabled === false && (
+                <p className="text-xs text-slate-400">Kloppy, Roboflow, and MCBYTE stay unadmitted challengers.</p>
+              )}
+              {heatmap?.withheld === true && (
+                <p className="text-xs text-slate-400">Heatmaps stay interval-limited without identity continuity.</p>
+              )}
+              {assembleReport?.factualCheck?.accepted === false && (
+                <p className="text-xs text-slate-400">Report assembly rejects fabricated evidence.</p>
+              )}
+              {stalePermissions?.admitted === false && (
+                <p className="text-xs text-slate-400">Stale permissions are not admitted.</p>
               )}
               <div className="rounded-lg border border-slate-700 p-3">
                 <h4 className="text-xs uppercase tracking-wide text-slate-500 mb-2">Capability matrix</h4>

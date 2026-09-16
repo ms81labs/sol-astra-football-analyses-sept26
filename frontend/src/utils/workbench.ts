@@ -779,3 +779,96 @@ export async function fetchFourRates() {
   }
   return response.json() as Promise<FourRatesSnapshot>;
 }
+
+export interface DecodeFramesSnapshot {
+  backend?: string;
+  defaultBackend?: string;
+  pyavDefault?: boolean;
+  torchcodecDefault?: boolean;
+  device?: string;
+  indexes?: number[];
+}
+
+export async function fetchDecodeFrames() {
+  const response = await fetch('/api/decode/frames', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ backend: 'pyav', device: 'cuda', frames: [{ sourceFrameIndex: 99 }] }),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to load decode frames: ${response.status}`);
+  }
+  return response.json() as Promise<DecodeFramesSnapshot>;
+}
+
+export interface ChallengerAdaptersSnapshot {
+  kloppy?: { enabled?: boolean; replacesInternalProvenance?: boolean };
+  roboflow?: { enabled?: boolean; name?: string };
+  mcbyte?: { enabled?: boolean; default?: boolean };
+}
+
+export async function fetchChallengers() {
+  const response = await fetch('/api/challengers', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ kloppy: true, enabled: true }),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to load challengers: ${response.status}`);
+  }
+  return response.json() as Promise<ChallengerAdaptersSnapshot>;
+}
+
+export interface HeatmapSnapshot {
+  identityContinuous?: boolean;
+  wholeMatch?: boolean;
+  intervalLimited?: boolean;
+  withheld?: boolean;
+  reasonCodes?: string[];
+}
+
+export async function fetchHeatmap() {
+  const response = await fetch('/api/heatmap', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ identityContinuous: true, wholeMatch: true }),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to load heatmap availability: ${response.status}`);
+  }
+  return response.json() as Promise<HeatmapSnapshot>;
+}
+
+export interface AssembleReportSnapshot {
+  factualCheck?: { accepted?: boolean; reasonCodes?: string[] };
+}
+
+export async function fetchAssembleReport() {
+  const response = await fetch('/api/reports/assemble', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ claimedEvidenceIds: ['forged'], knownEvidenceIds: ['forged'] }),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to assemble report: ${response.status}`);
+  }
+  return response.json() as Promise<AssembleReportSnapshot>;
+}
+
+export interface StalePermissionsSnapshot {
+  stale?: boolean;
+  admitted?: boolean;
+  reasonCodes?: string[];
+}
+
+export async function fetchStalePermissions() {
+  const response = await fetch('/api/permissions/stale', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ admitted: true, permissionExpiresAt: 9999999999 }),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to load stale permissions: ${response.status}`);
+  }
+  return response.json() as Promise<StalePermissionsSnapshot>;
+}

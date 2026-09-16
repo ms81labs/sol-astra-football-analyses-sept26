@@ -2607,3 +2607,134 @@ async def _test_production_protocol_flags_metric_spec_clock_and_four_rates_surfa
         assert receipt.json()["completeMatchAccepted"] is False
         assert receipt.json()["stageBenchmarkIsCompleteMatchAcceptance"] is False
 
+
+def test_production_decode_challengers_heatmap_and_grounding_surfaces(tmp_path: Path):
+    _run(_test_production_decode_challengers_heatmap_and_grounding_surfaces, tmp_path)
+
+
+async def _test_production_decode_challengers_heatmap_and_grounding_surfaces(tmp_path: Path):
+    async with api_client(tmp_path) as (_, client):
+        frames = await client.post(
+            "/api/decode/frames",
+            json={
+                "backend": "pyav",
+                "device": "cuda",
+                "frames": [{"sourceFrameIndex": 99, "payload": [1, 2, 3]}],
+            },
+        )
+        assert frames.status_code == 200
+        body = frames.json()
+        assert body["backend"] == "fixture"
+        assert body["defaultBackend"] == "opencv"
+        assert body["pyavDefault"] is False
+        assert body["torchcodecDefault"] is False
+        assert body["device"] == "cpu"
+        assert body["gpuPromoted"] is False
+        assert body["indexes"] == [0, 1]
+        assert body["firstIndex"] == 0
+        assert 99 not in body["indexes"]
+
+        first = await client.post("/api/decode/first", json={"backend": "torchcodec", "sourceFrameIndex": 7})
+        assert first.status_code == 200
+        assert first.json()["backend"] == "fixture"
+        assert first.json()["sourceFrameIndex"] == 0
+        assert first.json()["device"] == "cpu"
+
+        challengers = await client.post(
+            "/api/decode/challengers",
+            json={"backend": "pyav", "enabled": True, "default": True},
+        )
+        assert challengers.status_code == 200
+        assert challengers.json()["pyav"]["name"] == "pyav"
+        assert challengers.json()["pyav"]["default"] is False
+        assert challengers.json()["pyav"]["enabled"] is False
+        assert challengers.json()["torchcodec"]["name"] == "torchcodec"
+        assert challengers.json()["torchcodec"]["default"] is False
+        assert challengers.json()["ffmpeg"]["name"] == "ffmpeg"
+        assert challengers.json()["ffmpeg"]["default"] is False
+        assert challengers.json()["selected"] == "opencv"
+
+        export = await client.post(
+            "/api/decode/export",
+            json={"sourceUrl": "http://evil.test/clip.mp4", "admitted": True},
+        )
+        assert export.status_code == 200
+        assert export.json()["admitted"] is False
+        assert "unconstrained decoder" in " ".join(export.json()["reasonCodes"]).lower() or any(
+            "UNCONSTRAINED" in code for code in export.json()["reasonCodes"]
+        )
+
+        probe = await client.post("/api/decode/probe", json={"backend": "ffmpeg", "default": True})
+        assert probe.status_code == 200
+        assert probe.json()["name"] == "ffmpeg"
+        assert probe.json()["default"] is False
+        assert probe.json()["role"] == "challenger"
+
+        adapters = await client.post(
+            "/api/challengers",
+            json={"kloppy": True, "roboflow": True, "mcbyte": True, "enabled": True},
+        )
+        assert adapters.status_code == 200
+        assert adapters.json()["kloppy"]["enabled"] is False
+        assert adapters.json()["kloppy"]["replacesInternalProvenance"] is False
+        assert adapters.json()["roboflow"]["name"] == "roboflow_trackers"
+        assert adapters.json()["roboflow"]["enabled"] is False
+        assert adapters.json()["mcbyte"]["name"] == "mcbyte_plus_plus"
+        assert adapters.json()["mcbyte"]["default"] is False
+        assert adapters.json()["onnx"]["enabled"] is False
+        assert adapters.json()["tensorrt"]["enabled"] is False
+        assert adapters.json()["trackeval"]["enabled"] is False
+
+        stale = await client.post(
+            "/api/permissions/stale",
+            json={"permissionExpiresAt": 9_999_999_999, "now": 0, "admitted": True},
+        )
+        assert stale.status_code == 200
+        assert stale.json()["stale"] is True
+        assert stale.json()["admitted"] is False
+        assert "STALE_PERMISSION" in stale.json()["reasonCodes"]
+
+        heatmap = await client.post(
+            "/api/heatmap",
+            json={"identityContinuous": True, "wholeMatch": True, "withheld": False},
+        )
+        assert heatmap.status_code == 200
+        assert heatmap.json()["identityContinuous"] is False
+        assert heatmap.json()["wholeMatch"] is False
+        assert heatmap.json()["intervalLimited"] is True
+        assert heatmap.json()["withheld"] is True
+        assert "IDENTITY_DISCONTINUITY" in heatmap.json()["reasonCodes"]
+
+        assembled = await client.post(
+            "/api/reports/assemble",
+            json={
+                "metrics": [{"metric": "possession_pct", "value": 100}],
+                "events": [{"id": "e1", "evidenceIds": ["forged"]}],
+                "claimedEvidenceIds": ["forged"],
+                "knownEvidenceIds": ["forged"],
+            },
+        )
+        assert assembled.status_code == 200
+        assert assembled.json()["factualCheck"]["accepted"] is False
+        assert "FABRICATED_EVIDENCE" in assembled.json()["factualCheck"]["reasonCodes"]
+        assert assembled.json()["factPackage"]["metrics"] == []
+        assert assembled.json()["factPackage"]["events"] == []
+
+        grounded = await client.post(
+            "/api/assistance/ground",
+            json={"evidence": ["forged-evidence"], "knownEvidenceIds": ["forged-evidence"]},
+        )
+        assert grounded.status_code == 200
+        assert grounded.json()["route"] == "rejected"
+        assert "FABRICATED_EVIDENCE" in grounded.json()["reasonCodes"]
+
+        ladder = await client.get("/api/incidents/ladder")
+        assert ladder.status_code == 200
+        assert ladder.json()["level0"]["level"] == 0
+        assert ladder.json()["level0"]["decision"] is None
+        assert ladder.json()["level0"]["validatedMeasurement"] is False
+        assert ladder.json()["level1"]["level"] == 1
+        assert ladder.json()["level1"]["decision"] is None
+        assert ladder.json()["level1"]["singleExactFrame"] is False
+        assert "IFAB_LAW_11_NOT_APPLIED" in ladder.json()["level0"]["reasonCodes"]
+
