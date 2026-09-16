@@ -85,3 +85,17 @@ it('offers match-scoped identity join without treating the click as continuity',
   expect(onJoinIdentity).toHaveBeenCalledTimes(1);
   expect(onJoinIdentity).toHaveBeenCalledWith('19');
 });
+
+it('offers match-scoped identity validation without treating the click as a client-injected receipt', () => {
+  const onValidateIdentity = vi.fn();
+  render(
+    <PlayerDetailPanel
+      player={player}
+      events={events}
+      identityContinuous={false}
+      onValidateIdentity={onValidateIdentity}
+    />,
+  );
+  fireEvent.click(screen.getByRole('button', { name: /validate identity/i }));
+  expect(onValidateIdentity).toHaveBeenCalledTimes(1);
+});

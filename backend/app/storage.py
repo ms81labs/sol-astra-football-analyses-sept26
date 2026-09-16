@@ -1055,6 +1055,8 @@ class Storage:
             self._apply_team_mapping(match_id, dict(original.payload or {}))
         elif original is not None and original.kind == "track_join":
             self._apply_identity_edit(match_id, kind="track_join_undo", payload=dict(original.payload or {}))
+        elif original is not None and original.kind == "identity_validate":
+            self._recompute_identity_continuity(match_id, identity_continuous=False)
         return saved
 
     def list_corrections(self, match_id: str, *, state: str | None = None) -> list[dict]:
@@ -1101,6 +1103,9 @@ class Storage:
             return
         if saved.kind == "team_mapping":
             self._apply_team_mapping(match_id, dict(saved.payload or {}))
+            return
+        if saved.kind == "identity_validate":
+            self._recompute_identity_continuity(match_id, identity_continuous=True)
 
     def _apply_team_mapping(self, match_id: str, payload: dict) -> None:
         if payload.get("swap") is not True:
@@ -1719,6 +1724,65 @@ class Storage:
             "correction": correction,
             "storedTrack": known,
         }
+
+    def promote_identity_for_match(self, match_id: str, payload: dict | None = None) -> dict:
+        from .workbench.review import correction_api_payload
+
+        self.get_match(match_id)
+        body = dict(payload or {})
+        reviewed = body.get("reviewed") is True
+        reason_codes: list[str] = []
+        correction = None
+        committed = False
+        if not reviewed:
+            reason_codes.append("REVIEW_REQUIRED")
+        else:
+            saved = self.submit_correction(
+                match_id,
+                kind="identity_validate",
+                payload={"reviewed": True},
+                author=str(body.get("author") or "analyst"),
+                crash_before_commit=bool(body.get("crashBeforeCommit")),
+            )
+            correction = correction_api_payload(saved)
+            committed = saved.saveState == "saved"
+        return {
+            "preview": True,
+            "committed": committed,
+            "identityContinuous": self._stored_identity_continuous(match_id) if committed else False,
+            "silentlyReconnected": False,
+            "visionRerun": False,
+            "reasonCodes": reason_codes,
+            "correction": correction,
+        }
+
+    def _recompute_identity_continuity(self, match_id: str, *, identity_continuous: bool) -> None:
+        from .analytics import summarize_match
+
+        try:
+            frames = self.load_frames(match_id)
+            summary, assignments, timeline, shots = self.load_analytics(match_id)
+        except FileNotFoundError:
+            return
+        try:
+            events = self.load_events(match_id)
+        except FileNotFoundError:
+            events = []
+        match = self.get_match(match_id)
+        self.save_analytics(
+            match_id,
+            summarize_match(
+                frames,
+                assignments,
+                shots,
+                events,
+                attack_direction=match.config.attackDirection,
+                identity_continuous=identity_continuous,
+            ),
+            assignments,
+            timeline,
+            shots,
+        )
 
     def _apply_identity_edit(self, match_id: str, *, kind: str, payload: dict) -> None:
         from .workbench.identity import apply_track_join, apply_track_split, apply_track_unjoin, remap_track_references

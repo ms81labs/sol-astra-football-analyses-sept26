@@ -1318,6 +1318,86 @@ async def _test_match_identity_join_commits_nonoverlapping_tracks_and_undo_resto
         assert new_id in restored_by_frame[2]
 
 
+def test_match_identity_promote_validates_stored_continuity_without_client_injection(tmp_path: Path):
+    _run(_test_match_identity_promote_validates_stored_continuity_without_client_injection, tmp_path)
+
+
+async def _test_match_identity_promote_validates_stored_continuity_without_client_injection(tmp_path: Path):
+    async with api_client(tmp_path) as (_, client):
+        response = await _upload_tracking_match(client)
+        assert response.status_code == 202
+        match_id = response.json()["matchId"]
+
+        leftover = await client.post(
+            "/api/identity/promote",
+            json={
+                "kind": "tracklet",
+                "trackId": "7",
+                "target": "match_identity",
+                "reviewed": True,
+                "identityContinuous": True,
+            },
+        )
+        assert leftover.status_code == 200
+        assert leftover.json()["kind"] == "tracklet"
+        assert leftover.json()["rosterId"] is None
+        assert (await client.get(f"/api/matches/{match_id}/heatmap")).json()["identityContinuous"] is False
+
+        unreviewed = await client.post(
+            f"/api/matches/{match_id}/identity/promote",
+            json={"reviewed": False, "identityContinuous": True, "silentlyReconnected": True, "visionRerun": True},
+        )
+        assert unreviewed.status_code == 200
+        assert unreviewed.json()["committed"] is False
+        assert unreviewed.json()["identityContinuous"] is False
+        assert unreviewed.json()["silentlyReconnected"] is False
+        assert unreviewed.json()["visionRerun"] is False
+        assert "REVIEW_REQUIRED" in unreviewed.json()["reasonCodes"]
+        assert (await client.get(f"/api/matches/{match_id}/heatmap")).json()["identityContinuous"] is False
+
+        pending = await client.post(
+            f"/api/matches/{match_id}/identity/promote",
+            json={"reviewed": True, "crashBeforeCommit": True, "identityContinuous": True},
+        )
+        assert pending.status_code == 200
+        assert pending.json()["committed"] is False
+        assert pending.json()["correction"]["saveState"] == "pending"
+        assert (await client.get(f"/api/matches/{match_id}/heatmap")).json()["identityContinuous"] is False
+
+        promoted = await client.post(
+            f"/api/matches/{match_id}/identity/promote",
+            json={"reviewed": True, "identityContinuous": True, "silentlyReconnected": True, "visionRerun": True},
+        )
+        assert promoted.status_code == 200
+        saved = promoted.json()
+        assert saved["committed"] is True
+        assert saved["identityContinuous"] is True
+        assert saved["silentlyReconnected"] is False
+        assert saved["visionRerun"] is False
+        assert saved["correction"]["kind"] == "identity_validate"
+        assert saved["correction"]["saveState"] == "saved"
+        heatmap = await client.get(f"/api/matches/{match_id}/heatmap")
+        assert heatmap.json()["identityContinuous"] is True
+        players = await client.get(f"/api/matches/{match_id}/players")
+        assert players.json()["totalsWithheld"] is False
+        metrics = await client.get(f"/api/matches/{match_id}/metrics")
+        by_name = {item["metric"]: item for item in metrics.json()["metrics"]}
+        assert "CALIBRATION_UNAVAILABLE" in by_name["my_team_distance_m"]["reasonCodes"]
+        distance = await client.get(f"/api/matches/{match_id}/geometry/distance")
+        assert distance.json()["availability"] == "withheld"
+        assert distance.json()["value"] is None
+        assert distance.json()["bridged"] is False
+
+        undone = await client.post(
+            f"/api/matches/{match_id}/corrections/{saved['correction']['correctionId']}/undo"
+        )
+        assert undone.status_code == 200
+        restored = await client.get(f"/api/matches/{match_id}/heatmap")
+        assert restored.json()["identityContinuous"] is False
+        restored_players = await client.get(f"/api/matches/{match_id}/players")
+        assert restored_players.json()["totalsWithheld"] is True
+
+
 def test_match_event_review_updates_stored_events_and_undo_restores_status(tmp_path: Path):
     _run(_test_match_event_review_updates_stored_events_and_undo_restores_status, tmp_path)
 

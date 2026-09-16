@@ -7,6 +7,7 @@ interface PlayerDetailPanelProps {
     identityContinuous?: boolean;
     onSplitIdentity?: () => void;
     onJoinIdentity?: (rightTrackId: string) => void;
+    onValidateIdentity?: () => void;
 }
 
 type PlayerDetailSelection = PlayerDetailPanelProps['player'];
@@ -25,7 +26,7 @@ function isPlayerEvent(event: BackendEvent, player: PlayerDetailSelection) {
     return event.fromTrackId === player.playerId || event.toTrackId === player.playerId;
 }
 
-export default function PlayerDetailPanel({ player, events, identityContinuous = false, onSplitIdentity, onJoinIdentity }: PlayerDetailPanelProps) {
+export default function PlayerDetailPanel({ player, events, identityContinuous = false, onSplitIdentity, onJoinIdentity, onValidateIdentity }: PlayerDetailPanelProps) {
     const [joinTrackId, setJoinTrackId] = useState('');
     const recentEvents = events
         .filter((event) => isPlayerEvent(event, player))
@@ -54,6 +55,15 @@ export default function PlayerDetailPanel({ player, events, identityContinuous =
                 <p className="text-sm text-slate-300">{player.summaryLine?.trim() || 'No profile summary available.'}</p>
                 {!identityContinuous && (
                     <p className="text-xs text-amber-200">Interval-limited observations. Totals withheld until identity continuity is validated.</p>
+                )}
+                {onValidateIdentity && !identityContinuous && (
+                    <button
+                        type="button"
+                        onClick={onValidateIdentity}
+                        className="mt-2 rounded border border-emerald-600/40 bg-emerald-900/20 px-2 py-1 text-[11px] font-semibold text-emerald-100 hover:bg-emerald-900/40"
+                    >
+                        Validate identity
+                    </button>
                 )}
                 {onSplitIdentity && (
                     <button

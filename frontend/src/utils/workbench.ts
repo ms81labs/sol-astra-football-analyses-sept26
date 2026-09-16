@@ -861,6 +861,26 @@ export async function assembleMatchReport(matchId: string) {
   return response.json() as Promise<AssembleReportSnapshot>;
 }
 
+export async function promoteMatchIdentity(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/identity/promote`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ reviewed: true }),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to promote match identity: ${response.status}`);
+  }
+  return response.json() as Promise<{
+    committed: boolean;
+    preview: boolean;
+    identityContinuous: boolean;
+    silentlyReconnected: boolean;
+    visionRerun: boolean;
+    reasonCodes: string[];
+    correction?: { correctionId?: string; kind?: string; saveState?: string };
+  }>;
+}
+
 export async function repairMatchIdentity(
   matchId: string,
   body: { kind?: string; trackId?: string; atFrame?: number; leftTrackId?: string; rightTrackId?: string } = {},

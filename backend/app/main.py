@@ -3158,6 +3158,10 @@ def create_app(
     def post_match_identity_repair(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
         return storage.repair_identity_for_match(match.id, payload)
 
+    @app.post("/api/matches/{match_id}/identity/promote")
+    def post_match_identity_promote(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+        return storage.promote_identity_for_match(match.id, payload)
+
     @app.get("/api/matches/{match_id}/history")
     def get_match_history(match: MatchRecord = Depends(require_match)) -> dict:
         return storage.history_for_match(match.id)
