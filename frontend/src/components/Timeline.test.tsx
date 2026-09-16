@@ -46,3 +46,23 @@ it('labels heuristic detections as provisional and keeps analyst tags distinct',
   expect(screen.getByRole('button', { name: 'Pass from #2 to #82 at 1 seconds (provisional)' })).toBeTruthy();
   expect(screen.getByRole('button', { name: 'Goal at 1.6 seconds' })).toBeTruthy();
 });
+
+it('shades uncertain intervals without treating them as accepted events', () => {
+  const frames: FrameData[] = Array.from({ length: 20 }, (_, frame) => ({
+    Frame_ID: frame, Timestamp: frame / 5, Ball: null, My_Team: [], Enemies: [],
+  }));
+  render(
+    <Timeline
+      matchData={frames}
+      currentFrame={0}
+      isPlaying={false}
+      fps={5}
+      events={[]}
+      uncertaintyRanges={[{ startFrame: 4, endFrame: 8, reason: 'identity switch' }]}
+      onSeek={() => {}}
+      onTogglePlay={() => {}}
+    />,
+  );
+  expect(screen.getByLabelText(/uncertain interval/i)).toBeTruthy();
+  expect(screen.getByText(/identity switch/i)).toBeTruthy();
+});

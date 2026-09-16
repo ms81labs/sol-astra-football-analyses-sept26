@@ -21,7 +21,10 @@ def dpia_screen(
     identifiable_faces: bool,
     cloud_requested: bool,
     cloud_permitted: bool,
+    face_recognition_requested: bool = False,
+    cross_season_requested: bool = False,
 ) -> DpiaDecision:
+    del face_recognition_requested, cross_season_requested
     reasons: list[str] = []
     if youth_footage:
         reasons.append("YOUTH_FOOTAGE")
@@ -37,3 +40,12 @@ def dpia_screen(
         crossSeasonIdentity=False,
         reasonCodes=reasons,
     )
+
+
+def residency_claim(*, requested_region: str, provider: str) -> dict[str, object]:
+    return {
+        "provider": provider,
+        "requestedRegion": requested_region,
+        "euProcessingProven": False,
+        "reasonCodes": ["REQUESTED_REGION_IS_NOT_PROOF"],
+    }

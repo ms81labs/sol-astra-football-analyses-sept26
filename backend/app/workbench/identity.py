@@ -54,3 +54,13 @@ def player_observations(rows: list[dict[str, Any]], *, identity_continuous: bool
         "rows": rows,
         "reasonCodes": ["IDENTITY_DISCONTINUITY"],
     }
+
+
+def face_recognition(*, requested: bool) -> dict[str, Any]:
+    del requested
+    return {"enabled": False, "reasonCodes": ["FACE_RECOGNITION_EXCLUDED"]}
+
+
+def cross_season_identity(*, requested: bool) -> dict[str, Any]:
+    del requested
+    return {"enabled": False, "reasonCodes": ["CROSS_SEASON_IDENTITY_EXCLUDED"]}

@@ -13,7 +13,7 @@ from .contracts import SourceClockIdentity, jsonable
 from .costs import credit_allocation, match_cost
 from .dossier import build_baseline_dossier, build_release_dossier
 from .evaluation import current_repository_evaluation_gate
-from .evidence import EvidenceStore, metric_dictionary, summarize_legacy_match
+from .evidence import EvidenceStore, inspect_metric, metric_dictionary, summarize_legacy_match
 from .flags import feature_flags
 from .geometry import review_incident_geometry
 from .identity import player_observations
@@ -24,10 +24,12 @@ from .media import FourRatesReceipt
 from .native import native_gate, probe_gpu
 from .ownership import classify_ownership
 from .package import assemble_match_package
+from .privacy import residency_claim
 from .reports import assemble_report
 from .review import CorrectionLog, new_correction, playlist_export_interval
 from .rights import rights_register
 from .roster import model_roster
+from .setup import assess_match_setup
 from .store import WorkbenchStore
 from .xt import xt_deferred_plan
 
@@ -450,5 +452,23 @@ def create_workbench_router(storage_root: Path) -> APIRouter:
             "decodeFpsEqualsExportFps": rates.decodeFpsEqualsExportFps,
             "notes": list(rates.notes),
         }
+
+    @router.post("/setup/assess")
+    def post_setup_assess(payload: dict | None = None) -> dict:
+        body = payload or {}
+        return assess_match_setup(
+            camera_profile=str(body.get("cameraProfile") or "stitched_panoramic_view"),
+            pitch_length_m=body.get("pitchLengthM"),
+            rights=dict(body.get("rights") or {}),
+            periods=list(body.get("periods") or []),
+        )
+
+    @router.get("/metrics/inspect/{metric}")
+    def get_metric_inspect(metric: str) -> dict:
+        return inspect_metric(metric)
+
+    @router.get("/residency")
+    def get_residency() -> dict:
+        return residency_claim(requested_region="eu", provider="daytona")
 
     return router

@@ -192,6 +192,16 @@ def test_workbench_corrections_search_jobs_and_unknown_metrics(tmp_path: Path) -
             assert players.json()["intervalLimited"] is True
             rates = await client.get("/api/workbench/jobs/r1/rates")
             assert rates.json()["exportFpsEqualsInferenceFps"] is False
+            setup = await client.post(
+                "/api/workbench/setup/assess",
+                json={"cameraProfile": "handheld_low_angle", "pitchLengthM": None, "rights": {"cloudPermission": False}},
+            )
+            assert setup.json()["manualTaggingPermitted"] is True
+            assert setup.json()["automationAdmitted"] is False
+            inspector = await client.get("/api/workbench/metrics/inspect/my_team_distance_m")
+            assert inspector.json()["rendered"] == "unavailable"
+            residency = await client.get("/api/workbench/residency")
+            assert residency.json()["euProcessingProven"] is False
 
     _run(body)
 

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 
+import MetricInspector from './MetricInspector';
 import ModalDialog from './ModalDialog';
 import {
   exportPlaylistInterval,
@@ -265,6 +266,16 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
                 ))}
                 {playersLimited && <p className="text-xs text-amber-200">Interval-limited player observations. Totals withheld.</p>}
               </div>
+              <MetricInspector
+                metric="my_team_distance_m"
+                unit="metres"
+                denominator="identity_continuous_eligible_seconds"
+                definitionVersion="1"
+                eligibleDuration={0}
+                exclusions={['IDENTITY_DISCONTINUITY']}
+                value={null}
+                availability="unknown"
+              />
               <div className="rounded-lg border border-slate-700 p-3 space-y-2">
                 <h4 className="text-xs uppercase tracking-wide text-slate-500">Playlist source interval</h4>
                 <label className="block text-xs text-slate-400">

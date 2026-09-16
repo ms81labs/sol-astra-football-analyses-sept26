@@ -7,6 +7,7 @@ interface TimelineProps {
     fps: number;
     events: EventTag[];
     reviewRange?: ReviewRange | null;
+    uncertaintyRanges?: Array<{ startFrame: number; endFrame: number; reason: string }>;
     onRangeChange?: (range: ReviewRange | null) => void;
     onSeek: (frame: number) => void;
     onTogglePlay: () => void;
@@ -78,6 +79,7 @@ export default function Timeline({
     fps,
     events,
     reviewRange = null,
+    uncertaintyRanges = [],
     onRangeChange,
     onSeek,
     onTogglePlay,
@@ -135,6 +137,23 @@ export default function Timeline({
                         <span>Time: {matchData[currentFrame]?.Timestamp || '0.00'}s</span>
                         <span>Frame {currentFrame} / {maxFrame}</span>
                     </div>
+                    {uncertaintyRanges.map((range, index) => {
+                        const left = maxFrame > 0 ? (range.startFrame / maxFrame) * 100 : 0;
+                        const width = maxFrame > 0 ? ((range.endFrame - range.startFrame) / maxFrame) * 100 : 0;
+                        return (
+                            <div
+                                key={`${range.startFrame}-${range.endFrame}-${index}`}
+                                aria-label="Uncertain interval"
+                                className="relative h-2 mt-1 rounded bg-amber-900/40"
+                            >
+                                <div
+                                    className="absolute inset-y-0 bg-amber-400/50 rounded"
+                                    style={{ left: `${left}%`, width: `${width}%` }}
+                                />
+                                <span className="sr-only">{range.reason}</span>
+                            </div>
+                        );
+                    })}
                     {events.length > 0 && (
                         <select
                             aria-label="Jump to event"

@@ -284,3 +284,46 @@ def round_trip_unknown(metric: MetricAvailability) -> MetricAvailability:
     if restored.published_value() is not None:
         raise ValueError("unknown metrics must not acquire a published value")
     return restored
+
+
+def inspect_metric(
+    metric: str,
+    *,
+    value: float | None = None,
+    availability: str = "unknown",
+    eligible_duration: float = 0.0,
+    exclusions: list[str] | None = None,
+) -> dict[str, Any]:
+    spec = metric_dictionary().get(metric, {})
+    unknown = availability != "available" or value is None
+    return {
+        "metric": metric,
+        "unit": spec.get("unit"),
+        "denominator": spec.get("denominator"),
+        "definitionVersion": DEFINITION_VERSION,
+        "eligibleDuration": eligible_duration,
+        "exclusions": list(exclusions or []),
+        "rendered": "unavailable" if unknown else str(value),
+        "publishedValue": None if unknown else value,
+    }
+
+
+def migrate_legacy_record(summary: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    metrics = summarize_legacy_match(
+        summary,
+        identity_continuous=False,
+        calibration_accepted=False,
+        controlled_frames=int(summary.get("controlledFrames") or 0),
+    )
+    return {
+        item.metric: {"value": item.value, "availability": item.availability, "reasonCodes": item.reasonCodes}
+        for item in metrics
+    }
+
+
+def rollback_reader(migrated: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "possession": (migrated.get("possession_pct") or {}).get("value"),
+        "myTeamDistance": (migrated.get("my_team_distance_m") or {}).get("value"),
+        "xg": (migrated.get("experimental_shot_quality") or {}).get("value"),
+    }

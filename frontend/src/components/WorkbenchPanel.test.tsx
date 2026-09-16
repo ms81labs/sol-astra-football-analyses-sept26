@@ -42,7 +42,7 @@ it('renders independently visible capability statuses from the dossier', async (
 
   expect(await screen.findByText('Manual review')).toBeTruthy();
   expect(screen.getByText('Usable')).toBeTruthy();
-  expect(screen.getByText('Unavailable')).toBeTruthy();
+  expect(screen.getAllByText('Unavailable').length).toBeGreaterThanOrEqual(1);
   expect(screen.getByText(/Independent labels 0\/18 complete/)).toBeTruthy();
   expect(screen.getByText(/cancellation is a request/i)).toBeTruthy();
   expect(screen.getByText(/native code remain gated/i)).toBeTruthy();

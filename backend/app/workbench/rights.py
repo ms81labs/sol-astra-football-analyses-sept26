@@ -44,3 +44,38 @@ def rights_register() -> dict[str, Any]:
         ],
         "openSourceDoesNotMeanUnrestricted": True,
     }
+
+
+def licence_register() -> dict[str, Any]:
+    return {
+        "ultralytics": {
+            "reviewExactAssets": True,
+            "generalisedToEveryYoloNamedModel": False,
+            "notes": "AGPL-3.0 and Enterprise terms are reviewed per code/weight asset.",
+        },
+        "rf_detr": {"reviewExactVersion": True, "generalisedToEveryYoloNamedModel": False},
+        "native_builds": {"codecNoticesRequired": True},
+    }
+
+
+def dataset_manifest() -> dict[str, Any]:
+    return {
+        "soccernet": {
+            "permittedPurpose": "research",
+            "commercialProduct": False,
+            "redistributeCopyrightedVideo": False,
+        },
+        "statsbomb_open_data": {
+            "permittedPurpose": "research_pending_licence_check",
+            "commercialProduct": False,
+        },
+    }
+
+
+def incident_response() -> dict[str, Any]:
+    return {
+        "path": "record, contain, notify, restore, review",
+        "faceRecognition": False,
+        "crossSeasonIdentity": False,
+        "supportBundles": "scoped_consented_time_limited",
+    }

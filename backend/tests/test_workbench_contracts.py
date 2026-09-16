@@ -1381,3 +1381,172 @@ def test_provider_adapters_are_split_from_llm_and_stay_disabled_by_default() -> 
     with pytest.raises(RuntimeError, match="not authorised"):
         cloud_adapter(enabled=True)
 
+
+def test_rejected_automation_still_offers_manual_tagging() -> None:
+    from backend.app.workbench.setup import assess_match_setup
+
+    handheld = assess_match_setup(
+        camera_profile="handheld_low_angle",
+        pitch_length_m=None,
+        rights={"processingScope": "local_only", "cloudPermission": False},
+        periods=[{"name": "first_half", "startSeconds": 0, "endSeconds": 2700}],
+    )
+    assert handheld["automationAdmitted"] is False
+    assert handheld["manualTaggingPermitted"] is True
+    assert "physical_metrics" in handheld["cannotMeasure"]
+    assert handheld["costEstimateRequiresAuthorisation"] is True
+    wide = assess_match_setup(
+        camera_profile="stable_elevated_wide",
+        pitch_length_m=105,
+        rights={"processingScope": "local_only", "cloudPermission": False},
+        periods=[{"name": "first_half", "startSeconds": 0, "endSeconds": 2700}],
+    )
+    assert wide["automationAdmitted"] is True
+    assert wide["certified"] is False
+
+
+def test_metric_inspector_exposes_definition_and_renders_unknown_as_unavailable() -> None:
+    from backend.app.workbench.evidence import inspect_metric
+
+    inspected = inspect_metric(
+        "my_team_distance_m",
+        value=None,
+        availability="unknown",
+        eligible_duration=0.0,
+        exclusions=["IDENTITY_DISCONTINUITY"],
+    )
+    assert inspected["unit"] == "metres"
+    assert inspected["denominator"] == "identity_continuous_eligible_seconds"
+    assert inspected["definitionVersion"] == "1"
+    assert inspected["eligibleDuration"] == 0.0
+    assert inspected["rendered"] == "unavailable"
+    assert inspected["rendered"] != "0"
+    assert inspected["publishedValue"] is None
+
+
+def test_content_addressed_artifacts_restore_and_keep_evaluation_cache_isolated(tmp_path: Path) -> None:
+    from backend.app.workbench.artifacts import ArtifactStore, object_storage_adapter
+
+    store = ArtifactStore(tmp_path / "cas")
+    digest = store.put(b"observation-bytes", namespace="production")
+    assert digest == store.put(b"observation-bytes", namespace="production")
+    assert store.get(digest, namespace="production") == b"observation-bytes"
+    with pytest.raises(KeyError):
+        store.get(digest, namespace="held_out_evaluation")
+    restored = store.restore_to(tmp_path / "disposable")
+    assert (restored / digest).read_bytes() == b"observation-bytes"
+    hosted = object_storage_adapter(hosted_approved=False)
+    assert hosted["enabled"] is False
+    assert hosted["mandatoryDuckDb"] is False
+
+
+def test_worker_import_rejects_traversal_unrecognised_and_oversized_archives(tmp_path: Path) -> None:
+    from backend.app.workbench.artifacts import import_worker_output
+
+    allowed = import_worker_output(
+        {"path": "observations.parquet", "bytes": 12, "kind": "observations", "jobSucceeded": True},
+        quality_accepted=False,
+    )
+    assert allowed["imported"] is True
+    assert allowed["productQualityPass"] is False
+    traversal = import_worker_output({"path": "../secrets.env", "bytes": 12, "kind": "observations"})
+    assert traversal["imported"] is False
+    assert "PATH_TRAVERSAL" in traversal["reasonCodes"]
+    unknown = import_worker_output({"path": "notes.txt", "bytes": 12, "kind": "unexpected_blob"})
+    assert unknown["imported"] is False
+    assert "UNRECOGNISED_WORKER_OUTPUT" in unknown["reasonCodes"]
+    huge = import_worker_output({"path": "observations.parquet", "bytes": 10_000_000_000, "kind": "observations"})
+    assert huge["imported"] is False
+    assert "OVERSIZED_ARCHIVE" in huge["reasonCodes"]
+
+
+def test_object_access_ignores_client_tenant_and_expires_sharing_links() -> None:
+    from backend.app.workbench.access import authorize_object, mint_sharing_link, upload_quota
+
+    decision = authorize_object(object_id="match-1", session_tenant="club-a", client_tenant="club-b")
+    assert decision["allowed"] is True
+    assert decision["tenant"] == "club-a"
+    denied = authorize_object(object_id="match-1", session_tenant="club-a", client_tenant="club-b", object_tenant="club-b")
+    assert denied["allowed"] is False
+    link = mint_sharing_link(object_id="clip-1", now=100, ttl_seconds=10)
+    assert link["expired"](100) is False
+    assert link["expired"](111) is True
+    quota = upload_quota(byte_size=9_000_000_000, duration_seconds=12_000)
+    assert quota["admitted"] is False
+    assert "DURATION_QUOTA" in quota["reasonCodes"] or "SIZE_QUOTA" in quota["reasonCodes"]
+
+
+def test_face_recognition_cross_season_identity_and_unproven_eu_residency_stay_blocked() -> None:
+    from backend.app.workbench.privacy import dpia_screen, residency_claim
+    from backend.app.workbench.identity import cross_season_identity, face_recognition
+
+    screen = dpia_screen(
+        youth_footage=False,
+        identifiable_faces=True,
+        cloud_requested=True,
+        cloud_permitted=True,
+        face_recognition_requested=True,
+        cross_season_requested=True,
+    )
+    assert screen.faceRecognition is False
+    assert screen.crossSeasonIdentity is False
+    assert face_recognition(requested=True)["enabled"] is False
+    assert cross_season_identity(requested=True)["enabled"] is False
+    claim = residency_claim(requested_region="eu", provider="daytona")
+    assert claim["euProcessingProven"] is False
+    assert "REQUESTED_REGION_IS_NOT_PROOF" in claim["reasonCodes"]
+
+
+def test_licence_dataset_and_incident_registers_are_explicit() -> None:
+    from backend.app.workbench.rights import dataset_manifest, incident_response, licence_register
+
+    licences = licence_register()
+    assert "ultralytics" in licences
+    assert licences["ultralytics"]["generalisedToEveryYoloNamedModel"] is False
+    data = dataset_manifest()
+    assert data["soccernet"]["commercialProduct"] is False
+    incident = incident_response()
+    assert incident["path"]
+    assert incident["faceRecognition"] is False
+
+
+def test_challenger_adapters_stay_fail_closed_and_are_not_defaults() -> None:
+    from backend.app.workbench.challengers import (
+        gstreamer_adapter,
+        kloppy_boundary,
+        mcbyte_adapter,
+        onnx_runtime_adapter,
+        pynv_adapter,
+        roboflow_trackers_adapter,
+        tensorrt_adapter,
+    )
+
+    for adapter in (
+        onnx_runtime_adapter,
+        tensorrt_adapter,
+        pynv_adapter,
+        gstreamer_adapter,
+        roboflow_trackers_adapter,
+        mcbyte_adapter,
+    ):
+        result = adapter()
+        assert result["default"] is False
+        assert result["enabled"] is False
+    kloppy = kloppy_boundary()
+    assert kloppy["replacesInternalProvenance"] is False
+    assert kloppy["role"] == "import_export_boundary"
+
+
+def test_legacy_absent_null_and_rollback_readers_do_not_invent_zeros() -> None:
+    from backend.app.workbench.evidence import migrate_legacy_record, rollback_reader
+
+    absent = migrate_legacy_record({})
+    assert absent["possession_pct"]["value"] is None
+    assert absent["possession_pct"]["availability"] == "unknown"
+    nulls = migrate_legacy_record({"possession": None, "myTeamDistance": None})
+    assert nulls["my_team_distance_m"]["value"] is None
+    rolled = rollback_reader(nulls)
+    assert "possession" in rolled
+    assert rolled["possession"] is None
+    assert rolled.get("myTeamDistance") is None
+
