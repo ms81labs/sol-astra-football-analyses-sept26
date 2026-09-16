@@ -230,6 +230,24 @@ def test_iter_bgr_frames_wraps_payload_in_frame_buffer_and_releases_previous(tmp
     assert second.buffer.device == "cpu"
 
 
+def test_pixels_from_decoded_frame_uses_live_buffer_and_rejects_reuse() -> None:
+    import numpy as np
+
+    from backend.app.workbench.media import pixels_from_decoded_frame, wrap_decoded_frame
+    from dataclasses import replace
+
+    payload = bytes(range(12))
+    frame = DecodedFrame(0, 0, 0.0, 2, 2, "bgr", 0, payload, "fixture", image=object())
+    live = replace(frame, buffer=wrap_decoded_frame(frame))
+    pixels = pixels_from_decoded_frame(live)
+    assert isinstance(pixels, np.ndarray)
+    assert pixels.shape == (2, 2, 3)
+    assert pixels.tobytes() == payload
+    live.buffer.release()
+    with pytest.raises(RuntimeError, match="use after buffer reuse"):
+        pixels_from_decoded_frame(live)
+
+
 def test_recover_ball_rows_uses_injected_frame_source_without_opening_video(tmp_path: Path) -> None:
     import numpy as np
 

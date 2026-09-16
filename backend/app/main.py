@@ -212,6 +212,25 @@ VIDEO_TO_ANALYSIS_BOUNDED_NEXT_SAMPLE_REPORT_BINDING_DIR = (
 )
 
 
+def _dashboard_metric_measured(summary: dict, metric: str) -> bool:
+    records = summary.get("metricAvailability") or []
+    record = next((item for item in records if item.get("metric") == metric), None)
+    if record is None:
+        return True
+    return record.get("availability") in {"available", "experimental"}
+
+
+def _dashboard_average(summaries: list[dict], *, field: str, metric: str) -> float | None:
+    values = [
+        float(summary.get(field, 0) or 0)
+        for summary in summaries
+        if _dashboard_metric_measured(summary, metric)
+    ]
+    if not values:
+        return None
+    return round(sum(values) / len(values), 1)
+
+
 def create_app(
     storage_root: Path | str | None = None,
     run_jobs_inline: bool = False,
@@ -1311,7 +1330,7 @@ def create_app(
             empty = DashboardResponse(
                 summary=DashboardSummary(
                     matchCount=0, avgPossession=None, avgMyTeamXg=0.0, avgEnemyXg=0.0,
-                    avgXgDiff=0.0, avgMyTeamSprints=0.0, avgEnemySprints=0.0,
+                    avgXgDiff=0.0, avgMyTeamSprints=None, avgEnemySprints=None,
                     mostUsedFormation="-",
                 ),
             )
@@ -1324,8 +1343,8 @@ def create_app(
         avg_my_xg = sum(s.get("myTeamXg", 0) for s in summaries) / n
         avg_enemy_xg = sum(s.get("enemyXg", 0) for s in summaries) / n
         avg_xg_diff = avg_my_xg - avg_enemy_xg
-        avg_my_sprints = sum(s.get("myTeamSprints", 0) for s in summaries) / n
-        avg_enemy_sprints = sum(s.get("enemySprints", 0) for s in summaries) / n
+        avg_my_sprints = _dashboard_average(summaries, field="myTeamSprints", metric="my_team_sprints")
+        avg_enemy_sprints = _dashboard_average(summaries, field="enemySprints", metric="enemy_sprints")
 
         from collections import Counter
         formations = [s.get("formation", "-") for s in summaries if s.get("formation")]
@@ -1337,8 +1356,8 @@ def create_app(
             avgMyTeamXg=round(avg_my_xg, 2),
             avgEnemyXg=round(avg_enemy_xg, 2),
             avgXgDiff=round(avg_xg_diff, 2),
-            avgMyTeamSprints=round(avg_my_sprints, 1),
-            avgEnemySprints=round(avg_enemy_sprints, 1),
+            avgMyTeamSprints=avg_my_sprints,
+            avgEnemySprints=avg_enemy_sprints,
             mostUsedFormation=most_used,
         )
 
@@ -1377,8 +1396,18 @@ def create_app(
                     - (s_prev.get("myTeamXg", 0) - s_prev.get("enemyXg", 0)),
                     2,
                 ),
-                myTeamSprintsDelta=round(s_latest.get("myTeamSprints", 0) - s_prev.get("myTeamSprints", 0), 1),
-                enemySprintsDelta=round(s_latest.get("enemySprints", 0) - s_prev.get("enemySprints", 0), 1),
+                myTeamSprintsDelta=(
+                    round(s_latest.get("myTeamSprints", 0) - s_prev.get("myTeamSprints", 0), 1)
+                    if _dashboard_metric_measured(s_latest, "my_team_sprints")
+                    and _dashboard_metric_measured(s_prev, "my_team_sprints")
+                    else None
+                ),
+                enemySprintsDelta=(
+                    round(s_latest.get("enemySprints", 0) - s_prev.get("enemySprints", 0), 1)
+                    if _dashboard_metric_measured(s_latest, "enemy_sprints")
+                    and _dashboard_metric_measured(s_prev, "enemy_sprints")
+                    else None
+                ),
             )
 
         response = DashboardResponse(

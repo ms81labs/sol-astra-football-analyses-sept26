@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from backend.app.main import create_app
 from backend.app.storage import Storage
-from backend.app.schemas import MatchSummary
+from backend.app.schemas import MatchSummary, MetricAvailabilityRecord
 
 
 def _seed_dashboard_storage(storage_root: Path, configs: list[dict]) -> list[str]:
@@ -185,3 +185,72 @@ class TestDashboardEndpoint:
         assert len(trends) == 2
         assert trends[0]["name"] == "Match Alpha"
         assert trends[1]["name"] == "Match Beta"
+
+
+def _withheld_sprint_availability() -> list[MetricAvailabilityRecord]:
+    return [
+        MetricAvailabilityRecord(
+            metric="my_team_sprints",
+            value=None,
+            availability="withheld",
+            reasonCodes=["IDENTITY_DISCONTINUITY"],
+            denominator="identity_continuous_eligible_seconds",
+        ),
+        MetricAvailabilityRecord(
+            metric="enemy_sprints",
+            value=None,
+            availability="withheld",
+            reasonCodes=["IDENTITY_DISCONTINUITY"],
+            denominator="identity_continuous_eligible_seconds",
+        ),
+    ]
+
+
+def test_dashboard_withholds_sprint_averages_when_physical_metrics_are_withheld(tmp_path: Path) -> None:
+    storage_root = tmp_path
+    Storage(storage_root)
+    mid = uuid.uuid4().hex
+    cfg_json = json.dumps({"attackDirection": "left_to_right", "manualHomographyPoints": []})
+    db_path = storage_root / "guerilla.sqlite3"
+    conn = sqlite3.connect(str(db_path))
+    conn.execute(
+        "INSERT INTO matches (id,name,input_mode,status,original_filename,input_path,config_json,requires_team_selection,created_at,updated_at) VALUES (?,?,'video','ready', ?,?,?,'0',datetime('now'),datetime('now'))",
+        (mid, "Withheld Sprints", f"{mid}.mp4", str(storage_root / f"{mid}.mp4"), cfg_json),
+    )
+    conn.commit()
+    conn.close()
+    summary = MatchSummary(
+        possession=55,
+        myTeamDistance=0,
+        enemyDistance=0,
+        myTeamAvgPos={"x": 50, "y": 50},
+        enemyAvgPos={"x": 50, "y": 50},
+        myTeamTopSpeed=0.0,
+        enemyTopSpeed=0.0,
+        myTeamSprints=12,
+        enemySprints=10,
+        myTeamXg=1.2,
+        enemyXg=0.8,
+        formation="4-3-3",
+        myTeamDefensiveLineHeight=0.5,
+        enemyDefensiveLineHeight=0.5,
+        myTeamDefensiveTeamLength=45.0,
+        enemyDefensiveTeamLength=45.0,
+        metricAvailability=_withheld_sprint_availability(),
+    )
+    match_dir = storage_root / "matches" / mid
+    match_dir.mkdir(parents=True, exist_ok=True)
+    (match_dir / "analytics.json").write_text(json.dumps({
+        "summary": summary.model_dump(mode="json"),
+        "ballAssignments": [],
+        "formationTimeline": [],
+        "shots": [],
+    }))
+    (match_dir / "events.json").write_text("[]")
+    client = TestClient(create_app(storage_root=str(tmp_path), run_jobs_inline=True), base_url="http://127.0.0.1")
+
+    data = client.get("/api/aggregate/dashboard").json()
+    assert data["summary"]["avgMyTeamSprints"] is None
+    assert data["summary"]["avgEnemySprints"] is None
+    assert data["summary"]["avgMyTeamSprints"] != 12
+    assert data["summary"]["avgEnemySprints"] != 10

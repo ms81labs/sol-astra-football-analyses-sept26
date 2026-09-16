@@ -432,8 +432,8 @@ class DashboardSummary(BaseModel):
     avgMyTeamXg: float
     avgEnemyXg: float
     avgXgDiff: float
-    avgMyTeamSprints: float
-    avgEnemySprints: float
+    avgMyTeamSprints: float | None
+    avgEnemySprints: float | None
     mostUsedFormation: str
 
 
@@ -453,8 +453,8 @@ class DashboardComparison(BaseModel):
     previousMatchName: str
     possessionDelta: float | None
     xgDiffDelta: float
-    myTeamSprintsDelta: float
-    enemySprintsDelta: float
+    myTeamSprintsDelta: float | None
+    enemySprintsDelta: float | None
 
 
 class DashboardResponse(BaseModel):

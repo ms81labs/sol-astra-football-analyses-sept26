@@ -3563,11 +3563,11 @@ def collect_primary_player_windows(
     player_classes = detector_player_class_ids(detector_profile)
     if not player_classes:
         return frame_player_windows
-    from backend.app.workbench.media import iter_bgr_frames
+    from backend.app.workbench.media import iter_bgr_frames, pixels_from_decoded_frame
 
     frame_count = 0
     for decoded in iter_bgr_frames(Path(video_path), frame_source, cv2_module=cv2):
-        frame = decoded.image
+        frame = pixels_from_decoded_frame(decoded)
         if frame is None:
             frame_count += 1
             continue
@@ -4906,7 +4906,7 @@ def recover_ball_rows(
         if return_diagnostics:
             return empty_rows, _empty_direct_seed_inference_diagnostics()
         return empty_rows
-    from backend.app.workbench.media import OpenCvFrameSource, iter_bgr_frames
+    from backend.app.workbench.media import OpenCvFrameSource, iter_bgr_frames, pixels_from_decoded_frame
 
     decode_adapter = frame_source or OpenCvFrameSource(cv2_module=cv2)
     identity = decode_adapter.probe(Path(str(video_path)))
@@ -5079,7 +5079,7 @@ def recover_ball_rows(
             return
 
     for decoded in iter_bgr_frames(Path(str(video_path)), decode_adapter, cv2_module=cv2):
-        frame = decoded.image
+        frame = pixels_from_decoded_frame(decoded)
         if frame is None:
             frame_count += 1
             continue
@@ -6553,13 +6553,13 @@ def run_ball_recovery_experiment(
         configured_conf=conf,
         include_player_window_probe=bool(player_windows),
     )
-    from backend.app.workbench.media import OpenCvFrameSource, first_bgr_frame
+    from backend.app.workbench.media import OpenCvFrameSource, first_bgr_frame, pixels_from_decoded_frame
 
     decode_adapter = frame_source or OpenCvFrameSource(cv2_module=cv2)
     identity = decode_adapter.probe(Path(str(video_path)))
     first_decoded = first_bgr_frame(Path(str(video_path)), decode_adapter, cv2_module=cv2)
-    ret = first_decoded is not None and first_decoded.image is not None
-    first_frame = first_decoded.image if first_decoded is not None else None
+    first_frame = pixels_from_decoded_frame(first_decoded) if first_decoded is not None else None
+    ret = first_frame is not None
     total_frame_count = int(identity.frameCount or 0)
     frame_shape = first_frame.shape if ret and first_frame is not None else None
     cached_rows = {}
@@ -8009,18 +8009,18 @@ def process_video(
     emit_worker_heartbeat("modelLoad", "completed")
     
     video_open_started_at = time.monotonic()
-    from backend.app.workbench.media import OpenCvFrameSource, first_bgr_frame
+    from backend.app.workbench.media import OpenCvFrameSource, first_bgr_frame, pixels_from_decoded_frame
 
     decode_source = frame_source or OpenCvFrameSource(cv2_module=cv2)
     identity = decode_source.probe(Path(video_path))
     first_decoded = first_bgr_frame(Path(video_path), decode_source, cv2_module=cv2)
-    if first_decoded is None or first_decoded.image is None:
+    first_frame = pixels_from_decoded_frame(first_decoded) if first_decoded is not None else None
+    if first_frame is None:
         print(f"Error opening video {video_path}")
         return empty_result() if return_rows or not output_parquet else []
     emit_worker_heartbeat("videoOpenAndHomography", "started")
 
     fps = float(identity.nominalFps or 0.0) or 1.0
-    first_frame = first_decoded.image
     frame_interval = int(fps / TARGET_FPS) if fps > TARGET_FPS else 1
     sample_interval = frame_interval
     from backend.app.workbench.media import SamplingAudit
@@ -8060,13 +8060,12 @@ def process_video(
     # We will use generator to track frame by frame
     if frame_source is not None:
         def _frame_source_track_results():
-            from backend.app.workbench.media import iter_bgr_frames
+            from backend.app.workbench.media import iter_bgr_frames, pixels_from_decoded_frame
 
             for decoded in iter_bgr_frames(Path(video_path), frame_source, cv2_module=cv2):
-                if decoded.image is None:
-                    continue
+                frame = pixels_from_decoded_frame(decoded)
                 tracked = primary_model.track(
-                    source=decoded.image,
+                    source=frame,
                     persist=True,
                     tracker="botsort.yaml",
                     imgsz=TRACKING_IMGSZ,
@@ -8077,7 +8076,7 @@ def process_video(
                 result = tracked[0] if isinstance(tracked, (list, tuple)) else tracked
                 if getattr(result, "orig_img", None) is None:
                     try:
-                        result.orig_img = decoded.image
+                        result.orig_img = frame
                     except Exception:
                         pass
                 yield result

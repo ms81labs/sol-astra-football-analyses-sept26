@@ -88,11 +88,15 @@ export default function DashboardPanel({ onClose, onSelectMatch }: DashboardPane
                                         </div>
                                         <div className="bg-slate-900 rounded-lg p-3">
                                             <div className="text-slate-400 text-xs mb-1">Sprints For / Against</div>
+                                            {summary.avgMyTeamSprints == null || summary.avgEnemySprints == null ? (
+                                                <div className="text-lg font-bold text-slate-400">Unavailable</div>
+                                            ) : (
                                             <div className="text-lg font-bold">
                                                 <span className="text-emerald-400">{summary.avgMyTeamSprints.toFixed(0)}</span>
                                                 <span className="text-slate-500 mx-1">/</span>
                                                 <span className="text-red-400">{summary.avgEnemySprints.toFixed(0)}</span>
                                             </div>
+                                            )}
                                         </div>
                                         <div className="bg-slate-900 rounded-lg p-3">
                                             <div className="text-slate-400 text-xs mb-1">Top Formation</div>

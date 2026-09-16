@@ -12,6 +12,7 @@ from backend.app.workbench.media import (
     cpu_fallback,
     wrap_decoded_frame,
     iter_bgr_frames,
+    pixels_from_decoded_frame,
 )
 
 __all__ = [
@@ -26,4 +27,5 @@ __all__ = [
     "cpu_fallback",
     "wrap_decoded_frame",
     "iter_bgr_frames",
+    "pixels_from_decoded_frame",
 ]

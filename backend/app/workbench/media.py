@@ -228,6 +228,18 @@ def wrap_decoded_frame(frame: DecodedFrame, *, device: Literal["cpu", "cuda"] = 
     )
 
 
+def pixels_from_decoded_frame(frame: DecodedFrame):
+    """Production pixels come from the live FrameBuffer, never a released predecessor."""
+
+    buffer = frame.buffer
+    if buffer is None:
+        raise RuntimeError("decoded frame has no live buffer")
+    payload = buffer.as_array()
+    import numpy as np
+
+    return np.frombuffer(payload, dtype=np.uint8).reshape(buffer.shape).copy()
+
+
 def iter_bgr_frames(
     path: Path,
     source: FrameSource | None = None,

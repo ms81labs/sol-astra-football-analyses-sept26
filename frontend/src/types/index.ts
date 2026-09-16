@@ -445,8 +445,8 @@ export interface DashboardSummary {
     avgMyTeamXg: number;
     avgEnemyXg: number;
     avgXgDiff: number;
-    avgMyTeamSprints: number;
-    avgEnemySprints: number;
+    avgMyTeamSprints: number | null;
+    avgEnemySprints: number | null;
     mostUsedFormation: string;
 }
 
@@ -457,8 +457,8 @@ export interface DashboardComparison {
     previousMatchName: string;
     possessionDelta: number | null;
     xgDiffDelta: number;
-    myTeamSprintsDelta: number;
-    enemySprintsDelta: number;
+    myTeamSprintsDelta: number | null;
+    enemySprintsDelta: number | null;
 }
 
 export interface OpponentRollup {
