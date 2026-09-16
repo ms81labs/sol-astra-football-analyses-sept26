@@ -16,6 +16,7 @@ import AiUnavailableBanner from './components/AiUnavailableBanner';
 import LoopbackBanner from './components/LoopbackBanner';
 import RecoveryPanel from './components/RecoveryPanel';
 import SecurityBoundary from './components/SecurityBoundary';
+import ReleaseGate from './components/ReleaseGate';
 import QualityTimeline from './components/QualityTimeline';
 import WorkbenchPanel from './components/WorkbenchPanel';
 import DemoMatchIssuePanel from './components/DemoMatchIssuePanel';
@@ -1057,6 +1058,9 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           </div>
           <div className="mb-3 shrink-0">
             <SecurityBoundary />
+          </div>
+          <div className="mb-3 shrink-0">
+            <ReleaseGate />
           </div>
           <div className="mb-3 shrink-0">
             <DrawingToolbar

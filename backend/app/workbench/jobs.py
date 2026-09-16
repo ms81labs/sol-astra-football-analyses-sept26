@@ -261,3 +261,15 @@ def signed_scoped_job_access(*, token: str | None, job_id: str, token_job_id: st
         "scoped": True,
         "reasonCodes": [] if admitted else ["UNSIGNED_OR_UNSCOPED_JOB_ACCESS"],
     }
+
+
+def egress_policy(*, destination: str, authorised_hosts: frozenset[str]) -> dict[str, object]:
+    from urllib.parse import urlparse
+
+    host = (urlparse(destination).hostname or "").lower()
+    admitted = bool(host) and host in authorised_hosts
+    return {
+        "admitted": admitted,
+        "defaultDeny": True,
+        "reasonCodes": [] if admitted else ["WORKER_EGRESS_DENIED"],
+    }

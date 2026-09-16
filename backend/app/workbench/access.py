@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any, Callable
+from urllib.parse import urlparse
 
 SIZE_QUOTA_BYTES = 5_368_709_120
 DURATION_QUOTA_SECONDS = 8_000
@@ -92,4 +93,45 @@ def deployment_encryption(*, boundary: str) -> dict[str, Any]:
         "loopbackLocalFilesystem": not hosted,
         "hostedEncryptionProven": False,
         "reasonCodes": ["HOSTED_ENCRYPTION_UNPROVEN"] if hosted else [],
+    }
+
+
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+def protocol_network_allowlist(*, url: str) -> dict[str, Any]:
+    parsed = urlparse(url)
+    scheme = (parsed.scheme or "").lower()
+    host = (parsed.hostname or "").lower()
+    if scheme == "file" or (scheme in {"http", "https"} and host in _LOOPBACK_HOSTS):
+        return {"admitted": True, "reasonCodes": []}
+    return {
+        "admitted": False,
+        "reasonCodes": ["PROTOCOL_OR_NETWORK_NOT_ALLOWLISTED"],
+    }
+
+
+def constrained_decoder(*, argv: list[str], network_enabled: bool) -> dict[str, Any]:
+    joined = " ".join(argv)
+    networked = network_enabled or "http://" in joined or "https://" in joined
+    if not argv or argv[0] not in {"ffmpeg", "ffprobe"} or networked:
+        return {"admitted": False, "reasonCodes": ["UNCONSTRAINED_DECODER"]}
+    return {"admitted": True, "reasonCodes": []}
+
+
+def least_privilege_storage(*, credential_scope: str) -> dict[str, Any]:
+    admitted = credential_scope == "object"
+    return {
+        "admitted": admitted,
+        "reasonCodes": [] if admitted else ["LEAST_PRIVILEGE_REQUIRED"],
+    }
+
+
+def public_exposure_gate(*, security_review_accepted: bool, bound: str) -> dict[str, Any]:
+    public_ok = bool(security_review_accepted) and bound != "loopback"
+    admitted = bound == "loopback" or bool(security_review_accepted)
+    return {
+        "admitted": admitted,
+        "publicExposureAllowed": public_ok,
+        "reasonCodes": [] if admitted else ["SECURITY_REVIEW_REQUIRED"],
     }

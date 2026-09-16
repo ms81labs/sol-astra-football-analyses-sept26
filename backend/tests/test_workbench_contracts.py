@@ -2465,3 +2465,50 @@ def test_untrusted_outputs_secrets_and_unsigned_jobs_stay_fail_closed() -> None:
     scoped = signed_scoped_job_access(token="t", job_id="job-1", token_job_id="job-2")
     assert scoped["admitted"] is False
 
+
+def test_network_allowlist_constrained_decoder_and_egress_stay_fail_closed() -> None:
+    from backend.app.workbench.access import (
+        constrained_decoder,
+        least_privilege_storage,
+        protocol_network_allowlist,
+        public_exposure_gate,
+    )
+    from backend.app.workbench.jobs import egress_policy
+
+    public = protocol_network_allowlist(url="https://example.com/footage.mp4")
+    assert public["admitted"] is False
+    assert "PROTOCOL_OR_NETWORK_NOT_ALLOWLISTED" in public["reasonCodes"]
+    lan = protocol_network_allowlist(url="http://192.168.1.10/clip.mp4")
+    assert lan["admitted"] is False
+    loopback = protocol_network_allowlist(url="http://127.0.0.1:8000/local.mp4")
+    assert loopback["admitted"] is True
+    file_url = protocol_network_allowlist(url="file:///tmp/match.mp4")
+    assert file_url["admitted"] is True
+
+    unsafe = constrained_decoder(argv=["ffmpeg", "-i", "http://evil.test", "-c", "copy", "out.mp4"], network_enabled=True)
+    assert unsafe["admitted"] is False
+    assert "UNCONSTRAINED_DECODER" in unsafe["reasonCodes"]
+    safe = constrained_decoder(argv=["ffmpeg", "-i", "/tmp/match.mp4", "-c", "copy", "/tmp/out.mp4"], network_enabled=False)
+    assert safe["admitted"] is True
+
+    open_net = egress_policy(destination="https://attacker.test", authorised_hosts=frozenset())
+    assert open_net["admitted"] is False
+    assert open_net["defaultDeny"] is True
+    assert "WORKER_EGRESS_DENIED" in open_net["reasonCodes"]
+    allowed = egress_policy(destination="https://worker.internal/artifacts", authorised_hosts=frozenset({"worker.internal"}))
+    assert allowed["admitted"] is True
+
+    broad = least_privilege_storage(credential_scope="account")
+    assert broad["admitted"] is False
+    assert "LEAST_PRIVILEGE_REQUIRED" in broad["reasonCodes"]
+    object_scoped = least_privilege_storage(credential_scope="object")
+    assert object_scoped["admitted"] is True
+
+    public_host = public_exposure_gate(security_review_accepted=False, bound="public")
+    assert public_host["admitted"] is False
+    assert public_host["publicExposureAllowed"] is False
+    assert "SECURITY_REVIEW_REQUIRED" in public_host["reasonCodes"]
+    loopback_ok = public_exposure_gate(security_review_accepted=False, bound="loopback")
+    assert loopback_ok["admitted"] is True
+    assert loopback_ok["publicExposureAllowed"] is False
+
