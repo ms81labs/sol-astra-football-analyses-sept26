@@ -41,3 +41,7 @@ def kloppy_boundary() -> dict[str, Any]:
         "enabled": False,
         "default": False,
     }
+
+
+def trackeval_adapter() -> dict[str, Any]:
+    return _inert("trackeval")

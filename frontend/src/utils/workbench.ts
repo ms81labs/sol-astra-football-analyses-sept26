@@ -50,6 +50,18 @@ export interface MetricAvailability {
   unit?: string | null;
 }
 
+export interface WorkbenchFlags {
+  experimental_shot_quality: boolean;
+  gpu_default: boolean;
+  native_code: boolean;
+}
+
+export interface JobCostSummary {
+  reservedTotal: number;
+  actualTotal: number;
+  p50Reserved: number;
+}
+
 export async function fetchWorkbenchDossier(): Promise<WorkbenchDossier> {
   const response = await fetch('/api/workbench/dossier');
   if (!response.ok) {
@@ -118,7 +130,7 @@ export async function fetchWorkbenchFlags() {
   if (!response.ok) {
     throw new Error(`Failed to load feature flags: ${response.status}`);
   }
-  return response.json() as Promise<{ experimental_shot_quality: boolean; gpu_default: boolean; native_code: boolean }>;
+  return response.json() as Promise<WorkbenchFlags>;
 }
 
 export async function fetchJobCost(jobId: string) {
@@ -126,7 +138,7 @@ export async function fetchJobCost(jobId: string) {
   if (!response.ok) {
     throw new Error(`Failed to load job cost: ${response.status}`);
   }
-  return response.json() as Promise<{ reservedTotal: number; actualTotal: number; p50Reserved: number }>;
+  return response.json() as Promise<JobCostSummary>;
 }
 
 export async function searchMatchLibrary(query: string, matches: Array<Record<string, unknown>> = []) {

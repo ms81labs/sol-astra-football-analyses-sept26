@@ -24,3 +24,18 @@ def promotion_gate(*, task: str, independent_accepted: bool, licence_recorded: b
     if not licence_recorded:
         reasons.append("LICENCE_UNREVIEWED")
     return {"task": task, "promoted": not reasons, "reasonCodes": reasons}
+
+
+def label_products() -> dict[str, Any]:
+    return {
+        "cvat": {"role": "independent_labelling", "sameProductAsCorrections": False},
+        "in_app_corrections": {"role": "analyst_repair", "sameProductAsCorrections": False},
+    }
+
+
+def video_model_roster() -> dict[str, Any]:
+    return {
+        "qwen3_5_4b": {"promoted": False, "role": "compact_local_language_candidate"},
+        "mvitv2": {"promoted": False, "role": "pretrained_video_reference"},
+        "videomae_v2": {"promoted": False, "role": "pretrained_video_reference"},
+    }

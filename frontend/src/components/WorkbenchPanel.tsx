@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 
 import MetricInspector from './MetricInspector';
 import ModalDialog from './ModalDialog';
+import PlaylistBuilder from './PlaylistBuilder';
 import {
   exportPlaylistInterval,
   fetchJobCost,
@@ -242,6 +243,7 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
                 <h4 className="text-xs uppercase tracking-wide text-slate-500">Operations</h4>
                 <p className="text-xs text-slate-400">
                   Job cancellation is a request, not proof of termination. GPU default and native code remain gated.
+                  Cleanup is unknown until confirmed. GPU inference does not run inside an HTTP request.
                 </p>
                 {flags && flags.experimental_shot_quality === false && (
                   <p className="text-xs text-slate-400">experimental shot quality: shadowed</p>
@@ -266,6 +268,7 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
                 ))}
                 {playersLimited && <p className="text-xs text-amber-200">Interval-limited player observations. Totals withheld.</p>}
               </div>
+              <PlaylistBuilder />
               <MetricInspector
                 metric="my_team_distance_m"
                 unit="metres"

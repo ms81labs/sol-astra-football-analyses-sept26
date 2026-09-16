@@ -1550,3 +1550,108 @@ def test_legacy_absent_null_and_rollback_readers_do_not_invent_zeros() -> None:
     assert rolled["possession"] is None
     assert rolled.get("myTeamDistance") is None
 
+
+def test_incident_ladder_keeps_geometry_indeterminate_and_3d_schematic() -> None:
+    from backend.app.workbench.incidents import level1_positional_aid, level2_schematic_replay, level3_multiview
+
+    aid = level1_positional_aid(
+        touch_interval=(12.04, 12.16),
+        attacker_x=10.0,
+        offside_line_x=10.0,
+        uncertainty_m=0.4,
+    )
+    assert aid["level"] == 1
+    assert aid["decision"] is None
+    assert aid["indeterminate"] is True
+    assert aid["validatedMeasurement"] is False
+    assert aid["touchInterval"] == (12.04, 12.16)
+    schematic = level2_schematic_replay(coordinates=[{"x": 10, "y": 20}])
+    assert schematic["level"] == 2
+    assert schematic["photorealistic"] is False
+    assert schematic["decision"] is None
+    blocked = level3_multiview()
+    assert blocked["level"] == 3
+    assert blocked["enabled"] is False
+    assert "NEW_DATASET_REQUIRED" in blocked["reasonCodes"]
+
+
+def test_recovery_corrupted_full_disk_interrupted_upload_and_restore(tmp_path: Path) -> None:
+    from backend.app.workbench.recovery import (
+        corrupted_import,
+        full_disk,
+        interrupted_upload,
+        restore_exercise,
+        support_bundle,
+    )
+
+    corrupt = corrupted_import(expected_sha256="a" * 64, actual_sha256="b" * 64)
+    assert corrupt["accepted"] is False
+    disk = full_disk()
+    assert disk["status"] == "failed"
+    assert disk["acceptedPartial"] is False
+    upload = interrupted_upload(tmp_path / "partial.bin")
+    assert upload["accepted"] is False
+    assert not (tmp_path / "partial.bin").exists() or upload["quarantined"] is True
+    restored = restore_exercise(tmp_path / "backup", tmp_path / "disposable-restore")
+    assert restored["destination"] != restored["source"]
+    assert restored["tested"] is True
+    bundle = support_bundle(consented=True, ttl_seconds=600, now=0)
+    assert bundle["expired"](601) is True
+    assert support_bundle(consented=False, ttl_seconds=600, now=0)["released"] is False
+
+
+def test_scale_scenarios_keep_gb_gib_and_planning_assumptions_explicit() -> None:
+    from backend.app.workbench.costs import deployment_choice, decimal_gb_to_gib, scale_scenario
+
+    ten = scale_scenario(matches_per_month=10)
+    assert ten["variableTechnical"] == 23.4
+    assert ten["reviewLabour"] == 100.0
+    assert ten["totalIncludingFixed"] == 173.4
+    assert ten["measuredApplicationPerformance"] is False
+    assert abs(decimal_gb_to_gib(5.4) - (5.4 * 1e9 / (1024**3))) < 1e-9
+    local = deployment_choice(privacy_required=True, irregular_usage=False, suitable_local_hardware=True)
+    assert local["selected"] == "local"
+    burst = deployment_choice(privacy_required=False, irregular_usage=True, suitable_local_hardware=False)
+    assert burst["selected"] == "cloud_burst"
+    assert burst["alwaysOnGpuCommitted"] is False
+
+
+def test_repository_adapter_does_not_replace_storage_and_http_cannot_run_gpu() -> None:
+    from backend.app.workbench.repository import RepositoryAdapter, http_may_run_gpu, vector_broker_required
+    from backend.app import storage as storage_mod
+
+    adapter = RepositoryAdapter()
+    assert adapter.backend_name == "sqlite_plus_artifacts"
+    assert adapter.replaces_storage_module is False
+    assert storage_mod.Storage is not None
+    assert http_may_run_gpu() is False
+    assert vector_broker_required() is False
+
+
+def test_llm_execution_is_delegated_to_provider_adapters() -> None:
+    from backend.app import llm
+    from backend.app import provider_adapters
+
+    assert llm.execute_local is provider_adapters.execute_local
+    assert llm.execute_cloud is provider_adapters.execute_cloud
+    assert provider_adapters.CONFIGURED_DEFAULT == "disabled_until_policy"
+
+
+def test_trackeval_cvat_and_video_models_stay_unpromoted() -> None:
+    from backend.app.workbench.challengers import trackeval_adapter
+    from backend.app.workbench.roster import label_products, video_model_roster
+    from backend.app.workbench.adoption import dependency_register
+
+    assert trackeval_adapter()["enabled"] is False
+    products = label_products()
+    assert products["cvat"]["role"] == "independent_labelling"
+    assert products["in_app_corrections"]["role"] == "analyst_repair"
+    assert products["cvat"]["sameProductAsCorrections"] is False
+    roster = video_model_roster()
+    assert roster["qwen3_5_4b"]["promoted"] is False
+    assert roster["mvitv2"]["promoted"] is False
+    assert roster["videomae_v2"]["promoted"] is False
+    register = dependency_register()
+    assert "ultralytics" in register
+    assert register["ultralytics"]["rollbackPath"]
+
