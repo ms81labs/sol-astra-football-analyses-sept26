@@ -43,31 +43,12 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci --prefix frontend
 
-      - name: Verify artifact-independent backend
-        run: >-
-          python -m pytest -q backend/tests
-          --ignore=backend/tests/test_convert_football_analysis_pilot_cvat_labels.py
-          --ignore=backend/tests/test_evaluate_football_analysis_pilot_soccertrack_events.py
-          --ignore=backend/tests/test_gpu_worker.py
-          --ignore=backend/tests/test_operational_docs.py
-          --ignore=backend/tests/test_run_guerilla.py
-          --ignore=backend/tests/test_run_source_robustness_batch.py
-
-      - name: Verify research sidecar
-        run: python -m pytest -q research-addon/tests
-
-      - name: Verify frontend
-        run: |
-          npm --prefix frontend test
-          npm --prefix frontend run lint
-          (cd frontend && npx tsc -p tsconfig.app.json --noEmit --incremental false)
-          (cd frontend && npx tsc -p tsconfig.node.json --noEmit --incremental false)
-          npm --prefix frontend run build
-
-      - name: Verify backend import and production dependencies
-        run: |
-          python -c 'from backend.app.main import app'
-          npm --prefix frontend audit --omit=dev --audit-level=high
+      - name: Verify code-only project
+        run: scripts/verify.sh
+        env:
+          VERIFY_CODE_ONLY: '1'
+          VERIFY_DAYTONA: '0'
+          ALLOW_DAYTONA_MUTATION: '0'
 
       - name: Upload verification logs
         if: failure()

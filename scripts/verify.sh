@@ -4,7 +4,8 @@ export QT_QPA_PLATFORM="${QT_QPA_PLATFORM-offscreen}"
 
 VERIFY_DAYTONA="${VERIFY_DAYTONA-0}"
 ALLOW_DAYTONA_MUTATION="${ALLOW_DAYTONA_MUTATION-0}"
-for flag in VERIFY_DAYTONA ALLOW_DAYTONA_MUTATION; do
+VERIFY_CODE_ONLY="${VERIFY_CODE_ONLY-0}"
+for flag in VERIFY_DAYTONA ALLOW_DAYTONA_MUTATION VERIFY_CODE_ONLY; do
     value="${!flag}"
     if [[ "$value" != "0" && "$value" != "1" ]]; then
         printf '%s must be exactly 0 or 1\n' "$flag" >&2
@@ -93,8 +94,18 @@ require_test_count() {
 }
 
 BACKEND_COMMAND="python3 -m pytest -q backend/tests"
+BACKEND_MINIMUM=1486
+if [[ "$VERIFY_CODE_ONLY" == "1" ]]; then
+    BACKEND_COMMAND+=" --ignore=backend/tests/test_convert_football_analysis_pilot_cvat_labels.py"
+    BACKEND_COMMAND+=" --ignore=backend/tests/test_evaluate_football_analysis_pilot_soccertrack_events.py"
+    BACKEND_COMMAND+=" --ignore=backend/tests/test_gpu_worker.py"
+    BACKEND_COMMAND+=" --ignore=backend/tests/test_operational_docs.py"
+    BACKEND_COMMAND+=" --ignore=backend/tests/test_run_guerilla.py"
+    BACKEND_COMMAND+=" --ignore=backend/tests/test_run_source_robustness_batch.py"
+    BACKEND_MINIMUM=3000
+fi
 run_gate "backend" "$BACKEND_COMMAND"
-require_test_count "backend" "$BACKEND_COMMAND" 1486
+require_test_count "backend" "$BACKEND_COMMAND" "$BACKEND_MINIMUM"
 
 SIDECAR_COMMAND="python3 -m pytest -q research-addon/tests"
 run_gate "sidecar" "$SIDECAR_COMMAND"
@@ -109,6 +120,11 @@ run_gate "typecheck-app" "cd frontend && npx tsc -p tsconfig.app.json --noEmit -
 run_gate "typecheck-node" "cd frontend && npx tsc -p tsconfig.node.json --noEmit --incremental false"
 run_gate "build" "npm --prefix frontend run build"
 run_gate "backend-startup" "python3 -c 'from backend.app.main import app'"
+if [[ "$VERIFY_CODE_ONLY" == "1" ]]; then
+    run_gate "prod-audit" "npm --prefix frontend audit --omit=dev --audit-level=high"
+    printf '%s\n' "Code-only verification passed; restore documented artifacts before running release gates."
+    exit 0
+fi
 run_gate "manifest" "python3 -m pytest -q backend/tests/test_release_manifest.py backend/tests/test_write_release_manifest.py"
 run_gate "runtime-options" "python3 -m pytest -q backend/tests/test_runtime_options.py"
 run_gate "preflight-negatives" "python3 -m pytest -q backend/tests/test_release_preflight.py -k reject"
