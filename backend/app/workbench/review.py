@@ -132,6 +132,32 @@ def new_correction(
     )
 
 
+def collaboration_lock(
+    *,
+    mode: str,
+    lock_holder: str | None = None,
+    requester: str | None = None,
+) -> dict[str, Any]:
+    if mode == "local_only":
+        return {
+            "required": False,
+            "admitted": True,
+            "acquired": True,
+            "silentlyReplaced": False,
+            "mode": mode,
+        }
+    acquired = bool(lock_holder) and lock_holder == requester
+    return {
+        "required": True,
+        "admitted": False,
+        "acquired": acquired,
+        "silentlyReplaced": False,
+        "mode": mode,
+        "lockHolder": lock_holder,
+        "requester": requester,
+    }
+
+
 def playlist_export_interval(item: dict[str, Any], source_fps: float) -> dict[str, float | int]:
     start = float(item["timestampStart"])
     end = float(item["timestampEnd"])

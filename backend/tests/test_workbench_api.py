@@ -232,6 +232,7 @@ def test_workbench_corrections_search_jobs_and_unknown_metrics(tmp_path: Path) -
             measures = await client.get("/api/workbench/evaluation/measures")
             assert measures.json()["trackevalIsGroundTruth"] is False
             assert measures.json()["annotationServiceHealthSatisfiesLabelGate"] is False
+            assert measures.json()["analystWorkflow"]["measured"] is False
 
     _run(body)
 

@@ -74,6 +74,7 @@ REASON_CODES: dict[str, str] = {
     "EXPERIMENTAL_NOT_CALIBRATED_XG": "Shot quality is experimental and is not a calibrated xG model.",
     "LOCKED_EVALUATION_ISOLATION": "Locked independent-evaluation labels cannot become training data.",
     "INDEPENDENT_ACCEPTANCE_MISSING": "A model upgrade stays unpromoted until independent acceptance exists.",
+    "ANALYST_ACCEPTANCE_MISSING": "Product workflow measures stay unmeasured until an intended analyst completes a reviewed match.",
     "INVENTED_NUMBER": "A narrative claimed a number that is not in the fact package.",
     "YOUTH_FOOTAGE": "Youth footage requires safeguarding, club permission and local processing by default.",
     "MANUAL_INCIDENT_PACKAGE": "Incident review is a manual clip/note package, not a validated ruling.",

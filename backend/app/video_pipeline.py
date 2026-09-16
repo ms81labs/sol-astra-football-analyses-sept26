@@ -162,6 +162,9 @@ def project_detected_rows(rows: list[dict]) -> list[dict]:
     return projected
 
 
+IMAGE_SPACE_SAFE_CHANGES = {"report", "calibration", "team_mapping", "track_edit", "ownership"}
+
+
 def reprocess_for_change(
     *,
     change: str,
@@ -174,12 +177,23 @@ def reprocess_for_change(
         current_identity=current_identity,
         change=change,
     )
-    if change == "report" or plan["reuse"]:
+    if change in IMAGE_SPACE_SAFE_CHANGES:
         return {
             "visionInvoked": False,
             "rebuild": list(plan["rebuild"]),
             "reused": True,
-            "reason": "report_text_or_identical_cache_identity",
+            "imageSpaceDetectionsReused": change != "report" or bool(plan["reuse"]),
+            "reason": "image_space_detections_reused"
+            if change != "report"
+            else "report_text_or_identical_cache_identity",
+        }
+    if plan["reuse"]:
+        return {
+            "visionInvoked": False,
+            "rebuild": list(plan["rebuild"]),
+            "reused": True,
+            "imageSpaceDetectionsReused": True,
+            "reason": "identical_cache_identity",
         }
     payload = vision()
     if not isinstance(payload, dict):
@@ -187,4 +201,5 @@ def reprocess_for_change(
     payload["visionInvoked"] = True
     payload["rebuild"] = list(plan["rebuild"])
     payload["reused"] = False
+    payload["imageSpaceDetectionsReused"] = False
     return payload

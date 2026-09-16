@@ -290,6 +290,7 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
                 automationAdmitted={false}
                 manualTaggingPermitted
                 cannotMeasure={['physical_metrics']}
+                landmarkPreview={{ residualP95M: 4.2, accepted: false, committed: false }}
               />
               <ClockReadout presentationTimeSeconds={0} matchClockSeconds={0} />
               {flags?.experimental_ui ? (

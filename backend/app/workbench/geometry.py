@@ -226,6 +226,17 @@ def detect_zoom_or_cut(previous: CalibrationProfile, current: CalibrationProfile
     return False
 
 
+def preview_landmark_fit(*, residual_p95_m: float, max_p95_m: float) -> dict[str, Any]:
+    return {
+        "preview": True,
+        "committed": False,
+        "accepted": residual_p95_m <= max_p95_m,
+        "visionRerun": False,
+        "residualP95M": residual_p95_m,
+        "rebuild": ["pitch_positions", "physical_metrics", "tactical_metrics", "report"],
+    }
+
+
 def _project(profile: CalibrationProfile, image_x: float, image_y: float) -> tuple[float, float]:
     if profile.homography:
         h = profile.homography

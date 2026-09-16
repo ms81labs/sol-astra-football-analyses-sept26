@@ -3,6 +3,12 @@ interface TeamCluster {
   label: string;
 }
 
+interface LandmarkPreview {
+  residualP95M: number;
+  accepted: boolean;
+  committed: boolean;
+}
+
 interface SetupWizardProps {
   cameraProfile: string;
   pitchLengthM?: string;
@@ -10,6 +16,7 @@ interface SetupWizardProps {
   manualTaggingPermitted?: boolean;
   cannotMeasure?: string[];
   teamClusters?: TeamCluster[];
+  landmarkPreview?: LandmarkPreview | null;
 }
 
 export default function SetupWizard({
@@ -19,6 +26,7 @@ export default function SetupWizard({
   manualTaggingPermitted = true,
   cannotMeasure = [],
   teamClusters = [],
+  landmarkPreview = null,
 }: SetupWizardProps) {
   return (
     <section aria-label="Setup wizard" className="rounded-lg border border-slate-700 p-3 space-y-2">
@@ -40,6 +48,13 @@ export default function SetupWizard({
         <p key={cluster.id} className="text-xs text-slate-300">{cluster.label}</p>
       ))}
       <p className="text-xs text-slate-400">Calibration: four-point compatibility retained; not a certification of whole-pitch coverage.</p>
+      {landmarkPreview && (
+        <div className="rounded border border-slate-700 p-2 space-y-1">
+          <p className="text-xs text-amber-200">Preview landmark fit (p95 {landmarkPreview.residualP95M} m)</p>
+          <p className="text-xs text-slate-400">{landmarkPreview.committed ? 'Committed' : 'Not committed'}</p>
+          <p className="text-xs text-slate-500">Does not rerun image-space detection.</p>
+        </div>
+      )}
       <label className="flex items-center gap-2 text-xs text-slate-400">
         <input type="checkbox" />
         Cloud permission

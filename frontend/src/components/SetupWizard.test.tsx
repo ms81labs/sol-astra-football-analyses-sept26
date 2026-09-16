@@ -1,7 +1,9 @@
-import { render, screen } from '@testing-library/react';
-import { expect, it } from 'vitest';
+import { cleanup, render, screen } from '@testing-library/react';
+import { afterEach, expect, it } from 'vitest';
 
 import SetupWizard from './SetupWizard';
+
+afterEach(cleanup);
 
 it('collects periods, dimensions, camera, team mapping, calibration and rights without certifying automation', () => {
   render(
@@ -23,4 +25,16 @@ it('collects periods, dimensions, camera, team mapping, calibration and rights w
   expect(screen.getByLabelText(/cloud permission/i)).toBeTruthy();
   expect(screen.getByText(/manual tagging permitted/i)).toBeTruthy();
   expect(screen.getAllByText(/not a certification/i).length).toBeGreaterThanOrEqual(1);
+});
+
+it('previews landmark fit without committing calibration or implying whole-pitch coverage', () => {
+  render(
+    <SetupWizard
+      cameraProfile="stitched_panoramic_view"
+      landmarkPreview={{ residualP95M: 4.2, accepted: false, committed: false }}
+    />,
+  );
+  expect(screen.getByText(/preview landmark fit/i)).toBeTruthy();
+  expect(screen.getByText(/not committed/i)).toBeTruthy();
+  expect(screen.getByText(/does not rerun image-space detection/i)).toBeTruthy();
 });

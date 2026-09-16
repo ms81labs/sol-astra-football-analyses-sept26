@@ -145,6 +145,35 @@ def score_detections_by_stratum(
     return StratumBenchmark(byStratum=by_stratum, labelsIndependent=labels_independent)
 
 
+def tile_to_source(
+    bbox: tuple[float, float, float, float],
+    *,
+    origin: tuple[float, float],
+    scale: float = 1.0,
+) -> tuple[float, float, float, float]:
+    x1, y1, x2, y2 = bbox
+    ox, oy = origin
+    return (ox + x1 * scale, oy + y1 * scale, ox + x2 * scale, oy + y2 * scale)
+
+
+def merge_tiled_detections(
+    detections: list[dict[str, Any]],
+    *,
+    iou_threshold: float,
+) -> list[dict[str, Any]]:
+    ordered = sorted(
+        detections,
+        key=lambda item: (-float(item.get("score") or 0.0), str(item.get("tileId") or "")),
+    )
+    kept: list[dict[str, Any]] = []
+    for detection in ordered:
+        bbox = tuple(float(value) for value in detection["bbox"])
+        if any(_iou(bbox, tuple(float(value) for value in item["bbox"])) >= iou_threshold for item in kept):
+            continue
+        kept.append({**detection, "bbox": bbox, "sourceCoordinates": True, "deterministic": True})
+    return kept
+
+
 class PreprocessorAdapter:
     """Colour/crop/resize adapter. Football coordinates stay in source space."""
 

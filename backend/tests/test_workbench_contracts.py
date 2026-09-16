@@ -2099,6 +2099,109 @@ def test_rollback_stops_admission_and_does_not_rewrite_past_outcomes() -> None:
     assert rolled["rewrotePastTrialOutcomes"] is False
 
 
+def test_calibration_team_and_track_edits_reuse_image_space_detections() -> None:
+    from backend.app.video_pipeline import reprocess_for_change
+
+    calls: list[str] = []
+    for change in ("calibration", "team_mapping", "track_edit", "ownership"):
+        result = reprocess_for_change(
+            change=change,
+            previous_identity="old-cal",
+            current_identity="new-cal",
+            vision=lambda: calls.append(change) or {"rows": [{"Frame_ID": 1}]},
+        )
+        assert result["visionInvoked"] is False
+        assert result["imageSpaceDetectionsReused"] is True
+        assert result["reused"] is True
+    assert calls == []
+
+
+def test_tile_to_source_transform_merges_overlaps_deterministically() -> None:
+    from backend.app.workbench.perception import merge_tiled_detections, tile_to_source
+
+    mapped = tile_to_source(bbox=(10.0, 20.0, 30.0, 40.0), origin=(100.0, 50.0), scale=2.0)
+    assert mapped == (120.0, 90.0, 160.0, 130.0)
+    merged = merge_tiled_detections(
+        [
+            {"bbox": (0.0, 0.0, 10.0, 10.0), "score": 0.4, "tileId": "b"},
+            {"bbox": (1.0, 1.0, 11.0, 11.0), "score": 0.9, "tileId": "a"},
+            {"bbox": (80.0, 80.0, 90.0, 90.0), "score": 0.5, "tileId": "c"},
+        ],
+        iou_threshold=0.3,
+    )
+    assert len(merged) == 2
+    assert merged[0]["score"] == 0.9
+    assert merged[0]["tileId"] == "a"
+    assert all(item["sourceCoordinates"] is True for item in merged)
+
+
+def test_preview_landmark_fit_does_not_commit_or_rerun_vision() -> None:
+    from backend.app.workbench.geometry import preview_landmark_fit
+
+    preview = preview_landmark_fit(residual_p95_m=4.2, max_p95_m=3.0)
+    assert preview["preview"] is True
+    assert preview["committed"] is False
+    assert preview["accepted"] is False
+    assert preview["visionRerun"] is False
+    assert "pitch_positions" in preview["rebuild"]
+
+
+def test_hosted_collaboration_requires_explicit_lock_and_does_not_silently_replace() -> None:
+    from backend.app.workbench.review import collaboration_lock
+
+    local = collaboration_lock(mode="local_only")
+    assert local["required"] is False
+    assert local["silentlyReplaced"] is False
+    hosted = collaboration_lock(mode="hosted_collaboration", lock_holder="analyst-a", requester="analyst-b")
+    assert hosted["required"] is True
+    assert hosted["admitted"] is False
+    assert hosted["acquired"] is False
+    assert hosted["silentlyReplaced"] is False
+
+
+def test_retries_cannot_exceed_declared_spend() -> None:
+    from backend.app.workbench.jobs import DurableJobLedger, JobRequest, MAX_ATTEMPTS
+
+    ledger = DurableJobLedger()
+    request = JobRequest(
+        requestId="spend-1",
+        matchId="m1",
+        sourceSha256="a" * 64,
+        intervalStart=0.0,
+        intervalEnd=10.0,
+        temporalPolicy="source_global_grid",
+        decoderVersion="opencv",
+        modelHash="weights-v1",
+        outputSchema="evidence_v1",
+        budget=1.25,
+        authorisedLocation="local",
+    )
+    ledger.submit(request)
+    ledger.transition("spend-1", "failed", error="worker")
+    ledger.retry("spend-1")
+    ledger.transition("spend-1", "failed", error="worker")
+    assert ledger.cost_summary()["reservedTotal"] == 1.25
+    with pytest.raises(RuntimeError, match="retry budget exhausted"):
+        while True:
+            ledger.transition("spend-1", "failed", error="worker")
+            ledger.retry("spend-1")
+            if len(ledger.attempts["spend-1"]) > MAX_ATTEMPTS + 2:
+                break
+
+
+def test_analyst_workflow_measures_stay_unmeasured_until_a_real_reviewed_match() -> None:
+    from backend.app.workbench.evaluation import analyst_workflow_measures
+
+    measures = analyst_workflow_measures()
+    assert measures["measured"] is False
+    assert measures["analystCompletedReviewedMatch"] is False
+    assert measures["correctionTimeSeconds"] is None
+    assert measures["missedUsefulPassages"] is None
+    assert measures["exportUsefulness"] is None
+    assert measures["trust"] is None
+    assert "ANALYST_ACCEPTANCE_MISSING" in measures["reasonCodes"]
+
+
 def test_preprocessor_and_detector_adapters_keep_source_coordinates_and_fail_closed() -> None:
     from backend.vision import DetectorAdapter, PreprocessorAdapter
 

@@ -76,7 +76,7 @@ def current_repository_evaluation_gate() -> EvaluationGate:
     )
 
 
-def evaluation_measures() -> dict[str, bool]:
+def evaluation_measures() -> dict[str, object]:
     return {
         "hotaIdf1RequiresCompatibleImageSpaceLabels": True,
         "officialPitchPositionsAreNotHotaLabels": True,
@@ -84,4 +84,18 @@ def evaluation_measures() -> dict[str, bool]:
         "annotationServiceHealthSatisfiesLabelGate": False,
         "pooledAverageOnly": False,
         "handEditedSummaryIsResult": False,
+        "analystWorkflow": analyst_workflow_measures(),
+    }
+
+
+def analyst_workflow_measures() -> dict[str, object]:
+    return {
+        "measured": False,
+        "analystCompletedReviewedMatch": False,
+        "correctionTimeSeconds": None,
+        "missedUsefulPassages": None,
+        "exportUsefulness": None,
+        "trust": None,
+        "developerIntervention": None,
+        "reasonCodes": ["ANALYST_ACCEPTANCE_MISSING"],
     }

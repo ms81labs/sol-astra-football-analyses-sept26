@@ -6,7 +6,9 @@ from backend.app.workbench.perception import (
     IdentityRepair,
     PreprocessorAdapter,
     TrackerAdapter,
+    merge_tiled_detections,
     score_detections_by_stratum,
+    tile_to_source,
 )
 
 __all__ = [
@@ -16,7 +18,9 @@ __all__ = [
     "PreprocessorAdapter",
     "TrackerAdapter",
     "ground_contact_point",
+    "merge_tiled_detections",
     "project_to_pitch",
     "review_incident_geometry",
     "score_detections_by_stratum",
+    "tile_to_source",
 ]

@@ -278,13 +278,13 @@ def test_report_only_reprocess_does_not_invoke_vision():
     assert reused["visionInvoked"] is False
     assert calls == []
     rebuilt = reprocess_for_change(
-        change="calibration",
+        change="perception",
         previous_identity=None,
         current_identity="def",
         vision=vision,
     )
     assert rebuilt["visionInvoked"] is True
-    assert "pitch_positions" in rebuilt["rebuild"]
+    assert "observations" in rebuilt["rebuild"]
     assert calls == ["vision"]
 
 
@@ -302,13 +302,13 @@ def test_processor_report_change_does_not_invoke_vision() -> None:
     assert reused["visionInvoked"] is False
     assert calls == []
     rebuilt = reprocess_match_for_change(
-        change="calibration",
+        change="perception",
         previous_identity=None,
         current_identity="def",
         vision=lambda: calls.append("vision") or {"rows": [{"Frame_ID": 1}]},
     )
     assert rebuilt["visionInvoked"] is True
-    assert "pitch_positions" in rebuilt["rebuild"]
+    assert "observations" in rebuilt["rebuild"]
     assert calls == ["vision"]
 
 
