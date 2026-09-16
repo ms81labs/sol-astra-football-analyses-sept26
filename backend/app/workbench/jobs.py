@@ -273,3 +273,12 @@ def egress_policy(*, destination: str, authorised_hosts: frozenset[str]) -> dict
         "defaultDeny": True,
         "reasonCodes": [] if admitted else ["WORKER_EGRESS_DENIED"],
     }
+
+
+def cancellation_does_not_erase_charges(*, cancelled: bool, incurred: float) -> dict[str, object]:
+    return {
+        "cancelled": cancelled,
+        "incurred": incurred,
+        "chargesErased": False,
+        "reasonCodes": ["CANCELLATION_DOES_NOT_ERASE_INCURRED_CHARGES"] if cancelled else [],
+    }

@@ -276,9 +276,13 @@ class AssistanceRouter:
         self.spend += reserved
         self.calls += 1
         if not isinstance(raw, dict):
+            repair = json_repair_chain(attempts=self.calls, max_repair=policy.maxRepairAttempts)
+            reasons = ["MALFORMED_PROVIDER_OUTPUT"]
+            if not repair["admitted"]:
+                reasons.append("UNBOUNDED_JSON_REPAIR")
             return AssistanceDisposition(
                 route="template",
-                reasonCodes=["MALFORMED_PROVIDER_OUTPUT"],
+                reasonCodes=reasons,
                 callsUsed=self.calls,
                 spend=self.spend,
                 output=template,
@@ -317,4 +321,22 @@ def network_failure_preserves_unknown(*, metric_value: float | None, generated_n
         "value": metric_value,
         "availability": "unknown" if metric_value is None else "available",
         "replacedWithGenerated": False,
+    }
+
+
+def escalation_requires_quality_gap(*, model_uncertain: bool, measured_gap: bool) -> dict[str, Any]:
+    del model_uncertain
+    return {
+        "escalate": bool(measured_gap),
+        "reasonCodes": [] if measured_gap else ["ESCALATION_REQUIRES_MEASURED_QUALITY_GAP"],
+    }
+
+
+def json_repair_chain(*, attempts: int, max_repair: int) -> dict[str, Any]:
+    admitted = attempts <= max_repair
+    return {
+        "admitted": admitted,
+        "attempts": attempts,
+        "maxRepair": max_repair,
+        "reasonCodes": [] if admitted else ["UNBOUNDED_JSON_REPAIR"],
     }

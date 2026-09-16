@@ -21,5 +21,7 @@ it('shows job phase, spend, retries and cleanup without treating cancel as termi
   expect(screen.getByText(/retries 1/i)).toBeTruthy();
   expect(screen.getByText(/cleanup unknown/i)).toBeTruthy();
   expect(screen.getByText(/cancellation is a request, not proof of termination/i)).toBeTruthy();
+  expect(screen.getByText(/cancellation does not erase incurred charges/i)).toBeTruthy();
+  expect(screen.getByText(/escalation requires a measured task-quality gap/i)).toBeTruthy();
   expect(screen.getByText(/gpu inference does not run inside an http request/i)).toBeTruthy();
 });

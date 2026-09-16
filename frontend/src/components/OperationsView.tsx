@@ -25,7 +25,8 @@ export default function OperationsView({
       <p className="text-xs text-slate-300">Cleanup {cleanupResult}</p>
       {cancelRequested && <p className="text-xs text-amber-200">Cancel requested</p>}
       <p className="text-xs text-slate-400">
-        Job cancellation is a request, not proof of termination. GPU default and native code remain gated.
+        Job cancellation is a request, not proof of termination. Cancellation does not erase incurred charges.
+        Escalation requires a measured task-quality gap. GPU default and native code remain gated.
         Cleanup is unknown until confirmed. GPU inference does not run inside an HTTP request.
       </p>
     </section>

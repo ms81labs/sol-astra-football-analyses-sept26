@@ -2598,3 +2598,22 @@ def test_native_wheels_os_profiles_and_ffmpeg_builds_stay_unportable() -> None:
     assert native["pythonPlusDependenciesAcceptable"] is True
     assert "CUSTOM_NATIVE_UNJUSTIFIED" in native["reasonCodes"]
 
+
+def test_escalation_json_repair_and_cancellation_charges_stay_bounded() -> None:
+    from backend.app.workbench.assistance import escalation_requires_quality_gap, json_repair_chain
+    from backend.app.workbench.jobs import cancellation_does_not_erase_charges
+
+    uncertain = escalation_requires_quality_gap(model_uncertain=True, measured_gap=False)
+    assert uncertain["escalate"] is False
+    assert "ESCALATION_REQUIRES_MEASURED_QUALITY_GAP" in uncertain["reasonCodes"]
+    gap = escalation_requires_quality_gap(model_uncertain=False, measured_gap=True)
+    assert gap["escalate"] is True
+    unbounded = json_repair_chain(attempts=2, max_repair=1)
+    assert unbounded["admitted"] is False
+    assert "UNBOUNDED_JSON_REPAIR" in unbounded["reasonCodes"]
+    one = json_repair_chain(attempts=1, max_repair=1)
+    assert one["admitted"] is True
+    billed = cancellation_does_not_erase_charges(cancelled=True, incurred=1.2)
+    assert billed["chargesErased"] is False
+    assert billed["incurred"] == 1.2
+
