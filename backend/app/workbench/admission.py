@@ -34,3 +34,42 @@ _PROFILES: dict[CameraProfile, tuple[str, list[str]]] = {
 def admit_camera(profile: CameraProfile) -> CameraAdmission:
     automation, withhold = _PROFILES[profile]
     return CameraAdmission(profile=profile, automation=automation, withhold=withhold, certified=False)
+
+
+SUPPORTED_CODECS = {"h264", "hevc", "av1", "mpeg4", "vp9", "mpeg2video"}
+
+
+def admit_media(
+    identity,
+    *,
+    existing_digests: set[str] | None = None,
+    require_audio: bool = False,
+    supported_codecs: set[str] | None = None,
+) -> dict[str, object]:
+    """Reject unsafe/unsupported/duplicate/interrupted media before allocation."""
+
+    reasons: list[str] = []
+    warnings: list[str] = []
+    codecs = supported_codecs or SUPPORTED_CODECS
+    existing = existing_digests or set()
+    errors = [str(item).lower() for item in (identity.decodeErrors or [])]
+    if any("unsafe" in item for item in errors):
+        reasons.append("UNSAFE_MEDIA")
+    if identity.codec not in codecs:
+        reasons.append("UNSUPPORTED_CODEC")
+    if identity.sourceSha256 in existing:
+        reasons.append("DUPLICATE_CONTENT")
+    if any("truncat" in item or "interrupt" in item for item in errors):
+        reasons.append("INTERRUPTED_FILE")
+    if int(identity.audioTracks or 0) == 0:
+        if require_audio:
+            reasons.append("MISSING_AUDIO")
+        else:
+            warnings.append("MISSING_AUDIO")
+    return {
+        "admitted": not reasons,
+        "reasonCodes": reasons,
+        "warnings": warnings,
+        "variableFrameRate": bool(identity.variableFrameRate),
+        "rotation": int(identity.rotation or 0),
+    }

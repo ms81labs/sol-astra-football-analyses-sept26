@@ -77,6 +77,7 @@ REASON_CODES: dict[str, str] = {
     "INVENTED_NUMBER": "A narrative claimed a number that is not in the fact package.",
     "YOUTH_FOOTAGE": "Youth footage requires safeguarding, club permission and local processing by default.",
     "MANUAL_INCIDENT_PACKAGE": "Incident review is a manual clip/note package, not a validated ruling.",
+    "SINGLE_FRAME_FORMATION": "A single frame or partial view cannot support a stable formation.",
 }
 
 CAPABILITY_IDS: tuple[str, ...] = (

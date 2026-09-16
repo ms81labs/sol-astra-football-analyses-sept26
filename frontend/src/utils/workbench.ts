@@ -112,3 +112,43 @@ export async function exportPlaylistInterval(timestampStart: number, timestampEn
   }
   return response.json() as Promise<{ sourceStartSeconds: number; sourceEndSeconds: number; sourceEndFrameExclusive: number }>;
 }
+
+export async function fetchWorkbenchFlags() {
+  const response = await fetch('/api/workbench/flags');
+  if (!response.ok) {
+    throw new Error(`Failed to load feature flags: ${response.status}`);
+  }
+  return response.json() as Promise<{ experimental_shot_quality: boolean; gpu_default: boolean; native_code: boolean }>;
+}
+
+export async function fetchJobCost(jobId: string) {
+  const response = await fetch(`/api/workbench/jobs/${jobId}/cost`);
+  if (!response.ok) {
+    throw new Error(`Failed to load job cost: ${response.status}`);
+  }
+  return response.json() as Promise<{ reservedTotal: number; actualTotal: number; p50Reserved: number }>;
+}
+
+export async function searchMatchLibrary(query: string, matches: Array<Record<string, unknown>> = []) {
+  const response = await fetch('/api/workbench/library/search', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, matches }),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to search match library: ${response.status}`);
+  }
+  return response.json() as Promise<{ results: Array<{ id: string; title?: string }> }>;
+}
+
+export async function fetchPlayerObservations(matchId: string, rows: Array<Record<string, unknown>> = []) {
+  const response = await fetch(`/api/workbench/matches/${matchId}/players`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rows, identityContinuous: false }),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to load player observations: ${response.status}`);
+  }
+  return response.json() as Promise<{ intervalLimited: boolean; totalsWithheld: boolean; reasonCodes: string[] }>;
+}

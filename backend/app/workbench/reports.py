@@ -50,3 +50,23 @@ def assemble_report(
         "factualCheck": {"accepted": accepted, "reasonCodes": factual_reasons},
         "publication": {"accepted": accepted, "requiresAnalyst": True},
     }
+
+
+def claim_provenance(
+    *,
+    claims: list[dict[str, Any]],
+    known_evidence_ids: set[str],
+) -> dict[str, Any]:
+    missing = [
+        evidence_id
+        for claim in claims
+        for evidence_id in claim.get("evidenceIds") or []
+        if evidence_id not in known_evidence_ids
+    ]
+    reasons = ["FABRICATED_EVIDENCE"] if missing else []
+    return {
+        "accepted": not reasons,
+        "claims": claims,
+        "reasonCodes": reasons,
+        "missingEvidenceIds": missing,
+    }

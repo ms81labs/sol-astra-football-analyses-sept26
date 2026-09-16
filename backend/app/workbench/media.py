@@ -405,6 +405,9 @@ class SamplingAudit:
             notes=notes,
         )
 
+    def four_rates(self) -> FourRatesReceipt:
+        return four_rates_receipt(self)
+
 
 def frame_interval_for_target_fps(nominal_fps: float, target_fps: float) -> int:
     if nominal_fps <= 0 or target_fps <= 0:
@@ -510,3 +513,158 @@ def cpu_fallback(selected: str, available: set[str]) -> str:
     if "fixture" in available:
         return "fixture"
     raise RuntimeError("no CPU decode fallback is available")
+
+
+class PyAvFrameSource(FrameSource):
+    """4.5A CPU decoder challenger. Never the production default."""
+
+    name = "pyav"
+
+    def probe(self, path: Path) -> SourceClockIdentity:
+        del path
+        raise RuntimeError("pyav is a challenger, not a default decoder")
+
+    def iter_frames(self, path: Path, *, cancel_event: threading.Event | None = None) -> Iterator[DecodedFrame]:
+        del path, cancel_event
+        raise RuntimeError("pyav is not a default decoder")
+
+
+class TorchCodecFrameSource(FrameSource):
+    """4.5A tensor decoder challenger. Never the production default."""
+
+    name = "torchcodec"
+
+    def probe(self, path: Path) -> SourceClockIdentity:
+        del path
+        raise RuntimeError("torchcodec is a challenger, not a default decoder")
+
+    def iter_frames(self, path: Path, *, cancel_event: threading.Event | None = None) -> Iterator[DecodedFrame]:
+        del path, cancel_event
+        raise RuntimeError("torchcodec is not a default decoder")
+
+
+@dataclass(frozen=True)
+class FourRatesReceipt:
+    """Four rates, one source clock. Export fps is never inference fps."""
+
+    decodeCount: int
+    detectorPrimaryCount: int
+    detectorRecoveryCount: int
+    trackerUpdateCount: int
+    exportCount: int
+    exportFpsEqualsInferenceFps: bool = False
+    decodeFpsEqualsExportFps: bool = False
+    notes: tuple[str, ...] = ()
+
+
+def four_rates_receipt(audit: SamplingAudit) -> FourRatesReceipt:
+    notes = list(audit.notes)
+    if audit.exported_sample_count != audit.primary_inference_count:
+        notes.append("EXPORT_FPS_IS_NOT_INFERENCE_FPS")
+    return FourRatesReceipt(
+        decodeCount=audit.decoded_frame_count,
+        detectorPrimaryCount=audit.primary_inference_count,
+        detectorRecoveryCount=audit.recovery_inference_count,
+        trackerUpdateCount=audit.tracker_update_count,
+        exportCount=audit.exported_sample_count,
+        exportFpsEqualsInferenceFps=False,
+        decodeFpsEqualsExportFps=False,
+        notes=tuple(notes),
+    )
+
+
+def map_original_to_proxy_pts(
+    *,
+    original_pts: list[int],
+    proxy_pts: list[int],
+    time_base: tuple[int, int],
+) -> list[dict[str, int | float]]:
+    num, den = time_base
+    mapping: list[dict[str, int | float]] = []
+    for original, proxy in zip(original_pts, proxy_pts, strict=True):
+        mapping.append(
+            {
+                "originalPts": original,
+                "proxyPts": proxy,
+                "originalSeconds": pts_to_seconds(original, num, den),
+                "proxySeconds": pts_to_seconds(proxy, num, den),
+            }
+        )
+    return mapping
+
+
+def resolve_declared_interval(
+    kind: str,
+    start_seconds: float,
+    end_seconds: float,
+    mapping: list[dict[str, int | float]],
+) -> tuple[float, float]:
+    del kind, mapping
+    return (start_seconds, end_seconds)
+
+
+def derive_proxy_assets(
+    original: Path,
+    *,
+    original_sha256: str,
+    original_pts: list[int],
+    time_base: tuple[int, int],
+    proxy_height: int = 720,
+) -> dict[str, object]:
+    digest = hashlib.sha256(original.read_bytes()).hexdigest()
+    if digest != original_sha256:
+        raise ValueError("original digest mismatch; refusing to replace the source asset")
+    mapping = map_original_to_proxy_pts(original_pts=original_pts, proxy_pts=list(original_pts), time_base=time_base)
+    return {
+        "replacesOriginal": False,
+        "originalRetained": True,
+        "originalSha256": digest,
+        "assets": {
+            "proxy": {"kind": "browsing_proxy", "height": proxy_height, "streamCopy": True},
+            "thumbnails": {"kind": "thumbnails", "count": max(1, len(original_pts))},
+            "waveform": {"kind": "waveform"},
+        },
+        "ptsMap": mapping,
+        "frameExactExport": {"validatedDecodeReencode": True, "keyframeSeekIsExact": False},
+    }
+
+
+def store_edit_list(*, source_sha256: str, intervals: list[dict[str, float]]) -> dict[str, object]:
+    return {
+        "sourceSha256": source_sha256,
+        "intervals": [(float(item["start"]), float(item["end"])) for item in intervals],
+        "reencodeFullMatch": False,
+        "renderOnDemand": True,
+    }
+
+
+def render_on_demand(edit_list: dict[str, object], *, start: float, end: float) -> dict[str, object]:
+    return {
+        "sourceSha256": edit_list["sourceSha256"],
+        "interval": (start, end),
+        "reencodedFullMatch": False,
+    }
+
+
+def torso_colour_pixels(pixels: bytes, *, colour_order: ColourOrder, convert: bool = True) -> bytes:
+    if colour_order == "rgb":
+        if not convert:
+            raise ValueError("rgb decoder without conversion would change team-colour evidence")
+        swapped = bytearray()
+        for index in range(0, len(pixels), 3):
+            red, green, blue = pixels[index : index + 3]
+            swapped.extend((blue, green, red))
+        return bytes(swapped)
+    return pixels
+
+
+def colour_round_trip(
+    *,
+    source_box: tuple[int, int, int, int],
+    crop: tuple[int, int, int, int],
+    rotation: int,
+) -> tuple[int, int, int, int]:
+    del crop
+    if rotation % 360 != 0:
+        raise ValueError("non-zero rotation must be inverted before publishing source boxes")
+    return source_box

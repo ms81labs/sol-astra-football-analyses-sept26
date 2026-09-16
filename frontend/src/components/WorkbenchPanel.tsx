@@ -3,9 +3,13 @@ import { useEffect, useState } from 'react';
 import ModalDialog from './ModalDialog';
 import {
   exportPlaylistInterval,
+  fetchJobCost,
   fetchPendingCorrections,
+  fetchPlayerObservations,
   fetchWorkbenchDossier,
+  fetchWorkbenchFlags,
   recoverMatchCorrection,
+  searchMatchLibrary,
   searchWorkbenchEvents,
   type WorkbenchDossier,
 } from '../utils/workbench';
@@ -13,6 +17,7 @@ import {
 interface WorkbenchPanelProps {
   onClose: () => void;
   matchId?: string;
+  jobId?: string;
   events?: Array<Record<string, unknown>>;
   onSeek?: (timestamp: number) => void;
 }
@@ -26,7 +31,7 @@ const STATUS_LABEL: Record<string, string> = {
   unproven: 'Unproven',
 };
 
-export default function WorkbenchPanel({ onClose, matchId, events = [], onSeek }: WorkbenchPanelProps) {
+export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], onSeek }: WorkbenchPanelProps) {
   const [dossier, setDossier] = useState<WorkbenchDossier | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('show our second-half turnovers followed by a shot within 10 seconds');
@@ -36,6 +41,11 @@ export default function WorkbenchPanel({ onClose, matchId, events = [], onSeek }
   const [playlistStart, setPlaylistStart] = useState('3');
   const [playlistEnd, setPlaylistEnd] = useState('5');
   const [playlistMessage, setPlaylistMessage] = useState<string | null>(null);
+  const [flags, setFlags] = useState<{ experimental_shot_quality?: boolean } | null>(null);
+  const [jobCost, setJobCost] = useState<{ reservedTotal: number } | null>(null);
+  const [libraryQuery, setLibraryQuery] = useState('');
+  const [libraryHits, setLibraryHits] = useState<Array<{ id: string; title?: string }>>([]);
+  const [playersLimited, setPlayersLimited] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -60,6 +70,54 @@ export default function WorkbenchPanel({ onClose, matchId, events = [], onSeek }
       })
       .catch(() => {
         if (!cancelled) setPendingCorrection(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [matchId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchWorkbenchFlags()
+      .then((payload) => {
+        if (!cancelled && typeof payload.experimental_shot_quality === 'boolean') {
+          setFlags(payload);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setFlags(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!jobId) return;
+    let cancelled = false;
+    fetchJobCost(jobId)
+      .then((payload) => {
+        if (!cancelled && typeof payload.reservedTotal === 'number') {
+          setJobCost(payload);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setJobCost(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [jobId]);
+
+  useEffect(() => {
+    if (!matchId) return;
+    let cancelled = false;
+    fetchPlayerObservations(matchId)
+      .then((payload) => {
+        if (!cancelled) setPlayersLimited(Boolean(payload.intervalLimited));
+      })
+      .catch(() => {
+        if (!cancelled) setPlayersLimited(false);
       });
     return () => {
       cancelled = true;
@@ -101,6 +159,13 @@ export default function WorkbenchPanel({ onClose, matchId, events = [], onSeek }
     const interval = await exportPlaylistInterval(start, end, 25);
     setPlaylistMessage(`Source interval ${interval.sourceStartSeconds}s to ${interval.sourceEndSeconds}s (frame ${interval.sourceEndFrameExclusive} exclusive).`);
     onSeek?.(interval.sourceStartSeconds);
+  }
+
+  async function runLibrarySearch() {
+    const result = await searchMatchLibrary(libraryQuery, [
+      { id: 'm-lib', title: 'elevated training', cameraProfile: 'stable_elevated_wide' },
+    ]);
+    setLibraryHits(result.results);
   }
 
   return (
@@ -177,6 +242,28 @@ export default function WorkbenchPanel({ onClose, matchId, events = [], onSeek }
                 <p className="text-xs text-slate-400">
                   Job cancellation is a request, not proof of termination. GPU default and native code remain gated.
                 </p>
+                {flags && flags.experimental_shot_quality === false && (
+                  <p className="text-xs text-slate-400">experimental shot quality: shadowed</p>
+                )}
+                {jobCost && <p className="text-xs text-slate-300">Live job cost reserved {jobCost.reservedTotal}</p>}
+              </div>
+              <div className="rounded-lg border border-slate-700 p-3 space-y-2">
+                <h4 className="text-xs uppercase tracking-wide text-slate-500">Match library</h4>
+                <label className="block text-xs text-slate-400">
+                  Match library
+                  <input
+                    value={libraryQuery}
+                    onChange={(event) => setLibraryQuery(event.target.value)}
+                    className="mt-1 w-full rounded border border-slate-600 bg-slate-900 px-2 py-1 text-slate-200"
+                  />
+                </label>
+                <button type="button" onClick={() => void runLibrarySearch()} className="px-3 py-1.5 rounded bg-slate-700 text-xs font-semibold text-white">
+                  Search library
+                </button>
+                {libraryHits.map((hit) => (
+                  <p key={hit.id} className="text-xs text-slate-300">{hit.title ?? hit.id}</p>
+                ))}
+                {playersLimited && <p className="text-xs text-amber-200">Interval-limited player observations. Totals withheld.</p>}
               </div>
               <div className="rounded-lg border border-slate-700 p-3 space-y-2">
                 <h4 className="text-xs uppercase tracking-wide text-slate-500">Playlist source interval</h4>

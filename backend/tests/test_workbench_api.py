@@ -171,5 +171,52 @@ def test_workbench_corrections_search_jobs_and_unknown_metrics(tmp_path: Path) -
             assert credits.json()["authorised"] is False
             admission = await client.get("/api/workbench/admission/handheld_low_angle")
             assert "physical_metrics" in admission.json()["withhold"]
+            media = await client.post(
+                "/api/workbench/media/admit",
+                json={"sourceSha256": "d" * 64, "byteSize": 12, "codec": "unknown_codec", "audioTracks": 0},
+            )
+            assert media.status_code == 200
+            assert media.json()["admitted"] is False
+            assert "UNSUPPORTED_CODEC" in media.json()["reasonCodes"]
+            xt = await client.get("/api/workbench/xt")
+            assert xt.json()["enabled"] is False
+            library = await client.post(
+                "/api/workbench/library/search",
+                json={"query": "elevated wide", "matches": [{"id": "m1", "cameraProfile": "stable_elevated_wide", "title": "training"}]},
+            )
+            assert library.json()["results"][0]["id"] == "m1"
+            players = await client.post(
+                "/api/workbench/matches/m1/players",
+                json={"rows": [{"trackId": "t-1", "t": 2.0}], "identityContinuous": False},
+            )
+            assert players.json()["intervalLimited"] is True
+            rates = await client.get("/api/workbench/jobs/r1/rates")
+            assert rates.json()["exportFpsEqualsInferenceFps"] is False
+
+    _run(body)
+
+
+def test_workbench_concurrent_requests_do_not_change_factual_measurements(tmp_path: Path) -> None:
+    async def body():
+        async for client in _client(tmp_path):
+            async def post_search(suffix: str):
+                return await client.post(
+                    "/api/workbench/search",
+                    json={
+                        "query": "show our second-half turnovers followed by a shot within 10 seconds",
+                        "matchId": f"m-{suffix}",
+                        "events": [
+                            {"id": f"t-{suffix}", "type": "turnover", "team": "my_team", "period": 2, "timestamp": 70, "evidenceIds": ["e1"]},
+                            {"id": f"s-{suffix}", "type": "shot", "team": "my_team", "period": 2, "timestamp": 72, "evidenceIds": ["e2"]},
+                        ],
+                    },
+                )
+
+            first, second = await anyio.gather(post_search("a"), post_search("b"))
+            assert first.status_code == 200 and second.status_code == 200
+            assert first.json()["results"][0]["eventId"] == "t-a"
+            assert second.json()["results"][0]["eventId"] == "t-b"
+            hostile = await client.get("/api/workbench/dossier", headers={"host": "evil.example"})
+            assert hostile.status_code == 400
 
     _run(body)

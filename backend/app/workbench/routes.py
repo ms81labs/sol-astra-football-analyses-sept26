@@ -7,17 +7,20 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from .admission import admit_camera
+from .admission import admit_camera, admit_media
 from .assistance import AssistancePolicy, AssistanceRouter, execute_typed_query, parse_typed_query
-from .contracts import jsonable
+from .contracts import SourceClockIdentity, jsonable
 from .costs import credit_allocation, match_cost
 from .dossier import build_baseline_dossier, build_release_dossier
 from .evaluation import current_repository_evaluation_gate
 from .evidence import EvidenceStore, metric_dictionary, summarize_legacy_match
 from .flags import feature_flags
 from .geometry import review_incident_geometry
+from .identity import player_observations
 from .incidents import level0_incident_package
 from .jobs import DurableJobLedger, JobRequest
+from .library import search_match_library
+from .media import FourRatesReceipt
 from .native import native_gate, probe_gpu
 from .ownership import classify_ownership
 from .package import assemble_match_package
@@ -26,6 +29,7 @@ from .review import CorrectionLog, new_correction, playlist_export_interval
 from .rights import rights_register
 from .roster import model_roster
 from .store import WorkbenchStore
+from .xt import xt_deferred_plan
 
 _correction_log = CorrectionLog()
 _job_ledger = DurableJobLedger()
@@ -78,6 +82,28 @@ class ReportBody(BaseModel):
     events: list[dict] = Field(default_factory=list)
     claimedEvidenceIds: list[str] = Field(default_factory=list)
     knownEvidenceIds: list[str] = Field(default_factory=list)
+
+
+class MediaAdmitBody(BaseModel):
+    sourceSha256: str
+    byteSize: int
+    codec: str | None = None
+    audioTracks: int = 0
+    decodeErrors: list[str] = Field(default_factory=list)
+    variableFrameRate: bool = False
+    rotation: int = 0
+    requireAudio: bool = False
+    existingDigests: list[str] = Field(default_factory=list)
+
+
+class LibrarySearchBody(BaseModel):
+    query: str
+    matches: list[dict] = Field(default_factory=list)
+
+
+class PlayerBody(BaseModel):
+    rows: list[dict] = Field(default_factory=list)
+    identityContinuous: bool = False
 
 
 _CORRECTION_INVALIDATION = {
@@ -367,5 +393,62 @@ def create_workbench_router(storage_root: Path) -> APIRouter:
             return jsonable(admit_camera(profile))  # type: ignore[arg-type]
         except KeyError as exc:
             raise HTTPException(status_code=400, detail="Unknown camera profile") from exc
+
+    @router.post("/media/admit")
+    def post_media_admit(body: MediaAdmitBody) -> dict:
+        identity = SourceClockIdentity(
+            sourceSha256=body.sourceSha256,
+            byteSize=body.byteSize,
+            codec=body.codec,
+            audioTracks=body.audioTracks,
+            decodeErrors=body.decodeErrors,
+            variableFrameRate=body.variableFrameRate,
+            rotation=body.rotation,
+        )
+        return admit_media(
+            identity,
+            existing_digests=set(body.existingDigests),
+            require_audio=body.requireAudio,
+        )
+
+    @router.get("/xt")
+    def get_xt() -> dict:
+        return xt_deferred_plan()
+
+    @router.post("/library/search")
+    def post_library_search(body: LibrarySearchBody) -> dict:
+        return search_match_library(query=body.query, matches=body.matches)
+
+    @router.post("/matches/{match_id}/players")
+    def post_players(match_id: str, body: PlayerBody) -> dict:
+        del match_id
+        return player_observations(body.rows, identity_continuous=body.identityContinuous)
+
+    @router.get("/jobs/{request_id}/rates")
+    def job_rates(request_id: str) -> dict:
+        try:
+            _job_ledger.receipt(request_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Job not found") from exc
+        rates = FourRatesReceipt(
+            decodeCount=0,
+            detectorPrimaryCount=0,
+            detectorRecoveryCount=0,
+            trackerUpdateCount=0,
+            exportCount=0,
+            exportFpsEqualsInferenceFps=False,
+            decodeFpsEqualsExportFps=False,
+            notes=("EXPORT_FPS_IS_NOT_INFERENCE_FPS",),
+        )
+        return {
+            "decodeCount": rates.decodeCount,
+            "detectorPrimaryCount": rates.detectorPrimaryCount,
+            "detectorRecoveryCount": rates.detectorRecoveryCount,
+            "trackerUpdateCount": rates.trackerUpdateCount,
+            "exportCount": rates.exportCount,
+            "exportFpsEqualsInferenceFps": rates.exportFpsEqualsInferenceFps,
+            "decodeFpsEqualsExportFps": rates.decodeFpsEqualsExportFps,
+            "notes": list(rates.notes),
+        }
 
     return router

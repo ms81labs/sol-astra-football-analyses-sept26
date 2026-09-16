@@ -1177,3 +1177,207 @@ def test_player_observations_stay_interval_limited_without_identity_continuity()
     assert rows["totalsWithheld"] is True
     assert "IDENTITY_DISCONTINUITY" in rows["reasonCodes"]
 
+
+def test_derived_proxy_assets_keep_the_original_and_map_presentation_time(tmp_path: Path) -> None:
+    from backend.app.workbench.media import derive_proxy_assets, map_original_to_proxy_pts, resolve_declared_interval
+
+    original = tmp_path / "match.bin"
+    original.write_bytes(b"immutable-original")
+    digest = hashlib.sha256(original.read_bytes()).hexdigest()
+    derived = derive_proxy_assets(
+        original,
+        original_sha256=digest,
+        original_pts=[0, 3000, 6000],
+        time_base=(1, 90000),
+        proxy_height=720,
+    )
+    assert derived["replacesOriginal"] is False
+    assert derived["originalRetained"] is True
+    assert derived["originalSha256"] == digest
+    assert original.read_bytes() == b"immutable-original"
+    assert set(derived["assets"]) == {"proxy", "thumbnails", "waveform"}
+    assert derived["assets"]["proxy"]["height"] == 720
+    mapping = map_original_to_proxy_pts(
+        original_pts=[0, 3000, 6000],
+        proxy_pts=[0, 3000, 6000],
+        time_base=(1, 90000),
+    )
+    assert mapping[1]["originalSeconds"] == mapping[1]["proxySeconds"]
+    assert mapping[1]["originalPts"] == 3000
+    original_interval = resolve_declared_interval("original", 0.0, 1.0, mapping)
+    proxy_interval = resolve_declared_interval("proxy", 0.0, 1.0, mapping)
+    export_interval = resolve_declared_interval("export", 0.0, 1.0, mapping)
+    assert original_interval == proxy_interval == export_interval == (0.0, 1.0)
+    assert derived["frameExactExport"]["validatedDecodeReencode"] is True
+    assert derived["frameExactExport"]["keyframeSeekIsExact"] is False
+
+
+def test_admit_media_rejects_unsafe_unsupported_duplicate_interrupted_and_missing_audio() -> None:
+    from backend.app.workbench.admission import admit_media
+    from backend.app.workbench.contracts import SourceClockIdentity
+
+    supported = SourceClockIdentity(
+        sourceSha256="a" * 64,
+        byteSize=1024,
+        codec="h264",
+        audioTracks=1,
+    )
+    ok = admit_media(supported, existing_digests=set())
+    assert ok["admitted"] is True
+    assert ok["reasonCodes"] == []
+
+    unsafe = supported.model_copy(update={"decodeErrors": ["unsafe_container"]})
+    assert admit_media(unsafe)["admitted"] is False
+    assert "UNSAFE_MEDIA" in admit_media(unsafe)["reasonCodes"]
+
+    unsupported = supported.model_copy(update={"codec": "unknown_codec"})
+    assert admit_media(unsupported)["admitted"] is False
+    assert "UNSUPPORTED_CODEC" in admit_media(unsupported)["reasonCodes"]
+
+    duplicate = admit_media(supported, existing_digests={"a" * 64})
+    assert duplicate["admitted"] is False
+    assert "DUPLICATE_CONTENT" in duplicate["reasonCodes"]
+
+    interrupted = supported.model_copy(update={"decodeErrors": ["truncated_file"]})
+    assert admit_media(interrupted)["admitted"] is False
+    assert "INTERRUPTED_FILE" in admit_media(interrupted)["reasonCodes"]
+
+    silent = supported.model_copy(update={"audioTracks": 0})
+    missing = admit_media(silent, require_audio=True)
+    assert missing["admitted"] is False
+    assert "MISSING_AUDIO" in missing["reasonCodes"]
+    video_only = admit_media(silent, require_audio=False)
+    assert video_only["admitted"] is True
+    assert "MISSING_AUDIO" in video_only["warnings"]
+
+    vfr = supported.model_copy(update={"variableFrameRate": True, "rotation": 90})
+    rotated = admit_media(vfr)
+    assert rotated["admitted"] is True
+    assert rotated["variableFrameRate"] is True
+    assert rotated["rotation"] == 90
+
+
+def test_pyav_and_torchcodec_stubs_are_challengers_not_defaults(tmp_path: Path) -> None:
+    from backend.app.workbench.media import (
+        OpenCvFrameSource,
+        PyAvFrameSource,
+        TorchCodecFrameSource,
+        iter_bgr_frames,
+    )
+
+    source = tmp_path / "clip.bin"
+    source.write_bytes(b"src")
+    pyav = PyAvFrameSource()
+    torchcodec = TorchCodecFrameSource()
+    assert pyav.name == "pyav"
+    assert torchcodec.name == "torchcodec"
+    with pytest.raises(RuntimeError, match="not a default decoder"):
+        list(pyav.iter_frames(source))
+    with pytest.raises(RuntimeError, match="not a default decoder"):
+        list(torchcodec.iter_frames(source))
+    with pytest.raises(RuntimeError, match="challenger"):
+        pyav.probe(source)
+    assert iter_bgr_frames.__defaults__[0] is None
+    assert OpenCvFrameSource.name == "opencv"
+    assert cpu_fallback("pyav", {"opencv", "pyav"}) == "pyav"
+    assert cpu_fallback("torchcodec", {"opencv"}) == "opencv"
+
+
+def test_four_rates_receipt_never_equates_export_fps_with_inference_fps() -> None:
+    from backend.app.workbench.media import SamplingAudit, four_rates_receipt
+
+    audit = SamplingAudit(
+        source_sha256="b" * 64,
+        declared_target_fps=5.0,
+        nominal_fps=25.0,
+        frame_interval=5,
+        selected_backend="ultralytics_track",
+    )
+    for _ in range(25):
+        audit.record_decoded_frame()
+        audit.record_primary_inference()
+        audit.record_tracker_update()
+    for _ in range(3):
+        audit.record_recovery_inference()
+    for _ in range(5):
+        audit.record_export_sample()
+    rates = four_rates_receipt(audit)
+    assert rates.decodeCount == 25
+    assert rates.detectorPrimaryCount == 25
+    assert rates.detectorRecoveryCount == 3
+    assert rates.trackerUpdateCount == 25
+    assert rates.exportCount == 5
+    assert rates.exportFpsEqualsInferenceFps is False
+    assert rates.decodeFpsEqualsExportFps is False
+    assert "EXPORT_FPS_IS_NOT_INFERENCE_FPS" in rates.notes
+    wired = audit.four_rates()
+    assert wired == rates
+
+
+def test_edit_list_renders_on_demand_instead_of_reencoding_the_match() -> None:
+    from backend.app.workbench.media import render_on_demand, store_edit_list
+
+    edits = store_edit_list(
+        source_sha256="c" * 64,
+        intervals=[{"start": 12.0, "end": 14.0}, {"start": 40.0, "end": 42.5}],
+    )
+    assert edits["reencodeFullMatch"] is False
+    assert edits["renderOnDemand"] is True
+    clip = render_on_demand(edits, start=12.0, end=14.0)
+    assert clip["sourceSha256"] == "c" * 64
+    assert clip["interval"] == (12.0, 14.0)
+    assert clip["reencodedFullMatch"] is False
+
+
+def test_colour_fixture_keeps_bgr_torso_evidence_and_source_box_round_trip() -> None:
+    from backend.app.workbench.media import colour_round_trip, torso_colour_pixels
+
+    rgb = bytes([10, 200, 30])
+    converted = torso_colour_pixels(rgb, colour_order="rgb")
+    native = torso_colour_pixels(bytes([30, 200, 10]), colour_order="bgr")
+    assert converted == native
+    with pytest.raises(ValueError, match="rgb decoder without conversion"):
+        torso_colour_pixels(rgb, colour_order="rgb", convert=False)
+    box = colour_round_trip(source_box=(10, 20, 40, 50), crop=(10, 20, 40, 50), rotation=0)
+    assert box == (10, 20, 40, 50)
+
+
+def test_xt_and_vaep_stay_deferred_until_events_map_to_spadl() -> None:
+    from backend.app.workbench.xt import xt_deferred_plan
+
+    plan = xt_deferred_plan()
+    assert plan["enabled"] is False
+    assert plan["imported"] is False
+    assert "SPADL" in plan["blockedUntil"]
+    assert plan["socceractionImportDoesNotValidateExtraction"] is True
+
+
+def test_report_claims_carry_a_provenance_chain_to_evidence() -> None:
+    from backend.app.workbench.reports import claim_provenance
+
+    chain = claim_provenance(
+        claims=[{"text": "second-half turnover then shot", "evidenceIds": ["e1", "e2"]}],
+        known_evidence_ids={"e1", "e2"},
+    )
+    assert chain["accepted"] is True
+    assert chain["claims"][0]["evidenceIds"] == ["e1", "e2"]
+    broken = claim_provenance(
+        claims=[{"text": "invented goal", "evidenceIds": ["missing"]}],
+        known_evidence_ids={"e1"},
+    )
+    assert broken["accepted"] is False
+    assert "FABRICATED_EVIDENCE" in broken["reasonCodes"]
+
+
+def test_provider_adapters_are_split_from_llm_and_stay_disabled_by_default() -> None:
+    from backend.app.workbench.providers import cloud_adapter, local_adapter, provider_roster
+
+    roster = provider_roster()
+    assert roster["default"] == "disabled"
+    assert "llm.py" not in roster["adapters"]
+    assert set(roster["adapters"]) == {"local", "cloud"}
+    assert local_adapter(enabled=False)["route"] == "disabled"
+    assert cloud_adapter(enabled=False)["route"] == "disabled"
+    with pytest.raises(RuntimeError, match="not authorised"):
+        cloud_adapter(enabled=True)
+

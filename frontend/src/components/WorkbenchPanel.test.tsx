@@ -98,3 +98,49 @@ it('recovers a pending playlist correction after a simulated crash', async () =>
   await fireEvent.click(screen.getByRole('button', { name: /export source interval/i }));
   expect(await screen.findByText(/Source interval 3s to 5s/i)).toBeTruthy();
 });
+
+it('shows feature flags, live job cost, match library hits and interval-limited players', async () => {
+  const fetchMock = vi.fn(async (input: RequestInfo, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith('/api/workbench/dossier')) {
+      return new Response(JSON.stringify({
+        baseline: {
+          selectedCommit: '5099e1f',
+          declaredCameraProfile: 'stitched_panoramic_view',
+          declaredWorkflow: 'manual_review_plus_declared_camera_setup',
+          unresolvedGates: [],
+          permittedNextActions: [],
+          forbiddenActions: [],
+          capabilities: [],
+          evidenceClasses: {},
+        },
+        release: { deploymentBoundary: 'loopback', gNetworkRequiredForNonLocal: true, nativeCode: 'gated_inert' },
+        evaluation: { accepted: false, completeTasks: 0, requiredTasks: 18, reasonCodes: ['LABELS_INCOMPLETE'] },
+        gpu: { available: false, canPromoteDefault: false, reasonCodes: ['HARDWARE_UNAVAILABLE'] },
+        native: { approved: false, reasonCodes: ['NATIVE_GATE_CLOSED'] },
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    if (url.endsWith('/api/workbench/flags')) {
+      return new Response(JSON.stringify({ experimental_shot_quality: false, gpu_default: false, native_code: false }), { status: 200 });
+    }
+    if (url.endsWith('/api/workbench/jobs/live/cost')) {
+      return new Response(JSON.stringify({ reservedTotal: 1.5, actualTotal: 0, p50Reserved: 1.5 }), { status: 200 });
+    }
+    if (url.endsWith('/api/workbench/library/search') && init?.method === 'POST') {
+      return new Response(JSON.stringify({ results: [{ id: 'm-lib', title: 'elevated training' }] }), { status: 200 });
+    }
+    if (url.endsWith('/api/workbench/matches/m1/players') && init?.method === 'POST') {
+      return new Response(JSON.stringify({ intervalLimited: true, totalsWithheld: true, reasonCodes: ['IDENTITY_DISCONTINUITY'] }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ query: { unanswerable: true, reason: 'x', eventFamily: 'pass' }, results: [] }), { status: 200 });
+  });
+  vi.stubGlobal('fetch', fetchMock);
+
+  render(<WorkbenchPanel onClose={() => undefined} matchId="m1" jobId="live" events={[]} />);
+  expect(await screen.findByText(/experimental shot quality: shadowed/i)).toBeTruthy();
+  expect(await screen.findByText(/reserved 1.5/i)).toBeTruthy();
+  await fireEvent.change(screen.getByLabelText(/match library/i), { target: { value: 'elevated' } });
+  await fireEvent.click(screen.getByRole('button', { name: /search library/i }));
+  expect(await screen.findByText(/elevated training/i)).toBeTruthy();
+  expect(await screen.findByText(/interval-limited player observations/i)).toBeTruthy();
+});

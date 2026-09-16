@@ -6,7 +6,9 @@ from backend.app.workbench.media import (
     FrameBuffer,
     FrameSource,
     OpenCvFrameSource,
+    PyAvFrameSource,
     SamplingAudit,
+    TorchCodecFrameSource,
     cpu_fallback,
     iter_bgr_frames,
 )
@@ -17,7 +19,9 @@ __all__ = [
     "FrameBuffer",
     "FrameSource",
     "OpenCvFrameSource",
+    "PyAvFrameSource",
     "SamplingAudit",
+    "TorchCodecFrameSource",
     "cpu_fallback",
     "iter_bgr_frames",
 ]
