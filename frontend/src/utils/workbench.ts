@@ -486,3 +486,83 @@ export async function fetchSupportBundle() {
   }
   return response.json() as Promise<SupportBundleSnapshot>;
 }
+
+export interface ObjectStorageSnapshot {
+  enabled?: boolean;
+  mandatoryDuckDb?: boolean;
+  role?: string;
+}
+
+export async function fetchObjectStorage() {
+  const response = await fetch('/api/storage/object');
+  if (!response.ok) {
+    throw new Error(`Failed to load object storage policy: ${response.status}`);
+  }
+  return response.json() as Promise<ObjectStorageSnapshot>;
+}
+
+export interface ExperimentReceiptSnapshot {
+  experiment?: string;
+  promoted?: boolean;
+  hardwareVerified?: boolean;
+  reasonCodes?: string[];
+}
+
+export async function fetchExperiment(experiment: string) {
+  const response = await fetch(`/api/experiments/${experiment}`);
+  if (!response.ok) {
+    throw new Error(`Failed to load experiment receipt: ${response.status}`);
+  }
+  return response.json() as Promise<ExperimentReceiptSnapshot>;
+}
+
+export interface PreemptibleSnapshot {
+  allowed?: boolean;
+}
+
+export async function fetchPreemptible() {
+  const response = await fetch('/api/preemptible');
+  if (!response.ok) {
+    throw new Error(`Failed to load preemptible policy: ${response.status}`);
+  }
+  return response.json() as Promise<PreemptibleSnapshot>;
+}
+
+export interface LabelProductsSnapshot {
+  cvat?: { sameProductAsCorrections?: boolean };
+  in_app_corrections?: { role?: string };
+}
+
+export async function fetchLabelProducts() {
+  const response = await fetch('/api/roster/labels');
+  if (!response.ok) {
+    throw new Error(`Failed to load label products: ${response.status}`);
+  }
+  return response.json() as Promise<LabelProductsSnapshot>;
+}
+
+export interface ProxyAssetsSnapshot {
+  replacesOriginal?: boolean;
+  originalRetained?: boolean;
+}
+
+export async function fetchMatchProxy(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/media/proxy`);
+  if (!response.ok) {
+    throw new Error(`Failed to load proxy assets: ${response.status}`);
+  }
+  return response.json() as Promise<ProxyAssetsSnapshot>;
+}
+
+export interface EditListSnapshot {
+  reencodeFullMatch?: boolean;
+  renderOnDemand?: boolean;
+}
+
+export async function fetchMatchEdits(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/edits`);
+  if (!response.ok) {
+    throw new Error(`Failed to load edit list: ${response.status}`);
+  }
+  return response.json() as Promise<EditListSnapshot>;
+}

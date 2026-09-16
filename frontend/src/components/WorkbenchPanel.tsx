@@ -21,19 +21,25 @@ import {
   fetchAssistance,
   fetchCapacity,
   fetchCorrectionHistory,
+  fetchExperiment,
   fetchGpuTiming,
   fetchIncidentReview,
   fetchJobCost,
   fetchJobView,
+  fetchLabelProducts,
   fetchLandmarkPreview,
   fetchMatchClock,
+  fetchMatchEdits,
+  fetchMatchProxy,
   fetchMatchSetup,
   fetchMetricInspect,
   fetchNative,
   fetchNativeMemory,
+  fetchObjectStorage,
   fetchPendingCorrections,
   fetchPitchAxes,
   fetchPlayerObservations,
+  fetchPreemptible,
   fetchQualityTimeline,
   fetchRecovery,
   fetchRepository,
@@ -48,13 +54,19 @@ import {
   searchWorkbenchEvents,
   undoMatchCorrection,
   type CapacitySnapshot,
+  type EditListSnapshot,
+  type ExperimentReceiptSnapshot,
   type GpuTimingSnapshot,
+  type LabelProductsSnapshot,
   type LandmarkPreview,
   type MatchSetup,
   type MetricInspect,
   type NativeMemorySnapshot,
   type NativeSnapshot,
+  type ObjectStorageSnapshot,
   type PitchAxes,
+  type PreemptibleSnapshot,
+  type ProxyAssetsSnapshot,
   type QualityTimelinePayload,
   type RecoverySnapshot,
   type RepositorySnapshot,
@@ -129,6 +141,12 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
   const [capacity, setCapacity] = useState<CapacitySnapshot | null>(null);
   const [repository, setRepository] = useState<RepositorySnapshot | null>(null);
   const [supportBundle, setSupportBundle] = useState<SupportBundleSnapshot | null>(null);
+  const [objectStorage, setObjectStorage] = useState<ObjectStorageSnapshot | null>(null);
+  const [experiment, setExperiment] = useState<ExperimentReceiptSnapshot | null>(null);
+  const [preemptible, setPreemptible] = useState<PreemptibleSnapshot | null>(null);
+  const [labelProducts, setLabelProducts] = useState<LabelProductsSnapshot | null>(null);
+  const [proxyAssets, setProxyAssets] = useState<ProxyAssetsSnapshot | null>(null);
+  const [editList, setEditList] = useState<EditListSnapshot | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -208,6 +226,34 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
       })
       .catch(() => {
         if (!cancelled) setSupportBundle(null);
+      });
+    fetchObjectStorage()
+      .then((payload) => {
+        if (!cancelled && payload.enabled === false) setObjectStorage(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setObjectStorage(null);
+      });
+    fetchExperiment('B2')
+      .then((payload) => {
+        if (!cancelled && payload.promoted === false) setExperiment(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setExperiment(null);
+      });
+    fetchPreemptible()
+      .then((payload) => {
+        if (!cancelled && payload.allowed === false) setPreemptible(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setPreemptible(null);
+      });
+    fetchLabelProducts()
+      .then((payload) => {
+        if (!cancelled && payload.cvat?.sameProductAsCorrections === false) setLabelProducts(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setLabelProducts(null);
       });
     return () => {
       cancelled = true;
@@ -294,6 +340,20 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
       })
       .catch(() => {
         if (!cancelled) setSetup(null);
+      });
+    fetchMatchProxy(matchId)
+      .then((payload) => {
+        if (!cancelled && payload.replacesOriginal === false) setProxyAssets(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setProxyAssets(null);
+      });
+    fetchMatchEdits(matchId)
+      .then((payload) => {
+        if (!cancelled && payload.reencodeFullMatch === false) setEditList(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setEditList(null);
       });
     fetchMetricInspect('my_team_distance_m', matchId)
       .then((payload) => {
@@ -464,6 +524,24 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
               )}
               {supportBundle?.released === false && (
                 <p className="text-xs text-slate-400">Support bundle requires consent.</p>
+              )}
+              {objectStorage?.enabled === false && (
+                <p className="text-xs text-slate-400">Hosted object storage is unadmitted. DuckDB is not mandatory.</p>
+              )}
+              {experiment?.promoted === false && (
+                <p className="text-xs text-slate-400">Hardware experiment receipts stay unpromoted.</p>
+              )}
+              {preemptible?.allowed === false && (
+                <p className="text-xs text-slate-400">Preemptible workers are not allowed without checkpoints.</p>
+              )}
+              {labelProducts?.cvat?.sameProductAsCorrections === false && (
+                <p className="text-xs text-slate-400">Independent labels are not the same product as in-app corrections.</p>
+              )}
+              {proxyAssets?.replacesOriginal === false && (
+                <p className="text-xs text-slate-400">Derived proxies retain the original source.</p>
+              )}
+              {editList?.reencodeFullMatch === false && (
+                <p className="text-xs text-slate-400">Edit lists render on demand instead of re-encoding the match.</p>
               )}
               <div className="rounded-lg border border-slate-700 p-3">
                 <h4 className="text-xs uppercase tracking-wide text-slate-500 mb-2">Capability matrix</h4>

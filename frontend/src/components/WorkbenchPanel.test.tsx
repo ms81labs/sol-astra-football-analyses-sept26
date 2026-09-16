@@ -282,6 +282,24 @@ it('loads recovery and landmark preview from production routes and posts deletio
     if (url.endsWith('/api/native/memory')) {
       return new Response(JSON.stringify({ completeRuntimeMemory: false, admitted: false, reasonCodes: ['QUANTIZED_WEIGHT_SIZE_IS_NOT_RUNTIME_MEMORY'] }), { status: 200 });
     }
+    if (url.endsWith('/api/storage/object')) {
+      return new Response(JSON.stringify({ enabled: false, mandatoryDuckDb: false, role: 'local_content_addressed' }), { status: 200 });
+    }
+    if (url.endsWith('/api/experiments/B2')) {
+      return new Response(JSON.stringify({ experiment: 'B2', promoted: false, hardwareVerified: false, reasonCodes: ['HARDWARE_UNAVAILABLE'] }), { status: 200 });
+    }
+    if (url.endsWith('/api/preemptible')) {
+      return new Response(JSON.stringify({ allowed: false }), { status: 200 });
+    }
+    if (url.endsWith('/api/roster/labels')) {
+      return new Response(JSON.stringify({ cvat: { role: 'independent_labelling', sameProductAsCorrections: false }, in_app_corrections: { role: 'analyst_repair' } }), { status: 200 });
+    }
+    if (url.endsWith('/api/matches/m1/media/proxy')) {
+      return new Response(JSON.stringify({ replacesOriginal: false, originalRetained: true }), { status: 200 });
+    }
+    if (url.endsWith('/api/matches/m1/edits')) {
+      return new Response(JSON.stringify({ reencodeFullMatch: false, renderOnDemand: true }), { status: 200 });
+    }
     return new Response(JSON.stringify({ query: { unanswerable: true, reason: 'x', eventFamily: 'pass' }, results: [] }), { status: 200 });
   });
   vi.stubGlobal('fetch', fetchMock);
@@ -296,6 +314,12 @@ it('loads recovery and landmark preview from production routes and posts deletio
   expect(await screen.findByText(/support bundle requires consent/i)).toBeTruthy();
   expect(screen.getByText(/http control plane may not run gpu work/i)).toBeTruthy();
   expect(screen.getByText(/historical two-half duration is not current billable capacity/i)).toBeTruthy();
+  expect(await screen.findByText(/hosted object storage is unadmitted/i)).toBeTruthy();
+  expect(screen.getByText(/hardware experiment receipts stay unpromoted/i)).toBeTruthy();
+  expect(screen.getByText(/preemptible workers are not allowed/i)).toBeTruthy();
+  expect(screen.getByText(/independent labels are not the same product/i)).toBeTruthy();
+  expect(screen.getByText(/derived proxies retain the original source/i)).toBeTruthy();
+  expect(screen.getByText(/edit lists render on demand/i)).toBeTruthy();
   await fireEvent.click(screen.getByRole('button', { name: /request deletion/i }));
   const deletionCall = fetchMock.mock.calls.find(([url, init]) => String(url).endsWith('/api/access/deletion') && init?.method === 'POST');
   expect(deletionCall).toBeTruthy();

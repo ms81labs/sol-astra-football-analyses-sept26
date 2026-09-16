@@ -1599,6 +1599,109 @@ class Storage:
             "items": items,
         }
 
+    def proxy_assets_for_match(self, match_id: str) -> dict:
+        from .workbench.media import derive_proxy_assets
+
+        original = self.get_match_input_path(match_id)
+        sha = self.source_sha256(match_id)
+        try:
+            frames = self.load_frames(match_id)
+            pts = [int(float(frame.timestamp) * 90000) for frame in frames[:8]] or [0]
+        except FileNotFoundError:
+            pts = [0]
+        return derive_proxy_assets(original, original_sha256=sha, original_pts=pts, time_base=(1, 90000))
+
+    def edit_list_for_match(self, match_id: str) -> dict:
+        from .workbench.media import store_edit_list
+
+        sha = self.source_sha256(match_id)
+        intervals: list[dict[str, float]] = []
+        for item in self.list_corrections(match_id):
+            if item.get("kind") != "playlist_item":
+                continue
+            payload = item.get("payload") or {}
+            start = payload.get("timestampStart", payload.get("start"))
+            end = payload.get("timestampEnd", payload.get("end"))
+            if start is None or end is None:
+                continue
+            intervals.append({"start": float(start), "end": float(end)})
+        if not intervals:
+            intervals = [{"start": 0.0, "end": 0.0}]
+        return store_edit_list(source_sha256=sha, intervals=intervals)
+
+    def render_edit_for_match(self, match_id: str, *, start: float, end: float) -> dict:
+        from .workbench.media import render_on_demand
+
+        edits = self.edit_list_for_match(match_id)
+        return render_on_demand(edits, start=start, end=end)
+
+    def write_alongside_for_match(self, match_id: str) -> dict:
+        from .workbench.artifacts import ArtifactStore, write_alongside
+
+        self.get_match(match_id)
+        store = ArtifactStore(self.storage_root / "artifacts")
+        namespace = f"match:{match_id}"
+        previous = store.put(b"report-v1", namespace=namespace)
+        return write_alongside(store, previous_digest=previous, payload=b"report-v2", namespace=namespace)
+
+    def tracklets_for_match(self, match_id: str) -> dict:
+        from .workbench.identity import assign_tracklet, tracker_chunk
+        from .workbench.media import detect_camera_cuts
+
+        self.get_match(match_id)
+        try:
+            frames = self.load_frames(match_id)
+            times = [float(frame.timestamp) for frame in frames]
+            cuts = detect_camera_cuts(times) if len(times) > 1 else []
+        except FileNotFoundError:
+            cuts = []
+        return {
+            "assignment": assign_tracklet(roster_id=None, reviewed=False),
+            "chunk": tracker_chunk(scene_discontinuity=bool(cuts), broadcast_replay=False),
+            "silentlyReconnected": False,
+        }
+
+    def derived_distance_for_match(self, match_id: str) -> dict:
+        from .workbench.geometry import derived_distance
+        from .workbench.media import detect_camera_cuts
+
+        self.get_match(match_id)
+        try:
+            frames = self.load_frames(match_id)
+            times = [float(frame.timestamp) for frame in frames]
+            cuts = detect_camera_cuts(times) if len(times) > 1 else []
+        except FileNotFoundError:
+            cuts = []
+        return derived_distance(delta_m=0.0, uncertainty_m=0.0, cut_bridged=bool(cuts), identity_gap=True)
+
+    def shot_features_for_match(self, match_id: str) -> dict:
+        from .workbench.shot_model import missing_shot_features
+
+        self.get_match(match_id)
+        try:
+            _, _, _, shots = self.load_analytics(match_id)
+        except FileNotFoundError:
+            shots = []
+        if not shots:
+            record = missing_shot_features({})
+            return {"recorded": True, "missing": list(record["missing"]), "imputedAsCalibrated": False}
+        missing: list[str] = []
+        for shot in shots:
+            record = missing_shot_features({"x": shot.x, "y": shot.y, "inBox": shot.inBox})
+            missing.extend(record["missing"])
+        return {"recorded": True, "missing": sorted(set(missing)), "imputedAsCalibrated": False}
+
+    def corrupted_import_for_match(self, match_id: str, actual_sha256: str) -> dict:
+        from .workbench.recovery import corrupted_import
+
+        expected = self.source_sha256(match_id)
+        return corrupted_import(expected_sha256=expected, actual_sha256=actual_sha256)
+
+    def restore_exercise_run(self) -> dict:
+        from .workbench.recovery import restore_exercise
+
+        return restore_exercise(self.storage_root / "restore-source", self.storage_root / "restore-dest")
+
     def load_raw_rows(self, match_id: str) -> list[dict]:
         payload = self._read_json(self._match_dir(match_id) / "raw_rows.json")
         return [dict(item) for item in payload]

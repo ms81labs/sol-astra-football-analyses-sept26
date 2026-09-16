@@ -1854,3 +1854,164 @@ async def _test_production_quantities_formation_partition_provenance_timing_and_
             assert "EXPERIMENTAL_NOT_CALIBRATED_XG" in item["reasonCodes"]
             assert "goal" not in item
 
+
+def test_production_proxy_edits_artifacts_tracklets_experiments_and_recovery(tmp_path: Path):
+    _run(_test_production_proxy_edits_artifacts_tracklets_experiments_and_recovery, tmp_path)
+
+
+async def _test_production_proxy_edits_artifacts_tracklets_experiments_and_recovery(tmp_path: Path):
+    async with api_client(tmp_path) as (_, client):
+        storage_view = await client.get("/api/storage/object")
+        assert storage_view.status_code == 200
+        assert storage_view.json()["enabled"] is False
+        assert storage_view.json()["mandatoryDuckDb"] is False
+        assert storage_view.json()["role"] == "local_content_addressed"
+
+        disk = await client.get("/api/recovery/disk")
+        assert disk.status_code == 200
+        assert disk.json()["acceptedPartial"] is False
+        assert disk.json()["error"] == "disk_exhaustion"
+
+        restore = await client.get("/api/recovery/restore")
+        assert restore.status_code == 200
+        assert restore.json()["tested"] is True
+
+        preempt = await client.get("/api/preemptible")
+        assert preempt.status_code == 200
+        assert preempt.json()["allowed"] is False
+
+        repair = await client.post("/api/assistance/repair", json={"attempts": 99, "maxRepair": 1, "secret": "sk-live-secret"})
+        assert repair.status_code == 200
+        assert repair.json()["admitted"] is False
+        assert "UNBOUNDED_JSON_REPAIR" in repair.json()["reasonCodes"]
+        assert "sk-live-secret" not in json.dumps(repair.json())
+
+        policy = await client.post("/api/assistance/policy", json={"route": "template", "evidenceHash": "abc", "secret": "sk-live-secret"})
+        assert policy.status_code == 200
+        assert policy.json()["secretsExcluded"] is True
+        assert "sk-live-secret" not in json.dumps(policy.json())
+
+        b2 = await client.get("/api/experiments/B2")
+        assert b2.status_code == 200
+        assert b2.json()["promoted"] is False
+        assert b2.json()["hardwareVerified"] is False
+        assert "HARDWARE_UNAVAILABLE" in b2.json()["reasonCodes"]
+        b5 = await client.get("/api/experiments/B5")
+        assert b5.status_code == 200
+        assert b5.json()["promoted"] is False
+        assert "NATIVE_GATE_CLOSED" in b5.json()["reasonCodes"]
+        injected = await client.post("/api/experiments/B2", json={"hardwareVerified": True, "promoted": True})
+        assert injected.status_code == 200
+        assert injected.json()["promoted"] is False
+        assert injected.json()["hardwareVerified"] is False
+
+        gate = await client.post(
+            "/api/experiments/quality-gate",
+            json={"faster": True, "qualityPassed": True, "viewedResults": True, "originalThreshold": 0.8, "proposedThreshold": 0.5},
+        )
+        assert gate.status_code == 200
+        assert gate.json()["promoted"] is False
+        assert gate.json()["threshold"] == 0.8
+        assert "QUALITY_GATE_NOT_REDUCED_AFTER_VIEWING" in gate.json()["reasonCodes"]
+
+        labels = await client.get("/api/roster/labels")
+        assert labels.status_code == 200
+        assert labels.json()["cvat"]["sameProductAsCorrections"] is False
+        assert labels.json()["in_app_corrections"]["role"] == "analyst_repair"
+        video_roster = await client.get("/api/roster/video")
+        assert video_roster.status_code == 200
+        assert video_roster.json()["qwen3_5_4b"]["promoted"] is False
+        frontier = await client.get("/api/roster/frontier")
+        assert frontier.status_code == 200
+        assert frontier.json()["hardCodedModelName"] is False
+        assert frontier.json()["promoted"] is False
+        promotion = await client.get("/api/roster/promotion/player_ball")
+        assert promotion.status_code == 200
+        assert promotion.json()["promoted"] is False
+        assert "INDEPENDENT_ACCEPTANCE_MISSING" in promotion.json()["reasonCodes"]
+        promotion_forced = await client.post(
+            "/api/roster/promotion/player_ball",
+            json={"independentAccepted": True, "licenceRecorded": True},
+        )
+        assert promotion_forced.status_code == 200
+        assert promotion_forced.json()["promoted"] is False
+
+        stages = await client.get("/api/timing/stages")
+        assert stages.status_code == 200
+        assert stages.json()["overlappedStagesAreAdditive"] is False
+
+        response = await _upload_tracking_match(client)
+        assert response.status_code == 202
+        match_id = response.json()["matchId"]
+        job_id = response.json()["jobId"]
+
+        original_before = (await client.get(f"/api/matches/{match_id}")).json()["originalFilename"]
+        proxy = await client.get(f"/api/matches/{match_id}/media/proxy")
+        assert proxy.status_code == 200
+        assert proxy.json()["replacesOriginal"] is False
+        assert proxy.json()["originalRetained"] is True
+        assert proxy.json()["frameExactExport"]["keyframeSeekIsExact"] is False
+        assert set(proxy.json()["assets"]) == {"proxy", "thumbnails", "waveform"}
+        after = await client.get(f"/api/matches/{match_id}")
+        assert after.json()["originalFilename"] == original_before
+
+        edits = await client.get(f"/api/matches/{match_id}/edits")
+        assert edits.status_code == 200
+        assert edits.json()["reencodeFullMatch"] is False
+        assert edits.json()["renderOnDemand"] is True
+        rendered = await client.post(
+            f"/api/matches/{match_id}/edits/render",
+            json={"start": 12.0, "end": 14.0, "sourceSha256": "c" * 64, "reencodedFullMatch": True},
+        )
+        assert rendered.status_code == 200
+        assert rendered.json()["reencodedFullMatch"] is False
+        assert rendered.json()["sourceSha256"] != "c" * 64
+        assert rendered.json()["sourceSha256"] == edits.json()["sourceSha256"]
+
+        alongside = await client.post(
+            f"/api/matches/{match_id}/artifacts/alongside",
+            json={"mutatedHistorical": True, "payload": "DAYTONA_API_KEY=must-not-leak"},
+        )
+        assert alongside.status_code == 200
+        assert alongside.json()["mutatedHistorical"] is False
+        assert alongside.json()["digest"] != alongside.json()["previousDigest"]
+        assert "must-not-leak" not in json.dumps(alongside.json())
+        assert "DAYTONA_API_KEY" not in json.dumps(alongside.json())
+
+        tracklets = await client.post(
+            f"/api/matches/{match_id}/tracklets",
+            json={"rosterId": "shirt-9", "reviewed": True, "silentlyReconnected": True},
+        )
+        assert tracklets.status_code == 200
+        assert tracklets.json()["assignment"]["forced"] is False
+        assert tracklets.json()["assignment"]["kind"] == "tracklet"
+        assert tracklets.json()["chunk"]["silentlyReconnected"] is False
+
+        distance = await client.get(f"/api/matches/{match_id}/geometry/distance")
+        assert distance.status_code == 200
+        assert distance.json()["availability"] == "withheld"
+        assert distance.json()["value"] is None
+        assert distance.json()["bridged"] is False
+
+        features = await client.post(
+            f"/api/matches/{match_id}/shots/features",
+            json={"shots": [{"y": 50.0, "goal": True}]},
+        )
+        assert features.status_code == 200
+        assert features.json()["imputedAsCalibrated"] is False
+        assert features.json()["recorded"] is True
+        assert "goal" not in json.dumps(features.json())
+
+        budget = await client.get(f"/api/jobs/{job_id}/budget")
+        assert budget.status_code == 200
+        assert budget.json()["reserve"]["authorised"] is False
+        assert budget.json()["reconcile"]["alert"] == budget.json()["reconcile"]["exceeded"]
+
+        corrupted = await client.post(
+            f"/api/matches/{match_id}/recovery/import",
+            json={"expectedSha256": "a" * 64, "actualSha256": "a" * 64},
+        )
+        assert corrupted.status_code == 200
+        assert corrupted.json()["accepted"] is False
+        assert "CORRUPTED_ARTIFACT" in corrupted.json()["reasonCodes"]
+

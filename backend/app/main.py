@@ -62,12 +62,20 @@ from .workbench.access import (
     untrusted_model_output,
 )
 from .workbench.admission import admit_camera, admit_media
-from .workbench.artifacts import columnar_observation_store, cross_tenant_cache_reuse, secrets_in_artifacts
+from .workbench.artifacts import (
+    columnar_observation_store,
+    cross_tenant_cache_reuse,
+    object_storage_adapter,
+    secrets_in_artifacts,
+)
 from .workbench.assistance import (
     dual_budgets,
     embeddings_retrieve,
     escalation_requires_quality_gap,
+    json_repair_chain,
     network_failure_preserves_unknown,
+    policy_log,
+    preemptible_allowed,
     providers_disabled_fallback,
 )
 from .workbench.incidents import (
@@ -88,7 +96,16 @@ from .workbench.jobs import (
     vector_database,
 )
 from .workbench.contracts import SourceClockIdentity
-from .workbench.costs import credit_allocation, decimal_gb_to_gib, historical_capacity_seconds, match_cost, scale_scenario
+from .workbench.costs import (
+    credit_allocation,
+    decimal_gb_to_gib,
+    historical_capacity_seconds,
+    match_cost,
+    reconcile_spend,
+    reserve_budget,
+    scale_scenario,
+)
+from .workbench.benchmarks import experiment_receipt, quality_gate_holds
 from .workbench.decisions import architecture_decisions
 from .workbench.dossier import http_dossier
 from .workbench.evaluation import evaluation_measures, score_hota_idf1
@@ -117,7 +134,7 @@ from .workbench.native import (
 )
 from .workbench.privacy import dpia_screen, residency_claim
 from .workbench.quantities import pitch_axes
-from .workbench.recovery import recovery_objectives, support_bundle, unresolved_incidents
+from .workbench.recovery import full_disk, recovery_objectives, support_bundle, unresolved_incidents
 from .workbench.repository import RepositoryAdapter, http_may_run_gpu, vector_broker_required
 from .workbench.reports import held_out_questions
 from .workbench.research import execute_track, research_lane
@@ -127,10 +144,10 @@ from .workbench.review import collaboration_lock, correction_api_payload, playli
 from .workbench.rights import rights_register
 from .workbench.risks import independent_reviewer, risk_register, worked_match_flow
 from .workbench.rollback import rollback_release
-from .workbench.roster import model_roster
+from .workbench.roster import frontier_provider_role, label_products, model_roster, promotion_gate, video_model_roster
 from .workbench.routes import create_workbench_router
 from .workbench.shot_model import tree_challenger
-from .workbench.timing import gpu_timing_scope
+from .workbench.timing import gpu_timing_scope, stage_timing
 from .workbench.targets import metadata_api_targets
 from .workbench.training import drill_library
 from .workbench.xt import xt_deferred_plan
@@ -1072,6 +1089,34 @@ def create_app(
             raise HTTPException(status_code=403, detail=decision)
         return runner.ledger.cost_for(job_id)
 
+    @app.get("/api/jobs/{job_id}/budget")
+    def get_job_budget(
+        job_id: str,
+        authorization: str | None = Header(default=None),
+        x_object_scope: str | None = Header(default=None),
+        x_deployment_boundary: str | None = Header(default=None),
+        x_tenant_id: str | None = Header(default=None),
+    ) -> dict:
+        try:
+            job = storage.get_job(job_id)
+            match = storage.get_match(job.matchId)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Job not found") from exc
+        decision = object_access_decision(
+            object_id=match.id,
+            object_tenant=match.config.rights.audience,
+            authorization=authorization,
+            object_scope=x_object_scope,
+            deployment_boundary=x_deployment_boundary,
+            client_tenant=x_tenant_id,
+        )
+        if not decision["allowed"]:
+            raise HTTPException(status_code=403, detail=decision)
+        cost = runner.ledger.cost_for(job_id)
+        reserved = reserve_budget(estimate=float(cost.get("reservedTotal") or 0.0))
+        reconcile = reconcile_spend(reserved=float(reserved["reserved"]), actual=float(cost.get("actualTotal") or 0.0))
+        return {"reserve": reserved, "reconcile": reconcile, "cost": cost}
+
     @app.get("/api/jobs/{job_id}/charges")
     def get_job_charges(
         job_id: str,
@@ -1319,6 +1364,27 @@ def create_app(
     @app.get("/api/roster")
     def get_roster() -> dict:
         return {"items": model_roster()}
+
+    @app.get("/api/roster/labels")
+    def get_roster_labels() -> dict:
+        return label_products()
+
+    @app.get("/api/roster/video")
+    def get_roster_video() -> dict:
+        return video_model_roster()
+
+    @app.get("/api/roster/frontier")
+    def get_roster_frontier() -> dict:
+        return frontier_provider_role(model_id="unspecified")
+
+    @app.get("/api/roster/promotion/{task}")
+    def get_roster_promotion(task: str) -> dict:
+        return promotion_gate(task=task, independent_accepted=False, licence_recorded=False)
+
+    @app.post("/api/roster/promotion/{task}")
+    def post_roster_promotion(task: str, payload: dict | None = None) -> dict:
+        del payload
+        return promotion_gate(task=task, independent_accepted=False, licence_recorded=False)
 
     @app.get("/api/risks")
     def get_risks() -> dict:
@@ -1604,6 +1670,73 @@ def create_app(
     @app.get("/api/reports/held-out")
     def get_held_out_questions() -> dict:
         return {"questions": held_out_questions()}
+
+    @app.get("/api/storage/object")
+    def get_object_storage() -> dict:
+        return object_storage_adapter(hosted_approved=False)
+
+    @app.get("/api/recovery/disk")
+    def get_recovery_disk() -> dict:
+        return full_disk()
+
+    @app.get("/api/recovery/restore")
+    def get_recovery_restore() -> dict:
+        return storage.restore_exercise_run()
+
+    @app.get("/api/preemptible")
+    def get_preemptible() -> dict:
+        return {"allowed": preemptible_allowed(checkpoints=False, restart_semantics=False)}
+
+    @app.post("/api/assistance/repair")
+    def post_json_repair(payload: dict | None = None) -> dict:
+        body = payload or {}
+        attempts = int(body.get("attempts") or 0)
+        return json_repair_chain(attempts=attempts, max_repair=1)
+
+    @app.post("/api/assistance/policy")
+    def post_assistance_policy(payload: dict | None = None) -> dict:
+        body = payload or {}
+        return policy_log(
+            route=str(body.get("route") or "template"),
+            evidence_hash=str(body.get("evidenceHash") or ""),
+            secret=str(body.get("secret") or ""),
+        )
+
+    @app.post("/api/experiments/quality-gate")
+    def post_quality_gate(payload: dict | None = None) -> dict:
+        body = payload or {}
+        original = float(body.get("originalThreshold") or 0.8)
+        proposed = float(body.get("proposedThreshold") or original)
+        return quality_gate_holds(
+            faster=bool(body.get("faster")),
+            quality_passed=False,
+            viewed_results=bool(body.get("viewedResults")),
+            original_threshold=original,
+            proposed_threshold=proposed,
+        )
+
+    @app.get("/api/experiments/{experiment}")
+    def get_experiment(experiment: str) -> dict:
+        return experiment_receipt(experiment, hardware_verified=False, bottleneck_documented=False).model_dump(mode="json")
+
+    @app.post("/api/experiments/{experiment}")
+    def post_experiment(experiment: str, payload: dict | None = None) -> dict:
+        del payload
+        return experiment_receipt(experiment, hardware_verified=False, bottleneck_documented=False).model_dump(mode="json")
+
+    @app.get("/api/timing/stages")
+    def get_stage_timing() -> dict:
+        return stage_timing(
+            decode=1.0,
+            preprocess=1.0,
+            transfer=1.0,
+            inference=1.0,
+            association=1.0,
+            recovery=1.0,
+            serialisation=1.0,
+            wall_time=3.0,
+            overlapped=True,
+        ).model_dump(mode="json")
 
     @app.post("/api/search")
     def post_typed_search(payload: dict | None = None) -> dict:
@@ -1974,6 +2107,55 @@ def create_app(
     def post_match_shot_quality(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
         del payload
         return storage.shot_quality_for_match(match.id)
+
+    @app.get("/api/matches/{match_id}/media/proxy")
+    def get_match_proxy(match: MatchRecord = Depends(require_match)) -> dict:
+        return storage.proxy_assets_for_match(match.id)
+
+    @app.get("/api/matches/{match_id}/edits")
+    def get_match_edits(match: MatchRecord = Depends(require_match)) -> dict:
+        return storage.edit_list_for_match(match.id)
+
+    @app.post("/api/matches/{match_id}/edits/render")
+    def post_match_edit_render(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+        body = payload or {}
+        return storage.render_edit_for_match(
+            match.id,
+            start=float(body.get("start") or 0.0),
+            end=float(body.get("end") or 0.0),
+        )
+
+    @app.post("/api/matches/{match_id}/artifacts/alongside")
+    def post_match_write_alongside(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+        del payload
+        return storage.write_alongside_for_match(match.id)
+
+    @app.get("/api/matches/{match_id}/tracklets")
+    def get_match_tracklets(match: MatchRecord = Depends(require_match)) -> dict:
+        return storage.tracklets_for_match(match.id)
+
+    @app.post("/api/matches/{match_id}/tracklets")
+    def post_match_tracklets(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+        del payload
+        return storage.tracklets_for_match(match.id)
+
+    @app.get("/api/matches/{match_id}/geometry/distance")
+    def get_match_derived_distance(match: MatchRecord = Depends(require_match)) -> dict:
+        return storage.derived_distance_for_match(match.id)
+
+    @app.get("/api/matches/{match_id}/shots/features")
+    def get_match_shot_features(match: MatchRecord = Depends(require_match)) -> dict:
+        return storage.shot_features_for_match(match.id)
+
+    @app.post("/api/matches/{match_id}/shots/features")
+    def post_match_shot_features(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+        del payload
+        return storage.shot_features_for_match(match.id)
+
+    @app.post("/api/matches/{match_id}/recovery/import")
+    def post_match_corrupted_import(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+        body = payload or {}
+        return storage.corrupted_import_for_match(match.id, str(body.get("actualSha256") or ""))
 
     @app.post("/api/matches/{match_id}/assistance/report")
     def post_match_assistance_report(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
