@@ -187,6 +187,41 @@ def test_process_video_input_attaches_source_clock_from_frame_source(tmp_path, m
     assert result["sourceClock"]["codec"] == "h264"
 
 
+def test_process_video_input_forwards_frame_source_to_process_video(tmp_path):
+    video = tmp_path / "clip.bin"
+    video.write_bytes(b"fixture-bytes")
+    config = _cfg([[0, 0], [100, 0], [100, 100], [0, 100]])
+
+    class FakeSource:
+        name = "fixture"
+
+        def probe(self, path):
+            from backend.app.workbench.contracts import SourceClockIdentity
+
+            return SourceClockIdentity(sourceSha256="a" * 64, byteSize=path.stat().st_size)
+
+    source = FakeSource()
+    with patch("backend.app.video_pipeline._process_video_impl") as mock_process:
+        mock_process.return_value = {"rows": [{"Frame_ID": 0}], "trackColors": {}}
+        process_video_input(video, config, frame_source=source)
+
+    assert mock_process.call_args.kwargs["frame_source"] is source
+
+
+def test_process_video_input_defaults_to_opencv_frame_source(tmp_path):
+    video = tmp_path / "clip.bin"
+    video.write_bytes(b"fixture-bytes")
+    config = _cfg([[0, 0], [100, 0], [100, 100], [0, 100]])
+
+    with patch("backend.app.video_pipeline._process_video_impl") as mock_process:
+        mock_process.return_value = {"rows": [{"Frame_ID": 0}], "trackColors": {}}
+        process_video_input(video, config)
+
+    frame_source = mock_process.call_args.kwargs["frame_source"]
+    assert frame_source is not None
+    assert getattr(frame_source, "name", None) == "opencv"
+
+
 def test_process_video_input_raises_when_process_video_returns_nothing():
     """Raises RuntimeError when process_video returns an empty/falsy result."""
     config = _cfg([[0, 0], [100, 0], [100, 100], [0, 100]])

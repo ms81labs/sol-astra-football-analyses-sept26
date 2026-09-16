@@ -20,8 +20,10 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from .export_flatteners import (
     EVENT_CSV_FIELDS,
     FRAME_CSV_FIELDS,
+    METRIC_CSV_FIELDS,
     flatten_events_for_csv,
     flatten_frames_for_csv,
+    flatten_metrics_for_csv,
     render_csv,
 )
 from .jobs import JobDispatchError, JobRunner
@@ -974,6 +976,16 @@ def create_app(
             raise HTTPException(status_code=404, detail="Events not ready") from exc
         csv_payload = render_csv(flatten_events_for_csv(events), EVENT_CSV_FIELDS)
         headers = {"Content-Disposition": f'attachment; filename="{match_id}-events.csv"'}
+        return Response(content=csv_payload, media_type="text/csv", headers=headers)
+
+    @app.get("/api/matches/{match_id}/export/metrics.csv")
+    def export_metrics_csv(match_id: str) -> Response:
+        try:
+            summary, _assignments, _formation, _shots = storage.load_analytics(match_id)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="Analytics not ready") from exc
+        csv_payload = render_csv(flatten_metrics_for_csv(summary.metricAvailability), METRIC_CSV_FIELDS)
+        headers = {"Content-Disposition": f'attachment; filename="{match_id}-metrics.csv"'}
         return Response(content=csv_payload, media_type="text/csv", headers=headers)
 
     @app.get("/api/matches/{match_id}/export/match.json")

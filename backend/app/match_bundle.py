@@ -24,6 +24,7 @@ def build_match_bundle(storage: Storage, match_id: str) -> dict[str, Any]:
     accepted_match_state = _optional_artifact(storage, match_id, "accepted_match_state")
     ball_truth_layers = _optional_artifact(storage, match_id, "ball_truth_layers")
     ball_pipeline_trace = _optional_artifact(storage, match_id, "ball_pipeline_trace")
+    source_clock = _optional_artifact(storage, match_id, "source_clock")
     proof_runtime_options = _optional_artifact(storage, match_id, "proof_runtime_options")
     recovery_debug = _optional_artifact(storage, match_id, "recovery_debug")
 
@@ -39,6 +40,7 @@ def build_match_bundle(storage: Storage, match_id: str) -> dict[str, Any]:
         "acceptedMatchState": accepted_match_state is not None,
         "ballTruthLayers": ball_truth_layers is not None,
         "ballPipelineTrace": ball_pipeline_trace is not None,
+        "sourceClock": source_clock is not None,
         "proofRuntimeOptions": proof_runtime_options is not None,
         "recoveryDebug": recovery_debug is not None,
         "benchmark": benchmark is not None,
@@ -47,6 +49,7 @@ def build_match_bundle(storage: Storage, match_id: str) -> dict[str, Any]:
         "matchJson": f"/api/matches/{match_id}/export/match.json",
         "framesCsv": f"/api/matches/{match_id}/export/frames.csv",
         "eventsCsv": f"/api/matches/{match_id}/export/events.csv",
+        "metricsCsv": f"/api/matches/{match_id}/export/metrics.csv",
         "reportHtml": f"/api/matches/{match_id}/report/html",
         "benchmark": f"/api/matches/{match_id}/benchmark",
     }
@@ -72,6 +75,7 @@ def build_match_bundle(storage: Storage, match_id: str) -> dict[str, Any]:
         "acceptedMatchState": accepted_match_state,
         "ballTruthLayers": ball_truth_layers,
         "ballPipelineTrace": ball_pipeline_trace,
+        "sourceClock": source_clock,
         "proofRuntimeOptions": proof_runtime_options,
         "recoveryDebug": recovery_debug,
         "benchmark": benchmark,

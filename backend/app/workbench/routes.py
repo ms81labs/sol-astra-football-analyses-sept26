@@ -68,6 +68,27 @@ class ReportBody(BaseModel):
     knownEvidenceIds: list[str] = Field(default_factory=list)
 
 
+_CORRECTION_INVALIDATION = {
+    "team_mapping": "team_mapping",
+    "track_split": "track_edit",
+    "track_join": "track_edit",
+    "event_reject": "team_mapping",
+    "event_accept": "team_mapping",
+    "calibration": "calibration",
+    "playlist_item": "report",
+}
+
+
+def _correction_response(saved) -> dict:
+    payload = jsonable(saved)
+    if saved.saveState == "saved":
+        change = _CORRECTION_INVALIDATION.get(saved.kind, "report")
+        payload["rebuild"] = _job_ledger.invalidate_for(change)  # type: ignore[arg-type]
+    else:
+        payload["rebuild"] = []
+    return payload
+
+
 def create_workbench_router(storage_root: Path) -> APIRouter:
     store = WorkbenchStore(storage_root)
     router = APIRouter(prefix="/api/workbench", tags=["workbench"])
@@ -95,7 +116,7 @@ def create_workbench_router(storage_root: Path) -> APIRouter:
         saved = _correction_log.submit(correction, crash_before_commit=body.crashBeforeCommit)
         if saved.saveState == "saved":
             store.append_correction(saved)
-        return jsonable(saved)
+        return _correction_response(saved)
 
     @router.post("/matches/{match_id}/corrections/{correction_id}/recover")
     def recover_correction(match_id: str, correction_id: str) -> dict:
@@ -103,13 +124,13 @@ def create_workbench_router(storage_root: Path) -> APIRouter:
         if saved.matchId != match_id:
             raise HTTPException(status_code=404, detail="Correction not found")
         store.append_correction(saved)
-        return jsonable(saved)
+        return _correction_response(saved)
 
     @router.post("/matches/{match_id}/corrections/{correction_id}/undo")
     def undo_correction(match_id: str, correction_id: str) -> dict:
         undone = _correction_log.undo(correction_id, author="analyst")
         store.append_correction(undone)
-        return jsonable(undone)
+        return _correction_response(undone)
 
     @router.get("/matches/{match_id}/corrections")
     def list_corrections(match_id: str, state: str | None = None) -> dict:

@@ -181,6 +181,8 @@ class DetectedEvent(BaseModel):
     fromTrackId: int | None = None
     toTrackId: int | None = None
     description: str
+    reviewStatus: Literal["unreviewed", "accepted", "rejected"] = "unreviewed"
+    heuristicName: str = "provisional_event_suggestion"
 
 
 class ColorClusterSummary(BaseModel):

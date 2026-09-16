@@ -3557,20 +3557,20 @@ def collect_primary_player_windows(
     conf,
     tracker,
     detector_profile=DETECTOR_PROFILE_COCO_TRACKING_FULL,
+    frame_source=None,
 ):
     frame_player_windows = {}
     player_classes = detector_player_class_ids(detector_profile)
     if not player_classes:
         return frame_player_windows
-    cap = cv2.VideoCapture(video_path)
-    if not cap.isOpened():
-        return frame_player_windows
+    from backend.app.workbench.media import iter_bgr_frames
 
     frame_count = 0
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
+    for decoded in iter_bgr_frames(Path(video_path), frame_source, cv2_module=cv2):
+        frame = decoded.image
+        if frame is None:
+            frame_count += 1
+            continue
         if frame_count % frame_interval == 0:
             result = model.predict(
                 frame,
@@ -3597,7 +3597,6 @@ def collect_primary_player_windows(
                         y2,
                     )
         frame_count += 1
-    cap.release()
     return frame_player_windows
 
 
@@ -4894,6 +4893,7 @@ def recover_ball_rows(
     edge_share_repair_profile=None,
     detector_profile=DETECTOR_PROFILE_COCO_TRACKING_FULL,
     calibrations=None,
+    frame_source=None,
 ):
     crop_detector = _normalize_detector_profile(detector_profile) == DETECTOR_PROFILE_BALL_PROBE_ONLY_V7_3
     if crop_detector:
@@ -4906,8 +4906,11 @@ def recover_ball_rows(
         if return_diagnostics:
             return empty_rows, _empty_direct_seed_inference_diagnostics()
         return empty_rows
-    cap = cv2.VideoCapture(video_path)
-    if not cap.isOpened():
+    from backend.app.workbench.media import OpenCvFrameSource, iter_bgr_frames
+
+    decode_adapter = frame_source or OpenCvFrameSource(cv2_module=cv2)
+    identity = decode_adapter.probe(Path(str(video_path)))
+    if identity.decodeErrors:
         empty_rows = []
         if return_diagnostics:
             return empty_rows, _empty_direct_seed_inference_diagnostics()
@@ -5075,10 +5078,11 @@ def recover_ball_rows(
         except Exception:
             return
 
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
+    for decoded in iter_bgr_frames(Path(str(video_path)), decode_adapter, cv2_module=cv2):
+        frame = decoded.image
+        if frame is None:
+            frame_count += 1
+            continue
         if frame_count % frame_interval == 0:
             timestamp = round(frame_count / fps, 2)
             if calibrations:
@@ -5280,7 +5284,6 @@ def recover_ball_rows(
                     _emit_progress()
         frame_count += 1
 
-    cap.release()
     if dedupe_same_frame:
         recovered_rows = _dedupe_same_frame_recovered_rows(recovered_rows)
 
@@ -6537,6 +6540,7 @@ def run_ball_recovery_experiment(
     reviewed_positive_anchor_seed_path=None,
     detector_profile=DETECTOR_PROFILE_COCO_TRACKING_FULL,
     calibrations=None,
+    frame_source=None,
 ):
     if baseline_guided_rescue_reference is None and baseline_guided_rescue_reference_path is not None:
         baseline_guided_rescue_reference = _load_baseline_guided_rescue_reference(
@@ -6549,12 +6553,14 @@ def run_ball_recovery_experiment(
         configured_conf=conf,
         include_player_window_probe=bool(player_windows),
     )
-    cap = cv2.VideoCapture(video_path)
-    ret, first_frame = cap.read()
-    total_frame_count = 0
-    if hasattr(cap, "get"):
-        total_frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
-    cap.release()
+    from backend.app.workbench.media import OpenCvFrameSource, first_bgr_frame
+
+    decode_adapter = frame_source or OpenCvFrameSource(cv2_module=cv2)
+    identity = decode_adapter.probe(Path(str(video_path)))
+    first_decoded = first_bgr_frame(Path(str(video_path)), decode_adapter, cv2_module=cv2)
+    ret = first_decoded is not None and first_decoded.image is not None
+    first_frame = first_decoded.image if first_decoded is not None else None
+    total_frame_count = int(identity.frameCount or 0)
     frame_shape = first_frame.shape if ret and first_frame is not None else None
     cached_rows = {}
     experiment_results = []
@@ -6783,6 +6789,7 @@ def run_ball_recovery_experiment(
                 progress_context=profile_progress_context,
                 source_clip_id=source_clip_id,
                 edge_share_repair_profile=edge_share_repair_profile,
+                frame_source=decode_adapter,
             )
             if profile.get("cropMode") == "proposal_windows":
                 if (
@@ -7739,6 +7746,7 @@ def process_video(
     match_id=None,
     job_id=None,
     primary_acquisition_mode=SUPPORTED_PRIMARY_ACQUISITION_MODE,
+    frame_source=None,
 ):
     validate_primary_acquisition_mode(primary_acquisition_mode)
     sample_interval = None
@@ -8001,32 +8009,30 @@ def process_video(
     emit_worker_heartbeat("modelLoad", "completed")
     
     video_open_started_at = time.monotonic()
-    cap = cv2.VideoCapture(video_path)
-    if not cap.isOpened():
+    from backend.app.workbench.media import OpenCvFrameSource, first_bgr_frame
+
+    decode_source = frame_source or OpenCvFrameSource(cv2_module=cv2)
+    identity = decode_source.probe(Path(video_path))
+    first_decoded = first_bgr_frame(Path(video_path), decode_source, cv2_module=cv2)
+    if first_decoded is None or first_decoded.image is None:
         print(f"Error opening video {video_path}")
         return empty_result() if return_rows or not output_parquet else []
     emit_worker_heartbeat("videoOpenAndHomography", "started")
 
-    fps = cap.get(cv2.CAP_PROP_FPS)
+    fps = float(identity.nominalFps or 0.0) or 1.0
+    first_frame = first_decoded.image
     frame_interval = int(fps / TARGET_FPS) if fps > TARGET_FPS else 1
     sample_interval = frame_interval
     from backend.app.workbench.media import SamplingAudit
 
     sampling_audit = SamplingAudit(
-        source_sha256="",
+        source_sha256=str(identity.sourceSha256 or ""),
         declared_target_fps=float(TARGET_FPS),
         nominal_fps=float(fps) if fps else None,
         frame_interval=int(frame_interval),
-        selected_backend="ultralytics_track",
+        selected_backend=f"{decode_source.name}+ultralytics_track",
         temporal_policy="clip_local_index_modulo",
     )
-    
-    # Read first frame for Homography
-    ret, first_frame = cap.read()
-    cap.release()
-    if not ret:
-        print("Empty video")
-        return empty_result() if return_rows or not output_parquet else []
         
     H, pitch_points = resolve_homography(first_frame, homography_points=homography_points, use_auto=auto_homography)
     calibrations = [(0, H, pitch_points)]
@@ -8052,15 +8058,41 @@ def process_video(
     last_tracking_progress_frames_seen = 0
     
     # We will use generator to track frame by frame
-    results = primary_model.track(
-        source=video_path,
-        stream=True,
-        persist=True,
-        tracker="botsort.yaml",
-        imgsz=TRACKING_IMGSZ,
-        conf=TRACKING_CONF,
-        classes=detector_tracking_class_ids(resolved_primary_detector_profile),
-    )
+    if frame_source is not None:
+        def _frame_source_track_results():
+            from backend.app.workbench.media import iter_bgr_frames
+
+            for decoded in iter_bgr_frames(Path(video_path), frame_source, cv2_module=cv2):
+                if decoded.image is None:
+                    continue
+                tracked = primary_model.track(
+                    source=decoded.image,
+                    persist=True,
+                    tracker="botsort.yaml",
+                    imgsz=TRACKING_IMGSZ,
+                    conf=TRACKING_CONF,
+                    classes=detector_tracking_class_ids(resolved_primary_detector_profile),
+                    verbose=False,
+                )
+                result = tracked[0] if isinstance(tracked, (list, tuple)) else tracked
+                if getattr(result, "orig_img", None) is None:
+                    try:
+                        result.orig_img = decoded.image
+                    except Exception:
+                        pass
+                yield result
+
+        results = _frame_source_track_results()
+    else:
+        results = primary_model.track(
+            source=video_path,
+            stream=True,
+            persist=True,
+            tracker="botsort.yaml",
+            imgsz=TRACKING_IMGSZ,
+            conf=TRACKING_CONF,
+            classes=detector_tracking_class_ids(resolved_primary_detector_profile),
+        )
     
     for r in results:
         sampling_audit.record_decoded_frame()
@@ -8220,6 +8252,7 @@ def process_video(
             crop_edge_margin=0,
             max_crop_center_y_ratio=0.0,
             max_crop_width_ratio=0.0,
+            frame_source=decode_source,
         )
     probe_observed_ball_rows = suppress_repeated_false_ball_clusters(
         probe_observed_ball_rows,
@@ -8276,6 +8309,7 @@ def process_video(
             baseline_guided_rescue_reference=baseline_guided_rescue_reference,
             proposal_selection_truth_seed_path=proposal_selection_truth_seed_path,
             reviewed_positive_anchor_seed_path=reviewed_positive_anchor_seed_path,
+            frame_source=decode_source,
         )
         selected_profile = select_best_ball_recovery_profile(recovery_results)
         recovery_profile_matrix = _build_recovery_profile_matrix(

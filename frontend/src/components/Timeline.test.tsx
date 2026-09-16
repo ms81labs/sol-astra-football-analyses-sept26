@@ -31,3 +31,18 @@ it('seeks both densely spaced events by their distinct selector entries', () => 
   fireEvent.change(selector, { target: { value: '1' } });
   expect((screen.getByLabelText('Timeline scrubber') as HTMLInputElement).value).toBe('20');
 });
+
+it('labels heuristic detections as provisional and keeps analyst tags distinct', () => {
+  const frames: FrameData[] = Array.from({ length: 20 }, (_, frame) => ({
+    Frame_ID: frame, Timestamp: frame / 5, Ball: null, My_Team: [], Enemies: [],
+  }));
+  const events: EventTag[] = [
+    { frame: 5, timestamp: 1, label: 'Pass from #2 to #82', type: 'pass', reviewStatus: 'unreviewed', heuristicName: 'provisional_event_suggestion' },
+    { frame: 8, timestamp: 1.6, label: 'Goal', type: 'goal', reviewStatus: 'accepted' },
+  ];
+
+  render(<Timeline matchData={frames} currentFrame={0} isPlaying={false} fps={5}
+    events={events} onSeek={() => {}} onTogglePlay={() => {}} />);
+  expect(screen.getByRole('button', { name: 'Pass from #2 to #82 at 1 seconds (provisional)' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: 'Goal at 1.6 seconds' })).toBeTruthy();
+});

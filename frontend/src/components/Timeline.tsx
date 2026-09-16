@@ -54,7 +54,7 @@ function EventTagger({ currentFrame, timestamp, onAddEvent }: EventTaggerProps) 
             {EVENT_PRESETS.map(({ type, label, emoji }) => (
                 <button
                     key={type}
-                    onClick={() => onAddEvent({ frame: currentFrame, timestamp, label, type })}
+                    onClick={() => onAddEvent({ frame: currentFrame, timestamp, label, type, reviewStatus: 'accepted' })}
                     className="bg-slate-800 hover:bg-slate-700 px-2 py-1 rounded text-xs transition-colors border border-slate-700 flex items-center gap-1"
                     title={`Tag as ${label}`}
                 >
@@ -104,14 +104,18 @@ export default function Timeline({
                     <div className="relative h-1 mb-1">
                         {events.map((evt, idx) => {
                             const pct = maxFrame > 0 ? (evt.frame / maxFrame) * 100 : 0;
+                            const provisional = evt.reviewStatus === 'unreviewed';
+                            const title = provisional
+                                ? `${evt.label} @ ${evt.timestamp}s (provisional)`
+                                : `${evt.label} @ ${evt.timestamp}s`;
                             return (
                                 <button
                                     key={idx}
                                     onClick={() => onSeek(evt.frame)}
-                                    aria-label={`${evt.label} at ${evt.timestamp} seconds`}
+                                    aria-label={provisional ? `${evt.label} at ${evt.timestamp} seconds (provisional)` : `${evt.label} at ${evt.timestamp} seconds`}
                                     className="absolute w-2.5 h-2.5 rounded-full -top-0.5 transform -translate-x-1/2 hover:scale-150 transition-transform z-10 border border-slate-900"
-                                    style={{ left: `${pct}%`, backgroundColor: EVENT_COLORS[evt.type] }}
-                                    title={`${evt.label} @ ${evt.timestamp}s`}
+                                    style={{ left: `${pct}%`, backgroundColor: EVENT_COLORS[evt.type], opacity: provisional ? 0.65 : 1 }}
+                                    title={title}
                                 />
                             );
                         })}
@@ -143,7 +147,9 @@ export default function Timeline({
                         >
                             <option value="">Jump to event</option>
                             {events.map((event, index) => (
-                                <option key={index} value={index}>{event.label} @ {event.timestamp}s</option>
+                                <option key={index} value={index}>
+                                    {event.reviewStatus === 'unreviewed' ? `${event.label} @ ${event.timestamp}s (provisional)` : `${event.label} @ ${event.timestamp}s`}
+                                </option>
                             ))}
                         </select>
                     )}

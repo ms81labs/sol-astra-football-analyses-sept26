@@ -442,6 +442,7 @@ def test_persist_video_outputs_saves_ball_pipeline_trace(tmp_path, monkeypatch):
             {"Frame_ID": 0, "Timestamp": 0.0, "Entity_Type": "ball", "Track_ID": -1, "X": 52.0, "Y": 50.0, "Conf": 0.95},
         ],
         "trackColors": {},
+        "sourceClock": {"sourceSha256": "a" * 64, "byteSize": 5, "codec": "h264"},
         "runtimeFingerprint": {
             "configuredImageName": "ghcr.io/example/fotball-analyst-runpod-handler:abc123",
             "imageTag": "abc123",
@@ -599,6 +600,7 @@ def test_persist_video_outputs_saves_ball_pipeline_trace(tmp_path, monkeypatch):
     assert possession_stage["controlledPossessionFrames"] == 1
     assert event_stage["eventCount"] == 1
     assert event_stage["eventTypes"] == {"recovery": 1}
+    assert storage.load_analysis_artifact(match.id, "source_clock")["codec"] == "h264"
 
 
 def test_persist_video_outputs_saves_phase_timings_and_recovery_debug(tmp_path, monkeypatch):

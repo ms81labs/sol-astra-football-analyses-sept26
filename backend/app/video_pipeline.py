@@ -40,6 +40,7 @@ def process_video_input(
     primary_acquisition_mode: str = "anchored_player_ranked_context_960",
     frame_source: FrameSource | None = None,
 ) -> dict[str, object]:
+    adapter = frame_source or OpenCvFrameSource()
     if config.autoHomography:
         # Auto-detect: backend tries pitch_detector.py first, fallback to manual
         homography_points = None
@@ -71,9 +72,10 @@ def process_video_input(
         progress_callback=progress_callback,
         match_id=match_id,
         job_id=job_id,
+        frame_source=adapter,
     )
     if not result:
         raise RuntimeError("Video pipeline did not return any tracking rows.")
     payload = result if isinstance(result, dict) else {"rows": result, "trackColors": {}}
-    payload["sourceClock"] = _probe_source_clock(Path(video_path), frame_source)
+    payload["sourceClock"] = _probe_source_clock(Path(video_path), adapter)
     return payload

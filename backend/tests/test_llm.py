@@ -78,6 +78,39 @@ def test_tactical_report_prompt_includes_player_focus_and_match_signals():
     assert "0.38" in prompt
 
 
+def test_match_signals_omit_unknown_ppda_and_label_experimental_shot_quality():
+    from backend.app.llm import _build_match_signals, _build_player_summary
+    from backend.app.schemas import MetricAvailabilityRecord
+
+    summary = MatchSummary(
+        possession=50,
+        myTeamDistance=0,
+        enemyDistance=0,
+        myTeamAvgPos={"x": 50, "y": 50},
+        enemyAvgPos={"x": 50, "y": 50},
+        myTeamTopSpeed=0,
+        enemyTopSpeed=0,
+        myTeamSprints=0,
+        enemySprints=0,
+        myTeamXg=0.4,
+        enemyXg=0.1,
+        myTeamPpda=0.0,
+        enemyPpda=0.0,
+        formation="4-3-3",
+        metricAvailability=[
+            MetricAvailabilityRecord(metric="my_team_ppda", availability="unknown", value=None, reasonCodes=["ZERO_DENOMINATOR"]),
+            MetricAvailabilityRecord(metric="enemy_ppda", availability="unknown", value=None, reasonCodes=["ZERO_DENOMINATOR"]),
+            MetricAvailabilityRecord(metric="experimental_shot_quality", availability="experimental", value=0.5, publishedLabel="experimental_shot_quality"),
+        ],
+    )
+    signals = _build_match_signals(summary, [])
+    assert signals["pressingEdge"] is None
+    assert signals["shotQualityLabel"] == "experimental_shot_quality"
+    line = _build_player_summary({"actions": {"shot": 1}, "xgTaken": 0.38, "xgCreated": 0.0, "involvements": 1, "ballWins": 0}, "Shot Threat")
+    assert "experimental shot quality" in line
+    assert "xG taken" not in line
+
+
 def test_drills_prompt_includes_player_focus_and_contextual_signals():
     summary = MatchSummary(
         possession=54,

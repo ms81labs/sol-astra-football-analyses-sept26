@@ -5,6 +5,7 @@ from backend.app.analytics import (
     build_formation_timeline,
     build_shot_analytics,
     detect_events,
+    partition_detected_events,
     summarize_match,
 )
 from backend.app.schemas import BallOwnership, MatchStateFrame
@@ -639,6 +640,40 @@ def test_detect_events_emits_pass_then_turnover_from_control_changes():
     assert events[0].fromTrackId == 7
     assert events[0].toTrackId == 11
     assert events[1].team == "enemy"
+
+
+def test_detect_events_marks_candidates_as_provisional_and_unreviewed():
+    frames = [
+        {
+            "frameId": 0,
+            "timestamp": 0.0,
+            "ball": {"x": 21.0, "y": 50.0, "confidence": 0.95},
+            "myTeam": [
+                {"id": 7, "x": 20.0, "y": 50.0, "confidence": 0.92},
+                {"id": 11, "x": 35.0, "y": 50.0, "confidence": 0.92},
+            ],
+            "enemies": [{"id": 18, "x": 75.0, "y": 50.0, "confidence": 0.9}],
+        },
+        {
+            "frameId": 1,
+            "timestamp": 0.2,
+            "ball": {"x": 34.0, "y": 50.0, "confidence": 0.95},
+            "myTeam": [
+                {"id": 7, "x": 21.0, "y": 50.0, "confidence": 0.92},
+                {"id": 11, "x": 33.0, "y": 50.0, "confidence": 0.92},
+            ],
+            "enemies": [{"id": 18, "x": 74.0, "y": 50.0, "confidence": 0.9}],
+        },
+    ]
+    assignments = assign_ball_possession(frames)
+    events = detect_events(frames, assignments)
+    assert events
+    assert all(event.reviewStatus == "unreviewed" for event in events)
+    assert all(event.heuristicName == "provisional_event_suggestion" for event in events)
+    partitioned = partition_detected_events(events)
+    assert partitioned["candidates"] == events
+    assert partitioned["accepted"] == []
+    assert partitioned["rejected"] == []
 
 
 def test_detect_events_keeps_short_dead_ball_gap_visible_for_resolved_team_regain():

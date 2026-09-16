@@ -141,6 +141,7 @@ class SourceClockIdentity(StrictModel):
     timeBaseDen: int = 1
     nominalFps: float | None = None
     durationSeconds: float | None = None
+    frameCount: int | None = None
     variableFrameRate: bool = False
     audioTracks: int = 0
     decodeErrors: list[str] = Field(default_factory=list)

@@ -180,9 +180,9 @@ def _select_player_label(player: dict) -> str:
 
 def _build_player_summary(player: dict, label: str) -> str:
     if label == "Primary Creator":
-        return f"{_format_count(player['actions'].get('through_ball', 0), 'through ball')}, {player['xgCreated']:.2f} xG created"
+        return f"{_format_count(player['actions'].get('through_ball', 0), 'through ball')}, {player['xgCreated']:.2f} experimental shot quality created"
     if label == "Shot Threat":
-        return f"{_format_count(player['actions'].get('shot', 0), 'shot')}, {player['xgTaken']:.2f} xG taken"
+        return f"{_format_count(player['actions'].get('shot', 0), 'shot')}, {player['xgTaken']:.2f} experimental shot quality"
     if label == "Ball Winner":
         return f"{_format_count(player['ballWins'], 'ball win')}, {_format_count(player['actions'].get('interception', 0), 'interception')}"
     if label == "Wide Threat":
@@ -328,13 +328,26 @@ def _build_player_focus(events: list[DetectedEvent] | None, shots: list[ShotAnal
     }
 
 
+def _published_metric(summary: MatchSummary, metric: str) -> float | None:
+    for item in summary.metricAvailability:
+        if item.metric == metric:
+            return item.published_value()
+    return None
+
+
 def _build_match_signals(summary: MatchSummary | None, formation_timeline: list[FormationSegment] | None) -> dict:
     if summary is None:
         return {}
+    my_ppda = _published_metric(summary, "my_team_ppda")
+    enemy_ppda = _published_metric(summary, "enemy_ppda")
+    pressing_edge = None if my_ppda is None or enemy_ppda is None else _round_two(enemy_ppda - my_ppda)
+    if not summary.metricAvailability:
+        pressing_edge = _round_two(summary.enemyPpda - summary.myTeamPpda)
     return {
         "possession": summary.possession,
         "xgBalance": _round_two(summary.myTeamXg - summary.enemyXg),
-        "pressingEdge": _round_two(summary.enemyPpda - summary.myTeamPpda),
+        "pressingEdge": pressing_edge,
+        "shotQualityLabel": "experimental_shot_quality",
         "defensiveLineEdge": _round_two(summary.myTeamDefensiveLineHeight - summary.enemyDefensiveLineHeight),
         "recentFormations": [
             {

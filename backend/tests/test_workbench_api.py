@@ -55,6 +55,7 @@ def test_workbench_corrections_search_jobs_and_unknown_metrics(tmp_path: Path) -
                 f"/api/workbench/matches/m1/corrections/{created.json()['correctionId']}/recover"
             )
             assert recovered.json()["saveState"] == "saved"
+            assert recovered.json()["rebuild"] == ["team_state", "events", "metrics", "report"]
             search = await client.post(
                 "/api/workbench/search",
                 json={

@@ -25,6 +25,20 @@ EVENT_CSV_FIELDS = [
     "fromTrackId",
     "toTrackId",
     "description",
+    "reviewStatus",
+    "heuristicName",
+]
+
+METRIC_CSV_FIELDS = [
+    "metric",
+    "definitionVersion",
+    "value",
+    "availability",
+    "reasonCodes",
+    "publishedLabel",
+    "unit",
+    "eligibleSeconds",
+    "requestedSeconds",
 ]
 
 
@@ -70,6 +84,31 @@ def flatten_events_for_csv(events: list[Any]) -> list[dict[str, Any]]:
                 "fromTrackId": payload.get("fromTrackId"),
                 "toTrackId": payload.get("toTrackId"),
                 "description": payload.get("description"),
+                "reviewStatus": payload.get("reviewStatus") or "unreviewed",
+                "heuristicName": payload.get("heuristicName") or "provisional_event_suggestion",
+            }
+        )
+    return rows
+
+
+def flatten_metrics_for_csv(records: list[Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for record in records:
+        payload = _as_mapping(record)
+        reason_codes = payload.get("reasonCodes") or []
+        if isinstance(reason_codes, list):
+            reason_codes = ",".join(str(code) for code in reason_codes)
+        rows.append(
+            {
+                "metric": payload.get("metric"),
+                "definitionVersion": payload.get("definitionVersion"),
+                "value": payload.get("value"),
+                "availability": payload.get("availability"),
+                "reasonCodes": reason_codes,
+                "publishedLabel": payload.get("publishedLabel"),
+                "unit": payload.get("unit"),
+                "eligibleSeconds": payload.get("eligibleSeconds"),
+                "requestedSeconds": payload.get("requestedSeconds"),
             }
         )
     return rows

@@ -368,6 +368,8 @@ describe('mapBackendEventsToTags', () => {
       'through_ball',
       'interception',
     ]);
+    expect(tags.every((tag) => tag.reviewStatus === 'unreviewed')).toBe(true);
+    expect(tags.every((tag) => tag.heuristicName === 'provisional_event_suggestion')).toBe(true);
   });
 });
 

@@ -201,6 +201,8 @@ export function mapBackendEventsToTags(events: BackendEvent[], frames: FrameData
     timestamp: event.timestamp,
     label: event.description,
     type: supportedEventTypes.has(event.type as EventType) ? (event.type as EventType) : 'custom',
+    reviewStatus: event.reviewStatus ?? 'unreviewed',
+    heuristicName: event.heuristicName ?? 'provisional_event_suggestion',
   }));
 }
 

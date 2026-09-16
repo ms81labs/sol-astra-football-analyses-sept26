@@ -31,6 +31,7 @@ class DecodedFrame:
     payload: bytes
     backend: str
     crop: tuple[int, int, int, int] | None = None
+    image: object | None = None
 
 
 class FrameSource(ABC):
@@ -70,38 +71,54 @@ class FixtureFrameSource(FrameSource):
 class OpenCvFrameSource(FrameSource):
     name = "opencv"
 
+    def __init__(self, cv2_module: object | None = None):
+        self._cv2 = cv2_module
+
+    def _cv(self):
+        if self._cv2 is not None:
+            return self._cv2
+        import cv2  # type: ignore
+
+        return cv2
+
     def probe(self, path: Path) -> SourceClockIdentity:
-        payload = path.read_bytes()
+        payload = path.read_bytes() if path.exists() else b""
         identity = SourceClockIdentity(
-            sourceSha256=hashlib.sha256(payload).hexdigest(),
+            sourceSha256=hashlib.sha256(payload).hexdigest() if payload else "",
             byteSize=len(payload),
         )
         try:
-            import cv2  # type: ignore
+            cv2 = self._cv()
         except Exception:
             return identity
         capture = cv2.VideoCapture(str(path))
         if not capture.isOpened():
+            capture.release()
             return identity.model_copy(update={"decodeErrors": ["opencv_open_failed"]})
-        fps = float(capture.get(cv2.CAP_PROP_FPS) or 0.0) or None
-        width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH) or 0) or None
-        height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0) or None
-        frame_count = float(capture.get(cv2.CAP_PROP_FRAME_COUNT) or 0.0)
-        duration = (frame_count / fps) if fps and frame_count else None
-        capture.release()
+        try:
+            fps = float(capture.get(cv2.CAP_PROP_FPS) or 0.0) or None
+            width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH) or 0) or None
+            height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0) or None
+            raw_frame_count = float(capture.get(cv2.CAP_PROP_FRAME_COUNT) or 0.0)
+            frame_count = int(raw_frame_count) if raw_frame_count else None
+            duration = (raw_frame_count / fps) if fps and raw_frame_count else None
+        except Exception:
+            return identity.model_copy(update={"decodeErrors": ["opencv_probe_failed"]})
+        finally:
+            capture.release()
         return identity.model_copy(
             update={
                 "width": width,
                 "height": height,
                 "nominalFps": fps,
                 "durationSeconds": duration,
+                "frameCount": frame_count,
                 "pixelFormat": "bgr24",
             }
         )
 
     def iter_frames(self, path: Path, *, cancel_event: threading.Event | None = None) -> Iterator[DecodedFrame]:
-        import cv2  # type: ignore
-
+        cv2 = self._cv()
         capture = cv2.VideoCapture(str(path))
         if not capture.isOpened():
             return
@@ -126,10 +143,35 @@ class OpenCvFrameSource(FrameSource):
                     rotation=0,
                     payload=payload,
                     backend=self.name,
+                    image=image,
                 )
                 index += 1
         finally:
             capture.release()
+
+
+def iter_bgr_frames(
+    path: Path,
+    source: FrameSource | None = None,
+    *,
+    cancel_event: threading.Event | None = None,
+    cv2_module: object | None = None,
+) -> Iterator[DecodedFrame]:
+    """Production decode iterator. Football semantics stay outside this boundary."""
+
+    adapter = source or OpenCvFrameSource(cv2_module=cv2_module)
+    yield from adapter.iter_frames(path, cancel_event=cancel_event)
+
+
+def first_bgr_frame(
+    path: Path,
+    source: FrameSource | None = None,
+    *,
+    cv2_module: object | None = None,
+) -> DecodedFrame | None:
+    for frame in iter_bgr_frames(path, source, cv2_module=cv2_module):
+        return frame
+    return None
 
 
 class FfmpegProbe:

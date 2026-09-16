@@ -1524,3 +1524,19 @@ def detect_events(frames: list[FrameData | dict], assignments: list[BallOwnershi
         )
 
     return sorted(events, key=lambda event: (event.timestamp, event.frameId))
+
+
+def partition_detected_events(events: list[DetectedEvent]) -> dict[str, list[DetectedEvent]]:
+    """Keep heuristic candidates separate from accepted/rejected analyst events."""
+
+    accepted: list[DetectedEvent] = []
+    candidates: list[DetectedEvent] = []
+    rejected: list[DetectedEvent] = []
+    for event in events:
+        if event.reviewStatus == "accepted":
+            accepted.append(event)
+        elif event.reviewStatus == "rejected":
+            rejected.append(event)
+        else:
+            candidates.append(event)
+    return {"accepted": accepted, "candidates": candidates, "rejected": rejected}

@@ -177,6 +177,58 @@ def test_camera_cut_and_export_sample_contract(tmp_path: Path) -> None:
     assert [item.sourceFrameIndex for item in exported if item] == [0, 2, 4]
 
 
+def test_iter_bgr_frames_uses_injected_frame_source_as_production_decode_path(tmp_path: Path) -> None:
+    from backend.app.workbench.media import iter_bgr_frames
+
+    frames = [
+        DecodedFrame(0, 0, 0.0, 2, 2, "bgr", 0, b"aa", "fixture", image=object()),
+        DecodedFrame(1, 1, 0.04, 2, 2, "bgr", 0, b"bb", "fixture", image=object()),
+    ]
+    source = tmp_path / "clip.bin"
+    source.write_bytes(b"src")
+    adapter = FixtureFrameSource(
+        frames,
+        identity=__import__("backend.app.workbench.contracts", fromlist=["SourceClockIdentity"]).SourceClockIdentity(
+            sourceSha256="a" * 64,
+            byteSize=3,
+        ),
+    )
+    decoded = list(iter_bgr_frames(source, adapter))
+    assert [frame.source_frame_index for frame in decoded] == [0, 1]
+    assert all(frame.image is not None for frame in decoded)
+
+
+def test_recover_ball_rows_uses_injected_frame_source_without_opening_video(tmp_path: Path) -> None:
+    import numpy as np
+
+    from backend.app.workbench.contracts import SourceClockIdentity
+    from backend.run_guerilla import recover_ball_rows
+
+    class ClosedSource:
+        name = "fixture"
+
+        def probe(self, path):
+            return SourceClockIdentity(sourceSha256="a" * 64, byteSize=path.stat().st_size, decodeErrors=["opencv_open_failed"])
+
+        def iter_frames(self, path, *, cancel_event=None):
+            del path, cancel_event
+            if False:
+                yield None
+
+    video = tmp_path / "clip.bin"
+    video.write_bytes(b"src")
+    rows = recover_ball_rows(
+        str(video),
+        model=object(),
+        H=np.eye(3),
+        pitch_points=[[0, 0], [100, 0], [100, 100], [0, 100]],
+        fps=25,
+        frame_interval=5,
+        frame_source=ClosedSource(),
+    )
+    assert rows == []
+
+
 def test_sampling_audit_does_not_equate_export_fps_with_inference_fps() -> None:
     audit = SamplingAudit(
         source_sha256="a" * 64,

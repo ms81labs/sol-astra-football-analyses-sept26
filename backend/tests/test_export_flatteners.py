@@ -1,4 +1,9 @@
-from backend.app.export_flatteners import flatten_events_for_csv, flatten_frames_for_csv
+from backend.app.export_flatteners import (
+    flatten_events_for_csv,
+    flatten_frames_for_csv,
+    flatten_metrics_for_csv,
+)
+from backend.app.schemas import DetectedEvent, MetricAvailabilityRecord
 
 
 def test_flatten_frames_for_csv_export():
@@ -29,15 +34,15 @@ def test_flatten_frames_for_csv_export():
 
 def test_flatten_events_for_csv_export():
     events = [
-        {
-            "type": "pass",
-            "frameId": 10,
-            "timestamp": 2.0,
-            "team": "unassigned",
-            "fromTrackId": 7,
-            "toTrackId": 11,
-            "description": "Pass from #7 to #11",
-        }
+        DetectedEvent(
+            type="pass",
+            frameId=10,
+            timestamp=2.0,
+            team="unassigned",
+            fromTrackId=7,
+            toTrackId=11,
+            description="Pass from #7 to #11",
+        )
     ]
 
     rows = flatten_events_for_csv(events)
@@ -51,5 +56,32 @@ def test_flatten_events_for_csv_export():
             "fromTrackId": 7,
             "toTrackId": 11,
             "description": "Pass from #7 to #11",
+            "reviewStatus": "unreviewed",
+            "heuristicName": "provisional_event_suggestion",
         }
     ]
+
+
+def test_flatten_metrics_for_csv_preserves_unknown_availability():
+    records = [
+        MetricAvailabilityRecord(
+            metric="my_team_ppda",
+            availability="unknown",
+            value=None,
+            reasonCodes=["ZERO_DENOMINATOR"],
+        ),
+        MetricAvailabilityRecord(
+            metric="experimental_shot_quality",
+            availability="experimental",
+            value=0.42,
+            publishedLabel="experimental_shot_quality",
+        ),
+    ]
+
+    rows = flatten_metrics_for_csv(records)
+
+    assert rows[0]["metric"] == "my_team_ppda"
+    assert rows[0]["availability"] == "unknown"
+    assert rows[0]["value"] is None
+    assert rows[0]["reasonCodes"] == "ZERO_DENOMINATOR"
+    assert rows[1]["publishedLabel"] == "experimental_shot_quality"
