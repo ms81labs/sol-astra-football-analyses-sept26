@@ -134,7 +134,7 @@ export async function undoMatchCorrection(matchId: string, correctionId: string)
 }
 
 export async function exportPlaylistInterval(timestampStart: number, timestampEnd: number, sourceFps: number) {
-  const response = await fetch('/api/workbench/playlists/export-interval', {
+  const response = await fetch('/api/playlists/export-interval', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ timestampStart, timestampEnd, sourceFps }),
@@ -154,7 +154,7 @@ export async function fetchWorkbenchFlags() {
 }
 
 export async function fetchJobCost(jobId: string) {
-  const response = await fetch(`/api/workbench/jobs/${jobId}/cost`);
+  const response = await fetch(`/api/jobs/${jobId}/cost`);
   if (!response.ok) {
     throw new Error(`Failed to load job cost: ${response.status}`);
   }

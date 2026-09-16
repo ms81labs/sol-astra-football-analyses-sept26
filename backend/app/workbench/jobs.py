@@ -111,6 +111,15 @@ class DurableJobLedger:
         self.cancel_flags.add(request_id)
         return self.transition(request_id, "cancelling")
 
+    def request_cancel(self, request_id: str) -> JobAttempt | None:
+        self.cancel_flags.add(request_id)
+        if request_id not in self.attempts:
+            return None
+        latest = self.attempts[request_id][-1]
+        if latest.status in {"complete", "failed", "cancelled", "outcome_unknown"}:
+            return latest
+        return self.transition(request_id, "cancelling")
+
     def confirm_cleanup(self, request_id: str, *, ok: bool) -> JobAttempt:
         return self.transition(
             request_id,
@@ -199,6 +208,19 @@ class DurableJobLedger:
             "p95Reserved": _percentile(reserved, 95),
         }
 
+    def cost_for(self, request_id: str) -> dict[str, float | int | str]:
+        entries = [entry for entry in self.costs if entry.requestId == request_id]
+        reserved = [entry.reserved for entry in entries]
+        actual = [entry.actual for entry in entries if entry.actual is not None]
+        return {
+            "requestId": request_id,
+            "attempts": len(entries),
+            "reservedTotal": round(sum(reserved), 4) if reserved else 0.0,
+            "actualTotal": round(sum(actual), 4) if actual else 0.0,
+            "p50Reserved": _percentile(reserved, 50),
+            "p95Reserved": _percentile(reserved, 95),
+        }
+
 
 def _percentile(values: list[float], percentile: int) -> float:
     if not values:
@@ -252,6 +274,29 @@ def vector_database(*, measured_recall_benefit: bool = False) -> dict[str, objec
         "admitted": False,
         "embeddingsProveTacticalWeakness": False,
     }
+
+
+def attach_durable_job_view(payload: dict[str, Any], ledger: DurableJobLedger) -> dict[str, Any]:
+    job_id = str(payload.get("id") or payload.get("jobId") or "")
+    view = dict(payload)
+    storage_terminal = view.get("status") in {"completed", "failed", "cancelled"}
+    view["cancelRequested"] = ledger.cancel_requested(job_id)
+    if job_id in ledger.attempts:
+        receipt = ledger.receipt(job_id)
+        view["durablePhase"] = receipt.status
+        view["attemptId"] = receipt.attemptId
+        view["costReserved"] = receipt.costReserved
+        view["costActual"] = receipt.costActual
+        view["cleanupResult"] = receipt.cleanupResult
+        view["temporalPolicy"] = receipt.temporalPolicy
+        view["cacheIdentity"] = receipt.cacheIdentity
+        view["terminated"] = storage_terminal or ledger.terminated(job_id)
+    else:
+        view["durablePhase"] = None
+        view["cleanupResult"] = "unknown"
+        view["terminated"] = storage_terminal
+        view["costReserved"] = view.get("costReserved", 0.0)
+    return view
 
 
 def signed_scoped_job_access(*, token: str | None, job_id: str, token_job_id: str | None) -> dict[str, object]:

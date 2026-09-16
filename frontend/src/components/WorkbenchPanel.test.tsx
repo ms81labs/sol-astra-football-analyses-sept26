@@ -84,7 +84,7 @@ it('recovers a pending playlist correction after a simulated crash', async () =>
     if (url.endsWith('/corrections/c-pending/recover') && init?.method === 'POST') {
       return new Response(JSON.stringify({ correctionId: 'c-pending', saveState: 'saved' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
-    if (url.endsWith('/api/workbench/playlists/export-interval') && init?.method === 'POST') {
+    if (url.endsWith('/api/playlists/export-interval') && init?.method === 'POST') {
       return new Response(JSON.stringify({
         sourceStartSeconds: 3,
         sourceEndSeconds: 5,
@@ -127,7 +127,7 @@ it('shows feature flags, live job cost, match library hits and interval-limited 
     if (url.endsWith('/api/workbench/flags')) {
       return new Response(JSON.stringify({ experimental_shot_quality: false, gpu_default: false, native_code: false }), { status: 200 });
     }
-    if (url.endsWith('/api/workbench/jobs/live/cost')) {
+    if (url.endsWith('/api/jobs/live/cost')) {
       return new Response(JSON.stringify({ reservedTotal: 1.5, actualTotal: 0, p50Reserved: 1.5 }), { status: 200 });
     }
     if (url.endsWith('/api/workbench/library/search') && init?.method === 'POST') {

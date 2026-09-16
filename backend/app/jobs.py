@@ -37,7 +37,15 @@ class JobRunner:
         self.settings = settings or ProcessingSettings.from_env()
         self.ledger = ledger or DurableJobLedger()
 
-    def admit(self, job_id: str, *, match_id: str, source_sha256: str, budget: float = 0.0) -> JobAttempt:
+    def admit(
+        self,
+        job_id: str,
+        *,
+        match_id: str,
+        source_sha256: str,
+        budget: float = 0.0,
+        namespace: str = "production",
+    ) -> JobAttempt:
         location = "daytona" if self.settings.processing_backend == "daytona" else "local"
         return self.ledger.submit(
             JobRequest(
@@ -52,6 +60,7 @@ class JobRunner:
                 outputSchema="evidence_v1",
                 budget=budget,
                 authorisedLocation=location,
+                namespace=namespace,  # type: ignore[arg-type]
             )
         )
 
@@ -63,7 +72,7 @@ class JobRunner:
 
     def _ensure_admitted(self, job_id: str) -> None:
         if job_id not in self.ledger.requests:
-            self.admit(job_id, match_id="unknown", source_sha256="0" * 64)
+            self.admit(job_id, match_id="unknown", source_sha256="0" * 64, namespace="development")
 
     def start(self, job_id: str) -> None:
         self._ensure_admitted(job_id)

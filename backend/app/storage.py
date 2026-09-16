@@ -480,7 +480,19 @@ class Storage:
         return self.get_match(match_id)
 
     def create_job(self, match_id: str) -> JobRecord:
-        job_id = uuid.uuid4().hex
+        job, _created = self.ensure_job(match_id, uuid.uuid4().hex, created_status="queued")
+        return job
+
+    def ensure_job(self, match_id: str, job_id: str, *, created_status: str = "queued") -> tuple[JobRecord, bool]:
+        self.get_match(match_id)
+        try:
+            existing = self.get_job(job_id)
+        except KeyError:
+            existing = None
+        if existing is not None:
+            if existing.matchId != match_id:
+                raise ValueError("job belongs to another match")
+            return existing, False
         now = _utcnow().isoformat()
         log_path = str(self.storage_root / "logs" / f"job_{job_id}.log")
         with self._connect() as connection:
@@ -489,9 +501,19 @@ class Storage:
                 INSERT INTO jobs (id, match_id, status, progress, message, error, log_path, created_at, updated_at)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (job_id, match_id, "queued", 0.0, "Queued", None, log_path, now, now),
+                (job_id, match_id, created_status, 0.0, "Queued", None, log_path, now, now),
             )
-        return self.get_job(job_id)
+        return self.get_job(job_id), True
+
+    def source_sha256(self, match_id: str) -> str:
+        path = self.get_match_input_path(match_id)
+        if not path.exists() or not path.is_file():
+            return "0" * 64
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(_COPY_CHUNK_BYTES), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
 
     def has_active_job(self, match_id: str) -> bool:
         with self._connect() as connection:

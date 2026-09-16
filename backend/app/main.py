@@ -52,7 +52,9 @@ from .schemas import (
 from .semantic_search import search_matches_by_tactical_themes, search_bundles_by_tactical_themes, detect_themes_for_match
 from .storage import AdmissionOutcomeUncertainError, Storage, UploadTooLargeError
 from .workbench.access import object_access_decision
-from .workbench.review import correction_api_payload
+from .workbench.evidence import metric_dictionary
+from .workbench.jobs import attach_durable_job_view
+from .workbench.review import correction_api_payload, playlist_export_interval
 from .workbench.routes import create_workbench_router
 
 
@@ -245,6 +247,7 @@ def create_app(
 
     app = FastAPI(title="Guerilla Analytics API", version="0.1.0")
     app.state.storage = storage
+    app.state.runner = runner
     app.include_router(create_workbench_router(storage.storage_root))
     app.add_middleware(
         CORSMiddleware,
@@ -886,6 +889,11 @@ def create_app(
         if not created:
             return response(job, outcome="reused", reused=True)
 
+        try:
+            runner.admit(job.id, match_id=match.id, source_sha256=storage.source_sha256(match.id), budget=0.0)
+        except ValueError:
+            pass
+
         dispatch_outcome = "started"
         dispatch_error: str | None = None
         try:
@@ -937,11 +945,92 @@ def create_app(
         return match
 
     @app.get("/api/jobs/{job_id}")
-    def get_job(job_id: str) -> dict:
+    def get_job(
+        job_id: str,
+        authorization: str | None = Header(default=None),
+        x_object_scope: str | None = Header(default=None),
+        x_deployment_boundary: str | None = Header(default=None),
+        x_tenant_id: str | None = Header(default=None),
+    ) -> dict:
         try:
-            return storage.get_job(job_id).model_dump(mode="json")
+            job = storage.get_job(job_id)
+            match = storage.get_match(job.matchId)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Job not found") from exc
+        decision = object_access_decision(
+            object_id=match.id,
+            object_tenant=match.config.rights.audience,
+            authorization=authorization,
+            object_scope=x_object_scope,
+            deployment_boundary=x_deployment_boundary,
+            client_tenant=x_tenant_id,
+        )
+        if not decision["allowed"]:
+            raise HTTPException(status_code=403, detail=decision)
+        return attach_durable_job_view(job.model_dump(mode="json"), runner.ledger)
+
+    @app.get("/api/jobs/{job_id}/cost")
+    def get_job_cost(
+        job_id: str,
+        authorization: str | None = Header(default=None),
+        x_object_scope: str | None = Header(default=None),
+        x_deployment_boundary: str | None = Header(default=None),
+        x_tenant_id: str | None = Header(default=None),
+    ) -> dict:
+        try:
+            job = storage.get_job(job_id)
+            match = storage.get_match(job.matchId)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Job not found") from exc
+        decision = object_access_decision(
+            object_id=match.id,
+            object_tenant=match.config.rights.audience,
+            authorization=authorization,
+            object_scope=x_object_scope,
+            deployment_boundary=x_deployment_boundary,
+            client_tenant=x_tenant_id,
+        )
+        if not decision["allowed"]:
+            raise HTTPException(status_code=403, detail=decision)
+        return runner.ledger.cost_for(job_id)
+
+    @app.post("/api/jobs/{job_id}/cancel")
+    def cancel_job(
+        job_id: str,
+        authorization: str | None = Header(default=None),
+        x_object_scope: str | None = Header(default=None),
+        x_deployment_boundary: str | None = Header(default=None),
+        x_tenant_id: str | None = Header(default=None),
+    ) -> dict:
+        try:
+            job = storage.get_job(job_id)
+            match = storage.get_match(job.matchId)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Job not found") from exc
+        decision = object_access_decision(
+            object_id=match.id,
+            object_tenant=match.config.rights.audience,
+            authorization=authorization,
+            object_scope=x_object_scope,
+            deployment_boundary=x_deployment_boundary,
+            client_tenant=x_tenant_id,
+        )
+        if not decision["allowed"]:
+            raise HTTPException(status_code=403, detail=decision)
+        runner.ledger.request_cancel(job_id)
+        return attach_durable_job_view(job.model_dump(mode="json"), runner.ledger)
+
+    @app.get("/api/metrics/dictionary")
+    def get_metric_dictionary() -> dict:
+        return {"metrics": metric_dictionary()}
+
+    @app.post("/api/playlists/export-interval")
+    def export_playlist_interval(payload: dict | None = None) -> dict:
+        body = payload or {}
+        try:
+            return playlist_export_interval(body, float(body.get("sourceFps") or 25.0))
+        except (KeyError, TypeError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.get("/api/matches")
     def list_matches() -> list[dict]:
@@ -950,6 +1039,38 @@ def create_app(
     @app.get("/api/matches/{match_id}")
     def get_match(match: MatchRecord = Depends(require_match)) -> dict:
         return match.model_dump(mode="json")
+
+    @app.post("/api/matches/{match_id}/jobs", status_code=202)
+    def post_match_job(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+        body = payload or {}
+        request_id = str(body.get("requestId") or uuid.uuid4().hex)
+        budget = float(body.get("budget") or 0.0)
+        try:
+            job, created = storage.ensure_job(match.id, request_id, created_status="queued")
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        try:
+            attempt = runner.admit(
+                request_id,
+                match_id=match.id,
+                source_sha256=storage.source_sha256(match.id),
+                budget=budget,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail="idempotent request payload mismatch") from exc
+        view = attach_durable_job_view(job.model_dump(mode="json"), runner.ledger)
+        return {
+            "matchId": match.id,
+            "jobId": job.id,
+            "status": job.status,
+            "attemptId": attempt.attemptId,
+            "costReserved": float(attempt.reservedCost),
+            "reused": not created,
+            "cancelRequested": view["cancelRequested"],
+            "terminated": view["terminated"],
+            "cleanupResult": view["cleanupResult"],
+            "durablePhase": view["durablePhase"],
+        }
 
     @app.get("/api/matches/{match_id}/video")
     def get_match_video(match: MatchRecord = Depends(require_match)):

@@ -988,3 +988,87 @@ async def _test_match_reports_assemble_from_stored_evidence(tmp_path: Path):
         assert grounded.status_code == 200
         assert grounded.json()["factualCheck"]["accepted"] is True
         assert evidence_id in grounded.json()["evidenceSelection"]["evidenceIds"]
+
+
+def test_match_jobs_are_idempotent_and_cancel_is_a_request(tmp_path: Path):
+    _run(_test_match_jobs_are_idempotent_and_cancel_is_a_request, tmp_path)
+
+
+async def _test_match_jobs_are_idempotent_and_cancel_is_a_request(tmp_path: Path):
+    async with api_client(tmp_path) as (_, client):
+        response = await _upload_tracking_match(client)
+        assert response.status_code == 202
+        match_id = response.json()["matchId"]
+        upload_job_id = response.json()["jobId"]
+
+        uploaded = await client.get(f"/api/jobs/{upload_job_id}")
+        assert uploaded.status_code == 200
+        assert uploaded.json()["status"] == "completed"
+        assert uploaded.json()["cancelRequested"] is False
+        assert uploaded.json()["terminated"] is True
+        assert uploaded.json()["cleanupResult"]
+        assert uploaded.json()["costReserved"] is not None
+
+        created = await client.post(
+            f"/api/matches/{match_id}/jobs",
+            json={"requestId": "job-scope-1", "budget": 1.25},
+        )
+        assert created.status_code == 202
+        first = created.json()
+        assert first["jobId"] == "job-scope-1"
+        assert first["matchId"] == match_id
+        assert first["reused"] is False
+        assert first["costReserved"] == 1.25
+        assert first["status"] in {"queued", "submitted", "dispatching"}
+
+        replay = await client.post(
+            f"/api/matches/{match_id}/jobs",
+            json={"requestId": "job-scope-1", "budget": 1.25},
+        )
+        assert replay.status_code == 202
+        assert replay.json()["reused"] is True
+        assert replay.json()["jobId"] == "job-scope-1"
+
+        conflict = await client.post(
+            f"/api/matches/{match_id}/jobs",
+            json={"requestId": "job-scope-1", "budget": 9.0},
+        )
+        assert conflict.status_code == 409
+
+        cost = await client.get("/api/jobs/job-scope-1/cost")
+        assert cost.status_code == 200
+        assert cost.json()["reservedTotal"] == 1.25
+        assert cost.json()["requestId"] == "job-scope-1"
+
+        cancelled = await client.post("/api/jobs/job-scope-1/cancel")
+        assert cancelled.status_code == 200
+        assert cancelled.json()["cancelRequested"] is True
+        assert cancelled.json()["terminated"] is False
+        assert cancelled.json()["status"] != "cancelled"
+
+        done = await client.post(f"/api/jobs/{upload_job_id}/cancel")
+        assert done.status_code == 200
+        assert done.json()["cancelRequested"] is True
+        assert done.json()["terminated"] is True
+        assert done.json()["status"] == "completed"
+
+
+def test_metric_dictionary_and_playlist_export_are_on_production_routes(tmp_path: Path):
+    _run(_test_metric_dictionary_and_playlist_export_are_on_production_routes, tmp_path)
+
+
+async def _test_metric_dictionary_and_playlist_export_are_on_production_routes(tmp_path: Path):
+    async with api_client(tmp_path) as (_, client):
+        dictionary = await client.get("/api/metrics/dictionary")
+        assert dictionary.status_code == 200
+        assert "possession_pct" in dictionary.json()["metrics"]
+        assert dictionary.json()["metrics"]["experimental_shot_quality"]["publishedLabel"] == "experimental_shot_quality"
+
+        interval = await client.post(
+            "/api/playlists/export-interval",
+            json={"timestampStart": 3, "timestampEnd": 5, "sourceFps": 25},
+        )
+        assert interval.status_code == 200
+        assert interval.json()["sourceStartSeconds"] == 3
+        assert interval.json()["sourceEndSeconds"] == 5
+        assert interval.json()["sourceEndFrameExclusive"] == 125
