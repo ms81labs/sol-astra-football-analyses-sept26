@@ -856,6 +856,36 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
     [activeMatch, beginLoadingOperation, finishLoadingOperation, loadWorkspaceIntoState],
   );
 
+  const handleSwapTeams = useCallback(() => {
+    if (!activeMatch?.id || requiresTeamSelection) return;
+    const matchId = activeMatch.id;
+    const expectedVersion = correctionVersionRef.current;
+    setCorrectionSaveState('pending');
+    void submitMatchCorrection(matchId, {
+      kind: 'team_mapping',
+      payload: { swap: true },
+      expectedVersion,
+    })
+      .then(async (saved) => {
+        setCorrectionSaveState(saved.saveState as 'saved' | 'pending' | 'conflicted' | 'unavailable');
+        if (saved.saveState === 'saved' && typeof saved.version === 'number') {
+          correctionVersionRef.current = saved.version;
+        }
+        if (saved.correctionId) {
+          setCorrectionHistory((previous) => [
+            ...previous,
+            { correctionId: saved.correctionId, kind: 'team_mapping', saveState: saved.saveState, undoOf: null },
+          ]);
+        }
+        if (saved.saveState === 'saved') {
+          await loadWorkspaceIntoState(matchId, { prepend: true, force: true });
+        }
+      })
+      .catch(() => {
+        setCorrectionSaveState('unavailable');
+      });
+  }, [activeMatch?.id, loadWorkspaceIntoState, requiresTeamSelection]);
+
   const handleVideoTimeChange = useCallback(
     (time: number) => {
       if (frameTimestamps.length === 0) return;
@@ -1298,6 +1328,15 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
                 >
                   Report Issue
                 </button>
+                {!requiresTeamSelection && (
+                  <button
+                    type="button"
+                    onClick={handleSwapTeams}
+                    className="px-3 py-1.5 rounded border border-sky-600/30 bg-sky-900/20 text-sky-300 text-xs font-semibold hover:bg-sky-900/40 transition-colors"
+                  >
+                    Swap teams
+                  </button>
+                )}
               </div>
             </div>
           )}

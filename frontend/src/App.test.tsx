@@ -221,6 +221,7 @@ describe('App match workspace loading', () => {
     expect(screen.getByText(/do not establish a whole-match frequency/i)).toBeTruthy();
     expect(screen.getByRole('region', { name: /holdout calibration/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /measure holdout/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /swap teams/i })).toBeTruthy();
     expect(screen.getByRole('region', { name: /incident review/i })).toBeTruthy();
     expect(screen.queryAllByText(/attackerX=0/)).toHaveLength(0);
     expect(screen.queryAllByText(/line=0/)).toHaveLength(0);
@@ -550,6 +551,60 @@ describe('App match workspace loading', () => {
     expect(await screen.findByText(/holdout accepted/i)).toBeTruthy();
     expect(screen.getByText(/derived distance 5.25 m/i)).toBeTruthy();
     expect(screen.queryByText(/derived distance 0(\.0)? m/i)).toBeNull();
+  });
+
+  it('swaps stored teams on the loaded match without a vision rerun', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && init?.method === 'POST' && !String(url).includes('/undo')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            correctionId: 'swap-1',
+            saveState: 'saved',
+            kind: 'team_mapping',
+            rebuild: ['team_state', 'events', 'metrics', 'report'],
+            visionRerun: false,
+          }),
+        } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    fireEvent.click(screen.getByRole('button', { name: /swap teams/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/matches/match-a/corrections'))).toBe(true);
+    });
+    const swapCall = fetchMock.mock.calls.find(([url, init]) => (
+      String(url).includes('/api/matches/match-a/corrections')
+      && !String(url).includes('/undo')
+      && init?.method === 'POST'
+    ));
+    expect(swapCall?.[1]?.body).toContain('"kind":"team_mapping"');
+    expect(swapCall?.[1]?.body).toContain('"swap":true');
+    expect(swapCall?.[1]?.body).not.toContain('"visionRerun":true');
+    expect(swapCall?.[1]?.body).not.toContain('"frames"');
+    await waitFor(() => {
+      expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(2);
+    });
   });
 
   it('loads a selected match once and does not reload the active match', async () => {
