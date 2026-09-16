@@ -74,17 +74,25 @@ export default function DashboardPanel({ onClose, onSelectMatch }: DashboardPane
                                         </div>
                                         <div className="bg-slate-900 rounded-lg p-3">
                                             <div className="text-slate-400 text-xs mb-1">Experimental shot quality For / Against</div>
+                                            {summary.avgMyTeamXg == null || summary.avgEnemyXg == null ? (
+                                                <div className="text-lg font-bold text-slate-400">Unavailable</div>
+                                            ) : (
                                             <div className="text-lg font-bold">
                                                 <span className="text-emerald-400">{summary.avgMyTeamXg.toFixed(2)}</span>
                                                 <span className="text-slate-500 mx-1">/</span>
                                                 <span className="text-red-400">{summary.avgEnemyXg.toFixed(2)}</span>
                                             </div>
+                                            )}
                                         </div>
                                         <div className="bg-slate-900 rounded-lg p-3">
                                             <div className="text-slate-400 text-xs mb-1">Experimental shot quality Diff</div>
+                                            {summary.avgXgDiff == null ? (
+                                                <div className="text-lg font-bold text-slate-400">Unavailable</div>
+                                            ) : (
                                             <div className={`text-lg font-bold ${summary.avgXgDiff >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                                                 {summary.avgXgDiff >= 0 ? '+' : ''}{summary.avgXgDiff.toFixed(2)}
                                             </div>
+                                            )}
                                         </div>
                                         <div className="bg-slate-900 rounded-lg p-3">
                                             <div className="text-slate-400 text-xs mb-1">Sprints For / Against</div>
@@ -100,7 +108,7 @@ export default function DashboardPanel({ onClose, onSelectMatch }: DashboardPane
                                         </div>
                                         <div className="bg-slate-900 rounded-lg p-3">
                                             <div className="text-slate-400 text-xs mb-1">Top Formation</div>
-                                            <div className="text-lg font-bold text-slate-100">{summary.mostUsedFormation}</div>
+                                            <div className="text-lg font-bold text-slate-100">{summary.mostUsedFormation || 'Unavailable'}</div>
                                         </div>
                                     </div>
                                 ) : null}

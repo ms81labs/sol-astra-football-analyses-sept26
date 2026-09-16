@@ -96,8 +96,8 @@ export interface MatchStats {
     enemyTopSpeed: number | null;
     myTeamSprints: number | null;
     enemySprints: number | null;
-    myTeamXg: number;
-    enemyXg: number;
+    myTeamXg: number | null;
+    enemyXg: number | null;
     myTeamDefensiveLineHeight: number | null;
     enemyDefensiveLineHeight: number | null;
     myTeamDefensiveTeamLength: number | null;
@@ -108,7 +108,7 @@ export interface MatchStats {
     enemyHighPressRegains: number;
     myTeamCounterpressRecoverySeconds: number | null;
     enemyCounterpressRecoverySeconds: number | null;
-    formation: string;         // e.g. "4-4-2"
+    formation: string | null;         // e.g. "4-4-2"
     metricAvailability?: Array<{
         metric: string;
         definitionVersion: string;
@@ -284,8 +284,8 @@ export interface ShotSummary {
     enemyShots: number;
     myTeamBoxShots: number;
     enemyBoxShots: number;
-    myTeamXg: number;
-    enemyXg: number;
+    myTeamXg: number | null;
+    enemyXg: number | null;
 }
 
 export interface PlayerContribution {
@@ -442,12 +442,12 @@ export interface SeasonTrendPoint {
 export interface DashboardSummary {
     matchCount: number;
     avgPossession: number | null;
-    avgMyTeamXg: number;
-    avgEnemyXg: number;
-    avgXgDiff: number;
+    avgMyTeamXg: number | null;
+    avgEnemyXg: number | null;
+    avgXgDiff: number | null;
     avgMyTeamSprints: number | null;
     avgEnemySprints: number | null;
-    mostUsedFormation: string;
+    mostUsedFormation: string | null;
 }
 
 export interface DashboardComparison {
@@ -456,7 +456,7 @@ export interface DashboardComparison {
     previousMatchId: string;
     previousMatchName: string;
     possessionDelta: number | null;
-    xgDiffDelta: number;
+    xgDiffDelta: number | null;
     myTeamSprintsDelta: number | null;
     enemySprintsDelta: number | null;
 }

@@ -137,9 +137,9 @@ def _detect_themes_from_summary(summary: dict) -> list[tuple[str, float]]:
         summary_text_parts.append("solid transition")
     
     # xG
-    xg_my = summary.get("myTeamXg", 0)
-    xg_enemy = summary.get("enemyXg", 0)
-    if xg_my > xg_enemy * 1.5:
+    xg_my = summary.get("myTeamXg")
+    xg_enemy = summary.get("enemyXg")
+    if xg_my is not None and xg_enemy is not None and xg_my > xg_enemy * 1.5:
         summary_text_parts.append("dominant attack high quality chances")
     
     summary_text = " ".join(summary_text_parts)

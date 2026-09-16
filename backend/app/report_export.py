@@ -158,7 +158,7 @@ def render_match_report_html(
     fallback_summary = (
         possession_summary +
         f"{_format_available_metric(summary, 'experimental_shot_quality', 'myTeamXg', 2)} experimental shot quality for my team and "
-        f"{_format_number(summary.get('enemyXg', 0.0), 2)} experimental shot quality against."
+        f"{_format_measured(summary.get('enemyXg'), 2)} experimental shot quality against."
     )
 
     return f"""<!doctype html>
@@ -240,8 +240,8 @@ def render_match_report_html(
         <div class="grid-3">
           {_render_kv_card("Possession", _format_percent(summary.get("possession")))}
           {_render_kv_card("My Team experimental shot quality", _format_available_metric(summary, "experimental_shot_quality", "myTeamXg", 2))}
-          {_render_kv_card("Enemy experimental shot quality", _format_number(summary.get("enemyXg"), 2))}
-          {_render_kv_card("Formation", str(summary.get("formation", "-")))}
+          {_render_kv_card("Enemy experimental shot quality", _format_measured(summary.get("enemyXg"), 2))}
+          {_render_kv_card("Formation", "Unavailable" if not summary.get("formation") or summary.get("formation") == "-" else str(summary.get("formation")))}
           {_render_kv_card("My Team PPDA", _format_available_metric(summary, "my_team_ppda", "myTeamPpda", 1))}
           {_render_kv_card("Enemy PPDA", _format_available_metric(summary, "enemy_ppda", "enemyPpda", 1))}
           {_render_kv_card("My Team Defensive Line", _format_measured(summary.get("myTeamDefensiveLineHeight"), 1))}

@@ -182,11 +182,11 @@ export function summarizeShots(markers: ShotMarker[]): ShotSummary {
         if (marker.team === 'my_team') {
             summary.myTeamShots += 1;
             summary.myTeamBoxShots += Number(marker.inBox);
-            summary.myTeamXg = Math.round((summary.myTeamXg + (marker.xg ?? 0)) * 100) / 100;
+            summary.myTeamXg = Math.round(((summary.myTeamXg ?? 0) + (marker.xg ?? 0)) * 100) / 100;
         } else {
             summary.enemyShots += 1;
             summary.enemyBoxShots += Number(marker.inBox);
-            summary.enemyXg = Math.round((summary.enemyXg + (marker.xg ?? 0)) * 100) / 100;
+            summary.enemyXg = Math.round(((summary.enemyXg ?? 0) + (marker.xg ?? 0)) * 100) / 100;
         }
         return summary;
     }, {
@@ -194,8 +194,8 @@ export function summarizeShots(markers: ShotMarker[]): ShotSummary {
         enemyShots: 0,
         myTeamBoxShots: 0,
         enemyBoxShots: 0,
-        myTeamXg: 0,
-        enemyXg: 0,
+        myTeamXg: null,
+        enemyXg: null,
     });
 }
 

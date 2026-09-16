@@ -125,8 +125,8 @@ class MatchSummary(BaseModel):
     enemyTopSpeed: float | None
     myTeamSprints: int | None
     enemySprints: int | None
-    myTeamXg: float = 0.0
-    enemyXg: float = 0.0
+    myTeamXg: float | None = None
+    enemyXg: float | None = None
     myTeamDefensiveLineHeight: float | None = None
     enemyDefensiveLineHeight: float | None = None
     myTeamDefensiveTeamLength: float | None = None
@@ -137,7 +137,7 @@ class MatchSummary(BaseModel):
     enemyHighPressRegains: int = 0
     myTeamCounterpressRecoverySeconds: float | None = None
     enemyCounterpressRecoverySeconds: float | None = None
-    formation: str
+    formation: str | None = None
     # Defensive context metrics
     myTeamBlockHeight: str | None = None
     enemyBlockHeight: str | None = None
@@ -432,12 +432,12 @@ class DashboardSummary(BaseModel):
     """Aggregated totals and averages across all completed matches."""
     matchCount: int
     avgPossession: float | None
-    avgMyTeamXg: float
-    avgEnemyXg: float
-    avgXgDiff: float
+    avgMyTeamXg: float | None
+    avgEnemyXg: float | None
+    avgXgDiff: float | None
     avgMyTeamSprints: float | None
     avgEnemySprints: float | None
-    mostUsedFormation: str
+    mostUsedFormation: str | None
 
 
 class SeasonTrendPoint(BaseModel):
@@ -455,7 +455,7 @@ class DashboardComparison(BaseModel):
     previousMatchId: str
     previousMatchName: str
     possessionDelta: float | None
-    xgDiffDelta: float
+    xgDiffDelta: float | None
     myTeamSprintsDelta: float | None
     enemySprintsDelta: float | None
 

@@ -83,7 +83,10 @@ class TestDashboardEndpoint:
         data = response.json()
         assert data["summary"]["matchCount"] == 0
         assert data["summary"]["avgPossession"] is None
-        assert data["summary"]["mostUsedFormation"] == "-"
+        assert data["summary"]["mostUsedFormation"] is None
+        assert data["summary"]["avgMyTeamXg"] is None
+        assert data["summary"]["avgEnemyXg"] is None
+        assert data["summary"]["avgXgDiff"] is None
         assert data["comparison"] is None
         assert data["trends"] == []
 

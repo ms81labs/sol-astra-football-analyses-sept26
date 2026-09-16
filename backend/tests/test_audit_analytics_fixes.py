@@ -99,7 +99,7 @@ def test_processing_and_reprocessing_apply_direction_to_saved_outputs(tmp_path, 
     assert storage.load_frames(match.id)[0].myTeam[0].x==10
     reprocess_video_match(storage,match.id,config=MatchConfig(attackDirection='left_to_right'))
     summary,_,_,shots=storage.load_analytics(match.id)
-    assert summary.myTeamXg==0
+    assert summary.myTeamXg is None
     assert shots==[]
     assert storage.load_frames(match.id)[0].myTeam[0].x==10
 

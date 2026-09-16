@@ -84,8 +84,8 @@ const reviewStats: MatchStats = {
   enemyTopSpeed: null,
   myTeamSprints: null,
   enemySprints: null,
-  myTeamXg: 0,
-  enemyXg: 0,
+  myTeamXg: null,
+  enemyXg: null,
   myTeamDefensiveLineHeight: null,
   enemyDefensiveLineHeight: null,
   myTeamDefensiveTeamLength: null,
@@ -96,7 +96,7 @@ const reviewStats: MatchStats = {
   enemyHighPressRegains: 0,
   myTeamCounterpressRecoverySeconds: null,
   enemyCounterpressRecoverySeconds: null,
-  formation: '-',
+  formation: null,
 };
 
 function reviewWorkspace(): Workspace {

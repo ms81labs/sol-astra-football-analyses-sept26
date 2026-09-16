@@ -76,6 +76,17 @@ describe('resolvePassingNetworkEdgesForFrame', () => {
 });
 
 describe('summarizeShots xg totals', () => {
+  it('does not invent experimental shot quality when there are no shots', () => {
+    expect(summarizeShots([])).toEqual({
+      myTeamShots: 0,
+      enemyShots: 0,
+      myTeamBoxShots: 0,
+      enemyBoxShots: 0,
+      myTeamXg: null,
+      enemyXg: null,
+    });
+  });
+
   it('sums shot quality values by team when xg is available', () => {
     expect(
       summarizeShots([

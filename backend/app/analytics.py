@@ -962,7 +962,10 @@ def build_formation_timeline(
         start = max(0, index - half_window)
         end = min(len(canonical_frames), index + half_window + 1)
         window_formations = [formation for formation in raw_formations[start:end] if formation != "-"]
-        smoothed_formations.append(Counter(window_formations).most_common(1)[0][0] if window_formations else "-")
+        if not window_formations or raw_formations[index] == "-":
+            smoothed_formations.append("-")
+        else:
+            smoothed_formations.append(Counter(window_formations).most_common(1)[0][0])
 
     timeline: list[FormationSegment] = []
     for index, formation in enumerate(smoothed_formations):
@@ -987,9 +990,9 @@ def build_formation_timeline(
     return timeline
 
 
-def _select_primary_formation(timeline: list[FormationSegment]) -> str:
+def _select_primary_formation(timeline: list[FormationSegment]) -> str | None:
     if not timeline:
-        return "-"
+        return None
     primary = max(
         timeline,
         key=lambda segment: (
@@ -997,6 +1000,8 @@ def _select_primary_formation(timeline: list[FormationSegment]) -> str:
             segment.endTimestamp - segment.startTimestamp,
         ),
     )
+    if primary.formation == "-" or primary.endFrameId <= primary.startFrameId:
+        return None
     return primary.formation
 
 
@@ -1112,16 +1117,16 @@ def summarize_match(
                 current_sprints["enemy"].add(current_player.id)
         sprinting = current_sprints
 
-    last_frame = directional_frames[-1] if directional_frames else None
     formation = _select_primary_formation(formation_timeline)
-    if formation == "-" and last_frame:
-        formation = detect_formation([{"x": player.x, "y": player.y} for player in last_frame.myTeam])
     my_team_avg_x = my_team_pos_sum["x"] / my_team_pos_sum["count"] if my_team_pos_sum["count"] else 50.0
     my_team_avg_y = my_team_pos_sum["y"] / my_team_pos_sum["count"] if my_team_pos_sum["count"] else 50.0
     enemy_avg_x = enemy_pos_sum["x"] / enemy_pos_sum["count"] if enemy_pos_sum["count"] else 50.0
     enemy_avg_y = enemy_pos_sum["y"] / enemy_pos_sum["count"] if enemy_pos_sum["count"] else 50.0
-    my_team_xg = round(sum(shot.xg for shot in (shots or []) if shot.team == "my_team"), 2)
-    enemy_xg = round(sum(shot.xg for shot in (shots or []) if shot.team == "enemy"), 2)
+    labelled_shots = shots or []
+    my_team_shot_quality = [shot.xg for shot in labelled_shots if shot.team == "my_team"]
+    enemy_shot_quality = [shot.xg for shot in labelled_shots if shot.team == "enemy"]
+    my_team_xg = round(sum(my_team_shot_quality), 2) if my_team_shot_quality else None
+    enemy_xg = round(sum(enemy_shot_quality), 2) if enemy_shot_quality else None
     (
         my_team_defensive_line_height,
         enemy_defensive_line_height,
@@ -1250,14 +1255,15 @@ def _summary_metric_availability(
         )
         for name in physical_values
     ]
+    labelled_shot_quality = [value for value in (summary.myTeamXg, summary.enemyXg) if value is not None]
     shot_quality = MetricAvailabilityRecord(
         metric="experimental_shot_quality",
-        value=round(summary.myTeamXg + summary.enemyXg, 2),
-        availability="experimental",
+        value=round(sum(labelled_shot_quality), 2) if labelled_shot_quality else None,
+        availability="experimental" if labelled_shot_quality else "unknown",
         publishedLabel="experimental_shot_quality",
         unit="probability",
         denominator="labelled_shots",
-        reasonCodes=[],
+        reasonCodes=[] if labelled_shot_quality else ["NO_LABELLED_SHOTS"],
     )
     return [
         possession,

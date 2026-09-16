@@ -349,7 +349,11 @@ def _build_match_signals(summary: MatchSummary | None, formation_timeline: list[
         )
     return {
         "possession": summary.possession,
-        "xgBalance": _round_two(summary.myTeamXg - summary.enemyXg),
+        "xgBalance": (
+            None
+            if summary.myTeamXg is None or summary.enemyXg is None
+            else _round_two(summary.myTeamXg - summary.enemyXg)
+        ),
         "pressingEdge": pressing_edge,
         "shotQualityLabel": "experimental_shot_quality",
         "defensiveLineEdge": (

@@ -633,15 +633,25 @@ def _dashboard_metric_measured(summary: dict, metric: str) -> bool:
     return record.get("availability") in {"available", "experimental"}
 
 
-def _dashboard_average(summaries: list[dict], *, field: str, metric: str) -> float | None:
+def _dashboard_average(summaries: list[dict], *, field: str, metric: str, digits: int = 1) -> float | None:
     values = [
-        float(summary.get(field, 0) or 0)
+        float(value)
         for summary in summaries
         if _dashboard_metric_measured(summary, metric)
+        for value in [summary.get(field)]
+        if value is not None
     ]
     if not values:
         return None
-    return round(sum(values) / len(values), 1)
+    return round(sum(values) / len(values), digits)
+
+
+def _xg_balance(summary: dict) -> float | None:
+    my_xg = summary.get("myTeamXg")
+    enemy_xg = summary.get("enemyXg")
+    if my_xg is None or enemy_xg is None:
+        return None
+    return round(float(my_xg) - float(enemy_xg), 2)
 
 
 def create_app(
@@ -3629,33 +3639,32 @@ def create_app(
         if not all_matches:
             empty = DashboardResponse(
                 summary=DashboardSummary(
-                    matchCount=0, avgPossession=None, avgMyTeamXg=0.0, avgEnemyXg=0.0,
-                    avgXgDiff=0.0, avgMyTeamSprints=None, avgEnemySprints=None,
-                    mostUsedFormation="-",
+                    matchCount=0, avgPossession=None, avgMyTeamXg=None, avgEnemyXg=None,
+                    avgXgDiff=None, avgMyTeamSprints=None, avgEnemySprints=None,
+                    mostUsedFormation=None,
                 ),
             )
             return empty.model_dump(mode="json")
 
         summaries = [m["summary"] for m in all_matches]
-        n = len(summaries)
         measured_possession = [s["possession"] for s in summaries if s.get("possession") is not None]
         avg_pos = sum(measured_possession) / len(measured_possession) if measured_possession else None
-        avg_my_xg = sum(s.get("myTeamXg", 0) for s in summaries) / n
-        avg_enemy_xg = sum(s.get("enemyXg", 0) for s in summaries) / n
-        avg_xg_diff = avg_my_xg - avg_enemy_xg
+        avg_my_xg = _dashboard_average(summaries, field="myTeamXg", metric="experimental_shot_quality", digits=2)
+        avg_enemy_xg = _dashboard_average(summaries, field="enemyXg", metric="experimental_shot_quality", digits=2)
+        avg_xg_diff = None if avg_my_xg is None or avg_enemy_xg is None else round(avg_my_xg - avg_enemy_xg, 2)
         avg_my_sprints = _dashboard_average(summaries, field="myTeamSprints", metric="my_team_sprints")
         avg_enemy_sprints = _dashboard_average(summaries, field="enemySprints", metric="enemy_sprints")
 
         from collections import Counter
-        formations = [s.get("formation", "-") for s in summaries if s.get("formation")]
-        most_used = Counter(formations).most_common(1)[0][0] if formations else "-"
+        formations = [s.get("formation") for s in summaries if s.get("formation") and s.get("formation") != "-"]
+        most_used = Counter(formations).most_common(1)[0][0] if formations else None
 
         summary = DashboardSummary(
-            matchCount=n,
+            matchCount=len(summaries),
             avgPossession=round(avg_pos, 1) if avg_pos is not None else None,
-            avgMyTeamXg=round(avg_my_xg, 2),
-            avgEnemyXg=round(avg_enemy_xg, 2),
-            avgXgDiff=round(avg_xg_diff, 2),
+            avgMyTeamXg=avg_my_xg,
+            avgEnemyXg=avg_enemy_xg,
+            avgXgDiff=avg_xg_diff,
             avgMyTeamSprints=avg_my_sprints,
             avgEnemySprints=avg_enemy_sprints,
             mostUsedFormation=most_used,
@@ -3691,10 +3700,11 @@ def create_app(
                     if s_latest.get("possession") is not None and s_prev.get("possession") is not None
                     else None
                 ),
-                xgDiffDelta=round(
-                    (s_latest.get("myTeamXg", 0) - s_latest.get("enemyXg", 0))
-                    - (s_prev.get("myTeamXg", 0) - s_prev.get("enemyXg", 0)),
-                    2,
+                xgDiffDelta=(
+                    round(latest_balance - previous_balance, 2)
+                    if (latest_balance := _xg_balance(s_latest)) is not None
+                    and (previous_balance := _xg_balance(s_prev)) is not None
+                    else None
                 ),
                 myTeamSprintsDelta=(
                     round(s_latest.get("myTeamSprints", 0) - s_prev.get("myTeamSprints", 0), 1)

@@ -1483,6 +1483,54 @@ def test_summarize_match_uses_dominant_windowed_formation_instead_of_last_frame(
     assert summary.formation == "4-4-2"
 
 
+def test_summarize_match_does_not_publish_a_single_last_frame_as_formation():
+    def make_players(rows: list[int]) -> list[dict]:
+        players: list[dict] = []
+        track_id = 1
+        for row_index, row_count in enumerate(rows):
+            for column in range(row_count):
+                players.append(
+                    {
+                        "id": track_id,
+                        "x": 6 + row_index * 20 + column,
+                        "y": 15 + column * 10,
+                        "confidence": 0.95,
+                    }
+                )
+                track_id += 1
+        return players
+
+    frames = [
+        {"frameId": 0, "timestamp": 0.0, "ball": None, "myTeam": [{"id": 1, "x": 10.0, "y": 50.0, "confidence": 0.9}], "enemies": []},
+        {"frameId": 1, "timestamp": 0.2, "ball": None, "myTeam": [{"id": 1, "x": 10.0, "y": 50.0, "confidence": 0.9}], "enemies": []},
+        {"frameId": 2, "timestamp": 0.4, "ball": None, "myTeam": make_players([1, 4, 4, 2]), "enemies": []},
+    ]
+
+    summary = summarize_match(frames, [])
+
+    assert summary.formation is None
+
+
+def test_summarize_match_does_not_publish_zero_experimental_shot_quality_without_labelled_shots():
+    frames = [
+        {
+            "frameId": 0,
+            "timestamp": 0.0,
+            "ball": {"x": 50.0, "y": 50.0, "confidence": 0.9},
+            "myTeam": [{"id": 1, "x": 40.0, "y": 50.0, "confidence": 0.9}],
+            "enemies": [{"id": 11, "x": 60.0, "y": 50.0, "confidence": 0.9}],
+        }
+    ]
+
+    summary = summarize_match(frames, [])
+
+    assert summary.myTeamXg is None
+    assert summary.enemyXg is None
+    shot_quality = next(item for item in summary.metricAvailability if item.metric == "experimental_shot_quality")
+    assert shot_quality.value is None
+    assert shot_quality.availability != "experimental"
+
+
 def test_build_shot_analytics_scores_central_box_shots_higher_than_wide_efforts():
     frames = [
         {
@@ -1792,7 +1840,8 @@ def test_summarize_match_marks_ppda_unknown_when_pressing_denominator_is_zero():
     assert summary.myTeamTransitionExposure is None
     assert summary.enemyTransitionExposure is None
     shot_quality = _metric(summary, "experimental_shot_quality")
-    assert shot_quality.availability == "experimental"
+    assert shot_quality.availability == "unknown"
+    assert shot_quality.value is None
     assert shot_quality.publishedLabel == "experimental_shot_quality"
 
 

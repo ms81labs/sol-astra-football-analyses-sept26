@@ -39,8 +39,8 @@ function ComparisonArrow({ current, previous }: { current: number; previous: num
     );
 }
 
-function FormationDiagram({ formation }: { formation: string }) {
-    if (formation === '-') return <span className="text-slate-500">—</span>;
+function FormationDiagram({ formation }: { formation: string | null }) {
+    if (!formation || formation === '-') return <span className="text-slate-500">—</span>;
 
     const rows = formation.split('-').map(Number).filter(n => !isNaN(n));
     const totalRows = rows.length;
@@ -110,9 +110,11 @@ export default function StatsPanel({
     const enemyPpda = metricAvailability.find((metric) => metric.metric === 'enemy_ppda');
     const ppdaUnavailable = (record?: { availability: string } | undefined, value?: number | null) =>
       value == null || (record != null && record.availability !== 'available' && record.availability !== 'experimental');
-    const formationWithheld = formationAvailability != null
+    const formationWithheld = stats.formation == null
+      || stats.formation === '-'
+      || (formationAvailability != null
       && formationAvailability.availability !== 'available'
-      && formationAvailability.availability !== 'experimental';
+      && formationAvailability.availability !== 'experimental');
 
     return (
         <div className="w-full max-w-4xl mt-4 space-y-3">
@@ -364,13 +366,13 @@ export default function StatsPanel({
                                 <p className="text-xs text-slate-500 mb-1">My Team Shots</p>
                                 <p className="text-2xl font-bold text-rose-300">{shotSummary?.myTeamShots ?? 0}</p>
                                 <p className="text-xs text-slate-400">{shotSummary?.myTeamBoxShots ?? 0} in box</p>
-                                <p className="text-xs text-emerald-400 mt-1">experimental shot quality {shotSummary?.myTeamXg?.toFixed(2) ?? '0.00'}</p>
+                                <p className="text-xs text-emerald-400 mt-1">{shotSummary?.myTeamXg == null ? 'Unavailable' : `experimental shot quality ${shotSummary.myTeamXg.toFixed(2)}`}</p>
                             </div>
                             <div className="rounded-lg border border-slate-700 bg-slate-900/70 p-3">
                                 <p className="text-xs text-slate-500 mb-1">Enemy Shots</p>
                                 <p className="text-2xl font-bold text-rose-400">{shotSummary?.enemyShots ?? 0}</p>
                                 <p className="text-xs text-slate-400">{shotSummary?.enemyBoxShots ?? 0} in box</p>
-                                <p className="text-xs text-emerald-400 mt-1">experimental shot quality {shotSummary?.enemyXg?.toFixed(2) ?? '0.00'}</p>
+                                <p className="text-xs text-emerald-400 mt-1">{shotSummary?.enemyXg == null ? 'Unavailable' : `experimental shot quality ${shotSummary.enemyXg.toFixed(2)}`}</p>
                             </div>
                         </div>
                     </div>

@@ -178,6 +178,21 @@ describe('StatsPanel', () => {
     expect(scoped.getByRole('heading', { name: 'Formation' })).toBeTruthy();
   });
 
+  it('withholds a placeholder formation and unpublished experimental shot quality', () => {
+    const { container } = render(
+      <StatsPanel
+        stats={{ ...baseStats, formation: null, myTeamXg: null, enemyXg: null }}
+        benchmark={benchmarkTruthReady}
+        shotSummary={{ ...shotSummary, myTeamXg: null, enemyXg: null }}
+      />,
+    );
+    const scoped = within(container);
+    expect(scoped.getByRole('heading', { name: 'Formation' })).toBeTruthy();
+    expect(scoped.getAllByText('Unavailable').length).toBeGreaterThanOrEqual(1);
+    expect(container.textContent).not.toContain('0.00 experimental shot quality');
+    expect(container.textContent).not.toMatch(/(?:^|[^-])4-3-3/);
+  });
+
   it('withholds formation when stored availability is not eligible', () => {
     const { container } = render(
       <StatsPanel
