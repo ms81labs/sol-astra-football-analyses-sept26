@@ -47,7 +47,6 @@ export default function IncidentReview({ touchStart, touchEnd, samples }: Incide
         {samples.map((sample) => (
           <li key={sample.time}>
             t={sample.time} attackerX={sample.attackerX} line={sample.offsideLineX}
-            {sample.indeterminate ? ' indeterminate' : ''}
           </li>
         ))}
       </ul>
