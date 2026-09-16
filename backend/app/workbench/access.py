@@ -113,7 +113,9 @@ def protocol_network_allowlist(*, url: str) -> dict[str, Any]:
 
 def constrained_decoder(*, argv: list[str], network_enabled: bool) -> dict[str, Any]:
     joined = " ".join(argv)
-    networked = network_enabled or "http://" in joined or "https://" in joined
+    networked = network_enabled or any(
+        token.startswith(("http:", "https:", "ftp:", "rtmp:", "rtsp:")) or "://" in token for token in argv
+    ) or "http://" in joined or "https://" in joined
     if not argv or argv[0] not in {"ffmpeg", "ffprobe"} or networked:
         return {"admitted": False, "reasonCodes": ["UNCONSTRAINED_DECODER"]}
     return {"admitted": True, "reasonCodes": []}
