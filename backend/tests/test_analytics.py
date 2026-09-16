@@ -7,8 +7,9 @@ from backend.app.analytics import (
     detect_events,
     partition_detected_events,
     summarize_match,
+    _get_event_x,
 )
-from backend.app.schemas import BallOwnership, MatchStateFrame
+from backend.app.schemas import BallOwnership, DetectedEvent, FrameData, MatchStateFrame
 from backend.app.team_classification import classify_player_rows_by_cluster, cluster_track_colors
 
 
@@ -1871,4 +1872,18 @@ def test_summarize_match_keeps_measured_ppda_and_withholds_physical_totals_by_de
     distance = _metric(summary, "my_team_distance_m")
     assert distance.availability in {"unknown", "withheld"}
     assert distance.published_value() is None
+
+
+def test_event_x_stays_unknown_without_a_source_position() -> None:
+    event = DetectedEvent(
+        type="recovery",
+        frameId=9,
+        timestamp=1.8,
+        team="my_team",
+        toTrackId=7,
+        description="missing frame",
+    )
+    assert _get_event_x(event, {}) is None
+    empty = FrameData.model_validate({"frameId": 0, "timestamp": 0.0, "myTeam": [], "enemies": []})
+    assert _get_event_x(event.model_copy(update={"frameId": 0}), {0: empty}) is None
 

@@ -464,8 +464,22 @@ def _summarize_defensive_context(
         return round(turnovers / high_press_regains, 2)
     
     # Get high-press regains from events (recoveries in attacking third)
-    my_team_high_press = sum(1 for e in events if e.team == "my_team" and e.type in regain_types and _is_pressing_zone("my_team", _get_event_x(e, frame_by_id)))
-    enemy_high_press = sum(1 for e in events if e.team == "enemy" and e.type in regain_types and _is_pressing_zone("enemy", _get_event_x(e, frame_by_id)))
+    my_team_high_press = sum(
+        1
+        for event in events
+        if event.team == "my_team"
+        and event.type in regain_types
+        and (event_x := _get_event_x(event, frame_by_id)) is not None
+        and _is_pressing_zone("my_team", event_x)
+    )
+    enemy_high_press = sum(
+        1
+        for event in events
+        if event.team == "enemy"
+        and event.type in regain_types
+        and (event_x := _get_event_x(event, frame_by_id)) is not None
+        and _is_pressing_zone("enemy", event_x)
+    )
     
     my_team_exposure = calc_exposure(turnovers_faced["my_team"], my_team_high_press)
     enemy_exposure = calc_exposure(turnovers_faced["enemy"], enemy_high_press)
@@ -480,18 +494,18 @@ def _summarize_defensive_context(
     )
 
 
-def _get_event_x(event: DetectedEvent, frame_by_id: dict[int, FrameData]) -> float:
+def _get_event_x(event: DetectedEvent, frame_by_id: dict[int, FrameData]) -> float | None:
     """Get x position from an event's frame."""
     frame = frame_by_id.get(event.frameId)
     if frame is None:
-        return 50.0
-    
+        return None
+
     track_id = event.toTrackId or event.fromTrackId
     if track_id is None:
-        return 50.0
-    
+        return None
+
     position = _lookup_player_position(frame, event.team, track_id)
-    return position[0] if position else 50.0
+    return position[0] if position else None
 
 
 def _turnover_distance(previous_position: tuple[float, float] | None, current_position: tuple[float, float] | None) -> float | None:

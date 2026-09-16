@@ -1,9 +1,12 @@
 import { useState } from 'react';
 
+import { exportPlaylistInterval } from '../utils/workbench';
+
 interface PlaylistClip {
   start: number;
   end: number;
   notes: string;
+  sourceEndFrameExclusive: number;
 }
 
 export default function PlaylistBuilder() {
@@ -11,12 +14,24 @@ export default function PlaylistBuilder() {
   const [end, setEnd] = useState('14');
   const [notes, setNotes] = useState('');
   const [clips, setClips] = useState<PlaylistClip[]>([]);
+  const [exportError, setExportError] = useState<string | null>(null);
 
-  function addClip() {
+  async function addClip() {
     const from = Number(start);
     const to = Number(end);
-    if (!Number.isFinite(from) || !Number.isFinite(to)) return;
-    setClips((current) => [...current, { start: from, end: to, notes }]);
+    if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) return;
+    try {
+      const interval = await exportPlaylistInterval(from, to, 25);
+      setExportError(null);
+      setClips((current) => [...current, {
+        start: interval.sourceStartSeconds,
+        end: interval.sourceEndSeconds,
+        notes,
+        sourceEndFrameExclusive: interval.sourceEndFrameExclusive,
+      }]);
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : 'Failed to export playlist interval');
+    }
   }
 
   return (
@@ -34,12 +49,13 @@ export default function PlaylistBuilder() {
         Notes
         <input value={notes} onChange={(event) => setNotes(event.target.value)} className="mt-1 w-full rounded border border-slate-600 bg-slate-900 px-2 py-1 text-slate-200" />
       </label>
-      <button type="button" onClick={addClip} className="px-3 py-1.5 rounded bg-slate-700 text-xs font-semibold text-white">
+      <button type="button" onClick={() => void addClip()} className="px-3 py-1.5 rounded bg-slate-700 text-xs font-semibold text-white">
         Add clip
       </button>
+      {exportError && <p className="text-xs text-amber-200">{exportError}</p>}
       {clips.map((clip) => (
-        <p key={`${clip.start}-${clip.end}-${clip.notes}`} className="text-xs text-slate-300">
-          {clip.start}s to {clip.end}s{clip.notes ? ` · ${clip.notes}` : ''}
+        <p key={`${clip.start}-${clip.end}-${clip.sourceEndFrameExclusive}-${clip.notes}`} className="text-xs text-slate-300">
+          {clip.start}s to {clip.end}s (frame {clip.sourceEndFrameExclusive} exclusive){clip.notes ? ` · ${clip.notes}` : ''}
         </p>
       ))}
       <p className="text-xs text-slate-500">Reviewed passages do not establish a whole-match frequency.</p>
