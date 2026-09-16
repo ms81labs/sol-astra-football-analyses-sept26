@@ -1490,6 +1490,31 @@ class Storage:
             )
         return {"items": items, "reviewFirst": True, "accepted": False, "measured": False}
 
+    def identity_for_match(self, match_id: str) -> dict:
+        from .workbench.identity import (
+            appearance_embedding_policy,
+            candidate_rejoin,
+            cross_season_identity,
+            face_recognition,
+            reconnect_across_cut,
+        )
+        from .workbench.media import detect_camera_cuts
+
+        self.get_match(match_id)
+        try:
+            frames = self.load_frames(match_id)
+        except FileNotFoundError:
+            frames = []
+        times = [float(frame.timestamp) for frame in frames]
+        cuts = detect_camera_cuts(times) if len(times) > 1 else []
+        payload = reconnect_across_cut(cut_detected=bool(cuts))
+        payload["appearance"] = appearance_embedding_policy()
+        payload["faceRecognition"] = face_recognition(requested=False)
+        payload["crossSeasonIdentity"] = cross_season_identity(requested=False)
+        payload["candidateRejoin"] = candidate_rejoin()
+        payload["cutCount"] = len(cuts)
+        return payload
+
     def load_raw_rows(self, match_id: str) -> list[dict]:
         payload = self._read_json(self._match_dir(match_id) / "raw_rows.json")
         return [dict(item) for item in payload]

@@ -272,6 +272,9 @@ it('loads recovery and landmark preview from production routes and posts deletio
   expect(await screen.findByText(/cleanup unconfirmed/i)).toBeTruthy();
   expect(screen.getByText(/recovery objectives remain unmeasured/i)).toBeTruthy();
   expect(await screen.findByText(/landmark residual unmeasured/i)).toBeTruthy();
+  expect(screen.getByText(/hosted encryption is unproven/i)).toBeTruthy();
+  expect(screen.getByText(/public exposure remains blocked/i)).toBeTruthy();
+  expect(screen.getByText(/native gate is closed/i)).toBeTruthy();
   await fireEvent.click(screen.getByRole('button', { name: /request deletion/i }));
   const deletionCall = fetchMock.mock.calls.find(([url, init]) => String(url).endsWith('/api/access/deletion') && init?.method === 'POST');
   expect(deletionCall).toBeTruthy();

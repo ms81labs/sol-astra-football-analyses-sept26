@@ -47,7 +47,7 @@ import { buildUploadConfig, createEmptyPointInputs } from './utils/uploadConfig'
 import { getUploadFailureGuidance } from './utils/uploadErrors';
 import { findNearestFrameIndex } from './utils/videoSync';
 import { applyReviewShortcut, type ReviewAction } from './utils/reviewShortcuts';
-import { fetchAssistance, fetchIncidentReview, fetchQualityTimeline, fetchRecovery, fetchWorkbenchDossier, requestAccessDeletion, submitMatchCorrection, undoMatchCorrection } from './utils/workbench';
+import { fetchAssistance, fetchIncidentReview, fetchNative, fetchQualityTimeline, fetchRecovery, fetchSecurity, fetchWorkbenchDossier, requestAccessDeletion, submitMatchCorrection, undoMatchCorrection } from './utils/workbench';
 import { windowedTimelineProps } from './utils/windowedTimeline';
 import { splitScores } from './utils/quantities';
 
@@ -260,6 +260,31 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
       .catch(() => {
         if (!cancelled) setProvidersEnabled(false);
       });
+    fetchSecurity()
+      .then((payload) => {
+        if (cancelled || !payload.modelOutput) return;
+        setSecurity({
+          modelTrusted: payload.modelOutput.trusted,
+          hostedEncryptionProven: payload.encryption?.hostedEncryptionProven,
+          signedJobAccessAdmitted: payload.signedJobAccess?.admitted,
+          publicExposureAllowed: payload.publicExposure?.publicExposureAllowed,
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setSecurity(null);
+      });
+    fetchNative()
+      .then((payload) => {
+        if (cancelled || typeof payload.approved !== 'boolean') return;
+        setNative({
+          approved: payload.approved,
+          rpcFleetEnabled: payload.rpcFleet?.enabled,
+          universallyPortable: payload.pinned?.universallyPortable,
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setNative(null);
+      });
     return () => {
       cancelled = true;
     };
@@ -285,6 +310,17 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
   const [deploymentBoundary, setDeploymentBoundary] = useState('loopback');
   const [providersEnabled, setProvidersEnabled] = useState(false);
   const [qualityItems, setQualityItems] = useState<Array<{ id: string; label: string; impact: string }>>([]);
+  const [security, setSecurity] = useState<{
+    modelTrusted?: boolean;
+    hostedEncryptionProven?: boolean;
+    signedJobAccessAdmitted?: boolean;
+    publicExposureAllowed?: boolean;
+  } | null>(null);
+  const [native, setNative] = useState<{
+    approved?: boolean;
+    rpcFleetEnabled?: boolean;
+    universallyPortable?: boolean;
+  } | null>(null);
   const correctionVersionRef = useRef(0);
   const matchStats = activeMatch?.stats || null;
   const matchBenchmark = activeMatch?.benchmark || null;
@@ -1192,13 +1228,21 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
             />
           </div>
           <div className="mb-3 shrink-0">
-            <SecurityBoundary />
+            <SecurityBoundary
+              modelTrusted={security?.modelTrusted}
+              hostedEncryptionProven={security?.hostedEncryptionProven}
+              signedJobAccessAdmitted={security?.signedJobAccessAdmitted}
+            />
           </div>
           <div className="mb-3 shrink-0">
-            <ReleaseGate />
+            <ReleaseGate publicExposureAllowed={security?.publicExposureAllowed} />
           </div>
           <div className="mb-3 shrink-0">
-            <NativePackaging />
+            <NativePackaging
+              approved={native?.approved}
+              rpcFleetEnabled={native?.rpcFleetEnabled}
+              universallyPortable={native?.universallyPortable}
+            />
           </div>
           <div className="mb-3 shrink-0">
             <DrawingToolbar

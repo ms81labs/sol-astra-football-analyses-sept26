@@ -356,3 +356,34 @@ export async function fetchAssistance() {
   }
   return response.json() as Promise<AssistanceSnapshot>;
 }
+
+export interface SecuritySnapshot {
+  modelOutput?: { trusted?: boolean };
+  publicExposure?: { admitted?: boolean; publicExposureAllowed?: boolean };
+  encryption?: { hostedEncryptionProven?: boolean };
+  signedJobAccess?: { admitted?: boolean };
+  secretsAdmitted?: boolean;
+}
+
+export async function fetchSecurity() {
+  const response = await fetch('/api/security');
+  if (!response.ok) {
+    throw new Error(`Failed to load security boundary: ${response.status}`);
+  }
+  return response.json() as Promise<SecuritySnapshot>;
+}
+
+export interface NativeSnapshot {
+  approved?: boolean;
+  rpcFleet?: { enabled?: boolean };
+  pinned?: { universallyPortable?: boolean; admitted?: boolean };
+  customNative?: { approved?: boolean };
+}
+
+export async function fetchNative() {
+  const response = await fetch('/api/native');
+  if (!response.ok) {
+    throw new Error(`Failed to load native packaging: ${response.status}`);
+  }
+  return response.json() as Promise<NativeSnapshot>;
+}

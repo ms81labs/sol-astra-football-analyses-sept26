@@ -1637,3 +1637,80 @@ async def _test_production_assistance_budgets_quality_timeline_and_decode_memory
         assert "ambiguous possession around a shot" in labels
         assert all(item["accepted"] is False for item in quality.json()["items"])
         assert all(item["impact"] == "high" for item in quality.json()["items"] if item["id"] in {"identity", "team", "calibration", "possession"})
+
+
+def test_production_identity_incident_ladder_hota_and_gated_challengers(tmp_path: Path):
+    _run(_test_production_identity_incident_ladder_hota_and_gated_challengers, tmp_path)
+
+
+async def _test_production_identity_incident_ladder_hota_and_gated_challengers(tmp_path: Path):
+    async with api_client(tmp_path) as (_, client):
+        identity = await client.get("/api/identity")
+        assert identity.status_code == 200
+        assert identity.json()["faceRecognition"]["enabled"] is False
+        assert identity.json()["crossSeasonIdentity"]["enabled"] is False
+        assert identity.json()["appearance"]["everyDetection"] is False
+        assert identity.json()["appearance"]["cameraCutDefeatsAppearance"] is True
+        assert identity.json()["candidateRejoin"]["autoAccepted"] is False
+        assert identity.json()["silentlyReconnected"] is False
+
+        ladder = await client.get("/api/incidents/ladder")
+        assert ladder.status_code == 200
+        assert ladder.json()["level2"]["photorealistic"] is False
+        assert ladder.json()["level2"]["decision"] is None
+        assert ladder.json()["level3"]["enabled"] is False
+        assert ladder.json()["vlm"]["refereeGroundTruth"] is False
+        assert ladder.json()["replay"]["simultaneous"] is False
+        assert ladder.json()["homography"]["preciseOffsideLine"] is False
+        assert ladder.json()["invisible"]["repaired"] is False
+
+        hota = await client.get("/api/evaluation/hota")
+        assert hota.status_code == 200
+        assert hota.json()["scored"] is False
+        assert hota.json()["hota"] is None
+        assert hota.json()["idf1"] is None
+        assert hota.json()["trackevalIsGroundTruth"] is False
+
+        shots = await client.get("/api/shots/tree")
+        assert shots.status_code == 200
+        assert shots.json()["tree"]["enabled"] is False
+        assert shots.json()["tree"]["calibratedXg"] is False
+        assert shots.json()["temporal"]["enabled"] is False
+        assert shots.json()["temporal"]["replacesStateMachine"] is False
+
+        collab = await client.get("/api/collaboration")
+        assert collab.status_code == 200
+        assert collab.json()["local"]["silentlyReplaced"] is False
+        assert collab.json()["hosted"]["admitted"] is False
+        assert collab.json()["hosted"]["silentlyReplaced"] is False
+
+        stride = await client.get("/api/media/stride")
+        assert stride.status_code == 200
+        assert stride.json()["addsVidStrideAlone"] is False
+        assert stride.json()["targetFpsEqualsInferenceFps"] is False
+
+        cache = await client.get("/api/cache/tenancy")
+        assert cache.status_code == 200
+        assert cache.json()["crossTenant"]["allowed"] is False
+        assert "CROSS_TENANT_CACHE_BLOCKED" in cache.json()["crossTenant"]["reasonCodes"]
+        assert cache.json()["columnar"]["enabled"] is False
+        assert cache.json()["columnar"]["mandatoryDuckDb"] is False
+
+        response = await _upload_tracking_match(client)
+        assert response.status_code == 202
+        match_id = response.json()["matchId"]
+        job_id = response.json()["jobId"]
+
+        match_identity = await client.get(f"/api/matches/{match_id}/identity")
+        assert match_identity.status_code == 200
+        assert match_identity.json()["silentlyReconnected"] is False
+        assert match_identity.json()["faceRecognition"]["enabled"] is False
+
+        cancelled = await client.post(f"/api/jobs/{job_id}/cancel")
+        assert cancelled.status_code == 200
+        charges = await client.get(f"/api/jobs/{job_id}/charges")
+        assert charges.status_code == 200
+        assert charges.json()["chargesErased"] is False
+        if charges.json()["cancelled"]:
+            assert "CANCELLATION_DOES_NOT_ERASE_INCURRED_CHARGES" in charges.json()["reasonCodes"]
+

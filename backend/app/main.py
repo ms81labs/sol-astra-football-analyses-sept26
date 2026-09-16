@@ -62,28 +62,44 @@ from .workbench.access import (
     untrusted_model_output,
 )
 from .workbench.admission import admit_camera, admit_media
-from .workbench.artifacts import secrets_in_artifacts
+from .workbench.artifacts import columnar_observation_store, cross_tenant_cache_reuse, secrets_in_artifacts
 from .workbench.assistance import (
     dual_budgets,
     embeddings_retrieve,
     escalation_requires_quality_gap,
     providers_disabled_fallback,
 )
-from .workbench.media import decode_memory_policy
-from .workbench.contracts import SourceClockIdentity
-from .workbench.costs import credit_allocation, decimal_gb_to_gib, match_cost, scale_scenario
-from .workbench.decisions import architecture_decisions
-from .workbench.dossier import http_dossier
-from .workbench.evaluation import evaluation_measures
-from .workbench.evidence import inspect_metric, metric_dictionary
-from .workbench.flags import feature_flags
+from .workbench.incidents import (
+    broadcast_replay_not_simultaneous,
+    elevated_body_part_homography,
+    invisible_entity_not_repaired_by_larger_model,
+    level2_schematic_replay,
+    level3_multiview,
+    vlm_confidence_is_not_referee,
+)
 from .workbench.jobs import (
     attach_durable_job_view,
+    cancellation_does_not_erase_charges,
     deployment_mode,
     distributed_broker,
     egress_policy,
     signed_scoped_job_access,
     vector_database,
+)
+from .workbench.contracts import SourceClockIdentity
+from .workbench.costs import credit_allocation, decimal_gb_to_gib, match_cost, scale_scenario
+from .workbench.decisions import architecture_decisions
+from .workbench.dossier import http_dossier
+from .workbench.evaluation import evaluation_measures, score_hota_idf1
+from .workbench.events import learned_temporal
+from .workbench.evidence import inspect_metric, metric_dictionary
+from .workbench.flags import feature_flags
+from .workbench.identity import (
+    appearance_embedding_policy,
+    candidate_rejoin,
+    cross_season_identity,
+    face_recognition,
+    reconnect_across_cut,
 )
 from .workbench.milestones import milestone_plan, owners, progress_signal
 from .workbench.native import (
@@ -100,12 +116,14 @@ from .workbench.privacy import dpia_screen, residency_claim
 from .workbench.recovery import recovery_objectives, unresolved_incidents
 from .workbench.research import execute_track, research_lane
 from .workbench.retention import PROTECTED, may_delete
-from .workbench.review import correction_api_payload, playlist_export_interval
+from .workbench.media import decode_memory_policy, vid_stride_policy
+from .workbench.review import collaboration_lock, correction_api_payload, playlist_export_interval
 from .workbench.rights import rights_register
 from .workbench.risks import independent_reviewer, risk_register, worked_match_flow
 from .workbench.rollback import rollback_release
 from .workbench.roster import model_roster
 from .workbench.routes import create_workbench_router
+from .workbench.shot_model import tree_challenger
 from .workbench.targets import metadata_api_targets
 from .workbench.training import drill_library
 from .workbench.xt import xt_deferred_plan
@@ -1047,6 +1065,37 @@ def create_app(
             raise HTTPException(status_code=403, detail=decision)
         return runner.ledger.cost_for(job_id)
 
+    @app.get("/api/jobs/{job_id}/charges")
+    def get_job_charges(
+        job_id: str,
+        authorization: str | None = Header(default=None),
+        x_object_scope: str | None = Header(default=None),
+        x_deployment_boundary: str | None = Header(default=None),
+        x_tenant_id: str | None = Header(default=None),
+    ) -> dict:
+        try:
+            job = storage.get_job(job_id)
+            match = storage.get_match(job.matchId)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Job not found") from exc
+        decision = object_access_decision(
+            object_id=match.id,
+            object_tenant=match.config.rights.audience,
+            authorization=authorization,
+            object_scope=x_object_scope,
+            deployment_boundary=x_deployment_boundary,
+            client_tenant=x_tenant_id,
+        )
+        if not decision["allowed"]:
+            raise HTTPException(status_code=403, detail=decision)
+        view = attach_durable_job_view(job.model_dump(mode="json"), runner.ledger)
+        cost = runner.ledger.cost_for(job_id)
+        incurred = float(cost.get("actualTotal") or 0.0)
+        if incurred == 0.0:
+            incurred = float(cost.get("reservedTotal") or 0.0)
+        cancelled = bool(view.get("cancelRequested") or job.status == "cancelled")
+        return cancellation_does_not_erase_charges(cancelled=cancelled, incurred=incurred)
+
     @app.post("/api/jobs/{job_id}/cancel")
     def cancel_job(
         job_id: str,
@@ -1425,6 +1474,63 @@ def create_app(
     def get_worked_flow() -> dict:
         return worked_match_flow()
 
+    @app.get("/api/identity")
+    def get_identity_policy() -> dict:
+        payload = reconnect_across_cut(cut_detected=False)
+        payload["appearance"] = appearance_embedding_policy()
+        payload["faceRecognition"] = face_recognition(requested=False)
+        payload["crossSeasonIdentity"] = cross_season_identity(requested=False)
+        payload["candidateRejoin"] = candidate_rejoin()
+        return payload
+
+    @app.get("/api/incidents/ladder")
+    def get_incident_ladder() -> dict:
+        return {
+            "level2": level2_schematic_replay(coordinates=[]),
+            "level3": level3_multiview(),
+            "vlm": vlm_confidence_is_not_referee(confidence=0.99),
+            "replay": broadcast_replay_not_simultaneous(same_timestamp=False),
+            "homography": elevated_body_part_homography(part="foot"),
+            "invisible": invisible_entity_not_repaired_by_larger_model(visible=False),
+        }
+
+    @app.get("/api/evaluation/hota")
+    def get_evaluation_hota() -> dict:
+        return score_hota_idf1(
+            label_space="official_pitch",
+            hand_edited_summary=False,
+            native_predictions_present=False,
+        )
+
+    @app.get("/api/shots/tree")
+    def get_shot_tree() -> dict:
+        return {
+            "tree": tree_challenger(logistic_calibrated=False),
+            "temporal": learned_temporal(labelled_errors_justify=False),
+        }
+
+    @app.get("/api/collaboration")
+    def get_collaboration() -> dict:
+        return {
+            "local": collaboration_lock(mode="local_only"),
+            "hosted": collaboration_lock(mode="hosted_collaboration", lock_holder="analyst-a", requester="analyst-b"),
+        }
+
+    @app.get("/api/media/stride")
+    def get_media_stride() -> dict:
+        return vid_stride_policy()
+
+    @app.get("/api/cache/tenancy")
+    def get_cache_tenancy() -> dict:
+        return {
+            "crossTenant": cross_tenant_cache_reuse(
+                source_tenant="loopback",
+                requester_tenant="other",
+                explicit_privacy_design=False,
+            ),
+            "columnar": columnar_observation_store(),
+        }
+
     @app.post("/api/search")
     def post_typed_search(payload: dict | None = None) -> dict:
         body = payload or {}
@@ -1739,6 +1845,10 @@ def create_app(
     @app.get("/api/matches/{match_id}/quality")
     def get_match_quality(match: MatchRecord = Depends(require_match)) -> dict:
         return storage.quality_timeline_for_match(match.id)
+
+    @app.get("/api/matches/{match_id}/identity")
+    def get_match_identity(match: MatchRecord = Depends(require_match)) -> dict:
+        return storage.identity_for_match(match.id)
 
     @app.post("/api/matches/{match_id}/assistance/report")
     def post_match_assistance_report(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:

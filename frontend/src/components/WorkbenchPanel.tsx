@@ -27,10 +27,12 @@ import {
   fetchMatchClock,
   fetchMatchSetup,
   fetchMetricInspect,
+  fetchNative,
   fetchPendingCorrections,
   fetchPlayerObservations,
   fetchQualityTimeline,
   fetchRecovery,
+  fetchSecurity,
   fetchTrainingDrills,
   fetchWorkbenchDossier,
   fetchWorkbenchFlags,
@@ -44,6 +46,8 @@ import {
   type MetricInspect,
   type QualityTimelinePayload,
   type RecoverySnapshot,
+  type NativeSnapshot,
+  type SecuritySnapshot,
   type WorkbenchDossier,
 } from '../utils/workbench';
 
@@ -105,6 +109,8 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
   const [landmarkPreview, setLandmarkPreview] = useState<LandmarkPreview | null>(null);
   const [qualityItems, setQualityItems] = useState<QualityTimelinePayload['items']>([]);
   const [providersEnabled, setProvidersEnabled] = useState(false);
+  const [security, setSecurity] = useState<SecuritySnapshot | null>(null);
+  const [native, setNative] = useState<NativeSnapshot | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -128,6 +134,20 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
       })
       .catch(() => {
         if (!cancelled) setProvidersEnabled(false);
+      });
+    fetchSecurity()
+      .then((payload) => {
+        if (!cancelled && payload.modelOutput) setSecurity(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setSecurity(null);
+      });
+    fetchNative()
+      .then((payload) => {
+        if (!cancelled && typeof payload.approved === 'boolean') setNative(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setNative(null);
       });
     return () => {
       cancelled = true;
@@ -358,9 +378,17 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
                   void requestAccessDeletion().catch(() => undefined);
                 }}
               />
-              <SecurityBoundary />
-              <ReleaseGate />
-              <NativePackaging />
+              <SecurityBoundary
+                modelTrusted={security?.modelOutput?.trusted}
+                hostedEncryptionProven={security?.encryption?.hostedEncryptionProven}
+                signedJobAccessAdmitted={security?.signedJobAccess?.admitted}
+              />
+              <ReleaseGate publicExposureAllowed={security?.publicExposure?.publicExposureAllowed} />
+              <NativePackaging
+                approved={native?.approved}
+                rpcFleetEnabled={native?.rpcFleet?.enabled}
+                universallyPortable={native?.pinned?.universallyPortable}
+              />
               <div className="rounded-lg border border-slate-700 p-3">
                 <h4 className="text-xs uppercase tracking-wide text-slate-500 mb-2">Capability matrix</h4>
                 <ul className="space-y-2">
