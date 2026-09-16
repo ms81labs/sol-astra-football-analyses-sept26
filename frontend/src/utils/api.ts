@@ -270,6 +270,12 @@ export async function fetchMatchWorkspace(matchId: string, signal?: AbortSignal)
   };
 }
 
+export async function fetchMatchEvents(matchId: string, signal?: AbortSignal): Promise<BackendEvent[]> {
+  const response = await fetch(`/api/matches/${matchId}/events`, { signal });
+  const payload = await parseJson<{ matchId: string; events: BackendEvent[] }>(response);
+  return payload.events;
+}
+
 export function mapBackendEventsToTags(events: BackendEvent[], frames: FrameData[]): EventTag[] {
   const supportedEventTypes = new Set<EventType>(['pass', 'cross', 'shot', 'tackle', 'recovery', 'turnover', 'through_ball', 'interception']);
   const timestamps = frames.map((frame) => frame.Timestamp);

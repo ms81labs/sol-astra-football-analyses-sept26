@@ -604,6 +604,88 @@ describe('App match workspace loading', () => {
     expect(await screen.findByText(/1 evidence-linked interval/i)).toBeTruthy();
   });
 
+  it('refreshes stored events after accept without rewriting the playhead or injecting event ids', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue({
+      ...loadedWorkspace('match-a', 'Match A'),
+      events: [{
+        type: 'pass',
+        frameId: 0,
+        timestamp: 0,
+        team: 'my_team',
+        fromTrackId: 7,
+        toTrackId: 8,
+        description: 'Pass by track 7',
+        reviewStatus: 'unreviewed',
+      }],
+    });
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && init?.method === 'POST' && !String(url).includes('/undo')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ correctionId: 'accept-1', saveState: 'saved', kind: 'event_accept' }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/events') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            events: [{
+              type: 'pass',
+              frameId: 0,
+              timestamp: 0,
+              team: 'my_team',
+              fromTrackId: 7,
+              toTrackId: 8,
+              description: 'Pass by track 7',
+              reviewStatus: 'accepted',
+            }],
+          }),
+        } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    expect(screen.getByText('unreviewed')).toBeTruthy();
+    fireEvent.keyDown(window, { key: 'a' });
+    await waitFor(() => {
+      const acceptCall = fetchMock.mock.calls.find(([url, init]) => (
+        String(url).includes('/api/matches/match-a/corrections')
+        && !String(url).includes('/undo')
+        && init?.method === 'POST'
+      ));
+      expect(acceptCall?.[1]?.body).toContain('"kind":"event_accept"');
+      expect(acceptCall?.[1]?.body).toContain('"frame":0');
+      expect(acceptCall?.[1]?.body).toContain('"type":"pass"');
+      expect(acceptCall?.[1]?.body).not.toContain('"eventId"');
+    });
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).includes('/api/matches/match-a/events')
+        && (!init?.method || init.method === 'GET')
+      ))).toBe(true);
+    });
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText('accepted')).toBeTruthy();
+  });
+
   it('swaps stored teams on the loaded match without a vision rerun', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);

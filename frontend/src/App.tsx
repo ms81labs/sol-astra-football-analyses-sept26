@@ -39,6 +39,7 @@ import {
   buildMatchVideoUrl,
   createMatchUpload,
   fetchMatches,
+  fetchMatchEvents,
   fetchMatchFrames,
   fetchMatchWorkspace,
   mapBackendEventsToTags,
@@ -539,17 +540,19 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
       review.setReviewRange(next.reviewRange);
     }
     setEvents(next.events as EventTag[]);
-    if ((action === 'accept' || action === 'reject') && activeMatch?.id) {
+    if ((action === 'accept' || action === 'reject') && activeMatch) {
+      const matchId = activeMatch.id;
+      const frames = activeMatch.data;
       const kind = action === 'accept' ? 'event_accept' : 'event_reject';
       const expectedVersion = correctionVersionRef.current;
       const reviewed = next.events.find((event) => event.frame === next.currentFrame) ?? next.events.find((event) => event.reviewStatus === (kind === 'event_accept' ? 'accepted' : 'rejected'));
       setCorrectionSaveState('pending');
-      void submitMatchCorrection(activeMatch.id, {
+      void submitMatchCorrection(matchId, {
         kind,
         payload: { frame: next.currentFrame, type: reviewed?.type },
         expectedVersion,
       })
-        .then((saved) => {
+        .then(async (saved) => {
           setCorrectionSaveState(saved.saveState as 'saved' | 'pending' | 'conflicted' | 'unavailable');
           if (saved.saveState === 'saved' && typeof saved.version === 'number') {
             correctionVersionRef.current = saved.version;
@@ -560,12 +563,28 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
               { correctionId: saved.correctionId, kind, saveState: saved.saveState, undoOf: null },
             ]);
           }
+          if (saved.saveState !== 'saved') {
+            return;
+          }
+          const storedEvents = await fetchMatchEvents(matchId);
+          const tags = mapBackendEventsToTags(storedEvents, frames);
+          setActiveMatch((previous) => {
+            if (!previous || previous.id !== matchId) {
+              return previous;
+            }
+            return {
+              ...previous,
+              backendEvents: storedEvents,
+              baseEvents: tags,
+            };
+          });
+          setEvents(tags);
         })
         .catch(() => {
           setCorrectionSaveState('unavailable');
         });
     }
-  }, [activeMatch?.id, currentFrame, events, handleSeek, isPlaying, totalFrameCount, review]);
+  }, [activeMatch, currentFrame, events, handleSeek, isPlaying, totalFrameCount, review]);
 
   const handleDrawingAnnotation = useCallback(
     (x: number, y: number, x2?: number, y2?: number) => {
