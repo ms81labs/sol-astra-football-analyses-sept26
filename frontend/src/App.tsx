@@ -23,6 +23,7 @@ import WorkbenchPanel from './components/WorkbenchPanel';
 import DemoMatchIssuePanel from './components/DemoMatchIssuePanel';
 import MatchVideoPanel from './components/MatchVideoPanel';
 import PlaylistBuilder from './components/PlaylistBuilder';
+import HoldoutCalibrationPanel from './components/HoldoutCalibrationPanel';
 import PlayerDetailPanel from './components/PlayerDetailPanel';
 import StatsPanel from './components/StatsPanel';
 import TeamSelectionBanner from './components/TeamSelectionBanner';
@@ -1437,6 +1438,9 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           </div>
           <div className="mb-3 shrink-0">
             <PlaylistBuilder matchId={activeMatch?.id} />
+          </div>
+          <div className="mb-3 shrink-0">
+            <HoldoutCalibrationPanel matchId={activeMatch?.id} />
           </div>
           <div className="mb-3 flex-1 overflow-y-auto">
             <AnnotationList

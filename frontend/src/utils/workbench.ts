@@ -904,6 +904,50 @@ export async function repairMatchIdentity(
   }>;
 }
 
+export async function submitMatchCalibration(
+  matchId: string,
+  body: {
+    landmarks: Array<{
+      name?: string;
+      imageX: number;
+      imageY: number;
+      pitchX: number;
+      pitchY: number;
+      independentHoldout: true;
+    }>;
+  },
+) {
+  const response = await fetch(`/api/matches/${matchId}/calibration`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to measure match calibration holdout: ${response.status}`);
+  }
+  return response.json() as Promise<{
+    evaluation?: { accepted?: boolean };
+    measured?: boolean;
+    residualP95M?: number | null;
+    committed?: boolean;
+    visionRerun?: boolean;
+  }>;
+}
+
+export async function fetchMatchDerivedDistance(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/geometry/distance`);
+  if (!response.ok) {
+    throw new Error(`Failed to load derived distance: ${response.status}`);
+  }
+  return response.json() as Promise<{
+    availability?: string;
+    value?: number | null;
+    uncertaintyM?: number;
+    bridged?: boolean;
+    reasonCodes?: string[];
+  }>;
+}
+
 export async function fetchAssembleReport() {
   const response = await fetch('/api/reports/assemble', {
     method: 'POST',

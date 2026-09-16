@@ -219,6 +219,8 @@ describe('App match workspace loading', () => {
     expect(screen.getByRole('region', { name: /playlist builder/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /assemble report/i })).toBeTruthy();
     expect(screen.getByText(/do not establish a whole-match frequency/i)).toBeTruthy();
+    expect(screen.getByRole('region', { name: /holdout calibration/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /measure holdout/i })).toBeTruthy();
     expect(screen.getByRole('region', { name: /incident review/i })).toBeTruthy();
     expect(screen.queryAllByText(/attackerX=0/)).toHaveLength(0);
     expect(screen.queryAllByText(/line=0/)).toHaveLength(0);
@@ -477,6 +479,77 @@ describe('App match workspace loading', () => {
       expect(promoteCall?.[1]?.body).toContain('"reviewed":true');
       expect(promoteCall?.[1]?.body).not.toContain('"identityContinuous":true');
     });
+  });
+
+  it('submits independent holdout landmarks on the loaded match without client acceptance', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/calibration') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            evaluation: { accepted: true },
+            measured: true,
+            residualP95M: 0.4,
+            committed: true,
+            visionRerun: false,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/geometry/distance')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            availability: 'available',
+            value: 5.25,
+            uncertaintyM: 0.4,
+            bridged: false,
+            reasonCodes: [],
+          }),
+        } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    fireEvent.change(screen.getByLabelText(/image x/i), { target: { value: '50' } });
+    fireEvent.change(screen.getByLabelText(/image y/i), { target: { value: '50' } });
+    fireEvent.change(screen.getByLabelText(/pitch x/i), { target: { value: '52.5' } });
+    fireEvent.change(screen.getByLabelText(/pitch y/i), { target: { value: '34' } });
+    fireEvent.click(screen.getByRole('button', { name: /measure holdout/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/matches/match-a/calibration'))).toBe(true);
+    });
+    const calibrationCall = fetchMock.mock.calls.find(([url]) => String(url).includes('/api/matches/match-a/calibration'));
+    expect(calibrationCall?.[1]?.method).toBe('POST');
+    expect(calibrationCall?.[1]?.body).toContain('"independentHoldout":true');
+    expect(calibrationCall?.[1]?.body).toContain('"imageX":50');
+    expect(calibrationCall?.[1]?.body).toContain('"pitchX":52.5');
+    expect(calibrationCall?.[1]?.body).not.toContain('"accepted":true');
+    expect(calibrationCall?.[1]?.body).not.toContain('"residualP95M"');
+    expect(calibrationCall?.[1]?.body).not.toContain('"measured":true');
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/geometry/landmarks'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/geometry/preview'))).toBe(false);
+    expect(await screen.findByText(/holdout accepted/i)).toBeTruthy();
+    expect(screen.getByText(/derived distance 5.25 m/i)).toBeTruthy();
+    expect(screen.queryByText(/derived distance 0(\.0)? m/i)).toBeNull();
   });
 
   it('loads a selected match once and does not reload the active match', async () => {
