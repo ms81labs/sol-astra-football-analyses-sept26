@@ -276,3 +276,52 @@ export async function fetchCorrectionHistory(matchId: string) {
     items: Array<{ correctionId: string; kind: string; saveState: string; undoOf?: string | null }>;
   }>;
 }
+
+export interface RecoverySnapshot {
+  deletion: { available: boolean; executed: boolean; trackIdsDoNotAnonymise: boolean; reasonCodes: string[] };
+  unresolvedIncidents: {
+    items: Array<{ id: string; title: string }>;
+    operatorVisible: boolean;
+    enterpriseUptimePromised: boolean;
+  };
+  recoveryObjectives: { defined: boolean; enterpriseUptimePromised: boolean; reasonCodes: string[] };
+  stalePermissions: { stale: boolean; admitted: boolean; reasonCodes: string[] };
+}
+
+export async function fetchRecovery() {
+  const response = await fetch('/api/recovery');
+  if (!response.ok) {
+    throw new Error(`Failed to load recovery state: ${response.status}`);
+  }
+  return response.json() as Promise<RecoverySnapshot>;
+}
+
+export async function requestAccessDeletion() {
+  const response = await fetch('/api/access/deletion', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ requested: true }),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to request deletion: ${response.status}`);
+  }
+  return response.json() as Promise<{ executed: boolean; available: boolean; reasonCodes: string[] }>;
+}
+
+export interface LandmarkPreview {
+  residualP95M: number | null;
+  accepted: boolean;
+  committed: boolean;
+  measured?: boolean;
+  visionRerun?: boolean;
+  preview?: boolean;
+  reasonCodes?: string[];
+}
+
+export async function fetchLandmarkPreview(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/setup/preview`);
+  if (!response.ok) {
+    throw new Error(`Failed to load landmark preview: ${response.status}`);
+  }
+  return response.json() as Promise<LandmarkPreview>;
+}

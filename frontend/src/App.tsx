@@ -47,7 +47,7 @@ import { buildUploadConfig, createEmptyPointInputs } from './utils/uploadConfig'
 import { getUploadFailureGuidance } from './utils/uploadErrors';
 import { findNearestFrameIndex } from './utils/videoSync';
 import { applyReviewShortcut, type ReviewAction } from './utils/reviewShortcuts';
-import { fetchIncidentReview, submitMatchCorrection, undoMatchCorrection } from './utils/workbench';
+import { fetchIncidentReview, fetchRecovery, requestAccessDeletion, submitMatchCorrection, undoMatchCorrection } from './utils/workbench';
 import { windowedTimelineProps } from './utils/windowedTimeline';
 import { splitScores } from './utils/quantities';
 
@@ -213,6 +213,26 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
       cancelled = true;
     };
   }, [activeMatch?.id]);
+  useEffect(() => {
+    let cancelled = false;
+    fetchRecovery()
+      .then((payload) => {
+        if (cancelled || !payload.deletion) return;
+        setRecovery({
+          controllerRecorded: Boolean(payload.deletion.available),
+          unresolvedIncidents: payload.unresolvedIncidents.items ?? [],
+          recoveryObjectivesDefined: Boolean(payload.recoveryObjectives.defined),
+        });
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setRecovery({ controllerRecorded: false, unresolvedIncidents: [], recoveryObjectivesDefined: false });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const matchData = useMemo(() => activeMatch?.data || [], [activeMatch]);
   const totalFrameCount = activeMatch?.frameCount ?? matchData.length;
   const timelineWindow = useMemo(
@@ -226,6 +246,11 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
     touchEnd: number;
     samples: Array<{ time: number; attackerX: number; offsideLineX: number; indeterminate: boolean }>;
   } | null>(null);
+  const [recovery, setRecovery] = useState<{
+    controllerRecorded: boolean;
+    unresolvedIncidents: Array<{ id: string; title: string }>;
+    recoveryObjectivesDefined: boolean;
+  }>({ controllerRecorded: false, unresolvedIncidents: [], recoveryObjectivesDefined: false });
   const correctionVersionRef = useRef(0);
   const matchStats = activeMatch?.stats || null;
   const matchBenchmark = activeMatch?.benchmark || null;
@@ -1123,7 +1148,14 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
             <LoopbackBanner deploymentBoundary="loopback" />
           </div>
           <div className="mb-3 shrink-0">
-            <RecoveryPanel controllerRecorded={false} unresolvedIncidents={[]} recoveryObjectivesDefined={false} />
+            <RecoveryPanel
+              controllerRecorded={recovery.controllerRecorded}
+              unresolvedIncidents={recovery.unresolvedIncidents}
+              recoveryObjectivesDefined={recovery.recoveryObjectivesDefined}
+              onRequestDeletion={() => {
+                void requestAccessDeletion().catch(() => undefined);
+              }}
+            />
           </div>
           <div className="mb-3 shrink-0">
             <SecurityBoundary />

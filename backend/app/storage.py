@@ -1337,6 +1337,112 @@ class Storage:
             attacker_x_by_time=tuple(samples),
         )
 
+    def dpia_for_match(self, match_id: str) -> dict:
+        from .workbench.privacy import dpia_screen
+
+        match = self.get_match(match_id)
+        rights = match.config.rights
+        cloud_requested = match.config.llmProvider == "cloud" or rights.processingScope != "local_only"
+        return dpia_screen(
+            youth_footage=False,
+            identifiable_faces=True,
+            cloud_requested=cloud_requested,
+            cloud_permitted=rights.cloudPermission,
+        ).model_dump(mode="json")
+
+    def preview_landmark_for_match(self, match_id: str) -> dict:
+        from .workbench.cache import REBUILD_FOR
+
+        self.get_match(match_id)
+        return {
+            "preview": True,
+            "committed": False,
+            "accepted": False,
+            "visionRerun": False,
+            "residualP95M": None,
+            "measured": False,
+            "rebuild": list(REBUILD_FOR["calibration"]),
+            "reasonCodes": ["LANDMARK_RESIDUAL_UNMEASURED"],
+        }
+
+    def recompute_for_match(self, match_id: str, change: str) -> dict:
+        from .video_pipeline import IMAGE_SPACE_SAFE_CHANGES, reprocess_for_change
+        from .workbench.cache import cache_identity
+
+        self.get_match(match_id)
+        if change not in IMAGE_SPACE_SAFE_CHANGES:
+            return {
+                "visionInvoked": False,
+                "admitted": False,
+                "reused": False,
+                "rebuild": [],
+                "reasonCodes": ["VISION_REQUIRES_SEALED_WORKER"],
+            }
+        sha = self.source_sha256(match_id)
+        previous = cache_identity(
+            source_sha256=sha,
+            interval_start=0.0,
+            interval_end=0.0,
+            decoder_version="opencv",
+            model_hash="weights-v1",
+            temporal_policy="source_global_grid",
+            output_schema="evidence_v1",
+            namespace="production",
+        )
+        current = cache_identity(
+            source_sha256=sha,
+            interval_start=0.0,
+            interval_end=0.0,
+            decoder_version="opencv",
+            model_hash="weights-v1",
+            temporal_policy="source_global_grid",
+            output_schema="evidence_v1",
+            namespace="production",
+            calibration_id=None if change == "report" else "preview",
+        )
+
+        def vision() -> dict:
+            raise RuntimeError("image-space-safe recompute must not invoke vision")
+
+        result = dict(
+            reprocess_for_change(
+                change=change,
+                previous_identity=previous,
+                current_identity=current,
+                vision=vision,
+            )
+        )
+        result["admitted"] = True
+        return result
+
+    def promotion_receipt_for_match(self, match_id: str) -> dict:
+        from .workbench.receipts import promotion_receipt
+
+        sha = self.source_sha256(match_id)
+        try:
+            frame_count = len(self.load_frames(match_id))
+        except FileNotFoundError:
+            frame_count = 0
+        return promotion_receipt(
+            source_sha256=sha,
+            weights="unpromoted",
+            configuration="evidence_v1",
+            hardware="cpu",
+            native_builds=[],
+            selected_backend="opencv+ultralytics_track",
+            frame_count=frame_count,
+            call_count=0,
+            cold_timing_ms=0.0,
+            warm_timing_ms=0.0,
+            peak_memory_bytes=0,
+            transferred_bytes=0,
+            output_quality="unproven",
+            accepted_coverage=0.0,
+            failure_cases=["labels_incomplete"],
+            allocated_spend=0.0,
+            fallback_event="cpu_local",
+        )
+
     def load_raw_rows(self, match_id: str) -> list[dict]:
         payload = self._read_json(self._match_dir(match_id) / "raw_rows.json")
         return [dict(item) for item in payload]

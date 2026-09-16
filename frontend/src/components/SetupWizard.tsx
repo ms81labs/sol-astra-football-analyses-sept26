@@ -4,9 +4,10 @@ interface TeamCluster {
 }
 
 interface LandmarkPreview {
-  residualP95M: number;
+  residualP95M: number | null;
   accepted: boolean;
   committed: boolean;
+  measured?: boolean;
 }
 
 interface SetupWizardProps {
@@ -50,7 +51,11 @@ export default function SetupWizard({
       <p className="text-xs text-slate-400">Calibration: four-point compatibility retained; not a certification of whole-pitch coverage.</p>
       {landmarkPreview && (
         <div className="rounded border border-slate-700 p-2 space-y-1">
-          <p className="text-xs text-amber-200">Preview landmark fit (p95 {landmarkPreview.residualP95M} m)</p>
+          {landmarkPreview.measured === false || landmarkPreview.residualP95M == null ? (
+            <p className="text-xs text-amber-200">Landmark residual unmeasured</p>
+          ) : (
+            <p className="text-xs text-amber-200">Preview landmark fit (p95 {landmarkPreview.residualP95M} m)</p>
+          )}
           <p className="text-xs text-slate-400">{landmarkPreview.committed ? 'Committed' : 'Not committed'}</p>
           <p className="text-xs text-slate-500">Does not rerun image-space detection.</p>
         </div>

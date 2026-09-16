@@ -1415,3 +1415,154 @@ async def _test_production_timeout_search_clock_and_incident_review_use_stored_d
         assert assistance.status_code == 200
         assert assistance.json()["factualCheck"]["accepted"] is False
         assert "FABRICATED_EVIDENCE" in assistance.json()["factualCheck"]["reasonCodes"]
+
+
+def test_production_recovery_retention_security_native_and_recompute_surfaces(tmp_path: Path):
+    _run(_test_production_recovery_retention_security_native_and_recompute_surfaces, tmp_path)
+
+
+async def _test_production_recovery_retention_security_native_and_recompute_surfaces(tmp_path: Path):
+    async with api_client(tmp_path) as (_, client):
+        recovery = await client.get("/api/recovery")
+        assert recovery.status_code == 200
+        body = recovery.json()
+        assert body["deletion"]["available"] is False
+        assert body["deletion"]["executed"] is False
+        assert body["deletion"]["trackIdsDoNotAnonymise"] is True
+        assert "CONTROLLER_PROCESSOR_ROLES_REQUIRED" in body["deletion"]["reasonCodes"]
+        assert body["unresolvedIncidents"]["operatorVisible"] is True
+        assert body["unresolvedIncidents"]["enterpriseUptimePromised"] is False
+        assert body["unresolvedIncidents"]["syntheticTestsAreNotDeploymentAssessment"] is True
+        assert body["recoveryObjectives"]["defined"] is False
+        assert body["recoveryObjectives"]["enterpriseUptimePromised"] is False
+        assert "RECOVERY_OBJECTIVES_UNMEASURED" in body["recoveryObjectives"]["reasonCodes"]
+        assert body["stalePermissions"]["admitted"] is False
+        assert "STALE_PERMISSION" in body["stalePermissions"]["reasonCodes"] or "PERMISSION_EXPIRY_UNRECORDED" in body["stalePermissions"]["reasonCodes"]
+
+        forged_roles = await client.post(
+            "/api/access/deletion",
+            json={"requested": True, "controllerRecorded": True},
+        )
+        assert forged_roles.status_code == 200
+        assert forged_roles.json()["executed"] is False
+        assert forged_roles.json()["trackIdsDoNotAnonymise"] is True
+        assert "CONTROLLER_PROCESSOR_ROLES_REQUIRED" in forged_roles.json()["reasonCodes"]
+
+        frozen = await client.post(
+            "/api/retention/delete",
+            json={"kind": "frozen_evaluation", "authorisedPolicy": True},
+        )
+        assert frozen.status_code == 200
+        assert frozen.json()["mayDelete"] is False
+        originals = await client.post(
+            "/api/retention/delete",
+            json={"kind": "user_owned_original_media", "authorisedPolicy": True},
+        )
+        assert originals.status_code == 200
+        assert originals.json()["mayDelete"] is False
+        cache = await client.post(
+            "/api/retention/delete",
+            json={"kind": "working_cache", "authorisedPolicy": True},
+        )
+        assert cache.status_code == 200
+        assert cache.json()["mayDelete"] is True
+
+        scale = await client.get("/api/scale/10")
+        assert scale.status_code == 200
+        assert scale.json()["matchesPerMonth"] == 10
+        assert scale.json()["measuredApplicationPerformance"] is False
+        assert scale.json()["gbEqualsGiB"] is False
+        assert scale.json()["decimalGb"] == 5.4
+        assert abs(scale.json()["gib"] - (5.4 * 1e9 / (1024**3))) < 1e-9
+
+        dpia = await client.get("/api/privacy/dpia")
+        assert dpia.status_code == 200
+        assert dpia.json()["cloudAllowed"] is False
+        assert dpia.json()["faceRecognition"] is False
+        assert dpia.json()["crossSeasonIdentity"] is False
+        assert dpia.json()["localProcessingRequired"] is True
+
+        gpu = await client.get("/api/gpu")
+        assert gpu.status_code == 200
+        assert gpu.json()["canPromoteDefault"] is False
+        assert gpu.json()["videoEngine"]["videoEngineCapability"] is False
+        assert "CUDA_VISIBILITY_IS_NOT_VIDEO_CAPABILITY" in gpu.json()["videoEngine"]["reasonCodes"]
+
+        native = await client.get("/api/native")
+        assert native.status_code == 200
+        assert native.json()["approved"] is False
+        assert "NATIVE_GATE_CLOSED" in native.json()["reasonCodes"]
+        assert native.json()["pinned"]["universallyPortable"] is False
+        assert native.json()["pinned"]["admitted"] is False
+        assert native.json()["osProfiles"]["independentlyTested"] is False
+        assert native.json()["ffmpeg"]["wrapperRemovesLicenceObligations"] is False
+        assert native.json()["rpcFleet"]["enabled"] is False
+        assert native.json()["customNative"]["approved"] is False
+
+        security = await client.get("/api/security")
+        assert security.status_code == 200
+        assert security.json()["modelOutput"]["trusted"] is False
+        assert security.json()["publicExposure"]["admitted"] is True
+        assert security.json()["publicExposure"]["publicExposureAllowed"] is False
+        assert security.json()["encryption"]["hostedEncryptionProven"] is False
+        assert security.json()["allowlist"]["admitted"] is True
+        assert security.json()["decoder"]["admitted"] is True
+        assert security.json()["storage"]["admitted"] is True
+        assert security.json()["secretsAdmitted"] is True
+        assert security.json()["signedJobAccess"]["admitted"] is False
+        assert security.json()["egress"]["defaultDeny"] is True
+
+        public_host = await client.get("/api/security", headers={"x-deployment-boundary": "public"})
+        assert public_host.status_code == 200
+        assert public_host.json()["publicExposure"]["admitted"] is False
+        assert "SECURITY_REVIEW_REQUIRED" in public_host.json()["publicExposure"]["reasonCodes"]
+
+        response = await _upload_tracking_match(client)
+        assert response.status_code == 202
+        match_id = response.json()["matchId"]
+
+        match_dpia = await client.get(f"/api/matches/{match_id}/privacy")
+        assert match_dpia.status_code == 200
+        assert match_dpia.json()["cloudAllowed"] is False
+        assert match_dpia.json()["faceRecognition"] is False
+
+        preview = await client.get(f"/api/matches/{match_id}/setup/preview")
+        assert preview.status_code == 200
+        assert preview.json()["preview"] is True
+        assert preview.json()["committed"] is False
+        assert preview.json()["accepted"] is False
+        assert preview.json()["visionRerun"] is False
+        assert preview.json()["residualP95M"] is None
+        assert preview.json()["measured"] is False
+        assert "LANDMARK_RESIDUAL_UNMEASURED" in preview.json()["reasonCodes"]
+
+        report_only = await client.post(
+            f"/api/matches/{match_id}/recompute",
+            json={"change": "report", "visionRows": [{"Frame_ID": 999}]},
+        )
+        assert report_only.status_code == 200
+        assert report_only.json()["visionInvoked"] is False
+        assert report_only.json()["reused"] is True
+
+        calibration = await client.post(
+            f"/api/matches/{match_id}/recompute",
+            json={"change": "calibration"},
+        )
+        assert calibration.status_code == 200
+        assert calibration.json()["visionInvoked"] is False
+        assert calibration.json()["imageSpaceDetectionsReused"] is True
+
+        perception = await client.post(
+            f"/api/matches/{match_id}/recompute",
+            json={"change": "perception"},
+        )
+        assert perception.status_code == 200
+        assert perception.json()["visionInvoked"] is False
+        assert perception.json()["admitted"] is False
+        assert "VISION_REQUIRES_SEALED_WORKER" in perception.json()["reasonCodes"]
+
+        receipt = await client.get(f"/api/matches/{match_id}/promotion")
+        assert receipt.status_code == 200
+        assert receipt.json()["completeMatchAccepted"] is False
+        assert receipt.json()["stageBenchmarkIsCompleteMatchAcceptance"] is False
+        assert receipt.json()["outputQuality"] == "unproven"

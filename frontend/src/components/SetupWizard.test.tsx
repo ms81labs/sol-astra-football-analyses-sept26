@@ -38,3 +38,15 @@ it('previews landmark fit without committing calibration or implying whole-pitch
   expect(screen.getByText(/not committed/i)).toBeTruthy();
   expect(screen.getByText(/does not rerun image-space detection/i)).toBeTruthy();
 });
+
+it('does not invent a residual when landmark fit is unmeasured', () => {
+  render(
+    <SetupWizard
+      cameraProfile="stitched_panoramic_view"
+      landmarkPreview={{ residualP95M: null, accepted: false, committed: false, measured: false }}
+    />,
+  );
+  expect(screen.getByText(/landmark residual unmeasured/i)).toBeTruthy();
+  expect(screen.queryByText(/p95 4\.2/i)).toBeNull();
+  expect(screen.getByText(/does not rerun image-space detection/i)).toBeTruthy();
+});

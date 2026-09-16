@@ -51,19 +51,48 @@ from .schemas import (
 )
 from .semantic_search import search_matches_by_tactical_themes, search_bundles_by_tactical_themes, detect_themes_for_match
 from .storage import AdmissionOutcomeUncertainError, Storage, UploadTooLargeError
-from .workbench.access import object_access_decision
+from .workbench.access import (
+    access_deletion_procedure,
+    constrained_decoder,
+    deployment_encryption,
+    least_privilege_storage,
+    object_access_decision,
+    protocol_network_allowlist,
+    public_exposure_gate,
+    untrusted_model_output,
+)
 from .workbench.admission import admit_camera, admit_media
+from .workbench.artifacts import secrets_in_artifacts
 from .workbench.contracts import SourceClockIdentity
-from .workbench.costs import credit_allocation, match_cost
+from .workbench.costs import credit_allocation, decimal_gb_to_gib, match_cost, scale_scenario
 from .workbench.decisions import architecture_decisions
 from .workbench.dossier import http_dossier
 from .workbench.evaluation import evaluation_measures
 from .workbench.evidence import inspect_metric, metric_dictionary
 from .workbench.flags import feature_flags
-from .workbench.jobs import attach_durable_job_view, deployment_mode, distributed_broker, vector_database
+from .workbench.jobs import (
+    attach_durable_job_view,
+    deployment_mode,
+    distributed_broker,
+    egress_policy,
+    signed_scoped_job_access,
+    vector_database,
+)
 from .workbench.milestones import milestone_plan, owners, progress_signal
-from .workbench.privacy import residency_claim
+from .workbench.native import (
+    cuda_visibility_is_not_video_capability,
+    custom_native_justification,
+    ffmpeg_build_review,
+    native_gate,
+    no_rpc_fleet,
+    pinned_native_artifacts,
+    probe_gpu,
+    qualified_os_profiles,
+)
+from .workbench.privacy import dpia_screen, residency_claim
+from .workbench.recovery import recovery_objectives, unresolved_incidents
 from .workbench.research import execute_track, research_lane
+from .workbench.retention import PROTECTED, may_delete
 from .workbench.review import correction_api_payload, playlist_export_interval
 from .workbench.rights import rights_register
 from .workbench.risks import risk_register
@@ -1271,6 +1300,95 @@ def create_app(
         except KeyError as exc:
             raise HTTPException(status_code=400, detail="Unknown deployment mode") from exc
 
+    @app.get("/api/recovery")
+    def get_recovery() -> dict:
+        return {
+            "deletion": access_deletion_procedure(requested=False, controller_recorded=False),
+            "unresolvedIncidents": unresolved_incidents(),
+            "recoveryObjectives": recovery_objectives(data_volume_measured=False, disruption_measured=False),
+            "stalePermissions": {
+                "stale": True,
+                "admitted": False,
+                "reasonCodes": ["PERMISSION_EXPIRY_UNRECORDED"],
+            },
+        }
+
+    @app.post("/api/access/deletion")
+    def post_access_deletion(payload: dict | None = None) -> dict:
+        body = payload or {}
+        return access_deletion_procedure(
+            requested=bool(body.get("requested")),
+            controller_recorded=False,
+        )
+
+    @app.post("/api/retention/delete")
+    def post_retention_delete(payload: dict | None = None) -> dict:
+        body = payload or {}
+        kind = str(body.get("kind") or "")
+        authorised = bool(body.get("authorisedPolicy"))
+        return {
+            "kind": kind,
+            "mayDelete": may_delete(kind, authorised_policy=authorised),
+            "protected": kind in PROTECTED,
+        }
+
+    @app.get("/api/scale/{matches}")
+    def get_scale_scenario(matches: int) -> dict:
+        payload = dict(scale_scenario(matches_per_month=matches))
+        payload["gbEqualsGiB"] = False
+        payload["decimalGb"] = 5.4
+        payload["gib"] = decimal_gb_to_gib(5.4)
+        return payload
+
+    @app.get("/api/privacy/dpia")
+    def get_privacy_dpia() -> dict:
+        return dpia_screen(
+            youth_footage=False,
+            identifiable_faces=True,
+            cloud_requested=False,
+            cloud_permitted=False,
+        ).model_dump(mode="json")
+
+    @app.get("/api/gpu")
+    def get_gpu() -> dict:
+        capability = probe_gpu()
+        payload = capability.model_dump(mode="json")
+        payload["canPromoteDefault"] = False
+        payload["videoEngine"] = cuda_visibility_is_not_video_capability(cuda_visible=capability.available)
+        return payload
+
+    @app.get("/api/native")
+    def get_native() -> dict:
+        gate = native_gate(repo_root=Path.cwd(), approval_env=dict(os.environ))
+        return {
+            **gate.model_dump(mode="json"),
+            "pinned": pinned_native_artifacts(),
+            "osProfiles": qualified_os_profiles(profile="ubuntu"),
+            "ffmpeg": ffmpeg_build_review(),
+            "rpcFleet": no_rpc_fleet(),
+            "customNative": custom_native_justification(measured_savings=False, required_capability=False),
+        }
+
+    @app.get("/api/security")
+    def get_security(x_deployment_boundary: str | None = Header(default=None)) -> dict:
+        bound = (x_deployment_boundary or "loopback").lower()
+        return {
+            "modelOutput": untrusted_model_output(
+                claimed_actions=[],
+                allowed_actions=frozenset({"open_interval", "draft_report"}),
+                evidence_ids=[],
+                known_ids=set(),
+            ),
+            "publicExposure": public_exposure_gate(security_review_accepted=False, bound=bound),
+            "encryption": deployment_encryption(boundary=bound),
+            "allowlist": protocol_network_allowlist(url="http://127.0.0.1/"),
+            "decoder": constrained_decoder(argv=["ffmpeg", "-i", "local.mp4"], network_enabled=False),
+            "storage": least_privilege_storage(credential_scope="object"),
+            "secretsAdmitted": secrets_in_artifacts("cleanupResult=unknown")["admitted"],
+            "signedJobAccess": signed_scoped_job_access(token=None, job_id="job-1", token_job_id=None),
+            "egress": egress_policy(destination="https://evil.example", authorised_hosts=frozenset()),
+        }
+
     @app.post("/api/search")
     def post_typed_search(payload: dict | None = None) -> dict:
         body = payload or {}
@@ -1556,6 +1674,23 @@ def create_app(
     def post_match_incident_review(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
         del payload
         return get_match_incident_review(match)
+
+    @app.get("/api/matches/{match_id}/privacy")
+    def get_match_privacy(match: MatchRecord = Depends(require_match)) -> dict:
+        return storage.dpia_for_match(match.id)
+
+    @app.get("/api/matches/{match_id}/setup/preview")
+    def get_match_setup_preview(match: MatchRecord = Depends(require_match)) -> dict:
+        return storage.preview_landmark_for_match(match.id)
+
+    @app.post("/api/matches/{match_id}/recompute")
+    def post_match_recompute(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+        body = payload or {}
+        return storage.recompute_for_match(match.id, str(body.get("change") or "report"))
+
+    @app.get("/api/matches/{match_id}/promotion")
+    def get_match_promotion(match: MatchRecord = Depends(require_match)) -> dict:
+        return storage.promotion_receipt_for_match(match.id)
 
     @app.post("/api/matches/{match_id}/assistance/report")
     def post_match_assistance_report(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:

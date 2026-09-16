@@ -187,3 +187,83 @@ it('shows the quality timeline only when experimental UI is enabled', async () =
   expect(screen.getByText(/incorrect team selection/i)).toBeTruthy();
   expect(screen.getByText(/does not prescribe medical load/i)).toBeTruthy();
 });
+
+it('loads recovery and landmark preview from production routes and posts deletion', async () => {
+  const fetchMock = vi.fn(async (input: RequestInfo, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith('/api/dossier')) {
+      return new Response(JSON.stringify({
+        baseline: {
+          selectedCommit: '5099e1f',
+          declaredCameraProfile: 'stitched_panoramic_view',
+          declaredWorkflow: 'manual_review_plus_declared_camera_setup',
+          unresolvedGates: [],
+          permittedNextActions: [],
+          forbiddenActions: [],
+          capabilities: [],
+          evidenceClasses: {},
+        },
+        release: { deploymentBoundary: 'loopback', gNetworkRequiredForNonLocal: true, nativeCode: 'gated_inert' },
+        evaluation: { accepted: false, completeTasks: 0, requiredTasks: 18, reasonCodes: ['LABELS_INCOMPLETE'] },
+        gpu: { available: false, canPromoteDefault: false, reasonCodes: ['HARDWARE_UNAVAILABLE'] },
+        native: { approved: false, reasonCodes: ['NATIVE_GATE_CLOSED'] },
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    if (url.endsWith('/api/recovery')) {
+      return new Response(JSON.stringify({
+        deletion: { available: false, executed: false, trackIdsDoNotAnonymise: true, reasonCodes: ['CONTROLLER_PROCESSOR_ROLES_REQUIRED'] },
+        unresolvedIncidents: { items: [{ id: 'inc-op', title: 'cleanup unconfirmed' }], operatorVisible: true, enterpriseUptimePromised: false },
+        recoveryObjectives: { defined: false, enterpriseUptimePromised: false, reasonCodes: ['RECOVERY_OBJECTIVES_UNMEASURED'] },
+        stalePermissions: { stale: true, admitted: false, reasonCodes: ['PERMISSION_EXPIRY_UNRECORDED'] },
+      }), { status: 200 });
+    }
+    if (url.endsWith('/api/access/deletion') && init?.method === 'POST') {
+      return new Response(JSON.stringify({
+        available: false,
+        executed: false,
+        trackIdsDoNotAnonymise: true,
+        reasonCodes: ['CONTROLLER_PROCESSOR_ROLES_REQUIRED'],
+      }), { status: 200 });
+    }
+    if (url.endsWith('/api/matches/m1/setup/preview')) {
+      return new Response(JSON.stringify({
+        preview: true,
+        committed: false,
+        accepted: false,
+        visionRerun: false,
+        residualP95M: null,
+        measured: false,
+        reasonCodes: ['LANDMARK_RESIDUAL_UNMEASURED'],
+      }), { status: 200 });
+    }
+    if (url.endsWith('/api/native')) {
+      return new Response(JSON.stringify({
+        approved: false,
+        reasonCodes: ['NATIVE_GATE_CLOSED'],
+        pinned: { universallyPortable: false, admitted: false },
+        rpcFleet: { enabled: false },
+        customNative: { approved: false },
+      }), { status: 200 });
+    }
+    if (url.endsWith('/api/security')) {
+      return new Response(JSON.stringify({
+        modelOutput: { trusted: false, admitted: false },
+        publicExposure: { admitted: true, publicExposureAllowed: false },
+        encryption: { hostedEncryptionProven: false },
+        egress: { defaultDeny: true },
+      }), { status: 200 });
+    }
+    return new Response(JSON.stringify({ query: { unanswerable: true, reason: 'x', eventFamily: 'pass' }, results: [] }), { status: 200 });
+  });
+  vi.stubGlobal('fetch', fetchMock);
+
+  render(<WorkbenchPanel onClose={() => undefined} matchId="m1" events={[]} />);
+  expect(await screen.findByText(/cleanup unconfirmed/i)).toBeTruthy();
+  expect(screen.getByText(/recovery objectives remain unmeasured/i)).toBeTruthy();
+  expect(await screen.findByText(/landmark residual unmeasured/i)).toBeTruthy();
+  await fireEvent.click(screen.getByRole('button', { name: /request deletion/i }));
+  const deletionCall = fetchMock.mock.calls.find(([url, init]) => String(url).endsWith('/api/access/deletion') && init?.method === 'POST');
+  expect(deletionCall).toBeTruthy();
+  expect(JSON.parse(String(deletionCall?.[1]?.body))).toEqual({ requested: true });
+});
+

@@ -22,20 +22,25 @@ import {
   fetchIncidentReview,
   fetchJobCost,
   fetchJobView,
+  fetchLandmarkPreview,
   fetchMatchClock,
   fetchMatchSetup,
   fetchMetricInspect,
   fetchPendingCorrections,
   fetchPlayerObservations,
+  fetchRecovery,
   fetchTrainingDrills,
   fetchWorkbenchDossier,
   fetchWorkbenchFlags,
   recoverMatchCorrection,
+  requestAccessDeletion,
   searchMatchLibrary,
   searchWorkbenchEvents,
   undoMatchCorrection,
+  type LandmarkPreview,
   type MatchSetup,
   type MetricInspect,
+  type RecoverySnapshot,
   type WorkbenchDossier,
 } from '../utils/workbench';
 
@@ -93,6 +98,8 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
     samples: Array<{ time: number; attackerX: number; offsideLineX: number; indeterminate: boolean }>;
   } | null>(null);
   const [history, setHistory] = useState<Array<{ correctionId: string; kind: string; saveState: string; undoOf?: string | null }>>([]);
+  const [recovery, setRecovery] = useState<RecoverySnapshot | null>(null);
+  const [landmarkPreview, setLandmarkPreview] = useState<LandmarkPreview | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -102,6 +109,13 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
       })
       .catch((err: unknown) => {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load capability matrix');
+      });
+    fetchRecovery()
+      .then((payload) => {
+        if (!cancelled && payload.deletion) setRecovery(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setRecovery(null);
       });
     return () => {
       cancelled = true;
@@ -217,6 +231,20 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
       .catch(() => {
         if (!cancelled) setIncident(null);
       });
+    fetchLandmarkPreview(matchId)
+      .then((payload) => {
+        if (!cancelled && payload.committed === false) setLandmarkPreview(payload);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setLandmarkPreview({
+            residualP95M: null,
+            accepted: false,
+            committed: false,
+            measured: false,
+          });
+        }
+      });
     return () => {
       cancelled = true;
     };
@@ -304,9 +332,12 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
               </p>
               <LoopbackBanner deploymentBoundary={dossier.release.deploymentBoundary} />
               <RecoveryPanel
-                controllerRecorded={false}
-                unresolvedIncidents={[]}
-                recoveryObjectivesDefined={false}
+                controllerRecorded={Boolean(recovery?.deletion.available)}
+                unresolvedIncidents={recovery?.unresolvedIncidents.items ?? []}
+                recoveryObjectivesDefined={Boolean(recovery?.recoveryObjectives.defined)}
+                onRequestDeletion={() => {
+                  void requestAccessDeletion().catch(() => undefined);
+                }}
               />
               <SecurityBoundary />
               <ReleaseGate />
@@ -406,7 +437,14 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
                 automationAdmitted={setup?.automationAdmitted ?? false}
                 manualTaggingPermitted={setup?.manualTaggingPermitted ?? true}
                 cannotMeasure={setup?.cannotMeasure ?? ['physical_metrics']}
-                landmarkPreview={{ residualP95M: 4.2, accepted: false, committed: false }}
+                landmarkPreview={
+                  landmarkPreview ?? {
+                    residualP95M: null,
+                    accepted: false,
+                    committed: false,
+                    measured: false,
+                  }
+                }
               />
               <ClockReadout
                 presentationTimeSeconds={clock?.presentationTimeSeconds ?? 0}
