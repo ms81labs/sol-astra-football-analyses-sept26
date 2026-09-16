@@ -56,6 +56,18 @@ def player_observations(rows: list[dict[str, Any]], *, identity_continuous: bool
     }
 
 
+def reconnect_across_cut(*, cut_detected: bool) -> dict[str, Any]:
+    """Camera cuts reset identity. Never silently reconnect across a cut."""
+
+    if cut_detected:
+        return {
+            "reset": True,
+            "silentlyReconnected": False,
+            "reasonCodes": ["CAMERA_CUT"],
+        }
+    return {"reset": False, "silentlyReconnected": False, "reasonCodes": []}
+
+
 def face_recognition(*, requested: bool) -> dict[str, Any]:
     del requested
     return {"enabled": False, "reasonCodes": ["FACE_RECOGNITION_EXCLUDED"]}

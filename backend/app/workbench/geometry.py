@@ -142,6 +142,47 @@ def review_incident_geometry(
     }
 
 
+def ground_contact_point(bbox: tuple[float, float, float, float]) -> dict[str, Any]:
+    """Bottom-centre of the box is the foot estimate. The box centre is not a foot."""
+
+    x1, _y1, x2, y2 = bbox
+    return {
+        "imageX": (x1 + x2) / 2.0,
+        "imageY": y2,
+        "boxCentreIsFoot": False,
+    }
+
+
+def project_to_pitch(
+    *,
+    kind: Literal["player", "ball"],
+    airborne: bool,
+    bbox: tuple[float, float, float, float],
+) -> dict[str, Any]:
+    """Homography of an airborne ball is not a measured ground location."""
+
+    contact = ground_contact_point(bbox)
+    if kind == "ball" and airborne:
+        return {
+            "kind": kind,
+            "airborne": True,
+            "measuredGroundLocation": False,
+            "boxCentreIsFoot": False,
+            "imageX": None,
+            "imageY": None,
+            "reasonCodes": ["AERIAL_NOT_GROUND_PLANE"],
+        }
+    return {
+        "kind": kind,
+        "airborne": airborne,
+        "measuredGroundLocation": True,
+        "boxCentreIsFoot": False,
+        "imageX": contact["imageX"],
+        "imageY": contact["imageY"],
+        "reasonCodes": [],
+    }
+
+
 def detect_zoom_or_cut(previous: CalibrationProfile, current: CalibrationProfile) -> bool:
     if previous.cameraModel != current.cameraModel:
         return True

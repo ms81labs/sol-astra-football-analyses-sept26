@@ -47,6 +47,18 @@ def probe_gpu(*, nvidia_smi_ok: bool | None = None, torch_cuda: bool | None = No
     )
 
 
+def cuda_visibility_is_not_video_capability(*, cuda_visible: bool) -> dict[str, Any]:
+    """NVIDIA exposes video capability separately from CUDA visibility. NVENC is encode-only."""
+
+    return {
+        "cudaVisible": cuda_visible,
+        "videoEngineCapability": False,
+        "nvencRequiredForDecodeOnly": False,
+        "daytonaVideoEngineVerified": False,
+        "reasonCodes": ["CUDA_VISIBILITY_IS_NOT_VIDEO_CAPABILITY"],
+    }
+
+
 def native_gate(*, repo_root: Path, approval_env: dict[str, str] | None = None) -> NativeGate:
     env = approval_env if approval_env is not None else {}
     native_dir = repo_root / DEFAULT_NATIVE_DIR

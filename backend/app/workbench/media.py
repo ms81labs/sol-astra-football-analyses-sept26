@@ -573,6 +573,17 @@ def four_rates_receipt(audit: SamplingAudit) -> FourRatesReceipt:
     )
 
 
+def vid_stride_policy() -> dict[str, bool]:
+    """Do not add vid_stride alone. TARGET_FPS is not an inference-rate limit."""
+
+    return {
+        "addsVidStrideAlone": False,
+        "targetFpsEqualsInferenceFps": False,
+        "explicitFrameContractRequired": True,
+        "oldEvidenceCompatible": True,
+    }
+
+
 def map_original_to_proxy_pts(
     *,
     original_pts: list[int],

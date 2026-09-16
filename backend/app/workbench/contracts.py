@@ -78,6 +78,9 @@ REASON_CODES: dict[str, str] = {
     "YOUTH_FOOTAGE": "Youth footage requires safeguarding, club permission and local processing by default.",
     "MANUAL_INCIDENT_PACKAGE": "Incident review is a manual clip/note package, not a validated ruling.",
     "SINGLE_FRAME_FORMATION": "A single frame or partial view cannot support a stable formation.",
+    "AERIAL_NOT_GROUND_PLANE": "An airborne ball is not on the ground plane; its homography is not a measured location.",
+    "CAMERA_CUT": "A camera cut resets identity; tracks are not silently reconnected.",
+    "CUDA_VISIBILITY_IS_NOT_VIDEO_CAPABILITY": "CUDA visibility is not NVIDIA video-engine capability.",
 }
 
 CAPABILITY_IDS: tuple[str, ...] = (

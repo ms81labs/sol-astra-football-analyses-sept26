@@ -481,6 +481,54 @@ def test_evaluation_gate_fails_closed_without_independent_labels() -> None:
     assert passing.accepted is True
 
 
+def test_ground_contact_is_not_box_centre_and_aerial_ball_is_not_on_the_pitch() -> None:
+    from backend.app.workbench.geometry import ground_contact_point, project_to_pitch
+
+    contact = ground_contact_point((10.0, 20.0, 30.0, 80.0))
+    assert contact["boxCentreIsFoot"] is False
+    assert contact["imageX"] == 20.0
+    assert contact["imageY"] == 80.0
+    aerial = project_to_pitch(kind="ball", airborne=True, bbox=(10.0, 20.0, 30.0, 80.0))
+    assert aerial["measuredGroundLocation"] is False
+    assert "AERIAL_NOT_GROUND_PLANE" in aerial["reasonCodes"]
+    player = project_to_pitch(kind="player", airborne=False, bbox=(10.0, 20.0, 30.0, 80.0))
+    assert player["boxCentreIsFoot"] is False
+    assert player["imageY"] == 80.0
+
+
+def test_vid_stride_is_not_added_alone_and_target_fps_is_not_inference_fps() -> None:
+    from backend.app.workbench.media import vid_stride_policy
+
+    policy = vid_stride_policy()
+    assert policy["addsVidStrideAlone"] is False
+    assert policy["targetFpsEqualsInferenceFps"] is False
+    assert policy["explicitFrameContractRequired"] is True
+    assert policy["oldEvidenceCompatible"] is True
+
+
+def test_identity_resets_across_a_camera_cut_instead_of_silently_reconnecting() -> None:
+    from backend.app.workbench.identity import reconnect_across_cut
+
+    reset = reconnect_across_cut(cut_detected=True)
+    assert reset["reset"] is True
+    assert reset["silentlyReconnected"] is False
+    assert "CAMERA_CUT" in reset["reasonCodes"]
+    continuous = reconnect_across_cut(cut_detected=False)
+    assert continuous["reset"] is False
+    assert continuous["silentlyReconnected"] is False
+
+
+def test_cuda_visibility_is_not_video_engine_capability() -> None:
+    from backend.app.workbench.native import cuda_visibility_is_not_video_capability
+
+    probe = cuda_visibility_is_not_video_capability(cuda_visible=True)
+    assert probe["cudaVisible"] is True
+    assert probe["videoEngineCapability"] is False
+    assert probe["nvencRequiredForDecodeOnly"] is False
+    assert probe["daytonaVideoEngineVerified"] is False
+    assert "CUDA_VISIBILITY_IS_NOT_VIDEO_CAPABILITY" in probe["reasonCodes"]
+
+
 def test_evaluation_measures_require_compatible_labels_and_do_not_treat_health_as_the_label_gate() -> None:
     from backend.app.workbench.evaluation import evaluation_measures
 
