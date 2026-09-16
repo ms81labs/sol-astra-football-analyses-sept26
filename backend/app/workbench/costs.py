@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
+from typing import Any
 
 from pydantic import Field
 
@@ -131,4 +132,24 @@ def deployment_choice(
         "selected": selected,
         "alwaysOnGpuCommitted": False,
         "rule": "measured_workload_privacy_utilisation",
+    }
+
+
+def reserve_budget(*, estimate: float, conservative_factor: float = 1.5) -> dict[str, Any]:
+    return {
+        "estimate": estimate,
+        "reserved": round(estimate * conservative_factor, 4),
+        "authorised": False,
+        "currency": "USD",
+    }
+
+
+def reconcile_spend(*, reserved: float, actual: float) -> dict[str, Any]:
+    exceeded = actual > reserved
+    return {
+        "reserved": reserved,
+        "actual": actual,
+        "variance": round(actual - reserved, 4),
+        "exceeded": exceeded,
+        "alert": exceeded,
     }

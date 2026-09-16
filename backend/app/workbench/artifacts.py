@@ -66,3 +66,21 @@ def import_worker_output(item: dict[str, Any], *, quality_accepted: bool = False
         "jobSucceeded": bool(item.get("jobSucceeded")),
         "reasonCodes": reasons,
     }
+
+
+def write_alongside(
+    store: ArtifactStore,
+    *,
+    previous_digest: str,
+    payload: bytes,
+    namespace: str,
+) -> dict[str, Any]:
+    """Write a new version beside the retained previous artifact. Never mutate history."""
+
+    digest = store.put(payload, namespace=namespace)
+    return {
+        "digest": digest,
+        "previousDigest": previous_digest,
+        "mutatedHistorical": False,
+        "namespace": namespace,
+    }

@@ -48,3 +48,21 @@ def experimental_shot_quality(features: dict[str, float | bool]) -> ShotQuality:
         value=round(value, 4),
         reasonCodes=["EXPERIMENTAL_NOT_CALIBRATED_XG"],
     )
+
+
+def missing_shot_features(shot: dict[str, Any]) -> dict[str, Any]:
+    required = ("x", "y")
+    missing = [name for name in required if name not in shot]
+    return {
+        "recorded": True,
+        "missing": missing,
+        "imputedAsCalibrated": False,
+    }
+
+
+def tree_challenger(*, logistic_calibrated: bool) -> dict[str, bool]:
+    return {
+        "enabled": logistic_calibrated,
+        "comparedAfterLogisticBaseline": True,
+        "calibratedXg": False,
+    }

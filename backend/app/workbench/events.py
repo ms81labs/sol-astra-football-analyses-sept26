@@ -115,3 +115,11 @@ def score_events(
 
 def ownership_invalidation() -> list[str]:
     return DurableJobLedger().invalidate_for("track_edit")
+
+
+def learned_temporal(*, labelled_errors_justify: bool) -> dict[str, bool]:
+    return {
+        "enabled": labelled_errors_justify,
+        "replacesStateMachine": False,
+        "automaticPublication": False,
+    }

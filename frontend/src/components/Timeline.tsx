@@ -11,6 +11,8 @@ interface TimelineProps {
     onRangeChange?: (range: ReviewRange | null) => void;
     onSeek: (frame: number) => void;
     onTogglePlay: () => void;
+    frameCount?: number;
+    currentRecord?: FrameData | null;
 }
 
 interface EventTaggerProps {
@@ -83,18 +85,23 @@ export default function Timeline({
     onRangeChange,
     onSeek,
     onTogglePlay,
+    frameCount,
+    currentRecord,
 }: TimelineProps) {
-    const maxFrame = matchData.length > 0 ? matchData.length - 1 : 0;
+    const resolvedCount = frameCount ?? matchData.length;
+    const maxFrame = resolvedCount > 0 ? resolvedCount - 1 : 0;
+    const current = currentRecord ?? matchData[currentFrame];
     const reviewStartFrame = reviewRange?.startFrame ?? currentFrame;
     const reviewEndFrame = reviewRange?.endFrame ?? currentFrame;
     const activeEventIndex = events.findIndex((event) => event.frame === currentFrame);
+    const hasFrames = resolvedCount > 0;
 
     return (
         <div className="w-full max-w-4xl mt-6 bg-slate-900 p-3 rounded-lg border border-slate-700 space-y-2">
             <div className="flex items-center space-x-4">
                 <button
                     onClick={onTogglePlay}
-                    disabled={matchData.length === 0}
+                    disabled={!hasFrames}
                     aria-label={isPlaying ? 'Pause' : 'Play'}
                     className="bg-emerald-600 hover:bg-emerald-500 text-white w-12 h-12 rounded-full flex items-center justify-center transition focus:outline-none disabled:opacity-50 shrink-0"
                 >
@@ -131,10 +138,10 @@ export default function Timeline({
                         onChange={(e) => onSeek(Number(e.target.value))}
                         aria-label="Timeline scrubber"
                         className="w-full accent-emerald-500"
-                        disabled={matchData.length === 0}
+                        disabled={!hasFrames}
                     />
                     <div className="flex justify-between text-xs text-slate-400 mt-1 font-mono">
-                        <span>Time: {matchData[currentFrame]?.Timestamp || '0.00'}s</span>
+                        <span>Time: {current?.Timestamp ?? '0.00'}s</span>
                         <span>Frame {currentFrame} / {maxFrame}</span>
                     </div>
                     {uncertaintyRanges.map((range, index) => {
@@ -187,7 +194,7 @@ export default function Timeline({
                 <button
                     type="button"
                     onClick={() => onRangeChange?.({ startFrame: currentFrame, endFrame: currentFrame })}
-                    disabled={matchData.length === 0 || !onRangeChange}
+                    disabled={!hasFrames || !onRangeChange}
                     className="px-2 py-1 rounded border border-slate-700 bg-slate-800 hover:bg-slate-700 transition-colors disabled:opacity-50"
                 >
                     Set Range Start
@@ -195,7 +202,7 @@ export default function Timeline({
                 <button
                     type="button"
                     onClick={() => onRangeChange?.(normalizeRange(reviewRange?.startFrame ?? currentFrame, currentFrame))}
-                    disabled={matchData.length === 0 || !onRangeChange}
+                    disabled={!hasFrames || !onRangeChange}
                     className="px-2 py-1 rounded border border-slate-700 bg-slate-800 hover:bg-slate-700 transition-colors disabled:opacity-50"
                 >
                     Set Range End
@@ -203,7 +210,7 @@ export default function Timeline({
                 <button
                     type="button"
                     onClick={() => onRangeChange?.(null)}
-                    disabled={matchData.length === 0 || !onRangeChange}
+                    disabled={!hasFrames || !onRangeChange}
                     className="px-2 py-1 rounded border border-slate-700 bg-slate-800 hover:bg-slate-700 transition-colors disabled:opacity-50"
                 >
                     Clear Range
@@ -211,12 +218,12 @@ export default function Timeline({
             </div>
 
             {/* Event tagger row */}
-            {matchData.length > 0 && (
+            {hasFrames && (
                 <div className="flex items-center gap-3 pt-2 border-t border-slate-800">
                     <span className="text-xs text-slate-500 shrink-0">Tag:</span>
                     <EventTagger
                         currentFrame={currentFrame}
-                        timestamp={matchData[currentFrame]?.Timestamp || 0}
+                        timestamp={current?.Timestamp || 0}
                         onAddEvent={(evt) => {
                             // This is handled via the parent's onAddEvent - we pass it through
                             // The parent (App) provides the actual handler

@@ -26,3 +26,12 @@ def feature_enabled(name: str, env: dict[str, str] | None = None) -> bool:
 
 def feature_flags(env: dict[str, str] | None = None) -> dict[str, bool]:
     return {name: feature_enabled(name, env=env) for name in DEFAULT_FLAGS}
+
+
+def shadow_metric(name: str, env: dict[str, str] | None = None) -> dict[str, bool]:
+    enabled = feature_enabled(name, env=env)
+    return {
+        "default": bool(DEFAULT_FLAGS.get(name, False)),
+        "shadowed": not enabled,
+        "published": enabled,
+    }

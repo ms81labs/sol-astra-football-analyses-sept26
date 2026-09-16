@@ -292,3 +292,12 @@ def policy_log(*, route: str, evidence_hash: str, secret: str) -> dict[str, Any]
 
 def preemptible_allowed(*, checkpoints: bool, restart_semantics: bool) -> bool:
     return bool(checkpoints and restart_semantics)
+
+
+def network_failure_preserves_unknown(*, metric_value: float | None, generated_number: float) -> dict[str, Any]:
+    del generated_number
+    return {
+        "value": metric_value,
+        "availability": "unknown" if metric_value is None else "available",
+        "replacedWithGenerated": False,
+    }

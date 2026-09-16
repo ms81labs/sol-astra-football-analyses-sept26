@@ -66,3 +66,25 @@ it('shades uncertain intervals without treating them as accepted events', () => 
   expect(screen.getByLabelText(/uncertain interval/i)).toBeTruthy();
   expect(screen.getByText(/identity switch/i)).toBeTruthy();
 });
+
+it('scrubs a usable timeline without loading all frame records', () => {
+  const current = { Frame_ID: 12, Timestamp: 2.4, Ball: null, My_Team: [], Enemies: [] };
+  render(
+    <Timeline
+      matchData={[]}
+      frameCount={27000}
+      currentFrame={12}
+      currentRecord={current}
+      isPlaying={false}
+      fps={5}
+      events={[]}
+      onSeek={() => {}}
+      onTogglePlay={() => {}}
+    />,
+  );
+  const scrubber = screen.getByLabelText('Timeline scrubber') as HTMLInputElement;
+  expect(scrubber.max).toBe('26999');
+  expect(scrubber.value).toBe('12');
+  expect(screen.getByText(/Time: 2.40s|Time: 2.4s/)).toBeTruthy();
+  expect(screen.getByText(/Frame 12 \/ 26999/)).toBeTruthy();
+});

@@ -39,3 +39,13 @@ def formation_availability(*, eligible_windows: int, role_context: bool) -> dict
             "value": None,
         }
     return {"availability": "available", "reasonCodes": [], "value": "computed"}
+
+
+def transform_legacy_display(*, x: float, y: float, from_display: bool) -> dict[str, Any]:
+    del x, y
+    return {
+        "xAxis": "longitudinal",
+        "yAxis": "lateral",
+        "transformedExplicitly": from_display,
+        "legacyDisplay": "transform_explicitly",
+    }

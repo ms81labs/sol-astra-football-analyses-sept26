@@ -578,6 +578,61 @@ def test_derived_distance_does_not_bridge_camera_cuts_or_identity_gaps() -> None
     assert ok["bridged"] is False
 
 
+def test_shadowed_metrics_stay_off_defaults_and_new_artifacts_are_written_alongside(tmp_path: Path) -> None:
+    from backend.app.workbench.artifacts import ArtifactStore, write_alongside
+    from backend.app.workbench.flags import shadow_metric
+
+    shadowed = shadow_metric("experimental_shot_quality")
+    assert shadowed["default"] is False
+    assert shadowed["shadowed"] is True
+    assert shadowed["published"] is False
+    store = ArtifactStore(tmp_path / "cas")
+    previous = store.put(b"report-v1", namespace="reports")
+    published = write_alongside(store, previous_digest=previous, payload=b"report-v2", namespace="reports")
+    assert published["mutatedHistorical"] is False
+    assert published["previousDigest"] == previous
+    assert published["digest"] != previous
+    assert store.get(previous, namespace="reports") == b"report-v1"
+    assert store.get(published["digest"], namespace="reports") == b"report-v2"
+
+
+def test_shot_tree_challenger_and_learned_temporal_stay_gated_until_justified() -> None:
+    from backend.app.workbench.events import learned_temporal
+    from backend.app.workbench.shot_model import missing_shot_features, tree_challenger
+
+    missing = missing_shot_features({"y": 50.0})
+    assert missing["recorded"] is True
+    assert "x" in missing["missing"]
+    assert missing["imputedAsCalibrated"] is False
+    tree = tree_challenger(logistic_calibrated=False)
+    assert tree["enabled"] is False
+    assert tree["comparedAfterLogisticBaseline"] is True
+    temporal = learned_temporal(labelled_errors_justify=False)
+    assert temporal["enabled"] is False
+    assert temporal["replacesStateMachine"] is False
+
+
+def test_network_failure_preserves_unknown_metrics_and_budget_variance_alerts() -> None:
+    from backend.app.workbench.assistance import network_failure_preserves_unknown
+    from backend.app.workbench.costs import reconcile_spend, reserve_budget
+    from backend.app.workbench.quantities import transform_legacy_display
+
+    preserved = network_failure_preserves_unknown(metric_value=None, generated_number=4.2)
+    assert preserved["value"] is None
+    assert preserved["availability"] == "unknown"
+    assert preserved["replacedWithGenerated"] is False
+    reserved = reserve_budget(estimate=10.0, conservative_factor=1.5)
+    assert reserved["reserved"] == 15.0
+    assert reserved["authorised"] is False
+    variance = reconcile_spend(reserved=15.0, actual=22.0)
+    assert variance["alert"] is True
+    assert variance["exceeded"] is True
+    display = transform_legacy_display(x=10.0, y=20.0, from_display=True)
+    assert display["xAxis"] == "longitudinal"
+    assert display["yAxis"] == "lateral"
+    assert display["transformedExplicitly"] is True
+
+
 def test_evaluation_measures_require_compatible_labels_and_do_not_treat_health_as_the_label_gate() -> None:
     from backend.app.workbench.evaluation import evaluation_measures
 
