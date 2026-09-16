@@ -39,6 +39,10 @@ class JobRequest(StrictModel):
     budget: float
     authorisedLocation: Literal["local", "daytona"]
     fallbackPolicy: str = "cpu_local"
+    pixelFormat: str = "bgr24"
+    precision: str = "fp32"
+    namespace: Literal["development", "production", "validation", "held_out_evaluation"] = "development"
+    cameraProfile: str = "stitched_panoramic_view"
 
 
 class JobAttempt(StrictModel):
@@ -209,3 +213,31 @@ def _percentile(values: list[float], percentile: int) -> float:
     ordered = sorted(values)
     index = min(len(ordered) - 1, max(0, int(round((percentile / 100) * (len(ordered) - 1)))))
     return float(ordered[index])
+
+
+def worker_environment(request: JobRequest, *, host_secret: str) -> dict[str, str]:
+    del host_secret
+    return {
+        "REQUEST_ID": request.requestId,
+        "NAMESPACE": request.namespace,
+        "AUTHORISED_LOCATION": request.authorisedLocation,
+        "PIXEL_FORMAT": request.pixelFormat,
+        "PRECISION": request.precision,
+    }
+
+
+def cleanup_failure_is_complete(cleanup_result: str) -> bool:
+    return cleanup_result == "confirmed"
+
+
+def pause_experiment(*, remaining: float, termination_and_recovery: float) -> bool:
+    return remaining < termination_and_recovery
+
+
+def deployment_mode(name: str) -> dict[str, object]:
+    modes = {
+        "local_only": {"admitted": True, "silentCloudFallback": False, "requiresGNetwork": False},
+        "local_app_plus_burst_gpu": {"admitted": False, "silentCloudFallback": False, "requiresGNetwork": False, "requiresAuthorisedBudget": True},
+        "hosted_collaboration": {"admitted": False, "silentCloudFallback": False, "requiresGNetwork": True},
+    }
+    return modes[name]

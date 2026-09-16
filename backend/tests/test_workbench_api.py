@@ -202,6 +202,15 @@ def test_workbench_corrections_search_jobs_and_unknown_metrics(tmp_path: Path) -
             assert inspector.json()["rendered"] == "unavailable"
             residency = await client.get("/api/workbench/residency")
             assert residency.json()["euProcessingProven"] is False
+            created = await client.post(
+                "/api/workbench/matches",
+                json={"title": "training", "cameraProfile": "handheld_low_angle", "rights": {"cloudPermission": False}},
+            )
+            assert created.status_code == 200
+            assert created.json()["processingStarted"] is False
+            assert created.json()["manualTaggingPermitted"] is True
+            risks = await client.get("/api/workbench/risks")
+            assert any(item["id"] == "labels_incomplete" for item in risks.json()["items"])
 
     _run(body)
 

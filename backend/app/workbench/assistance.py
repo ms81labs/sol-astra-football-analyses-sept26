@@ -274,3 +274,21 @@ class AssistanceRouter:
             spend=self.spend,
             output=sanitized,
         )
+
+
+def dual_budgets(*, vision: float, language: float) -> dict[str, float]:
+    return {"vision": vision, "language": language}
+
+
+def embeddings_retrieve(query: str, *, passages: list[dict[str, Any]]) -> dict[str, Any]:
+    del query, passages
+    return {"enabled": False, "provesTacticalWeakness": False, "role": "candidate_retrieval_only"}
+
+
+def policy_log(*, route: str, evidence_hash: str, secret: str) -> dict[str, Any]:
+    del secret
+    return {"route": route, "evidenceHash": evidence_hash, "policyVersion": "1", "secretsExcluded": True}
+
+
+def preemptible_allowed(*, checkpoints: bool, restart_semantics: bool) -> bool:
+    return bool(checkpoints and restart_semantics)

@@ -34,3 +34,19 @@ def assess_match_setup(
             else "Candidate automation profile; not a certification of the current implementation."
         ),
     }
+
+
+def create_match(*, title: str, camera_profile: str, rights: dict[str, Any] | None = None) -> dict[str, Any]:
+    assessment = assess_match_setup(
+        camera_profile=camera_profile,
+        pitch_length_m=None,
+        rights=rights or {},
+    )
+    return {
+        "title": title,
+        "processingStarted": False,
+        "manualTaggingPermitted": True,
+        "cameraProfile": camera_profile,
+        "automationAdmitted": assessment["automationAdmitted"],
+        "cannotMeasure": assessment["cannotMeasure"],
+    }

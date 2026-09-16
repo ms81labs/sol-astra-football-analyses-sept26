@@ -8,6 +8,8 @@ DEFAULT_FLAGS = {
     "experimental_shot_quality": False,
     "gpu_default": False,
     "native_code": False,
+    "experimental_ui": False,
+    "embeddings_search": False,
 }
 
 

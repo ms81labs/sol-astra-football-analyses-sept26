@@ -28,8 +28,9 @@ from .privacy import residency_claim
 from .reports import assemble_report
 from .review import CorrectionLog, new_correction, playlist_export_interval
 from .rights import rights_register
+from .risks import risk_register
 from .roster import model_roster
-from .setup import assess_match_setup
+from .setup import assess_match_setup, create_match
 from .store import WorkbenchStore
 from .xt import xt_deferred_plan
 
@@ -470,5 +471,18 @@ def create_workbench_router(storage_root: Path) -> APIRouter:
     @router.get("/residency")
     def get_residency() -> dict:
         return residency_claim(requested_region="eu", provider="daytona")
+
+    @router.post("/matches")
+    def post_match(payload: dict | None = None) -> dict:
+        body = payload or {}
+        return create_match(
+            title=str(body.get("title") or "untitled"),
+            camera_profile=str(body.get("cameraProfile") or "stitched_panoramic_view"),
+            rights=dict(body.get("rights") or {}),
+        )
+
+    @router.get("/risks")
+    def get_risks() -> dict:
+        return {"items": risk_register()}
 
     return router

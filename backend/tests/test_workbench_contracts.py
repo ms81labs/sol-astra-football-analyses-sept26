@@ -1655,3 +1655,68 @@ def test_trackeval_cvat_and_video_models_stay_unpromoted() -> None:
     assert "ultralytics" in register
     assert register["ultralytics"]["rollbackPath"]
 
+
+def test_job_manifest_records_namespace_and_excludes_host_credentials() -> None:
+    from backend.app.workbench.jobs import JobRequest, cleanup_failure_is_complete, pause_experiment, worker_environment
+
+    request = JobRequest(
+        requestId="run-17",
+        matchId="m1",
+        sourceSha256="e" * 64,
+        intervalStart=0.0,
+        intervalEnd=90.0,
+        temporalPolicy="source_global_grid",
+        decoderVersion="opencv",
+        modelHash="weights-v1",
+        outputSchema="evidence_v1",
+        budget=4.0,
+        authorisedLocation="local",
+        pixelFormat="bgr24",
+        precision="fp32",
+        namespace="held_out_evaluation",
+        cameraProfile="stitched_panoramic_view",
+    )
+    assert request.namespace == "held_out_evaluation"
+    env = worker_environment(request, host_secret="DAYTONA_API_KEY=super-secret")
+    assert "super-secret" not in str(env)
+    assert "DAYTONA_API_KEY" not in env
+    assert cleanup_failure_is_complete("failed") is False
+    assert pause_experiment(remaining=1.0, termination_and_recovery=2.5) is True
+
+
+def test_deployment_modes_embeddings_and_dual_budgets_stay_gated() -> None:
+    from backend.app.workbench.jobs import deployment_mode
+    from backend.app.workbench.assistance import dual_budgets, embeddings_retrieve, policy_log, preemptible_allowed
+
+    local = deployment_mode("local_only")
+    assert local["silentCloudFallback"] is False
+    hosted = deployment_mode("hosted_collaboration")
+    assert hosted["requiresGNetwork"] is True
+    assert hosted["admitted"] is False
+    retrieved = embeddings_retrieve("pressing weakness", passages=[{"id": "p1", "text": "maybe a press"}])
+    assert retrieved["provesTacticalWeakness"] is False
+    assert retrieved["enabled"] is False
+    budgets = dual_budgets(vision=2.0, language=0.1)
+    assert budgets["vision"] != budgets["language"]
+    log = policy_log(route="template", evidence_hash="abc", secret="sk-live-secret")
+    assert "sk-live-secret" not in str(log)
+    assert preemptible_allowed(checkpoints=False, restart_semantics=False) is False
+
+
+def test_risk_register_worked_flow_and_independent_reviewer_stay_honest() -> None:
+    from backend.app.workbench.risks import independent_reviewer, risk_register, telestration_before_3d, worked_match_flow
+
+    register = risk_register()
+    ids = {item["id"] for item in register}
+    assert "labels_incomplete" in ids
+    assert "false_precision" in ids
+    flow = worked_match_flow()
+    assert flow["illustrative"] is True
+    assert flow["jobId"] == "run-17"
+    assert flow["assetId"] == "asset-A"
+    assert flow["correctionInvalidatesReportWithoutRerun"] is True
+    reviewer = independent_reviewer(developer="alice", reviewer="alice", inspected_held_out=True)
+    assert reviewer["accepted"] is False
+    assert telestration_before_3d()["blenderEnabled"] is False
+    assert telestration_before_3d()["pitchView"] == "2d"
+
