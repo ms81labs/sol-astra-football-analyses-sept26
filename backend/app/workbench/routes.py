@@ -477,7 +477,18 @@ def create_workbench_router(storage_root: Path) -> APIRouter:
         return player_observations(body.rows, identity_continuous=body.identityContinuous)
 
     @router.get("/jobs/{request_id}/rates")
-    def job_rates(request_id: str) -> dict:
+    def job_rates(
+        request_id: str,
+        authorization: str | None = Header(default=None),
+        x_job_scope: str | None = Header(default=None),
+        x_deployment_boundary: str | None = Header(default=None),
+    ) -> dict:
+        _require_job_access(
+            request_id,
+            authorization=authorization,
+            job_scope=x_job_scope,
+            deployment_boundary=x_deployment_boundary,
+        )
         try:
             _job_ledger.receipt(request_id)
         except KeyError as exc:
