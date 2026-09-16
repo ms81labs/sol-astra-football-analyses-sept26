@@ -167,7 +167,12 @@ def _bbox_from_row(item: dict) -> tuple[float, float, float, float] | None:
         return (float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3]))
     keys = ("Source_X1", "Source_Y1", "Source_X2", "Source_Y2")
     if all(item.get(key) is not None for key in keys):
-        return tuple(float(item[key]) for key in keys)  # type: ignore[return-value]
+        return (
+            float(item["Source_X1"]),
+            float(item["Source_Y1"]),
+            float(item["Source_X2"]),
+            float(item["Source_Y2"]),
+        )
     return None
 
 
