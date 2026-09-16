@@ -12,5 +12,7 @@ it('maps the declared review keys to undoable analyst actions', () => {
   expect(reviewShortcut('r')).toBe('reject');
   expect(reviewShortcut('z')).toBe('undo');
   expect(reviewShortcut('Enter')).toBe('save_note');
+  expect(reviewShortcut(',')).toBe('previous_frame');
+  expect(reviewShortcut('.')).toBe('next_frame');
   expect(reviewShortcut('x')).toBeNull();
 });

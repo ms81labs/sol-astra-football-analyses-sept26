@@ -529,6 +529,55 @@ def test_cuda_visibility_is_not_video_engine_capability() -> None:
     assert "CUDA_VISIBILITY_IS_NOT_VIDEO_CAPABILITY" in probe["reasonCodes"]
 
 
+def test_appearance_embeddings_are_selective_and_tracklets_are_not_forced_into_players() -> None:
+    from backend.app.workbench.identity import (
+        appearance_embedding_policy,
+        assign_tracklet,
+        candidate_rejoin,
+        tracker_chunk,
+    )
+
+    policy = appearance_embedding_policy()
+    assert policy["everyDetection"] is False
+    assert policy["afterOcclusion"] is True
+    assert policy["afterRejoin"] is True
+    assert policy["cameraCutDefeatsAppearance"] is True
+    unreviewed = assign_tracklet(roster_id="shirt-9", reviewed=False)
+    assert unreviewed["kind"] == "tracklet"
+    assert unreviewed["forced"] is False
+    assert unreviewed["rosterId"] is None
+    rejoin = candidate_rejoin()
+    assert rejoin["preserveCompetingHypotheses"] is True
+    assert rejoin["autoAccepted"] is False
+    cut = tracker_chunk(scene_discontinuity=True, broadcast_replay=False)
+    assert cut["reset"] is True
+    assert cut["silentlyReconnected"] is False
+    replay = tracker_chunk(scene_discontinuity=False, broadcast_replay=True)
+    assert replay["reset"] is True
+    assert replay["silentlyReconnected"] is False
+    overlap = tracker_chunk(scene_discontinuity=False, broadcast_replay=False)
+    assert overlap["carryForwardBoundedState"] is True
+    assert overlap["silentlyReconnected"] is False
+
+
+def test_derived_distance_does_not_bridge_camera_cuts_or_identity_gaps() -> None:
+    from backend.app.workbench.geometry import derived_distance
+
+    bridged = derived_distance(delta_m=12.0, uncertainty_m=0.4, cut_bridged=True, identity_gap=False)
+    assert bridged["availability"] == "withheld"
+    assert bridged["value"] is None
+    assert "CAMERA_CUT" in bridged["reasonCodes"]
+    gap = derived_distance(delta_m=12.0, uncertainty_m=0.4, cut_bridged=False, identity_gap=True)
+    assert gap["availability"] == "withheld"
+    assert gap["value"] is None
+    assert "IDENTITY_DISCONTINUITY" in gap["reasonCodes"]
+    ok = derived_distance(delta_m=12.0, uncertainty_m=0.4, cut_bridged=False, identity_gap=False)
+    assert ok["availability"] == "available"
+    assert ok["value"] == 12.0
+    assert ok["uncertaintyM"] == 0.4
+    assert ok["bridged"] is False
+
+
 def test_evaluation_measures_require_compatible_labels_and_do_not_treat_health_as_the_label_gate() -> None:
     from backend.app.workbench.evaluation import evaluation_measures
 

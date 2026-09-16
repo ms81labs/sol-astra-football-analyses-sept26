@@ -85,7 +85,7 @@ export default function ReviewToolbar({ onCreateNote, onCreateTaggedMoment, onSh
                     Tag
                 </button>
             </div>
-            <p className="text-[11px] text-slate-600">Shortcuts: Space play/pause, [ ] previous/next candidate, I/O mark in/out, A accept, R reject, Z undo. Enter saves a note.</p>
+            <p className="text-[11px] text-slate-600">Shortcuts: Space play/pause, [ ] previous/next candidate, , . previous/next source frame, I/O mark in/out, A accept, R reject, Z undo. Enter saves a note.</p>
         </div>
     );
 }

@@ -68,6 +68,46 @@ def reconnect_across_cut(*, cut_detected: bool) -> dict[str, Any]:
     return {"reset": False, "silentlyReconnected": False, "reasonCodes": []}
 
 
+def appearance_embedding_policy() -> dict[str, bool]:
+    """Embeddings after occlusion or rejoin only. Camera cuts and similar kits defeat matching."""
+
+    return {
+        "everyDetection": False,
+        "afterOcclusion": True,
+        "afterRejoin": True,
+        "cameraCutDefeatsAppearance": True,
+        "similarKitsDefeatAppearance": True,
+        "substitutionsDefeatAppearance": True,
+    }
+
+
+def assign_tracklet(*, roster_id: str | None, reviewed: bool) -> dict[str, Any]:
+    """Never force every tracklet into a known player."""
+
+    if reviewed and roster_id:
+        return {"kind": "roster_player", "forced": False, "rosterId": roster_id}
+    return {"kind": "tracklet", "forced": False, "rosterId": None}
+
+
+def candidate_rejoin() -> dict[str, bool]:
+    return {
+        "preserveCompetingHypotheses": True,
+        "requestReview": True,
+        "autoAccepted": False,
+    }
+
+
+def tracker_chunk(*, scene_discontinuity: bool, broadcast_replay: bool) -> dict[str, bool]:
+    """Carry a bounded tracker state across overlap; reset at genuine discontinuities and replays."""
+
+    reset = scene_discontinuity or broadcast_replay
+    return {
+        "reset": reset,
+        "silentlyReconnected": False,
+        "carryForwardBoundedState": not reset,
+    }
+
+
 def face_recognition(*, requested: bool) -> dict[str, Any]:
     del requested
     return {"enabled": False, "reasonCodes": ["FACE_RECOGNITION_EXCLUDED"]}

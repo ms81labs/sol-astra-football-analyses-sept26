@@ -183,6 +183,40 @@ def project_to_pitch(
     }
 
 
+def derived_distance(
+    *,
+    delta_m: float,
+    uncertainty_m: float,
+    cut_bridged: bool,
+    identity_gap: bool,
+) -> dict[str, Any]:
+    """Never bridge camera cuts or identity gaps to create physical totals."""
+
+    if cut_bridged:
+        return {
+            "availability": "withheld",
+            "value": None,
+            "uncertaintyM": uncertainty_m,
+            "bridged": False,
+            "reasonCodes": ["CAMERA_CUT"],
+        }
+    if identity_gap:
+        return {
+            "availability": "withheld",
+            "value": None,
+            "uncertaintyM": uncertainty_m,
+            "bridged": False,
+            "reasonCodes": ["IDENTITY_DISCONTINUITY"],
+        }
+    return {
+        "availability": "available",
+        "value": delta_m,
+        "uncertaintyM": uncertainty_m,
+        "bridged": False,
+        "reasonCodes": [],
+    }
+
+
 def detect_zoom_or_cut(previous: CalibrationProfile, current: CalibrationProfile) -> bool:
     if previous.cameraModel != current.cameraModel:
         return True

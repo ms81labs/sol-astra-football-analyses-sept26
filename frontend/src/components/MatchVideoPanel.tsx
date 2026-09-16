@@ -9,6 +9,7 @@ interface MatchVideoPanelProps {
   onVideoTimeChange: (time: number) => void;
   onPlayingChange?: (playing: boolean) => void;
   seekVersion?: number;
+  sourcePresentationFps?: number;
 }
 
 export default function MatchVideoPanel({
@@ -18,12 +19,22 @@ export default function MatchVideoPanel({
   onVideoTimeChange,
   onPlayingChange,
   seekVersion,
+  sourcePresentationFps = 25,
 }: MatchVideoPanelProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [isReady, setIsReady] = useState(false);
   const appliedSeekRef = useRef<number | undefined>(undefined);
   const [hasError, setHasError] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
+
+  const stepSourceFrame = (direction: -1 | 1) => {
+    const video = videoRef.current;
+    if (!video || sourcePresentationFps <= 0) return;
+    const step = 1 / sourcePresentationFps;
+    const next = Math.max(0, (video.currentTime || 0) + direction * step);
+    video.currentTime = next;
+    onVideoTimeChange(next);
+  };
 
   useEffect(() => {
     const video = videoRef.current;
@@ -92,19 +103,35 @@ export default function MatchVideoPanel({
           setHasError(true);
         }}
       />
-      <label className="absolute bottom-2 left-2 rounded bg-slate-900/80 px-2 py-1 text-[11px] text-slate-300">
-        Playback speed
-        <select
-          value={playbackRate}
-          onChange={(event) => setPlaybackRate(Number(event.target.value))}
-          className="ml-2 rounded border border-slate-600 bg-slate-800 px-1 py-0.5 text-slate-200"
+      <div className="absolute bottom-2 left-2 flex items-center gap-2 rounded bg-slate-900/80 px-2 py-1 text-[11px] text-slate-300">
+        <button
+          type="button"
+          onClick={() => stepSourceFrame(-1)}
+          className="rounded border border-slate-600 px-1.5 py-0.5 hover:bg-slate-800"
         >
-          <option value={0.5}>0.5x</option>
-          <option value={1}>1x</option>
-          <option value={1.5}>1.5x</option>
-          <option value={2}>2x</option>
-        </select>
-      </label>
+          Previous frame
+        </button>
+        <button
+          type="button"
+          onClick={() => stepSourceFrame(1)}
+          className="rounded border border-slate-600 px-1.5 py-0.5 hover:bg-slate-800"
+        >
+          Next frame
+        </button>
+        <label>
+          Playback speed
+          <select
+            value={playbackRate}
+            onChange={(event) => setPlaybackRate(Number(event.target.value))}
+            className="ml-2 rounded border border-slate-600 bg-slate-800 px-1 py-0.5 text-slate-200"
+          >
+            <option value={0.5}>0.5x</option>
+            <option value={1}>1x</option>
+            <option value={1.5}>1.5x</option>
+            <option value={2}>2x</option>
+          </select>
+        </label>
+      </div>
 
       {hasError && (
         <div className="absolute inset-0 flex items-center justify-center bg-slate-950/90 p-6 text-center">

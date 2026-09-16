@@ -16,4 +16,5 @@ it('orders high-impact uncertainty first and does not treat it as accepted', () 
   const buttons = screen.getAllByRole('listitem');
   expect(buttons[0].textContent).toMatch(/incorrect team selection|ambiguous possession/i);
   expect(screen.getByText(/review first/i)).toBeTruthy();
+  expect(screen.getAllByLabelText(/high-impact uncertainty/i).length).toBeGreaterThan(0);
 });

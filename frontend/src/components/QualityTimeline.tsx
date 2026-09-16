@@ -24,7 +24,15 @@ export default function QualityTimeline({ items }: QualityTimelineProps) {
       <p className="text-amber-200">Review first. High-impact uncertainty is not accepted.</p>
       <ul className="space-y-1">
         {ordered.map((item) => (
-          <li key={item.id} className="flex items-center justify-between gap-2">
+          <li
+            key={item.id}
+            aria-label={item.impact === 'high' ? 'high-impact uncertainty' : `${item.impact} uncertainty`}
+            className={
+              item.impact === 'high'
+                ? 'flex items-center justify-between gap-2 rounded bg-amber-900/40 px-1.5 py-0.5'
+                : 'flex items-center justify-between gap-2'
+            }
+          >
             <span>{item.label}</span>
             <span className="font-mono text-slate-500">{item.impact}</span>
           </li>

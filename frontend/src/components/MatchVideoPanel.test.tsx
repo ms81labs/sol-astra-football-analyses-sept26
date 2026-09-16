@@ -45,6 +45,25 @@ describe('MatchVideoPanel', () => {
 });
 
 
+it('steps one source presentation frame and does not treat target fps as the step', () => {
+  render(
+    <MatchVideoPanel
+      videoUrl="/api/matches/match-1/video"
+      currentTimestamp={0}
+      isPlaying={false}
+      onVideoTimeChange={() => undefined}
+      sourcePresentationFps={25}
+    />,
+  );
+  const video = screen.getByTestId('match-video') as HTMLVideoElement;
+  fireEvent.loadedMetadata(video);
+  fireEvent.click(screen.getByRole('button', { name: /next frame/i }));
+  expect(video.currentTime).toBeCloseTo(0.04);
+  fireEvent.click(screen.getByRole('button', { name: /previous frame/i }));
+  expect(video.currentTime).toBeCloseTo(0);
+  expect(screen.queryByText(/inference/i)).toBeNull();
+});
+
 it('exposes variable playback speed without treating it as inference fps', () => {
   render(
     <MatchVideoPanel

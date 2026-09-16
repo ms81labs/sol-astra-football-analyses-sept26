@@ -2,6 +2,8 @@ export type ReviewAction =
   | 'play_pause'
   | 'previous_candidate'
   | 'next_candidate'
+  | 'previous_frame'
+  | 'next_frame'
   | 'mark_in'
   | 'mark_out'
   | 'accept'
@@ -13,6 +15,8 @@ const SHORTCUTS: Record<string, ReviewAction> = {
   ' ': 'play_pause',
   '[': 'previous_candidate',
   ']': 'next_candidate',
+  ',': 'previous_frame',
+  '.': 'next_frame',
   i: 'mark_in',
   o: 'mark_out',
   a: 'accept',
