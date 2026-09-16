@@ -396,10 +396,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
   const currentEvent = events.find((event) => event.frame === currentFrame) ?? events.find((event) => Math.abs(event.timestamp - currentTimestamp) < 0.2) ?? null;
   const incidentTouchStart = storedIncident?.touchStart ?? currentEvent?.intervalStart ?? currentTimestamp;
   const incidentTouchEnd = storedIncident?.touchEnd ?? currentEvent?.intervalEnd ?? Number((currentTimestamp + 0.12).toFixed(2));
-  const incidentSamples = storedIncident?.samples ?? [
-    { time: incidentTouchStart, attackerX: 0, offsideLineX: 0, indeterminate: true },
-    { time: incidentTouchEnd, attackerX: 0, offsideLineX: 0, indeterminate: true },
-  ];
+  const incidentSamples = storedIncident?.samples ?? [];
   const matchVideoUrl = activeMatch ? buildMatchVideoUrl(activeMatch.id) : '';
   const uploadFailureGuidance = getUploadFailureGuidance(loadError);
   const canRetryUpload =

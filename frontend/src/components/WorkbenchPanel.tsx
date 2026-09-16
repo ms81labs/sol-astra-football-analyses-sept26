@@ -957,12 +957,7 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
               <IncidentReview
                 touchStart={incident?.touchStart ?? 0}
                 touchEnd={incident?.touchEnd ?? 0.12}
-                samples={
-                  incident?.samples ?? [
-                    { time: 0, attackerX: 0, offsideLineX: 0, indeterminate: true },
-                    { time: 0.12, attackerX: 0, offsideLineX: 0, indeterminate: true },
-                  ]
-                }
+                samples={incident?.samples ?? []}
               />
               {flags?.experimental_ui ? (
                 <QualityTimeline items={qualityItems} />

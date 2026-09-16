@@ -16,7 +16,7 @@ interface IncidentReviewProps {
 export default function IncidentReview({ touchStart, touchEnd, samples }: IncidentReviewProps) {
   const [start, setStart] = useState(String(touchStart));
   const [end, setEnd] = useState(String(touchEnd));
-  const indeterminate = samples.some((sample) => sample.indeterminate);
+  const indeterminate = samples.length === 0 || samples.some((sample) => sample.indeterminate);
 
   return (
     <section aria-label="Incident review" className="rounded-lg border border-slate-700 bg-slate-900 p-3 text-xs text-slate-300 space-y-2">
@@ -42,6 +42,7 @@ export default function IncidentReview({ touchStart, touchEnd, samples }: Incide
           className="mt-1 w-full rounded border border-slate-600 bg-slate-800 px-2 py-1 font-mono text-slate-200"
         />
       </label>
+      {samples.length === 0 && <p className="text-amber-200">Positional samples unavailable.</p>}
       {indeterminate && <p className="text-amber-200">Indeterminate across the chosen touch interval.</p>}
       <p>Video-language model confidence is not referee ground truth.</p>
       <p>Broadcast replays from different times are not simultaneous evidence.</p>

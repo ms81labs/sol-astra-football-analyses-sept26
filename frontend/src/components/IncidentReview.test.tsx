@@ -28,3 +28,11 @@ it('lets the reviewer choose a touch interval and stays indeterminate without an
   fireEvent.change(screen.getByLabelText(/touch interval end/i), { target: { value: '12.20' } });
   expect((screen.getByLabelText(/touch interval end/i) as HTMLInputElement).value).toBe('12.20');
 });
+
+it('does not invent origin attacker geometry when positional samples are missing', () => {
+  render(<IncidentReview touchStart={3.5} touchEnd={3.62} samples={[]} />);
+  expect(screen.getByRole('region', { name: /incident review/i })).toBeTruthy();
+  expect(screen.getByText(/positional samples unavailable/i)).toBeTruthy();
+  expect(screen.queryByText(/attackerX=0/)).toBeNull();
+  expect(screen.queryByText(/line=0/)).toBeNull();
+});

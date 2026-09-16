@@ -219,6 +219,9 @@ describe('App match workspace loading', () => {
     expect(screen.getByRole('region', { name: /playlist builder/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /assemble report/i })).toBeTruthy();
     expect(screen.getByText(/do not establish a whole-match frequency/i)).toBeTruthy();
+    expect(screen.getByRole('region', { name: /incident review/i })).toBeTruthy();
+    expect(screen.queryAllByText(/attackerX=0/)).toHaveLength(0);
+    expect(screen.queryAllByText(/line=0/)).toHaveLength(0);
   });
 
   it('loads heatmap availability from production HTTP and ignores claimed identity continuity', async () => {
