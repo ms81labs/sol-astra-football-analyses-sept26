@@ -19,6 +19,7 @@ def cache_identity(
     crop: tuple[int, int, int, int] | None = None,
     colour_order: str = "bgr",
     calibration_id: str | None = None,
+    namespace: str = "development",
 ) -> str:
     payload: dict[str, Any] = {
         "sourceSha256": source_sha256,
@@ -31,6 +32,7 @@ def cache_identity(
         "crop": list(crop) if crop else None,
         "colourOrder": colour_order,
         "calibrationId": calibration_id,
+        "namespace": namespace,
     }
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()

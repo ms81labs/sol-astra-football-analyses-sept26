@@ -161,6 +161,7 @@ class DurableJobLedger:
                 model_hash=request.modelHash,
                 temporal_policy=request.temporalPolicy,
                 output_schema=request.outputSchema,
+                namespace=request.namespace,
             ),
         )
 
@@ -233,3 +234,21 @@ def deployment_mode(name: str) -> dict[str, object]:
         "hosted_collaboration": {"admitted": False, "silentCloudFallback": False, "requiresGNetwork": True},
     }
     return modes[name]
+
+
+def distributed_broker(*, measured_workload_needs: bool = False) -> dict[str, object]:
+    del measured_workload_needs
+    return {
+        "enabled": False,
+        "admitted": False,
+        "renamesCurrentQueue": False,
+    }
+
+
+def vector_database(*, measured_recall_benefit: bool = False) -> dict[str, object]:
+    del measured_recall_benefit
+    return {
+        "enabled": False,
+        "admitted": False,
+        "embeddingsProveTacticalWeakness": False,
+    }

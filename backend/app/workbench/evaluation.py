@@ -99,3 +99,25 @@ def analyst_workflow_measures() -> dict[str, object]:
         "developerIntervention": None,
         "reasonCodes": ["ANALYST_ACCEPTANCE_MISSING"],
     }
+
+
+def score_hota_idf1(
+    *,
+    label_space: str,
+    hand_edited_summary: bool,
+    native_predictions_present: bool,
+) -> dict[str, object]:
+    reasons: list[str] = []
+    if label_space != "image_space":
+        reasons.append("INCOMPATIBLE_HOTA_LABEL_SPACE")
+    if hand_edited_summary:
+        reasons.append("HANDEDITED_SUMMARY_IS_NOT_A_RESULT")
+    if not native_predictions_present:
+        reasons.append("NATIVE_PREDICTIONS_REQUIRED")
+    return {
+        "scored": not reasons,
+        "hota": None,
+        "idf1": None,
+        "trackevalIsGroundTruth": False,
+        "reasonCodes": reasons,
+    }

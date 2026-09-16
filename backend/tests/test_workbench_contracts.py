@@ -2354,3 +2354,50 @@ def test_decode_memory_policy_bounds_queues_and_fails_closed_without_gpu_capabil
     assert gpu_ok["gpuResident"] is False
     assert gpu_ok["canPromoteDefault"] is False
 
+
+def test_held_out_evaluation_cache_is_not_reusable_as_development_cache() -> None:
+    from backend.app.workbench.cache import cache_compatible, cache_identity
+
+    shared = dict(
+        source_sha256="a" * 64,
+        interval_start=0.0,
+        interval_end=30.0,
+        decoder_version="opencv",
+        model_hash="weights-v1",
+        temporal_policy="clip_local_index_modulo",
+        output_schema="evidence_v1",
+    )
+    development = cache_identity(**shared, namespace="development")
+    held_out = cache_identity(**shared, namespace="held_out_evaluation")
+    assert cache_compatible(development, held_out) is False
+
+
+def test_hota_idf1_refuses_pitch_space_labels_and_hand_edited_summaries() -> None:
+    from backend.app.workbench.evaluation import score_hota_idf1
+
+    pitch = score_hota_idf1(label_space="official_pitch", hand_edited_summary=False, native_predictions_present=True)
+    assert pitch["scored"] is False
+    assert pitch["hota"] is None
+    assert pitch["idf1"] is None
+    assert pitch["trackevalIsGroundTruth"] is False
+    assert "INCOMPATIBLE_HOTA_LABEL_SPACE" in pitch["reasonCodes"]
+    edited = score_hota_idf1(label_space="image_space", hand_edited_summary=True, native_predictions_present=True)
+    assert edited["scored"] is False
+    assert "HANDEDITED_SUMMARY_IS_NOT_A_RESULT" in edited["reasonCodes"]
+    missing = score_hota_idf1(label_space="image_space", hand_edited_summary=False, native_predictions_present=False)
+    assert missing["scored"] is False
+    assert "NATIVE_PREDICTIONS_REQUIRED" in missing["reasonCodes"]
+
+
+def test_distributed_broker_and_vector_database_stay_unadmitted() -> None:
+    from backend.app.workbench.jobs import distributed_broker, vector_database
+
+    broker = distributed_broker(measured_workload_needs=False)
+    assert broker["enabled"] is False
+    assert broker["admitted"] is False
+    assert broker["renamesCurrentQueue"] is False
+    vectors = vector_database(measured_recall_benefit=True)
+    assert vectors["enabled"] is False
+    assert vectors["admitted"] is False
+    assert vectors["embeddingsProveTacticalWeakness"] is False
+
