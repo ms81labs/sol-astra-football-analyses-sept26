@@ -1041,6 +1041,118 @@ describe('App match workspace loading', () => {
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('recovers a pending playlist clip on the loaded match without rewriting the playhead', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && url.includes('state=pending') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            items: [{ correctionId: 'clip-pending', kind: 'playlist_item', saveState: 'pending' }],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections/clip-pending/recover') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ correctionId: 'clip-pending', saveState: 'saved', kind: 'playlist_item' }),
+        } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    fireEvent.click(await screen.findByRole('button', { name: /recover pending correction/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).includes('/api/matches/match-a/corrections/clip-pending/recover')
+        && init?.method === 'POST'
+      ))).toBe(true);
+    });
+    expect(await screen.findByRole('button', { name: 'Undo clip-pending' })).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/matches/match-a/events'))).toBe(false);
+  });
+
+  it('undos a stored playlist clip without rewriting the playhead', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && url.includes('state=pending') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ items: [] }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections/clip-1/undo') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ correctionId: 'undo-clip-1', saveState: 'saved', undoOf: 'clip-1' }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            items: [{
+              correctionId: 'clip-1',
+              kind: 'playlist_item',
+              saveState: 'saved',
+              undoOf: null,
+              author: 'analyst',
+            }],
+          }),
+        } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    fireEvent.click(await screen.findByRole('button', { name: 'Undo clip-1' }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).includes('/api/matches/match-a/corrections/clip-1/undo')
+        && init?.method === 'POST'
+      ))).toBe(true);
+    });
+    expect(await screen.findByText(/undo of clip-1/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/matches/match-a/events'))).toBe(false);
+  });
+
   it('swaps stored teams on the loaded match without a vision rerun', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);

@@ -755,6 +755,9 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           await applyStoredMatchEvents(matchId, frames);
           return;
         }
+        if (pending.kind === 'playlist_item') {
+          return;
+        }
         await loadWorkspaceIntoState(matchId, { prepend: true, force: true });
       })
       .catch(() => {
@@ -1602,6 +1605,9 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
                   });
                   if (original?.kind === 'event_accept' || original?.kind === 'event_reject') {
                     await applyStoredMatchEvents(matchId, frames);
+                    return;
+                  }
+                  if (original?.kind === 'playlist_item') {
                     return;
                   }
                   await loadWorkspaceIntoState(matchId, { prepend: true, force: true });

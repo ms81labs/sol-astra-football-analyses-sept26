@@ -908,6 +908,48 @@ async def _test_match_corrections_persist_pending_then_recover(tmp_path: Path):
         assert history.json()["items"][0]["saveState"] == "saved"
 
 
+def test_match_playlist_item_undo_omits_clip_from_package_and_edit_list(tmp_path: Path):
+    _run(_test_match_playlist_item_undo_omits_clip_from_package_and_edit_list, tmp_path)
+
+
+async def _test_match_playlist_item_undo_omits_clip_from_package_and_edit_list(tmp_path: Path):
+    async with api_client(tmp_path) as (_, client):
+        response = await _upload_tracking_match(client)
+        assert response.status_code == 202
+        match_id = response.json()["matchId"]
+
+        saved = await client.post(
+            f"/api/matches/{match_id}/corrections",
+            json={"kind": "playlist_item", "payload": {"timestampStart": 0.0, "timestampEnd": 0.4}},
+        )
+        assert saved.status_code == 200
+        assert saved.json()["saveState"] == "saved"
+        correction_id = saved.json()["correctionId"]
+
+        package = await client.get(f"/api/matches/{match_id}/package")
+        assert package.status_code == 200
+        starts = [item.get("timestampStart") for item in package.json()["analyst"]["playlist"]]
+        assert 0.0 in starts
+        edits = await client.get(f"/api/matches/{match_id}/edits")
+        assert edits.status_code == 200
+        assert (0.0, 0.4) in [tuple(item) for item in edits.json()["intervals"]]
+
+        undone = await client.post(f"/api/matches/{match_id}/corrections/{correction_id}/undo")
+        assert undone.status_code == 200
+        assert undone.json()["undoOf"] == correction_id
+
+        after = await client.get(f"/api/matches/{match_id}/package")
+        assert after.status_code == 200
+        after_starts = [item.get("timestampStart") for item in after.json()["analyst"]["playlist"]]
+        assert 0.0 not in after_starts
+        history_ids = {item["correctionId"] for item in after.json()["analyst"]["corrections"]}
+        assert correction_id in history_ids
+        assert undone.json()["correctionId"] in history_ids
+        after_edits = await client.get(f"/api/matches/{match_id}/edits")
+        assert after_edits.status_code == 200
+        assert (0.0, 0.4) not in [tuple(item) for item in after_edits.json()["intervals"]]
+
+
 def test_match_queries_use_stored_events_and_ignore_client_rows(tmp_path: Path):
     _run(_test_match_queries_use_stored_events_and_ignore_client_rows, tmp_path)
 

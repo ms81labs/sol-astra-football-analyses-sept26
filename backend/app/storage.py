@@ -1066,6 +1066,28 @@ class Storage:
         items = log.pending(match_id) if state == "pending" else log.history(match_id)
         return [item.model_dump(mode="json") for item in items]
 
+    def _active_playlist_payloads(self, match_id: str) -> list[dict]:
+        corrections = self.list_corrections(match_id)
+        undone = {
+            item.get("undoOf")
+            for item in corrections
+            if isinstance(item.get("undoOf"), str) and item.get("undoOf")
+        }
+        payloads: list[dict] = []
+        for item in corrections:
+            if item.get("kind") != "playlist_item":
+                continue
+            if item.get("undoOf"):
+                continue
+            if item.get("correctionId") in undone:
+                continue
+            if item.get("saveState") != "saved":
+                continue
+            payload = item.get("payload") or {}
+            if isinstance(payload, dict):
+                payloads.append(payload)
+        return payloads
+
     def _event_review_snapshot(self, match_id: str, payload: dict) -> list[dict]:
         from .workbench.events import event_matches_review_payload
 
@@ -1279,7 +1301,7 @@ class Storage:
             )
         ]
         corrections = self.list_corrections(match_id)
-        playlist = [item.get("payload") or item for item in corrections if item.get("kind") == "playlist_item"]
+        playlist = self._active_playlist_payloads(match_id)
         return assemble_match_package(
             playlist=playlist,
             events=[
@@ -1387,11 +1409,7 @@ class Storage:
         from .workbench.incidents import level0_incident_package
 
         self.get_match(match_id)
-        clips = [
-            item.get("payload") or item
-            for item in self.list_corrections(match_id)
-            if item.get("kind") == "playlist_item"
-        ]
+        clips = self._active_playlist_payloads(match_id)
         return level0_incident_package(clips=clips, notes=[], bookmarks=[])
 
     def clock_for_match(self, match_id: str) -> dict:
@@ -2014,10 +2032,7 @@ class Storage:
 
         sha = self.source_sha256(match_id)
         intervals: list[dict[str, float]] = []
-        for item in self.list_corrections(match_id):
-            if item.get("kind") != "playlist_item":
-                continue
-            payload = item.get("payload") or {}
+        for payload in self._active_playlist_payloads(match_id):
             start = payload.get("timestampStart", payload.get("start"))
             end = payload.get("timestampEnd", payload.get("end"))
             if start is None or end is None:
