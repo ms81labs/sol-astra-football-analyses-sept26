@@ -114,7 +114,7 @@ export default function StatsPanel({
                 <div className="flex items-start gap-3 rounded-lg border border-amber-600/60 bg-amber-900/30 p-3">
                     <div>
                         <p className="text-sm font-semibold text-amber-300">Ball signal untrusted</p>
-                        <p className="text-xs text-amber-400/80 mt-0.5">Possession, xG, and event analytics may be unreliable. Report issues using "Report Issue".</p>
+                        <p className="text-xs text-amber-400/80 mt-0.5">Possession, experimental shot quality, and event analytics may be unreliable. Report issues using "Report Issue".</p>
                         <p className="text-xs text-amber-300/80 mt-1">Tracking-safe distance and speed remain visible while tactical interpretation is paused.</p>
                     </div>
                 </div>
@@ -411,7 +411,7 @@ export default function StatsPanel({
                                     <span>{player.passes} passes, {player.crosses} crosses</span>
                                     <span>{player.throughBalls} through balls, {player.shots} shots</span>
                                     <span>{player.ballWins} ball wins, {player.interceptions} interceptions</span>
-                                    <span>{player.xgCreated.toFixed(2)} xGC, {player.xgTaken.toFixed(2)} xGT</span>
+                                    <span>{player.xgCreated.toFixed(2)} experimental shot quality created, {player.xgTaken.toFixed(2)} experimental shot quality taken</span>
                                     <span>{player.involvements} involvements</span>
                                     <span>{player.physicalTotalsWithheld ? 'Physical totals withheld' : `${player.totalDistance} m, ${player.topSpeed} km/h`}</span>
                                 </div>

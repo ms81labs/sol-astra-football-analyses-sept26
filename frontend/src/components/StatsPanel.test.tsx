@@ -93,7 +93,7 @@ const sampleProfiles: PlayerProfile[] = [
     totalDistance: 105.3,
     topSpeed: 28.1,
     profileLabel: 'Primary Creator',
-    summaryLine: '2 through balls, 0.54 xG created',
+    summaryLine: '2 through balls, 0.54 experimental shot quality created',
   },
 ];
 
@@ -105,7 +105,16 @@ describe('StatsPanel', () => {
     expect(scoped.getByText('Top Creator')).toBeTruthy();
     expect(scoped.getAllByText('#7')).toHaveLength(2);
     expect(scoped.getByText('Primary Creator')).toBeTruthy();
-    expect(scoped.getAllByText('2 through balls, 0.54 xG created')).toHaveLength(2);
+    expect(scoped.getAllByText('2 through balls, 0.54 experimental shot quality created')).toHaveLength(2);
+  });
+
+  it('labels player shot quality as experimental instead of xGC/xGT', () => {
+    const { container } = render(<StatsPanel stats={baseStats} shotSummary={shotSummary} playerProfiles={sampleProfiles} />);
+    const scoped = within(container);
+
+    expect(scoped.queryByText(/xGC/)).toBeNull();
+    expect(scoped.queryByText(/xGT/)).toBeNull();
+    expect(scoped.getByText('0.54 experimental shot quality created, 0.00 experimental shot quality taken')).toBeTruthy();
   });
 
   it('keeps the waiting state when there are no derived player profiles', () => {
@@ -126,6 +135,8 @@ describe('StatsPanel', () => {
     const scoped = within(container);
 
     expect(scoped.getByText('Ball signal untrusted')).toBeTruthy();
+    expect(scoped.getByText(/Possession, experimental shot quality, and event analytics may be unreliable/)).toBeTruthy();
+    expect(scoped.queryByText(/Possession, xG,/)).toBeNull();
     expect(scoped.queryByRole('heading', { name: 'Possession' })).toBeNull();
     expect(scoped.queryByRole('heading', { name: 'Pressing' })).toBeNull();
     expect(scoped.queryByText('Top Creator')).toBeNull();

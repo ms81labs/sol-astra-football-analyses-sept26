@@ -25,10 +25,10 @@ describe('CoachInsights', () => {
           weaknesses: 'Rest defense after turnovers',
           rating: 8,
           summary: 'Positive attacking output',
-          evidence: ['My team created 1.22 xG from 2 high-value chances.'],
+          evidence: ['My team created 1.22 experimental shot quality from 2 high-value chances.'],
           event_summary: { eventCounts: { through_ball: 2 }, topPlayers: [] },
           player_focus: {
-            topCreator: { trackId: 7, team: 'my_team', label: 'Primary Creator', summary: '2 through balls, 0.54 xG created' },
+            topCreator: { trackId: 7, team: 'my_team', label: 'Primary Creator', summary: '2 through balls, 0.54 experimental shot quality created' },
           },
         }}
         drillResponse={null}
@@ -39,7 +39,7 @@ describe('CoachInsights', () => {
 
     expect(screen.getByText('Player Focus')).toBeTruthy();
     expect(screen.getByText('Primary Creator')).toBeTruthy();
-    expect(screen.getByText('2 through balls, 0.54 xG created')).toBeTruthy();
+    expect(screen.getByText('2 through balls, 0.54 experimental shot quality created')).toBeTruthy();
     expect(screen.getByText(/reviewed passages do not establish a whole-match frequency/i)).toBeTruthy();
   });
 

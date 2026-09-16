@@ -63,7 +63,7 @@ def _collect_data_confidence_notes(summary: dict) -> list[str]:
     ball_signal_status = summary.get("ballSignalStatus")
     if ball_signal_status and ball_signal_status != "trusted":
         notes.append(
-            str(summary.get("ballSignalMessage") or "Ball signal is untrusted; possession, xG, and tactical event interpretation are review-only.")
+            str(summary.get("ballSignalMessage") or "Ball signal is untrusted; possession, experimental shot quality, and tactical event interpretation are review-only.")
         )
     notes.extend(str(reason) for reason in summary.get("truthGateReasons") or [])
     return notes

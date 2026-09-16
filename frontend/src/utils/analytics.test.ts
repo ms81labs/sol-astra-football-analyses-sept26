@@ -199,7 +199,7 @@ describe('buildPlayerProfiles', () => {
         totalDistance: 10.7,
         topSpeed: 39,
         profileLabel: 'Shot Threat',
-        summaryLine: '1 shot, 0.00 xG taken',
+        summaryLine: '1 shot, 0.00 experimental shot quality',
       }),
       expect.objectContaining({
         team: 'enemy',
@@ -270,7 +270,7 @@ describe('buildPlayerProfiles', () => {
         xgCreated: 0.38,
         xgTaken: 0,
         profileLabel: 'Primary Creator',
-        summaryLine: '1 through ball, 0.38 xG created',
+        summaryLine: '1 through ball, 0.38 experimental shot quality created',
       }),
       expect.objectContaining({
         team: 'my_team',
@@ -278,7 +278,7 @@ describe('buildPlayerProfiles', () => {
         shots: 1,
         xgTaken: 0.38,
         profileLabel: 'Shot Threat',
-        summaryLine: '1 shot, 0.38 xG taken',
+        summaryLine: '1 shot, 0.38 experimental shot quality',
       }),
       expect.objectContaining({
         team: 'enemy',

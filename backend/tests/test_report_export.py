@@ -107,6 +107,29 @@ def test_render_report_html_labels_low_confidence_ball_data():
     assert "Need withBallFrames/frameCount &gt;= 25% for truthful 5-10 minute analysis" in html
 
 
+def test_render_report_html_fallback_untrusted_copy_uses_experimental_shot_quality():
+    html = render_match_report_html(
+        match_name="Fallback Copy",
+        input_mode="video",
+        exported_at="2026-09-16T00:00:00+00:00",
+        summary={
+            "possession": 50,
+            "myTeamXg": 0.0,
+            "enemyXg": 0.0,
+            "formation": "-",
+            "ballSignalStatus": "untrusted",
+        },
+        formation_timeline=[],
+        event_summary={"eventCounts": {}},
+        tactical_report=None,
+        drills=None,
+    )
+
+    assert "experimental shot quality" in html.lower()
+    assert "possession, xG," not in html
+    assert "possession, xG" not in html
+
+
 def test_render_report_html_does_not_publish_unknown_ppda_as_zero():
     html = render_match_report_html(
         match_name="Unknown PPDA",

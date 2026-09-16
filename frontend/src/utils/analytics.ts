@@ -221,10 +221,10 @@ function selectProfileLabel(player: PlayerContribution): string {
 
 function buildSummaryLine(player: PlayerContribution, profileLabel: string): string {
     if (profileLabel === 'Primary Creator') {
-        return `${formatCount(player.throughBalls, 'through ball')}, ${player.xgCreated.toFixed(2)} xG created`;
+        return `${formatCount(player.throughBalls, 'through ball')}, ${player.xgCreated.toFixed(2)} experimental shot quality created`;
     }
     if (profileLabel === 'Shot Threat') {
-        return `${formatCount(player.shots, 'shot')}, ${player.xgTaken.toFixed(2)} xG taken`;
+        return `${formatCount(player.shots, 'shot')}, ${player.xgTaken.toFixed(2)} experimental shot quality`;
     }
     if (profileLabel === 'Ball Winner') {
         return `${formatCount(player.ballWins, 'ball win')}, ${formatCount(player.interceptions, 'interception')}`;
