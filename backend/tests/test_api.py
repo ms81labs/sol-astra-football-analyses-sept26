@@ -1017,6 +1017,62 @@ async def _test_match_heatmap_uses_stored_identity_receipt(tmp_path: Path):
         assert fetched.json()["identityContinuous"] is False
 
 
+def test_match_players_follow_stored_identity_receipt(tmp_path: Path):
+    _run(_test_match_players_follow_stored_identity_receipt, tmp_path)
+
+
+async def _test_match_players_follow_stored_identity_receipt(tmp_path: Path):
+    async with api_client(tmp_path) as (app, client):
+        response = await _upload_tracking_match(client)
+        assert response.status_code == 202
+        match_id = response.json()["matchId"]
+        storage = app.state.storage
+        summary, assignments, timeline, shots = storage.load_analytics(match_id)
+        availability = [
+            item.model_copy(update={"availability": "available", "reasonCodes": [], "value": 120.0})
+            if item.metric == "my_team_distance_m"
+            else item
+            for item in summary.metricAvailability
+        ]
+        storage.save_analytics(
+            match_id,
+            summary.model_copy(update={"metricAvailability": availability, "myTeamDistance": 120}),
+            assignments,
+            timeline,
+            shots,
+        )
+
+        heatmap = await client.get(f"/api/matches/{match_id}/heatmap")
+        assert heatmap.status_code == 200
+        assert heatmap.json()["identityContinuous"] is True
+
+        players = await client.post(
+            f"/api/matches/{match_id}/players",
+            json={"identityContinuous": False, "rows": [{"trackId": "forged"}]},
+        )
+        assert players.status_code == 200
+        payload = players.json()
+        assert payload["totalsWithheld"] is False
+        assert payload["intervalLimited"] is False
+        assert "IDENTITY_DISCONTINUITY" not in payload["reasonCodes"]
+        assert "forged" not in {str(row["trackId"]) for row in payload["rows"]}
+
+        listed = await client.get(f"/api/matches/{match_id}/players")
+        assert listed.status_code == 200
+        assert listed.json()["totalsWithheld"] is False
+        assert "IDENTITY_DISCONTINUITY" not in listed.json()["reasonCodes"]
+
+        metrics = await client.post(
+            f"/api/matches/{match_id}/metrics",
+            json={"identityContinuous": False, "calibrationAccepted": True},
+        )
+        assert metrics.status_code == 200
+        by_name = {item["metric"]: item for item in metrics.json()["metrics"]}
+        assert "IDENTITY_DISCONTINUITY" not in by_name["my_team_distance_m"]["reasonCodes"]
+        assert "CALIBRATION_UNAVAILABLE" in by_name["my_team_distance_m"]["reasonCodes"]
+        assert by_name["my_team_distance_m"]["availability"] != "available"
+
+
 def test_match_jobs_are_idempotent_and_cancel_is_a_request(tmp_path: Path):
     _run(_test_match_jobs_are_idempotent_and_cancel_is_a_request, tmp_path)
 

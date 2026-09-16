@@ -1076,7 +1076,7 @@ class Storage:
             metric.model_dump(mode="json")
             for metric in summarize_legacy_match(
                 summary.model_dump(mode="json"),
-                identity_continuous=False,
+                identity_continuous=self._stored_identity_continuous(match_id),
                 calibration_accepted=False,
                 controlled_frames=controlled,
             )
@@ -1097,7 +1097,10 @@ class Storage:
     def player_observations_for_match(self, match_id: str) -> dict:
         from .workbench.identity import player_observations, rows_from_frames
 
-        return player_observations(rows_from_frames(self.load_frames(match_id)), identity_continuous=False)
+        return player_observations(
+            rows_from_frames(self.load_frames(match_id)),
+            identity_continuous=self._stored_identity_continuous(match_id),
+        )
 
     def search_stored_library(self, query: str) -> dict:
         from .workbench.library import search_match_library
@@ -1166,7 +1169,7 @@ class Storage:
             metric.model_dump(mode="json")
             for metric in summarize_legacy_match(
                 summary.model_dump(mode="json"),
-                identity_continuous=False,
+                identity_continuous=self._stored_identity_continuous(match_id),
                 calibration_accepted=False,
                 controlled_frames=controlled,
             )
@@ -1250,7 +1253,7 @@ class Storage:
             metric.model_dump(mode="json")
             for metric in summarize_legacy_match(
                 summary.model_dump(mode="json"),
-                identity_continuous=False,
+                identity_continuous=self._stored_identity_continuous(match_id),
                 calibration_accepted=False,
                 controlled_frames=controlled,
             )
@@ -1488,24 +1491,26 @@ class Storage:
             )
         return {"items": items, "reviewFirst": True, "accepted": False, "measured": False}
 
-    def heatmap_for_match(self, match_id: str) -> dict:
-        from .workbench.quantities import heatmap_availability
-
-        self.get_match(match_id)
+    def _stored_identity_continuous(self, match_id: str) -> bool:
         try:
             summary, _, _, _ = self.load_analytics(match_id)
         except FileNotFoundError:
-            return heatmap_availability(identity_continuous=False)
+            return False
         physical = next(
             (item for item in summary.metricAvailability if item.metric == "my_team_distance_m"),
             None,
         )
-        identity_continuous = bool(
+        return bool(
             physical is not None
             and physical.availability == "available"
             and "IDENTITY_DISCONTINUITY" not in (physical.reasonCodes or [])
         )
-        return heatmap_availability(identity_continuous=identity_continuous)
+
+    def heatmap_for_match(self, match_id: str) -> dict:
+        from .workbench.quantities import heatmap_availability
+
+        self.get_match(match_id)
+        return heatmap_availability(identity_continuous=self._stored_identity_continuous(match_id))
 
     def identity_for_match(self, match_id: str) -> dict:
         from .workbench.identity import (
