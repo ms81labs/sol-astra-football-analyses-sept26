@@ -143,8 +143,8 @@ class MatchSummary(BaseModel):
     enemyBlockHeight: str | None = None
     myTeamRegainZones: dict[str, int] = Field(default_factory=lambda: {"defensive_third": 0, "middle_third": 0, "attacking_third": 0})
     enemyRegainZones: dict[str, int] = Field(default_factory=lambda: {"defensive_third": 0, "middle_third": 0, "attacking_third": 0})
-    myTeamTransitionExposure: float = 0.0
-    enemyTransitionExposure: float = 0.0
+    myTeamTransitionExposure: float | None = None
+    enemyTransitionExposure: float | None = None
     ballSignalStatus: str = "trusted"
     ballSignalMessage: str | None = None
     truthGateReasons: list[str] = Field(default_factory=list)

@@ -1747,11 +1747,10 @@ def test_summarize_match_includes_defensive_context():
     assert "middle_third" in summary.enemyRegainZones
     assert "attacking_third" in summary.enemyRegainZones
     
-    # Transition exposure should be a non-negative number
-    assert isinstance(summary.myTeamTransitionExposure, (int, float))
-    assert summary.myTeamTransitionExposure >= 0
-    assert isinstance(summary.enemyTransitionExposure, (int, float))
-    assert summary.enemyTransitionExposure >= 0
+    if summary.myTeamTransitionExposure is not None:
+        assert summary.myTeamTransitionExposure >= 0
+    if summary.enemyTransitionExposure is not None:
+        assert summary.enemyTransitionExposure >= 0
 
 
 def _metric(summary, name: str):
@@ -1789,6 +1788,8 @@ def test_summarize_match_marks_ppda_unknown_when_pressing_denominator_is_zero():
     assert summary.enemyDefensiveTeamLength is None
     assert summary.myTeamBlockHeight is None
     assert summary.enemyBlockHeight is None
+    assert summary.myTeamTransitionExposure is None
+    assert summary.enemyTransitionExposure is None
     shot_quality = _metric(summary, "experimental_shot_quality")
     assert shot_quality.availability == "experimental"
     assert shot_quality.publishedLabel == "experimental_shot_quality"

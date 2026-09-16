@@ -258,8 +258,8 @@ def render_match_report_html(
         <div class="grid-3">
           {_render_kv_card("My Team Block Height", _format_named_shape(summary.get("myTeamBlockHeight")))}
           {_render_kv_card("Enemy Block Height", _format_named_shape(summary.get("enemyBlockHeight")))}
-          {_render_kv_card("My Team Transition Exposure", _format_number(summary.get("myTeamTransitionExposure"), 2))}
-          {_render_kv_card("Enemy Transition Exposure", _format_number(summary.get("enemyTransitionExposure"), 2))}
+          {_render_kv_card("My Team Transition Exposure", _format_measured(summary.get("myTeamTransitionExposure"), 2))}
+          {_render_kv_card("Enemy Transition Exposure", _format_measured(summary.get("enemyTransitionExposure"), 2))}
         </div>
         <h3 style="margin-top: 16px;">Regain Zones</h3>
         <div class="grid-3" style="margin-top: 8px;">

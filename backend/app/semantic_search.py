@@ -130,10 +130,10 @@ def _detect_themes_from_summary(summary: dict) -> list[tuple[str, float]]:
         summary_text_parts.append("deep defense low block regain in defensive third")
     
     # Transition exposure
-    trans_exp = summary.get("myTeamTransitionExposure", 0)
-    if trans_exp > 2:
+    trans_exp = summary.get("myTeamTransitionExposure")
+    if trans_exp is not None and trans_exp > 2:
         summary_text_parts.append("vulnerable transition")
-    elif trans_exp < 1:
+    elif trans_exp is not None and trans_exp < 1:
         summary_text_parts.append("solid transition")
     
     # xG

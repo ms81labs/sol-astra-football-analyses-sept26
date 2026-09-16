@@ -408,7 +408,7 @@ def _summarize_defensive_context(
     events: list[DetectedEvent],
     my_team_defensive_line_height: float | None,
     enemy_defensive_line_height: float | None,
-) -> tuple[str | None, str | None, dict[str, int], dict[str, int], float, float]:
+) -> tuple[str | None, str | None, dict[str, int], dict[str, int], float | None, float | None]:
     """Compute block height classification, regain zones, and transition exposure."""
     # Block height classification
     my_team_block_height = None if my_team_defensive_line_height is None else _classify_block_height(my_team_defensive_line_height)
@@ -458,9 +458,9 @@ def _summarize_defensive_context(
     
     # Calculate exposure ratio: turnovers faced / high-press regains
     # If no high-press regains but turnovers faced, exposure is high
-    def calc_exposure(turnovers: int, high_press_regains: int) -> float:
+    def calc_exposure(turnovers: int, high_press_regains: int) -> float | None:
         if high_press_regains == 0:
-            return round(float(turnovers), 2) if turnovers > 0 else 0.0
+            return None
         return round(turnovers / high_press_regains, 2)
     
     # Get high-press regains from events (recoveries in attacking third)

@@ -283,6 +283,56 @@ describe('App match workspace loading', () => {
     expect(screen.queryByText(/player physical totals withheld until identity continuity/i)).toBeNull();
   });
 
+  it('passes production identity continuity into the selected player detail panel', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue({
+      ...loadedWorkspace('match-a', 'Match A'),
+      frames: [{
+        Frame_ID: 0,
+        Timestamp: 0,
+        Ball: null,
+        My_Team: [{ id: 7, x: 25, y: 40, conf: 1 }],
+        Enemies: [],
+      }],
+      events: [{
+        type: 'pass',
+        frameId: 0,
+        timestamp: 0,
+        team: 'my_team',
+        fromTrackId: 7,
+        toTrackId: 8,
+        description: 'Pass by track 7',
+      }],
+    });
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo, init?: RequestInit) => {
+      void init;
+      const url = String(input);
+      if (url.includes('/api/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: true,
+            wholeMatch: true,
+            intervalLimited: false,
+            withheld: false,
+            reasonCodes: [],
+          }),
+        } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    }));
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => {
+      expect(screen.queryByText(/whole-match heatmap withheld until identity continuity/i)).toBeNull();
+    });
+    fireEvent.click(screen.getByRole('img'), { clientX: 25, clientY: 40 });
+    expect(screen.getByText('Track 7')).toBeTruthy();
+    expect(screen.queryByText(/totals withheld until identity continuity/i)).toBeNull();
+  });
+
   it('loads a selected match once and does not reload the active match', async () => {
     stubPitchCanvas();
     const listedMatches = [readyMatch('match-a', 'Match A'), readyMatch('match-b', 'Match B')];

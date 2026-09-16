@@ -1087,7 +1087,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
               <PlayerDetailPanel
                 player={selectedPlayer}
                 events={activeMatch?.backendEvents ?? []}
-                identityContinuous={false}
+                identityContinuous={identityContinuous}
               />
               <button
                 type="button"
@@ -1207,7 +1207,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
                 (matchStats as MatchStats | null)?.metricAvailability?.length
                   ? matchStats?.metricAvailability
                   : activeMatch?.detail.requiresTeamSelection || matchBenchmark?.fiveMinuteTruthReady === false
-                    ? physicalMetricAvailability(false)
+                    ? physicalMetricAvailability(identityContinuous)
                     : []
               }
             />
