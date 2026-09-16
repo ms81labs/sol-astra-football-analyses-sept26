@@ -18,6 +18,16 @@ interface UploadCalibrationPanelProps {
   onPointChange: (index: number, axis: 'x' | 'y', value: string) => void;
   onResetPoints: () => void;
   onRetryUpload: () => void;
+  pitchLengthM?: string;
+  pitchWidthM?: string;
+  periodOneEnd?: string;
+  cloudPermission?: boolean;
+  retentionClass?: 'working' | 'review' | 'publication' | 'unknown';
+  onPitchLengthChange?: (value: string) => void;
+  onPitchWidthChange?: (value: string) => void;
+  onPeriodOneEndChange?: (value: string) => void;
+  onCloudPermissionChange?: (value: boolean) => void;
+  onRetentionClassChange?: (value: 'working' | 'review' | 'publication' | 'unknown') => void;
 }
 
 const POINT_LABELS = ['Top Left', 'Top Right', 'Bottom Right', 'Bottom Left'] as const;
@@ -39,6 +49,16 @@ export default function UploadCalibrationPanel({
   onPointChange,
   onResetPoints,
   onRetryUpload,
+  pitchLengthM = '',
+  pitchWidthM = '',
+  periodOneEnd = '',
+  cloudPermission = false,
+  retentionClass = 'unknown',
+  onPitchLengthChange,
+  onPitchWidthChange,
+  onPeriodOneEndChange,
+  onCloudPermissionChange,
+  onRetentionClassChange,
 }: UploadCalibrationPanelProps) {
   const showManualRecovery = Boolean(uploadFailureGuidance) && autoHomography;
   const loadedCalibrationMode = loadedVideoConfig === undefined ? null
@@ -176,6 +196,58 @@ export default function UploadCalibrationPanel({
             Next video upload will try automatic pitch detection. If it misses, switch to manual corners and retry.
           </p>
         )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3 rounded-lg border border-slate-700 bg-slate-900/70 p-3">
+          <label className="text-xs text-slate-400">
+            Pitch length (m)
+            <input
+              aria-label="Pitch length (m)"
+              type="number"
+              value={pitchLengthM}
+              onChange={(event) => onPitchLengthChange?.(event.target.value)}
+              className="mt-1 w-full bg-slate-950 border border-slate-700 rounded px-2 py-1.5 text-xs text-slate-200"
+            />
+          </label>
+          <label className="text-xs text-slate-400">
+            Pitch width (m)
+            <input
+              aria-label="Pitch width (m)"
+              type="number"
+              value={pitchWidthM}
+              onChange={(event) => onPitchWidthChange?.(event.target.value)}
+              className="mt-1 w-full bg-slate-950 border border-slate-700 rounded px-2 py-1.5 text-xs text-slate-200"
+            />
+          </label>
+          <label className="text-xs text-slate-400">
+            First-half end (s)
+            <input
+              aria-label="First-half end (s)"
+              type="number"
+              value={periodOneEnd}
+              onChange={(event) => onPeriodOneEndChange?.(event.target.value)}
+              className="mt-1 w-full bg-slate-950 border border-slate-700 rounded px-2 py-1.5 text-xs text-slate-200"
+            />
+          </label>
+          <label className="text-xs text-slate-400">
+            Retention class
+            <input
+              aria-label="Retention class"
+              value={retentionClass}
+              onChange={(event) => onRetentionClassChange?.(event.target.value as 'working' | 'review' | 'publication' | 'unknown')}
+              className="mt-1 w-full bg-slate-950 border border-slate-700 rounded px-2 py-1.5 text-xs text-slate-200"
+            />
+          </label>
+          <label className="flex items-center gap-2 text-xs text-slate-300 md:col-span-2">
+            <input
+              aria-label="Allow cloud processing"
+              type="checkbox"
+              checked={cloudPermission}
+              onChange={(event) => onCloudPermissionChange?.(event.target.checked)}
+              className="w-4 h-4 accent-emerald-500"
+            />
+            Allow cloud processing
+          </label>
+        </div>
       </div>
     </section>
   );

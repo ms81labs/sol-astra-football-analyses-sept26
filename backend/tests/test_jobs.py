@@ -163,6 +163,22 @@ def test_job_runner_classifies_inline_failure_after_start_as_uncertain(tmp_path:
     assert "sensitive detail" not in str(caught.value)
 
 
+def test_job_runner_uncertain_dispatch_records_outcome_unknown_and_blocks_retry(tmp_path: Path) -> None:
+    runner = JobRunner(tmp_path, run_jobs_inline=True)
+    runner.admit("job-inline-failure", match_id="m1", source_sha256="c" * 64, budget=1.0)
+    with (
+        patch("backend.app.jobs.run_job", side_effect=RuntimeError("sensitive detail")),
+        pytest.raises(jobs_module.JobDispatchError),
+    ):
+        runner.start("job-inline-failure")
+
+    receipt = runner.receipt("job-inline-failure")
+    assert receipt.status == "outcome_unknown"
+    assert receipt.cleanupResult == "unknown"
+    with pytest.raises(RuntimeError, match="reconcile"):
+        runner.retry("job-inline-failure")
+
+
 def test_jobs_module_has_no_runpod_dispatch_surface() -> None:
     source = Path(jobs_module.__file__).read_text(encoding="utf-8")
     tree = ast.parse(source, filename=str(jobs_module.__file__))

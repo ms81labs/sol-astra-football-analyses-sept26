@@ -41,6 +41,22 @@ def test_match_config_defaults_to_declared_panoramic_profile() -> None:
     config = MatchConfig()
     assert config.cameraProfile == "stitched_panoramic_view"
     assert config.pitchLengthM is None
+    assert config.periods == []
+    assert config.rights.processingScope == "local_only"
+    assert config.rights.cloudPermission is False
+    assert config.rights.retentionClass == "unknown"
+
+
+def test_match_config_records_periods_dimensions_and_rights() -> None:
+    config = MatchConfig(
+        pitchLengthM=105,
+        pitchWidthM=68,
+        periods=[{"name": "first_half", "startSeconds": 0, "endSeconds": 2700}],
+        rights={"processingScope": "local_only", "cloudPermission": False, "retentionClass": "review"},
+    )
+    assert config.pitchLengthM == 105
+    assert config.periods[0].name == "first_half"
+    assert config.rights.retentionClass == "review"
 
 
 def test_baseline_dossier_names_inspected_source_and_capability_matrix() -> None:
@@ -355,6 +371,42 @@ def test_durable_jobs_timeout_cancel_and_refuse_blind_retry() -> None:
     assert ledger.invalidate_for("calibration") == ["pitch_positions", "physical_metrics", "tactical_metrics", "report"]
     failed_cleanup = ledger.confirm_cleanup("req-1", ok=False)
     assert failed_cleanup.cleanupResult == "failed"
+
+
+def test_durable_jobs_quarantine_partial_output_and_cap_retries() -> None:
+    ledger = DurableJobLedger()
+    request = JobRequest(
+        requestId="req-q",
+        matchId="m1",
+        sourceSha256="b" * 64,
+        intervalStart=0,
+        intervalEnd=60,
+        temporalPolicy="clip_local_index_modulo",
+        decoderVersion="opencv",
+        modelHash="m",
+        outputSchema="evidence_v1",
+        budget=1.5,
+        authorisedLocation="local",
+    )
+    ledger.submit(request)
+    quarantined = ledger.import_attempt(
+        "req-q",
+        sha256="deadbeef",
+        expected_sha256="cafebabe",
+        schema_ok=True,
+        complete=False,
+    )
+    assert quarantined.status == "failed"
+    assert quarantined.error == "quarantined_partial_or_corrupt"
+    ledger.retry("req-q")
+    ledger.transition("req-q", "failed", error="reconciled")
+    ledger.retry("req-q")
+    ledger.transition("req-q", "failed", error="reconciled")
+    with pytest.raises(RuntimeError, match="retry budget"):
+        ledger.retry("req-q")
+    exhausted = ledger.disk_exhaustion("req-q")
+    assert exhausted.error == "disk_exhaustion"
+    assert exhausted.status == "failed"
 
 
 def test_evaluation_gate_fails_closed_without_independent_labels() -> None:

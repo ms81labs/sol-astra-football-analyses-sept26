@@ -148,6 +148,11 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
   const loadingOperationRef = useRef(0);
   const [uploadAttackDirection, setUploadAttackDirection] = useState<'left_to_right' | 'right_to_left'>('left_to_right');
   const [uploadCameraProfile, setUploadCameraProfile] = useState<CameraProfile>('stitched_panoramic_view');
+  const [uploadPitchLengthM, setUploadPitchLengthM] = useState('');
+  const [uploadPitchWidthM, setUploadPitchWidthM] = useState('');
+  const [uploadPeriodOneEnd, setUploadPeriodOneEnd] = useState('');
+  const [uploadCloudPermission, setUploadCloudPermission] = useState(false);
+  const [uploadRetentionClass, setUploadRetentionClass] = useState<'working' | 'review' | 'publication' | 'unknown'>('unknown');
   const [uploadPointInputs, setUploadPointInputs] = useState(createEmptyPointInputs);
   const [uploadAutoHomography, setUploadAutoHomography] = useState(true);
   const [uploadVideoFile, setUploadVideoFile] = useState<File | null>(null);
@@ -398,6 +403,16 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           cameraProfile: uploadCameraProfile,
           pointInputs: uploadPointInputs,
           autoHomography: uploadAutoHomography,
+          pitchLengthM: uploadPitchLengthM.trim() === '' ? null : Number(uploadPitchLengthM),
+          pitchWidthM: uploadPitchWidthM.trim() === '' ? null : Number(uploadPitchWidthM),
+          periods: uploadPeriodOneEnd.trim() === '' ? [] : [
+            { name: 'first_half', startSeconds: 0, endSeconds: Number(uploadPeriodOneEnd) },
+          ],
+          rights: {
+            processingScope: 'local_only',
+            cloudPermission: uploadCloudPermission,
+            retentionClass: uploadRetentionClass,
+          },
         });
       } catch (err) {
         setLoadError(err instanceof Error ? err.message : 'Video uploads require calibration points.');
@@ -445,7 +460,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
         }
       }
     },
-    [beginLoadingOperation, coach.llmProvider, finishLoadingOperation, loadWorkspaceIntoState, uploadAttackDirection, uploadCameraProfile, uploadPointInputs, uploadAutoHomography],
+    [beginLoadingOperation, coach.llmProvider, finishLoadingOperation, loadWorkspaceIntoState, uploadAttackDirection, uploadCameraProfile, uploadPointInputs, uploadAutoHomography, uploadPitchLengthM, uploadPitchWidthM, uploadPeriodOneEnd, uploadCloudPermission, uploadRetentionClass],
   );
 
   const handleFileUpload = useCallback(
@@ -639,6 +654,16 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
         onPointChange={updateUploadPoint}
         onResetPoints={resetUploadPoints}
         onRetryUpload={handleRetryUpload}
+        pitchLengthM={uploadPitchLengthM}
+        pitchWidthM={uploadPitchWidthM}
+        periodOneEnd={uploadPeriodOneEnd}
+        cloudPermission={uploadCloudPermission}
+        retentionClass={uploadRetentionClass}
+        onPitchLengthChange={setUploadPitchLengthM}
+        onPitchWidthChange={setUploadPitchWidthM}
+        onPeriodOneEndChange={setUploadPeriodOneEnd}
+        onCloudPermissionChange={setUploadCloudPermission}
+        onRetentionClassChange={setUploadRetentionClass}
       />
 
       {activeMatch && loadError && (
@@ -887,15 +912,17 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
               comparisonStats={comparisonStats}
               comparisonName={comparisonName ?? undefined}
               metricAvailability={
-                activeMatch?.detail.requiresTeamSelection || matchBenchmark?.fiveMinuteTruthReady === false
-                  ? [{
-                      metric: 'my_team_distance_m',
-                      definitionVersion: '1',
-                      value: null,
-                      availability: 'unknown',
-                      reasonCodes: ['IDENTITY_DISCONTINUITY'],
-                    }]
-                  : []
+                (matchStats as MatchStats | null)?.metricAvailability?.length
+                  ? matchStats?.metricAvailability
+                  : activeMatch?.detail.requiresTeamSelection || matchBenchmark?.fiveMinuteTruthReady === false
+                    ? [{
+                        metric: 'my_team_distance_m',
+                        definitionVersion: '1',
+                        value: null,
+                        availability: 'unknown',
+                        reasonCodes: ['IDENTITY_DISCONTINUITY'],
+                      }]
+                    : []
               }
             />
           )}

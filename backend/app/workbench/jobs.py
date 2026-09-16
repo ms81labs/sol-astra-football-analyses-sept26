@@ -9,6 +9,8 @@ from pydantic import Field
 
 from .contracts import JobPhase, StrictModel
 
+MAX_ATTEMPTS = 3
+
 JobStatus = Literal[
     "submitted",
     "validating",
@@ -117,6 +119,8 @@ class DurableJobLedger:
             if latest.status == "outcome_unknown":
                 raise RuntimeError("reconcile remote state before retrying an outcome-unknown job")
             return latest
+        if len(self.attempts[request_id]) >= MAX_ATTEMPTS:
+            raise RuntimeError("retry budget exhausted")
         request = self.requests[request_id]
         attempt = JobAttempt(
             attemptId=str(uuid.uuid4()),
@@ -152,3 +156,19 @@ class DurableJobLedger:
             costActual=attempt.actualCost,
             cleanupResult=attempt.cleanupResult,
         )
+
+    def import_attempt(
+        self,
+        request_id: str,
+        *,
+        sha256: str,
+        expected_sha256: str,
+        schema_ok: bool,
+        complete: bool,
+    ) -> JobAttempt:
+        if not schema_ok or not complete or sha256 != expected_sha256:
+            return self.transition(request_id, "failed", error="quarantined_partial_or_corrupt")
+        return self.transition(request_id, "complete")
+
+    def disk_exhaustion(self, request_id: str) -> JobAttempt:
+        return self.transition(request_id, "failed", error="disk_exhaustion")

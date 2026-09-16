@@ -184,6 +184,35 @@ describe('StatsPanel', () => {
     expect(scoped.getByText('Unavailable')).toBeTruthy();
   });
 
+  it('renders unknown PPDA as unavailable and labels shot quality as experimental', () => {
+    const { container } = render(
+      <StatsPanel
+        stats={baseStats}
+        benchmark={benchmarkTruthReady}
+        shotSummary={shotSummary}
+        metricAvailability={[
+          {
+            metric: 'my_team_ppda',
+            definitionVersion: '1',
+            value: null,
+            availability: 'unknown',
+            reasonCodes: ['ZERO_DENOMINATOR'],
+          },
+          {
+            metric: 'enemy_ppda',
+            definitionVersion: '1',
+            value: null,
+            availability: 'unknown',
+            reasonCodes: ['ZERO_DENOMINATOR'],
+          },
+        ]}
+      />,
+    );
+    const scoped = within(container);
+    expect(scoped.getAllByText('Unavailable').length).toBeGreaterThanOrEqual(2);
+    expect(scoped.getAllByText(/experimental shot quality/i).length).toBeGreaterThanOrEqual(1);
+  });
+
   it('does not recompute profile leaders when the profile array is unchanged', () => {
     const profiles = [...sampleProfiles];
     const iterate = profiles[Symbol.iterator].bind(profiles);

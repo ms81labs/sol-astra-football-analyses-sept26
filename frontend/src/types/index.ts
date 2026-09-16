@@ -103,6 +103,15 @@ export interface MatchStats {
     myTeamCounterpressRecoverySeconds: number;
     enemyCounterpressRecoverySeconds: number;
     formation: string;         // e.g. "4-4-2"
+    metricAvailability?: Array<{
+        metric: string;
+        definitionVersion: string;
+        value: number | null;
+        availability: string;
+        reasonCodes: string[];
+        unit?: string | null;
+        publishedLabel?: string | null;
+    }>;
 }
 
 export interface MatchBenchmarkSummary {
@@ -202,6 +211,12 @@ export interface UploadConfig {
     cameraProfile?: CameraProfile;
     pitchLengthM?: number | null;
     pitchWidthM?: number | null;
+    periods?: Array<{ name: string; startSeconds: number; endSeconds: number }>;
+    rights?: {
+        processingScope: 'local_only' | 'local_plus_burst' | 'hosted';
+        cloudPermission: boolean;
+        retentionClass: 'working' | 'review' | 'publication' | 'unknown';
+    };
 }
 
 export interface AnalyticsPayload {

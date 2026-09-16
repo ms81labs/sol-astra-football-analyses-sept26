@@ -12,6 +12,19 @@ class HomographyPoint(BaseModel):
     y: float
 
 
+class MatchPeriod(BaseModel):
+    name: str
+    startSeconds: float
+    endSeconds: float
+
+
+class SourceRights(BaseModel):
+    processingScope: Literal["local_only", "local_plus_burst", "hosted"] = "local_only"
+    cloudPermission: bool = False
+    retentionClass: Literal["working", "review", "publication", "unknown"] = "unknown"
+    audience: str | None = None
+
+
 class MatchConfig(BaseModel):
     attackDirection: Literal["left_to_right", "right_to_left"] = "left_to_right"
     manualHomographyPoints: list[HomographyPoint] = Field(default_factory=list)
@@ -26,6 +39,8 @@ class MatchConfig(BaseModel):
     ] = "stitched_panoramic_view"
     pitchLengthM: float | None = None
     pitchWidthM: float | None = None
+    periods: list[MatchPeriod] = Field(default_factory=list)
+    rights: SourceRights = Field(default_factory=SourceRights)
 
 
 class BallData(BaseModel):
@@ -80,6 +95,26 @@ class MatchStateFrame(BaseModel):
     reasonCodes: list[str] = Field(default_factory=list)
 
 
+class MetricAvailabilityRecord(BaseModel):
+    metric: str
+    definitionVersion: str = "1"
+    value: float | None = None
+    availability: str = "unknown"
+    eligibleSeconds: float = 0.0
+    requestedSeconds: float = 0.0
+    evidenceIds: list[str] = Field(default_factory=list)
+    reasonCodes: list[str] = Field(default_factory=list)
+    reviewStatus: str = "unreviewed"
+    unit: str | None = None
+    denominator: str | None = None
+    publishedLabel: str | None = None
+
+    def published_value(self) -> float | None:
+        if self.availability not in {"available", "experimental"}:
+            return None
+        return self.value
+
+
 class MatchSummary(BaseModel):
     possession: int | None
     myTeamDistance: int
@@ -113,6 +148,7 @@ class MatchSummary(BaseModel):
     ballSignalStatus: str = "trusted"
     ballSignalMessage: str | None = None
     truthGateReasons: list[str] = Field(default_factory=list)
+    metricAvailability: list[MetricAvailabilityRecord] = Field(default_factory=list)
 
 
 class FormationSegment(BaseModel):
@@ -132,6 +168,7 @@ class ShotAnalytics(BaseModel):
     y: float
     inBox: bool
     xg: float
+    publishedLabel: str = "experimental_shot_quality"
     distanceToGoal: float
     angleDegrees: float
 

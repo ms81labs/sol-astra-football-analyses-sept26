@@ -92,5 +92,26 @@ def test_workbench_corrections_search_jobs_and_unknown_metrics(tmp_path: Path) -
                 json={"timestampStart": 3.0, "timestampEnd": 5.0, "sourceFps": 25},
             )
             assert interval.json()["sourceStartSeconds"] == 3.0
+            queries = await client.post(
+                "/api/workbench/matches/m1/queries",
+                json={
+                    "query": "show our second-half turnovers followed by a shot within 10 seconds",
+                    "events": [
+                        {"id": "t1", "type": "turnover", "team": "my_team", "period": 2, "timestamp": 70, "evidenceIds": ["e1"]},
+                        {"id": "s1", "type": "shot", "team": "my_team", "period": 2, "timestamp": 72, "evidenceIds": ["e2"]},
+                    ],
+                },
+            )
+            assert queries.status_code == 200
+            assert queries.json()["results"][0]["eventId"] == "t1"
+            report = await client.post(
+                "/api/workbench/matches/m1/reports",
+                json={"metrics": [{"availability": "unknown", "reasonCodes": ["ZERO_DENOMINATOR"], "metric": "possession_pct"}]},
+            )
+            assert report.status_code == 200
+            assert report.json()["route"] == "template"
+            pending = await client.get("/api/workbench/matches/m1/corrections?state=pending")
+            assert pending.status_code == 200
+            assert pending.json()["items"] == []
 
     _run(body)

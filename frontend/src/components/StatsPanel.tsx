@@ -99,6 +99,9 @@ export default function StatsPanel({
     const maxDist = Math.max(stats.myTeamDistance, stats.enemyDistance, 1);
     const physical = metricAvailability.find((metric) => metric.metric === 'my_team_distance_m');
     const physicalUnavailable = physical != null && physical.availability !== 'available';
+    const myPpda = metricAvailability.find((metric) => metric.metric === 'my_team_ppda');
+    const enemyPpda = metricAvailability.find((metric) => metric.metric === 'enemy_ppda');
+    const ppdaHidden = (record?: { availability: string }) => record != null && record.availability !== 'available' && record.availability !== 'experimental';
 
     return (
         <div className="w-full max-w-4xl mt-4 space-y-3">
@@ -267,7 +270,7 @@ export default function StatsPanel({
                                 <div className="grid grid-cols-3 gap-3 text-xs">
                                     <div>
                                         <p className="text-slate-500">PPDA</p>
-                                        <p className="text-emerald-400 font-mono font-semibold">{stats.myTeamPpda}</p>
+                                        <p className="text-emerald-400 font-mono font-semibold">{ppdaHidden(myPpda) ? 'Unavailable' : stats.myTeamPpda}</p>
                                     </div>
                                     <div>
                                         <p className="text-slate-500">High Regains</p>
@@ -288,7 +291,7 @@ export default function StatsPanel({
                                 <div className="grid grid-cols-3 gap-3 text-xs">
                                     <div>
                                         <p className="text-slate-500">PPDA</p>
-                                        <p className="text-emerald-400 font-mono font-semibold">{stats.enemyPpda}</p>
+                                        <p className="text-emerald-400 font-mono font-semibold">{ppdaHidden(enemyPpda) ? 'Unavailable' : stats.enemyPpda}</p>
                                     </div>
                                     <div>
                                         <p className="text-slate-500">High Regains</p>
@@ -321,13 +324,13 @@ export default function StatsPanel({
                                 <p className="text-xs text-slate-500 mb-1">My Team Shots</p>
                                 <p className="text-2xl font-bold text-rose-300">{shotSummary?.myTeamShots ?? 0}</p>
                                 <p className="text-xs text-slate-400">{shotSummary?.myTeamBoxShots ?? 0} in box</p>
-                                <p className="text-xs text-emerald-400 mt-1">xG {shotSummary?.myTeamXg?.toFixed(2) ?? '0.00'}</p>
+                                <p className="text-xs text-emerald-400 mt-1">experimental shot quality {shotSummary?.myTeamXg?.toFixed(2) ?? '0.00'}</p>
                             </div>
                             <div className="rounded-lg border border-slate-700 bg-slate-900/70 p-3">
                                 <p className="text-xs text-slate-500 mb-1">Enemy Shots</p>
                                 <p className="text-2xl font-bold text-rose-400">{shotSummary?.enemyShots ?? 0}</p>
                                 <p className="text-xs text-slate-400">{shotSummary?.enemyBoxShots ?? 0} in box</p>
-                                <p className="text-xs text-emerald-400 mt-1">xG {shotSummary?.enemyXg?.toFixed(2) ?? '0.00'}</p>
+                                <p className="text-xs text-emerald-400 mt-1">experimental shot quality {shotSummary?.enemyXg?.toFixed(2) ?? '0.00'}</p>
                             </div>
                         </div>
                     </div>

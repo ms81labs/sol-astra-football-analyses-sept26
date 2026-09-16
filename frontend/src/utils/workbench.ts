@@ -73,6 +73,24 @@ export async function searchWorkbenchEvents(query: string, matchId: string, even
   }>;
 }
 
+export async function fetchPendingCorrections(matchId: string) {
+  const response = await fetch(`/api/workbench/matches/${matchId}/corrections?state=pending`);
+  if (!response.ok) {
+    throw new Error(`Failed to load pending corrections: ${response.status}`);
+  }
+  return response.json() as Promise<{ items: Array<{ correctionId: string; kind: string; saveState: string }> }>;
+}
+
+export async function recoverMatchCorrection(matchId: string, correctionId: string) {
+  const response = await fetch(`/api/workbench/matches/${matchId}/corrections/${correctionId}/recover`, {
+    method: 'POST',
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to recover correction: ${response.status}`);
+  }
+  return response.json() as Promise<{ correctionId: string; saveState: string }>;
+}
+
 export async function undoMatchCorrection(matchId: string, correctionId: string) {
   const response = await fetch(`/api/workbench/matches/${matchId}/corrections/${correctionId}/undo`, {
     method: 'POST',

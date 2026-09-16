@@ -235,4 +235,42 @@ describe('UploadCalibrationPanel', () => {
 
     expect(onRetryUpload).toHaveBeenCalledOnce();
   });
+
+  it('records periods, pitch dimensions and local-only rights for the next upload', () => {
+    const onPitchLengthChange = vi.fn();
+    const onRightsCloudChange = vi.fn();
+    render(
+      <UploadCalibrationPanel
+        autoHomography
+        attackDirection="left_to_right"
+        pointInputs={createEmptyPointInputs()}
+        previewUrl={null}
+        canRetryUpload={false}
+        isRetryingUpload={false}
+        uploadFailureGuidance={null}
+        onAutoHomographyChange={() => {}}
+        onAttackDirectionChange={() => {}}
+        onPointChange={() => {}}
+        onResetPoints={() => {}}
+        onRetryUpload={() => {}}
+        pitchLengthM="105"
+        pitchWidthM="68"
+        periodOneEnd="2700"
+        cloudPermission={false}
+        retentionClass="review"
+        onPitchLengthChange={onPitchLengthChange}
+        onPitchWidthChange={() => {}}
+        onPeriodOneEndChange={() => {}}
+        onCloudPermissionChange={onRightsCloudChange}
+        onRetentionClassChange={() => {}}
+      />,
+    );
+
+    expect(screen.getByLabelText('Pitch length (m)')).toBeTruthy();
+    expect(screen.getByLabelText('Pitch width (m)')).toBeTruthy();
+    expect(screen.getByLabelText('First-half end (s)')).toBeTruthy();
+    expect(screen.getByLabelText('Allow cloud processing')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText('Pitch length (m)'), { target: { value: '100' } });
+    expect(onPitchLengthChange).toHaveBeenCalledWith('100');
+  });
 });

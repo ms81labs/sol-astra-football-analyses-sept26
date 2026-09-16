@@ -6,6 +6,8 @@ import sys
 from pathlib import Path
 
 from .settings import ProcessingSettings
+from .workbench.jobs import DurableJobLedger, JobAttempt, JobRequest
+from .workbench.contracts import JobPhase
 
 
 class JobDispatchError(RuntimeError):
@@ -23,12 +25,58 @@ def run_job(storage_root: Path, job_id: str) -> None:
 
 
 class JobRunner:
-    def __init__(self, storage_root: Path, run_jobs_inline: bool = False, settings: ProcessingSettings | None = None):
+    def __init__(
+        self,
+        storage_root: Path,
+        run_jobs_inline: bool = False,
+        settings: ProcessingSettings | None = None,
+        ledger: DurableJobLedger | None = None,
+    ):
         self.storage_root = Path(storage_root)
         self.run_jobs_inline = run_jobs_inline
         self.settings = settings or ProcessingSettings.from_env()
+        self.ledger = ledger or DurableJobLedger()
+
+    def admit(self, job_id: str, *, match_id: str, source_sha256: str, budget: float = 0.0) -> JobAttempt:
+        location = "daytona" if self.settings.processing_backend == "daytona" else "local"
+        return self.ledger.submit(
+            JobRequest(
+                requestId=job_id,
+                matchId=match_id,
+                sourceSha256=source_sha256,
+                intervalStart=0.0,
+                intervalEnd=0.0,
+                temporalPolicy="clip_local_index_modulo",
+                decoderVersion="opencv",
+                modelHash="unspecified",
+                outputSchema="evidence_v1",
+                budget=budget,
+                authorisedLocation=location,
+            )
+        )
+
+    def receipt(self, job_id: str) -> JobPhase:
+        return self.ledger.receipt(job_id)
+
+    def retry(self, job_id: str) -> JobAttempt:
+        return self.ledger.retry(job_id)
+
+    def _ensure_admitted(self, job_id: str) -> None:
+        if job_id not in self.ledger.requests:
+            self.admit(job_id, match_id="unknown", source_sha256="0" * 64)
 
     def start(self, job_id: str) -> None:
+        self._ensure_admitted(job_id)
+        try:
+            self._dispatch(job_id)
+        except JobDispatchError as exc:
+            if exc.child_may_have_started:
+                self.ledger.lost_connection(job_id)
+            else:
+                self.ledger.transition(job_id, "failed", error="dispatch_failed")
+            raise
+
+    def _dispatch(self, job_id: str) -> None:
         backend = self.settings.processing_backend
         if backend == "daytona":
             if self.run_jobs_inline:

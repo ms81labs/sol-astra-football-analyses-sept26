@@ -50,4 +50,22 @@ describe('buildUploadConfig', () => {
       { x: 10, y: 220 },
     ]);
   });
+
+  it('includes camera profile, pitch dimensions, periods and local-only rights', () => {
+    const config = buildUploadConfig({
+      isVideo: false,
+      llmProvider: 'local',
+      attackDirection: 'left_to_right',
+      pointInputs: createEmptyPointInputs(),
+      pitchLengthM: 105,
+      pitchWidthM: 68,
+      periods: [{ name: 'first_half', startSeconds: 0, endSeconds: 2700 }],
+      rights: { processingScope: 'local_only', cloudPermission: false, retentionClass: 'review' },
+    });
+
+    expect(config.pitchLengthM).toBe(105);
+    expect(config.periods?.[0]?.name).toBe('first_half');
+    expect(config.rights?.cloudPermission).toBe(false);
+    expect(config.rights?.retentionClass).toBe('review');
+  });
 });

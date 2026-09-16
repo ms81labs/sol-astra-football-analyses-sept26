@@ -3,9 +3,23 @@ from __future__ import annotations
 from pathlib import Path
 
 from .schemas import MatchConfig
+from .workbench.media import FrameSource, OpenCvFrameSource
 
 # Exposed at module level so tests can patch this name directly.
 from backend.run_guerilla import process_video as _process_video_impl
+
+
+def _probe_source_clock(video_path: Path, frame_source: FrameSource | None) -> dict[str, object]:
+    adapter = frame_source or OpenCvFrameSource()
+    try:
+        identity = adapter.probe(video_path)
+        return identity.model_dump(mode="json")
+    except Exception as exc:
+        return {
+            "sourceSha256": "",
+            "byteSize": 0,
+            "decodeErrors": ["probe_unavailable", type(exc).__name__],
+        }
 
 
 def process_video_input(
@@ -24,6 +38,7 @@ def process_video_input(
     match_id: str | None = None,
     job_id: str | None = None,
     primary_acquisition_mode: str = "anchored_player_ranked_context_960",
+    frame_source: FrameSource | None = None,
 ) -> dict[str, object]:
     if config.autoHomography:
         # Auto-detect: backend tries pitch_detector.py first, fallback to manual
@@ -59,6 +74,6 @@ def process_video_input(
     )
     if not result:
         raise RuntimeError("Video pipeline did not return any tracking rows.")
-    if isinstance(result, dict):
-        return result
-    return {"rows": result, "trackColors": {}}
+    payload = result if isinstance(result, dict) else {"rows": result, "trackColors": {}}
+    payload["sourceClock"] = _probe_source_clock(Path(video_path), frame_source)
+    return payload

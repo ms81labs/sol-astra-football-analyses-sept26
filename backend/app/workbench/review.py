@@ -87,6 +87,10 @@ class CorrectionLog:
         )
         return self.submit(inverse)
 
+    def pending(self, match_id: str) -> list[Correction]:
+        with self._lock:
+            return [item for item in self._pending.values() if item.matchId == match_id]
+
     def history(self, match_id: str) -> list[Correction]:
         return [item for item in self._items if item.matchId == match_id]
 

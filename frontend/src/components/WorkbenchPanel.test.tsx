@@ -45,3 +45,42 @@ it('renders independently visible capability statuses from the dossier', async (
   await fireEvent.click(screen.getByRole('button', { name: 'Search evidence' }));
   expect(await screen.findByText(/Unanswerable/)).toBeTruthy();
 });
+
+it('recovers a pending playlist correction after a simulated crash', async () => {
+  const fetchMock = vi.fn(async (input: RequestInfo, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith('/api/workbench/dossier')) {
+      return new Response(JSON.stringify({
+        baseline: {
+          selectedCommit: '5099e1f',
+          declaredCameraProfile: 'stitched_panoramic_view',
+          declaredWorkflow: 'manual_review_plus_declared_camera_setup',
+          unresolvedGates: [],
+          permittedNextActions: [],
+          forbiddenActions: [],
+          capabilities: [],
+          evidenceClasses: {},
+        },
+        release: { deploymentBoundary: 'loopback', gNetworkRequiredForNonLocal: true, nativeCode: 'gated_inert' },
+        evaluation: { accepted: false, completeTasks: 0, requiredTasks: 18, reasonCodes: ['LABELS_INCOMPLETE'] },
+        gpu: { available: false, canPromoteDefault: false, reasonCodes: ['HARDWARE_UNAVAILABLE'] },
+        native: { approved: false, reasonCodes: ['NATIVE_GATE_CLOSED'] },
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    if (url.includes('/corrections') && url.includes('state=pending') && !init?.method) {
+      return new Response(JSON.stringify({
+        items: [{ correctionId: 'c-pending', kind: 'playlist_item', saveState: 'pending' }],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    if (url.endsWith('/corrections/c-pending/recover') && init?.method === 'POST') {
+      return new Response(JSON.stringify({ correctionId: 'c-pending', saveState: 'saved' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    return new Response(JSON.stringify({ query: { unanswerable: true, reason: 'x', eventFamily: 'pass' }, results: [] }), { status: 200 });
+  });
+  vi.stubGlobal('fetch', fetchMock);
+
+  render(<WorkbenchPanel onClose={() => undefined} matchId="m1" events={[]} />);
+  expect(await screen.findByText(/pending playlist edit/i)).toBeTruthy();
+  await fireEvent.click(screen.getByRole('button', { name: /recover pending edit/i }));
+  expect(await screen.findByText(/saved/i)).toBeTruthy();
+});

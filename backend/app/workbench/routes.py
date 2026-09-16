@@ -56,6 +56,18 @@ class JobBody(BaseModel):
     authorisedLocation: str = "local"
 
 
+class QueryBody(BaseModel):
+    query: str
+    events: list[dict] = Field(default_factory=list)
+
+
+class ReportBody(BaseModel):
+    metrics: list[dict] = Field(default_factory=list)
+    events: list[dict] = Field(default_factory=list)
+    claimedEvidenceIds: list[str] = Field(default_factory=list)
+    knownEvidenceIds: list[str] = Field(default_factory=list)
+
+
 def create_workbench_router(storage_root: Path) -> APIRouter:
     store = WorkbenchStore(storage_root)
     router = APIRouter(prefix="/api/workbench", tags=["workbench"])
@@ -100,8 +112,26 @@ def create_workbench_router(storage_root: Path) -> APIRouter:
         return jsonable(undone)
 
     @router.get("/matches/{match_id}/corrections")
-    def list_corrections(match_id: str) -> dict:
-        return {"items": [jsonable(item) for item in _correction_log.history(match_id)]}
+    def list_corrections(match_id: str, state: str | None = None) -> dict:
+        items = _correction_log.pending(match_id) if state == "pending" else _correction_log.history(match_id)
+        return {"items": [jsonable(item) for item in items]}
+
+    @router.post("/matches/{match_id}/queries")
+    def match_queries(match_id: str, body: QueryBody) -> dict:
+        query = parse_typed_query(body.query)
+        hits = execute_typed_query(body.events, query, match_id=match_id)
+        return {"query": jsonable(query), "results": [jsonable(hit) for hit in hits]}
+
+    @router.post("/matches/{match_id}/reports")
+    def match_reports(match_id: str, body: ReportBody) -> dict:
+        disposition = _router_assistance.run(
+            policy=AssistancePolicy(taskType="report", spendCap=0.0, allowedModelIds=[]),
+            metrics=body.metrics,
+            events=body.events,
+            claimed_evidence_ids=body.claimedEvidenceIds,
+            known_evidence_ids=set(body.knownEvidenceIds),
+        )
+        return jsonable(disposition)
 
     @router.post("/playlists/export-interval")
     def export_interval(payload: dict) -> dict:

@@ -41,7 +41,9 @@ def test_process_video_input_passes_parsed_points_to_process_video():
         call_args = mock_process.call_args
         assert call_args[0][0] == str(Path("/fake/video.mp4"))
         assert call_args[1]["homography_points"] == [[0, 0], [100, 0], [100, 100], [0, 100]]
-        assert result == {"rows": [], "trackColors": {}}
+        assert result["rows"] == []
+        assert result["trackColors"] == {}
+        assert "sourceClock" in result
 
 
 def test_process_video_input_forwards_progress_callback_to_process_video():
@@ -68,7 +70,9 @@ def test_process_video_input_forwards_progress_callback_to_process_video():
         assert call_args[1]["progress_callback"] is progress_callback
         assert call_args[1]["match_id"] == "match-123"
         assert call_args[1]["job_id"] == "job-123"
-        assert result == {"rows": [], "trackColors": {}}
+        assert result["rows"] == []
+        assert result["trackColors"] == {}
+        assert "sourceClock" in result
         assert progress_events == []
 
 
@@ -88,7 +92,9 @@ def test_process_video_input_forwards_model_path_to_process_video():
         mock_process.assert_called_once()
         call_args = mock_process.call_args
         assert call_args[1]["model_path"] == "/workspace/weights/yolo11s.pt"
-        assert result == {"rows": [], "trackColors": {}}
+        assert result["rows"] == []
+        assert result["trackColors"] == {}
+        assert "sourceClock" in result
 
 
 def test_process_video_input_forwards_edge_share_repair_profile_to_process_video():
@@ -106,7 +112,9 @@ def test_process_video_input_forwards_edge_share_repair_profile_to_process_video
         mock_process.assert_called_once()
         call_args = mock_process.call_args
         assert call_args[1]["edge_share_repair_profile"] == "source_robustness_shadow_supported_edge_run_keep_every_3_min10_guard2"
-        assert result == {"rows": [], "trackColors": {}}
+        assert result["rows"] == []
+        assert result["trackColors"] == {}
+        assert "sourceClock" in result
 
 
 def test_process_video_input_forwards_baseline_guided_rescue_reference_path_to_process_video():
@@ -124,7 +132,9 @@ def test_process_video_input_forwards_baseline_guided_rescue_reference_path_to_p
         mock_process.assert_called_once()
         call_args = mock_process.call_args
         assert call_args[1]["baseline_guided_rescue_reference_path"] == "/tmp/baseline-guided-reference.json"
-        assert result == {"rows": [], "trackColors": {}}
+        assert result["rows"] == []
+        assert result["trackColors"] == {}
+        assert "sourceClock" in result
 
 
 def test_process_video_input_forwards_primary_and_auxiliary_detector_fields_to_process_video():
@@ -148,7 +158,33 @@ def test_process_video_input_forwards_primary_and_auxiliary_detector_fields_to_p
         assert call_args[1]["primary_model_path"] == "/workspace/weights/yolov10n.pt"
         assert call_args[1]["auxiliary_ball_model_path"] == "/workspace/weights/touchline-best.pt"
         assert call_args[1]["auxiliary_ball_model_profile"] == "ball_probe_only_v1"
-        assert result == {"rows": [], "trackColors": {}}
+        assert result["rows"] == []
+        assert result["trackColors"] == {}
+        assert "sourceClock" in result
+        assert result["sourceClock"]["decodeErrors"]
+
+
+def test_process_video_input_attaches_source_clock_from_frame_source(tmp_path, monkeypatch):
+    video = tmp_path / "clip.bin"
+    video.write_bytes(b"fixture-bytes")
+    config = _cfg([[0, 0], [100, 0], [100, 100], [0, 100]])
+
+    class FakeSource:
+        name = "fixture"
+
+        def probe(self, path):
+            from backend.app.workbench.contracts import SourceClockIdentity
+
+            return SourceClockIdentity(sourceSha256="a" * 64, byteSize=path.stat().st_size, codec="h264")
+
+    with patch("backend.app.video_pipeline._process_video_impl") as mock_process:
+        mock_process.return_value = {"rows": [{"Frame_ID": 0}], "trackColors": {}}
+        result = process_video_input(video, config, frame_source=FakeSource())
+
+    assert result["rows"] == [{"Frame_ID": 0}]
+    assert result["sourceClock"]["sourceSha256"] == "a" * 64
+    assert result["sourceClock"]["byteSize"] == 13
+    assert result["sourceClock"]["codec"] == "h264"
 
 
 def test_process_video_input_raises_when_process_video_returns_nothing():

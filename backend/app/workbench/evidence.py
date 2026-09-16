@@ -110,6 +110,16 @@ def metric_dictionary() -> dict[str, dict[str, str]]:
             "denominator": "eligible_seconds_with_team_visibility",
             "definition": "Lateral spread of accepted on-pitch teammates.",
         },
+        "my_team_ppda": {
+            "unit": "passes_per_defensive_action",
+            "denominator": "pressing_actions",
+            "definition": "Passes allowed per defensive action in the pressing zone. Unknown when the denominator is empty.",
+        },
+        "experimental_shot_quality": {
+            "unit": "probability",
+            "denominator": "labelled_shots",
+            "definition": "Heuristic shot quality. Compatibility field remains `xg`; this is not a calibrated xG model.",
+        },
         EVENT_HEURISTIC_NAME: {
             "unit": "count",
             "denominator": "reviewed_or_protocol_eligible_events",

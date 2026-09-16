@@ -1685,3 +1685,113 @@ def test_summarize_match_includes_defensive_context():
     assert summary.myTeamTransitionExposure >= 0
     assert isinstance(summary.enemyTransitionExposure, (int, float))
     assert summary.enemyTransitionExposure >= 0
+
+
+def _metric(summary, name: str):
+    return next(item for item in summary.metricAvailability if item.metric == name)
+
+
+def test_summarize_match_marks_ppda_unknown_when_pressing_denominator_is_zero():
+    frames = [
+        {
+            "frameId": 0,
+            "timestamp": 0.0,
+            "ball": {"x": 50.0, "y": 50.0, "confidence": 0.9},
+            "myTeam": [{"id": 1, "x": 40.0, "y": 50.0, "confidence": 0.9}],
+            "enemies": [{"id": 11, "x": 60.0, "y": 50.0, "confidence": 0.9}],
+        }
+    ]
+    assignments = [BallOwnership(frameId=0, timestamp=0.0, team="my_team", trackId=1, distance=1.0)]
+
+    summary = summarize_match(frames, assignments, events=[])
+
+    my_ppda = _metric(summary, "my_team_ppda")
+    enemy_ppda = _metric(summary, "enemy_ppda")
+    assert my_ppda.availability == "unknown"
+    assert my_ppda.value is None
+    assert "ZERO_DENOMINATOR" in my_ppda.reasonCodes
+    assert my_ppda.published_value() is None
+    assert enemy_ppda.availability == "unknown"
+    assert summary.myTeamPpda == 0.0
+    shot_quality = _metric(summary, "experimental_shot_quality")
+    assert shot_quality.availability == "experimental"
+    assert shot_quality.publishedLabel == "experimental_shot_quality"
+
+
+def test_summarize_match_keeps_measured_ppda_and_withholds_physical_totals_by_default():
+    frames = [
+        {
+            "frameId": 0,
+            "timestamp": 0.0,
+            "ball": {"x": 82.0, "y": 48.0, "confidence": 0.95},
+            "myTeam": [{"id": 7, "x": 70.0, "y": 48.0, "confidence": 0.9}],
+            "enemies": [{"id": 20, "x": 82.0, "y": 48.0, "confidence": 0.9}],
+        },
+        {
+            "frameId": 1,
+            "timestamp": 0.2,
+            "ball": {"x": 78.0, "y": 48.0, "confidence": 0.95},
+            "myTeam": [{"id": 7, "x": 71.0, "y": 48.0, "confidence": 0.9}],
+            "enemies": [{"id": 21, "x": 78.0, "y": 48.0, "confidence": 0.9}],
+        },
+        {
+            "frameId": 2,
+            "timestamp": 0.4,
+            "ball": {"x": 75.0, "y": 48.0, "confidence": 0.95},
+            "myTeam": [{"id": 7, "x": 72.0, "y": 48.0, "confidence": 0.9}],
+            "enemies": [{"id": 22, "x": 75.0, "y": 48.0, "confidence": 0.9}],
+        },
+        {
+            "frameId": 3,
+            "timestamp": 0.6,
+            "ball": {"x": 73.0, "y": 48.0, "confidence": 0.95},
+            "myTeam": [{"id": 7, "x": 73.0, "y": 48.0, "confidence": 0.9}],
+            "enemies": [{"id": 22, "x": 76.0, "y": 48.0, "confidence": 0.9}],
+        },
+        {
+            "frameId": 4,
+            "timestamp": 0.8,
+            "ball": {"x": 71.0, "y": 48.0, "confidence": 0.95},
+            "myTeam": [{"id": 7, "x": 71.0, "y": 48.0, "confidence": 0.9}],
+            "enemies": [{"id": 18, "x": 69.0, "y": 48.0, "confidence": 0.9}],
+        },
+        {
+            "frameId": 5,
+            "timestamp": 1.0,
+            "ball": None,
+            "myTeam": [{"id": 7, "x": 69.0, "y": 48.0, "confidence": 0.9}],
+            "enemies": [{"id": 18, "x": 70.0, "y": 48.0, "confidence": 0.9}],
+        },
+        {
+            "frameId": 6,
+            "timestamp": 1.2,
+            "ball": {"x": 68.0, "y": 48.0, "confidence": 0.95},
+            "myTeam": [{"id": 8, "x": 68.0, "y": 48.0, "confidence": 0.9}],
+            "enemies": [{"id": 18, "x": 70.0, "y": 48.0, "confidence": 0.9}],
+        },
+    ]
+    assignments = [
+        BallOwnership(frameId=0, timestamp=0.0, team="enemy", trackId=20, distance=1.0),
+        BallOwnership(frameId=1, timestamp=0.2, team="enemy", trackId=21, distance=1.0),
+        BallOwnership(frameId=2, timestamp=0.4, team="enemy", trackId=22, distance=1.0),
+        BallOwnership(frameId=3, timestamp=0.6, team="my_team", trackId=7, distance=1.0),
+        BallOwnership(frameId=4, timestamp=0.8, team="enemy", trackId=18, distance=1.0),
+        BallOwnership(frameId=5, timestamp=1.0, team="dead_ball", trackId=None, distance=None),
+        BallOwnership(frameId=6, timestamp=1.2, team="my_team", trackId=8, distance=1.0),
+    ]
+    events = [
+        {"type": "pass", "frameId": 1, "timestamp": 0.2, "team": "enemy", "fromTrackId": 20, "toTrackId": 21, "description": "Pass"},
+        {"type": "pass", "frameId": 2, "timestamp": 0.4, "team": "enemy", "fromTrackId": 21, "toTrackId": 22, "description": "Pass"},
+        {"type": "turnover", "frameId": 3, "timestamp": 0.6, "team": "my_team", "toTrackId": 7, "description": "Turnover won"},
+        {"type": "turnover", "frameId": 4, "timestamp": 0.8, "team": "enemy", "toTrackId": 18, "description": "Turnover won"},
+        {"type": "recovery", "frameId": 6, "timestamp": 1.2, "team": "my_team", "toTrackId": 8, "description": "Recovery"},
+    ]
+
+    summary = summarize_match(frames, assignments, events=events)
+    my_ppda = _metric(summary, "my_team_ppda")
+    assert my_ppda.availability == "experimental"
+    assert my_ppda.value == 1.0
+    distance = _metric(summary, "my_team_distance_m")
+    assert distance.availability in {"unknown", "withheld"}
+    assert distance.published_value() is None
+

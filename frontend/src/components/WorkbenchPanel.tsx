@@ -1,7 +1,13 @@
 import { useEffect, useState } from 'react';
 
 import ModalDialog from './ModalDialog';
-import { fetchWorkbenchDossier, searchWorkbenchEvents, type WorkbenchDossier } from '../utils/workbench';
+import {
+  fetchPendingCorrections,
+  fetchWorkbenchDossier,
+  recoverMatchCorrection,
+  searchWorkbenchEvents,
+  type WorkbenchDossier,
+} from '../utils/workbench';
 
 interface WorkbenchPanelProps {
   onClose: () => void;
@@ -24,6 +30,8 @@ export default function WorkbenchPanel({ onClose, matchId, events = [], onSeek }
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('show our second-half turnovers followed by a shot within 10 seconds');
   const [searchMessage, setSearchMessage] = useState<string | null>(null);
+  const [pendingCorrection, setPendingCorrection] = useState<{ correctionId: string; kind: string; saveState: string } | null>(null);
+  const [recoveryMessage, setRecoveryMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -38,6 +46,21 @@ export default function WorkbenchPanel({ onClose, matchId, events = [], onSeek }
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!matchId) return;
+    let cancelled = false;
+    fetchPendingCorrections(matchId)
+      .then((payload) => {
+        if (!cancelled) setPendingCorrection(payload.items[0] ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setPendingCorrection(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [matchId]);
 
   async function runSearch() {
     if (!matchId) {
@@ -55,6 +78,13 @@ export default function WorkbenchPanel({ onClose, matchId, events = [], onSeek }
     }
     setSearchMessage(`${result.results.length} evidence-linked interval(s).`);
     onSeek?.(result.results[0].timestamp);
+  }
+
+  async function recoverPending() {
+    if (!matchId || !pendingCorrection) return;
+    const saved = await recoverMatchCorrection(matchId, pendingCorrection.correctionId);
+    setPendingCorrection(null);
+    setRecoveryMessage(saved.saveState);
   }
 
   return (
@@ -113,6 +143,19 @@ export default function WorkbenchPanel({ onClose, matchId, events = [], onSeek }
                 </button>
                 {searchMessage && <p className="text-xs text-slate-300">{searchMessage}</p>}
               </div>
+              {pendingCorrection && (
+                <div className="rounded-lg border border-amber-700/50 bg-amber-950/30 p-3 space-y-2">
+                  <p className="text-xs text-amber-200">Pending playlist edit ({pendingCorrection.kind})</p>
+                  <button
+                    type="button"
+                    onClick={() => void recoverPending()}
+                    className="px-3 py-1.5 rounded bg-amber-700 text-xs font-semibold text-white"
+                  >
+                    Recover pending edit
+                  </button>
+                </div>
+              )}
+              {recoveryMessage && <p className="text-xs text-emerald-300">{recoveryMessage}</p>}
             </>
           )}
         </div>

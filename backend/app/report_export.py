@@ -21,6 +21,25 @@ def _format_number(value: float | int | None, digits: int = 1) -> str:
     return f"{value:.{digits}f}"
 
 
+def _availability_lookup(summary: dict, metric: str) -> dict | None:
+    for item in summary.get("metricAvailability") or []:
+        if item.get("metric") == metric:
+            return item
+    return None
+
+
+def _format_available_metric(summary: dict, metric: str, legacy_key: str, digits: int) -> str:
+    record = _availability_lookup(summary, metric)
+    if record is not None and record.get("availability") not in {"available", "experimental"}:
+        return "Unavailable"
+    if record is not None and record.get("value") is None and record.get("availability") != "available":
+        return "Unavailable"
+    value = record.get("value") if record is not None and record.get("value") is not None else summary.get(legacy_key)
+    if value is None:
+        return "Unavailable"
+    return _format_number(value, digits)
+
+
 def _render_kv_card(label: str, value: str) -> str:
     return (
         '<div class="card stat-card">'
@@ -107,8 +126,8 @@ def render_match_report_html(
     )
     fallback_summary = (
         possession_summary +
-        f"{_format_number(summary.get('myTeamXg', 0.0), 2)} xG for my team and "
-        f"{_format_number(summary.get('enemyXg', 0.0), 2)} xG against."
+        f"{_format_available_metric(summary, 'experimental_shot_quality', 'myTeamXg', 2)} experimental shot quality for my team and "
+        f"{_format_number(summary.get('enemyXg', 0.0), 2)} experimental shot quality against."
     )
 
     return f"""<!doctype html>
@@ -188,11 +207,11 @@ def render_match_report_html(
         <h2>Match Analytics Snapshot</h2>
         <div class="grid-3">
           {_render_kv_card("Possession", _format_percent(summary.get("possession")))}
-          {_render_kv_card("My Team xG", _format_number(summary.get("myTeamXg"), 2))}
-          {_render_kv_card("Enemy xG", _format_number(summary.get("enemyXg"), 2))}
+          {_render_kv_card("My Team experimental shot quality", _format_available_metric(summary, "experimental_shot_quality", "myTeamXg", 2))}
+          {_render_kv_card("Enemy experimental shot quality", _format_number(summary.get("enemyXg"), 2))}
           {_render_kv_card("Formation", str(summary.get("formation", "-")))}
-          {_render_kv_card("My Team PPDA", _format_number(summary.get("myTeamPpda"), 1))}
-          {_render_kv_card("Enemy PPDA", _format_number(summary.get("enemyPpda"), 1))}
+          {_render_kv_card("My Team PPDA", _format_available_metric(summary, "my_team_ppda", "myTeamPpda", 1))}
+          {_render_kv_card("Enemy PPDA", _format_available_metric(summary, "enemy_ppda", "enemyPpda", 1))}
           {_render_kv_card("My Team Defensive Line", _format_number(summary.get("myTeamDefensiveLineHeight"), 1))}
           {_render_kv_card("Enemy Defensive Line", _format_number(summary.get("enemyDefensiveLineHeight"), 1))}
           {_render_kv_card("My Team High Press Regains", _format_number(summary.get("myTeamHighPressRegains"), 0))}

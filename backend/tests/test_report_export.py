@@ -102,3 +102,49 @@ def test_render_report_html_labels_low_confidence_ball_data():
     assert "Data Confidence" in html
     assert "Ball coverage too low for tactical interpretation." in html
     assert "Need withBallFrames/frameCount &gt;= 25% for truthful 5-10 minute analysis" in html
+
+
+def test_render_report_html_does_not_publish_unknown_ppda_as_zero():
+    html = render_match_report_html(
+        match_name="Unknown PPDA",
+        input_mode="video",
+        exported_at="2026-09-16T00:00:00+00:00",
+        summary={
+            "possession": 50,
+            "myTeamXg": 0.42,
+            "enemyXg": 0.0,
+            "formation": "4-3-3",
+            "myTeamPpda": 0.0,
+            "enemyPpda": 0.0,
+            "metricAvailability": [
+                {
+                    "metric": "my_team_ppda",
+                    "availability": "unknown",
+                    "value": None,
+                    "reasonCodes": ["ZERO_DENOMINATOR"],
+                },
+                {
+                    "metric": "enemy_ppda",
+                    "availability": "unknown",
+                    "value": None,
+                    "reasonCodes": ["ZERO_DENOMINATOR"],
+                },
+                {
+                    "metric": "experimental_shot_quality",
+                    "availability": "experimental",
+                    "value": 0.42,
+                    "publishedLabel": "experimental_shot_quality",
+                },
+            ],
+        },
+        formation_timeline=[],
+        event_summary={"eventCounts": {}},
+        tactical_report=None,
+        drills=None,
+    )
+
+    assert "Unavailable" in html
+    assert "experimental shot quality" in html.lower()
+    assert "My Team PPDA" in html
+    assert ">0.0<" not in html.replace("0.42", "SHOT")
+

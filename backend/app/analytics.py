@@ -6,7 +6,7 @@ from dataclasses import dataclass, replace
 from itertools import chain
 from math import atan2, degrees, pi, sqrt
 
-from .schemas import BallData, BallEstimate, BallOwnership, DetectedEvent, FormationSegment, FrameData, MatchStateFrame, MatchSummary, PlayerData, ShotAnalytics
+from .schemas import BallData, BallEstimate, BallOwnership, DetectedEvent, FormationSegment, FrameData, MatchStateFrame, MatchSummary, MetricAvailabilityRecord, PlayerData, ShotAnalytics
 
 PITCH_LENGTH_M = 105
 PITCH_WIDTH_M = 68
@@ -1134,7 +1134,7 @@ def summarize_match(
     )
 
     possession = round((my_team_ownership / controlled_frames) * 100) if controlled_frames else None
-    return MatchSummary(
+    summary = MatchSummary(
         possession=possession,
         myTeamDistance=round(my_team_total_dist),
         enemyDistance=round(enemy_total_dist),
@@ -1164,6 +1164,88 @@ def summarize_match(
         myTeamTransitionExposure=my_team_transition_exposure,
         enemyTransitionExposure=enemy_transition_exposure,
     )
+    return summary.model_copy(
+        update={
+            "metricAvailability": _summary_metric_availability(
+                summary,
+                controlled_frames=controlled_frames,
+                my_pressing_actions=my_team_high_press_regains,
+                enemy_pressing_actions=enemy_high_press_regains,
+            )
+        }
+    )
+
+
+def _ppda_availability(metric: str, value: float, pressing_actions: int) -> MetricAvailabilityRecord:
+    if pressing_actions <= 0:
+        return MetricAvailabilityRecord(
+            metric=metric,
+            value=None,
+            availability="unknown",
+            reasonCodes=["ZERO_DENOMINATOR"],
+            unit="passes_per_defensive_action",
+            denominator="pressing_actions",
+        )
+    return MetricAvailabilityRecord(
+        metric=metric,
+        value=value,
+        availability="experimental",
+        unit="passes_per_defensive_action",
+        denominator="pressing_actions",
+        publishedLabel="PPDA",
+    )
+
+
+def _summary_metric_availability(
+    summary: MatchSummary,
+    *,
+    controlled_frames: int,
+    my_pressing_actions: int,
+    enemy_pressing_actions: int,
+) -> list[MetricAvailabilityRecord]:
+    possession = MetricAvailabilityRecord(
+        metric="possession_pct",
+        value=None if summary.possession is None else float(summary.possession),
+        availability="available" if controlled_frames and summary.possession is not None else "unknown",
+        reasonCodes=[] if controlled_frames and summary.possession is not None else ["ZERO_DENOMINATOR"],
+        unit="percent",
+        denominator="controlled_possession_frames",
+    )
+    physical_reason = ["CALIBRATION_UNAVAILABLE", "IDENTITY_DISCONTINUITY"]
+    physical = [
+        MetricAvailabilityRecord(
+            metric=name,
+            value=None,
+            availability="withheld",
+            reasonCodes=physical_reason,
+            unit="metres" if "distance" in name else None,
+            denominator="identity_continuous_eligible_seconds",
+        )
+        for name in (
+            "my_team_distance_m",
+            "enemy_distance_m",
+            "my_team_top_speed_kmh",
+            "enemy_top_speed_kmh",
+            "my_team_sprints",
+            "enemy_sprints",
+        )
+    ]
+    shot_quality = MetricAvailabilityRecord(
+        metric="experimental_shot_quality",
+        value=round(summary.myTeamXg + summary.enemyXg, 2),
+        availability="experimental",
+        publishedLabel="experimental_shot_quality",
+        unit="probability",
+        denominator="labelled_shots",
+        reasonCodes=[],
+    )
+    return [
+        possession,
+        _ppda_availability("my_team_ppda", summary.myTeamPpda, my_pressing_actions),
+        _ppda_availability("enemy_ppda", summary.enemyPpda, enemy_pressing_actions),
+        shot_quality,
+        *physical,
+    ]
 
 
 def detect_events(frames: list[FrameData | dict], assignments: list[BallOwnership], *, attack_direction: str = "left_to_right") -> list[DetectedEvent]:
