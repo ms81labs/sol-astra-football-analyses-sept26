@@ -167,6 +167,20 @@ describe('StatsPanel', () => {
     expect(scoped.getByRole('heading', { name: 'Formation' })).toBeTruthy();
   });
 
+  it('does not publish player-card distances when physical totals are withheld', () => {
+    const { container } = render(
+      <StatsPanel
+        stats={baseStats}
+        shotSummary={shotSummary}
+        playerProfiles={[{ ...sampleProfiles[0], physicalTotalsWithheld: true }]}
+      />,
+    );
+    const scoped = within(container);
+    expect(container.textContent).not.toContain('105.3 m');
+    expect(container.textContent).not.toContain('28.1 km/h');
+    expect(scoped.getByText('Physical totals withheld')).toBeTruthy();
+  });
+
   it('renders withheld physical metrics as unavailable rather than a measured zero', () => {
     const { container } = render(
       <StatsPanel

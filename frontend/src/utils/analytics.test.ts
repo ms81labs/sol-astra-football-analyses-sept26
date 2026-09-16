@@ -4,6 +4,7 @@ import {
   computeHeatmap,
   heatmapAvailability,
   speedAvailability,
+  playerPhysicalTotalsAvailability,
   buildPassingNetwork,
   buildPlayerProfiles,
   buildPlayerContributions,
@@ -173,6 +174,8 @@ describe('buildPlayerProfiles', () => {
         { type: 'tackle', frameId: 2, timestamp: 1.0, team: 'enemy', fromTrackId: 7, toTrackId: 18, description: 'Tackle' },
         { type: 'recovery', frameId: 2, timestamp: 1.0, team: 'enemy', toTrackId: 18, description: 'Recovery' },
       ],
+      [],
+      true,
     );
 
     expect(profiles).toEqual([
@@ -253,6 +256,7 @@ describe('buildPlayerProfiles', () => {
       [
         { frameId: 1, timestamp: 0.5, team: 'my_team', playerId: 9, x: 84, y: 49, inBox: true, xg: 0.38 },
       ],
+      true,
     );
 
     expect(profiles).toEqual([
@@ -296,6 +300,7 @@ describe('buildPlayerProfiles', () => {
       [
         { frameId: 2, timestamp: 0.4, team: 'my_team', playerId: 11, x: 90, y: 50, inBox: true, xg: 0.42 },
       ],
+      true,
     );
 
     expect(profiles[0]).toEqual(
@@ -304,6 +309,45 @@ describe('buildPlayerProfiles', () => {
         profileLabel: 'Shot Threat',
       }),
     );
+  });
+
+  it('withholds player-profile physical totals until identity continuity is validated', () => {
+    const frames = [
+      {
+        Frame_ID: 0,
+        Timestamp: 0,
+        Ball: { x: 50, y: 50, conf: 0.9 },
+        My_Team: [{ id: 7, x: 20, y: 30, conf: 0.9 }],
+        Enemies: [],
+      },
+      {
+        Frame_ID: 1,
+        Timestamp: 0.5,
+        Ball: { x: 55, y: 50, conf: 0.9 },
+        My_Team: [{ id: 7, x: 25, y: 30, conf: 0.9 }],
+        Enemies: [],
+      },
+    ];
+    const events = [
+      { type: 'pass', frameId: 1, timestamp: 0.5, team: 'my_team', fromTrackId: 7, toTrackId: 11, description: 'Pass' },
+    ];
+
+    const withheld = buildPlayerProfiles(frames, events);
+    expect(withheld).toEqual([
+      expect.objectContaining({
+        playerId: 7,
+        totalDistance: 0,
+        topSpeed: 0,
+        physicalTotalsWithheld: true,
+      }),
+    ]);
+    expect(withheld[0].totalDistance).not.toBeGreaterThan(0);
+    expect(withheld[0].topSpeed).not.toBeGreaterThan(0);
+
+    const continuous = buildPlayerProfiles(frames, events, [], true);
+    expect(continuous[0].physicalTotalsWithheld).toBe(false);
+    expect(continuous[0].totalDistance).toBeGreaterThan(0);
+    expect(continuous[0].topSpeed).toBeGreaterThan(0);
   });
 });
 
@@ -333,5 +377,14 @@ describe('computeHeatmap boundaries', () => {
     expect(withheld.intervalLimited).toBe(true);
     const continuous = speedAvailability(true);
     expect(continuous.withheld).toBe(false);
+  });
+
+  it('withholds player physical totals until identity continuity is validated', () => {
+    const withheld = playerPhysicalTotalsAvailability(false);
+    expect(withheld.withheld).toBe(true);
+    expect(withheld.wholeMatch).toBe(false);
+    const continuous = playerPhysicalTotalsAvailability(true);
+    expect(continuous.withheld).toBe(false);
+    expect(continuous.wholeMatch).toBe(true);
   });
 });

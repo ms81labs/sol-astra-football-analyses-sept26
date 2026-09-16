@@ -300,6 +300,7 @@ export interface PlayerProfile extends PlayerContribution {
     avgY: number;
     totalDistance: number;
     topSpeed: number;
+    physicalTotalsWithheld?: boolean;
     profileLabel: string;
     summaryLine: string;
     jerseyNumber?: number | null;

@@ -201,6 +201,35 @@ def test_iter_bgr_frames_uses_injected_frame_source_as_production_decode_path(tm
     assert all(frame.image is not None for frame in decoded)
 
 
+def test_iter_bgr_frames_wraps_payload_in_frame_buffer_and_releases_previous(tmp_path: Path) -> None:
+    from backend.app.workbench.media import FrameBuffer, iter_bgr_frames
+
+    frames = [
+        DecodedFrame(0, 0, 0.0, 2, 2, "bgr", 0, b"aa", "fixture", image=object()),
+        DecodedFrame(1, 1, 0.04, 2, 2, "bgr", 0, b"bb", "fixture", image=object()),
+    ]
+    source = tmp_path / "clip.bin"
+    source.write_bytes(b"src")
+    adapter = FixtureFrameSource(
+        frames,
+        identity=__import__("backend.app.workbench.contracts", fromlist=["SourceClockIdentity"]).SourceClockIdentity(
+            sourceSha256="a" * 64,
+            byteSize=3,
+        ),
+    )
+    iterator = iter_bgr_frames(source, adapter)
+    first = next(iterator)
+    assert isinstance(first.buffer, FrameBuffer)
+    assert first.buffer.device == "cpu"
+    assert first.buffer.lifetime == "borrowed"
+    assert first.buffer.as_array() == b"aa"
+    second = next(iterator)
+    with pytest.raises(RuntimeError, match="use after buffer reuse"):
+        first.buffer.as_array()
+    assert second.buffer.as_array() == b"bb"
+    assert second.buffer.device == "cpu"
+
+
 def test_recover_ball_rows_uses_injected_frame_source_without_opening_video(tmp_path: Path) -> None:
     import numpy as np
 

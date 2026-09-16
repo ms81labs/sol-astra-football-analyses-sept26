@@ -9,7 +9,7 @@ import shlex
 import subprocess
 import threading
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Iterator, Literal
 
@@ -33,6 +33,7 @@ class DecodedFrame:
     backend: str
     crop: tuple[int, int, int, int] | None = None
     image: object | None = None
+    buffer: FrameBuffer | None = None
 
 
 @dataclass
@@ -212,6 +213,21 @@ class FfmpegFrameSource(FrameSource):
             yield frame
 
 
+def wrap_decoded_frame(frame: DecodedFrame, *, device: Literal["cpu", "cuda"] = "cpu") -> FrameBuffer:
+    """4.5B: borrowed CPU buffer. GPU residency is not promoted from CUDA visibility."""
+
+    return FrameBuffer(
+        device=device,
+        shape=(frame.height, frame.width, 3),
+        strides=None,
+        dtype="uint8",
+        lifetime="borrowed",
+        batch_index=None,
+        sync_required=device == "cuda",
+        payload=frame.payload,
+    )
+
+
 def iter_bgr_frames(
     path: Path,
     source: FrameSource | None = None,
@@ -222,7 +238,13 @@ def iter_bgr_frames(
     """Production decode iterator. Football semantics stay outside this boundary."""
 
     adapter = source or OpenCvFrameSource(cv2_module=cv2_module)
-    yield from adapter.iter_frames(path, cancel_event=cancel_event)
+    previous: FrameBuffer | None = None
+    for frame in adapter.iter_frames(path, cancel_event=cancel_event):
+        if previous is not None:
+            previous.release()
+        buffer = wrap_decoded_frame(frame, device="cpu")
+        previous = buffer
+        yield replace(frame, buffer=buffer)
 
 
 def first_bgr_frame(

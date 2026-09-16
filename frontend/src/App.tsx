@@ -31,7 +31,7 @@ import UploadCalibrationPanel from './components/UploadCalibrationPanel';
 import { useCoachAnalysis } from './hooks/useCoachAnalysis';
 import { useReviewSurface } from './features/review/useReviewSurface';
 import type { BackendEvent, CameraProfile, EventTag, FormationSegment, FrameData, MatchBenchmarkSummary, MatchRecord, MatchStats, ProcessingJob, RuntimeCapabilities, ShotMarker } from './types';
-import { buildPassingNetwork, buildPlayerProfiles, computeHeatmap, heatmapAvailability, speedAvailability, computeSpeedsForFrame, summarizeShots } from './utils/analytics';
+import { buildPassingNetwork, buildPlayerProfiles, computeHeatmap, heatmapAvailability, playerPhysicalTotalsAvailability, speedAvailability, computeSpeedsForFrame, summarizeShots } from './utils/analytics';
 import {
   buildMatchVideoUrl,
   createMatchUpload,
@@ -276,6 +276,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
 
   const heatmapAvail = heatmapAvailability(false);
   const speedAvail = speedAvailability(false);
+  const playerTotalsAvail = playerPhysicalTotalsAvailability(false);
   const heatmapData = useMemo(() => {
     if (matchData.length === 0 || heatmapAvail.withheld) return null;
     return computeHeatmap(matchData, 'my_team');
@@ -294,7 +295,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
 
   const playerProfiles = useMemo(() => {
     if (!activeMatch) return [];
-    return buildPlayerProfiles(activeMatch.data, activeMatch.backendEvents, shotMarkers);
+    return buildPlayerProfiles(activeMatch.data, activeMatch.backendEvents, shotMarkers, false);
   }, [activeMatch, shotMarkers]);
 
   const speedData = useMemo(() => {
@@ -948,6 +949,9 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
                 )}
                 {speedAvail.withheld && (
                   <span className="text-[11px] text-amber-200">Derived speeds withheld until identity continuity.</span>
+                )}
+                {playerTotalsAvail.withheld && (
+                  <span className="text-[11px] text-amber-200">Player physical totals withheld until identity continuity.</span>
                 )}
                 <button
                   type="button"

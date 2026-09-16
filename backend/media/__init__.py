@@ -10,6 +10,7 @@ from backend.app.workbench.media import (
     SamplingAudit,
     TorchCodecFrameSource,
     cpu_fallback,
+    wrap_decoded_frame,
     iter_bgr_frames,
 )
 
@@ -23,5 +24,6 @@ __all__ = [
     "SamplingAudit",
     "TorchCodecFrameSource",
     "cpu_fallback",
+    "wrap_decoded_frame",
     "iter_bgr_frames",
 ]

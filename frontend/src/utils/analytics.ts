@@ -57,6 +57,10 @@ export function speedAvailability(identityContinuous: boolean) {
     return physicalTotalsAvailability(identityContinuous);
 }
 
+export function playerPhysicalTotalsAvailability(identityContinuous: boolean) {
+    return physicalTotalsAvailability(identityContinuous);
+}
+
 function physicalTotalsAvailability(identityContinuous: boolean) {
     return {
         wholeMatch: identityContinuous,
@@ -341,7 +345,12 @@ export function buildPlayerContributions(events: BackendEvent[], shotMarkers: Sh
         });
 }
 
-export function buildPlayerProfiles(frames: FrameData[], events: BackendEvent[], shotMarkers: ShotMarker[] = []): PlayerProfile[] {
+export function buildPlayerProfiles(
+    frames: FrameData[],
+    events: BackendEvent[],
+    shotMarkers: ShotMarker[] = [],
+    identityContinuous = false,
+): PlayerProfile[] {
     const contributions = buildPlayerContributions(events, shotMarkers);
     type PlayerMovementMetric = {
         sumX: number;
@@ -371,7 +380,7 @@ export function buildPlayerProfiles(frames: FrameData[], events: BackendEvent[],
             metric.sumX += player.x;
             metric.sumY += player.y;
             metric.count += 1;
-            if (metric.lastX !== undefined && metric.lastY !== undefined && metric.lastTimestamp !== undefined) {
+            if (identityContinuous && metric.lastX !== undefined && metric.lastY !== undefined && metric.lastTimestamp !== undefined) {
                 const dt = frame.Timestamp - metric.lastTimestamp;
                 if (dt > 0) {
                     const dx = (player.x - metric.lastX) / 100 * PITCH_LENGTH_M;
@@ -392,7 +401,7 @@ export function buildPlayerProfiles(frames: FrameData[], events: BackendEvent[],
             metric.sumX += player.x;
             metric.sumY += player.y;
             metric.count += 1;
-            if (metric.lastX !== undefined && metric.lastY !== undefined && metric.lastTimestamp !== undefined) {
+            if (identityContinuous && metric.lastX !== undefined && metric.lastY !== undefined && metric.lastTimestamp !== undefined) {
                 const dt = frame.Timestamp - metric.lastTimestamp;
                 if (dt > 0) {
                     const dx = (player.x - metric.lastX) / 100 * PITCH_LENGTH_M;
@@ -416,8 +425,9 @@ export function buildPlayerProfiles(frames: FrameData[], events: BackendEvent[],
                 ...contribution,
                 avgX: metric && metric.count > 0 ? Math.round((metric.sumX / metric.count) * 10) / 10 : 50,
                 avgY: metric && metric.count > 0 ? Math.round((metric.sumY / metric.count) * 10) / 10 : 50,
-                totalDistance: Math.round((metric?.totalDistance ?? 0) * 10) / 10,
-                topSpeed: Math.round((metric?.topSpeed ?? 0) * 10) / 10,
+                totalDistance: identityContinuous ? Math.round((metric?.totalDistance ?? 0) * 10) / 10 : 0,
+                topSpeed: identityContinuous ? Math.round((metric?.topSpeed ?? 0) * 10) / 10 : 0,
+                physicalTotalsWithheld: !identityContinuous,
                 profileLabel,
                 summaryLine: buildSummaryLine(contribution, profileLabel),
             };
