@@ -180,7 +180,7 @@ def render_match_report_html(
           f'<div class="card"><div class="eyebrow">Pressing</div><p class="muted">{escape(tactical_report.get("pressing", "-"))}</p></div>'
           f'<div class="card"><div class="eyebrow">Weaknesses</div><p class="muted">{escape(tactical_report.get("weaknesses", "-"))}</p></div>'
           '</div>'
-          f'<div class="grid" style="margin-top: 12px;">{_render_kv_card("Overall Rating", f"{tactical_report.get("rating", "-")}/10")}{_render_kv_card("Key Player", f"#{tactical_report.get("key_player", "-")}")}</div>')
+          f'<div class="grid" style="margin-top: 12px;">{_render_kv_card("Overall Rating", str(tactical_report.get("rating", "-")) + "/10")}{_render_kv_card("Key Player", "#" + str(tactical_report.get("key_player", "-")))}</div>')
          if tactical_report else '<div class="card"><p class="muted">Coach report not generated yet.</p></div>'}
       </section>
 

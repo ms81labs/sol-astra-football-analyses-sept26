@@ -35,3 +35,7 @@ handoff is `docs/status/current.md`.
 
 No credential is required or included in this export. Keep provider and GitHub
 tokens outside the repository.
+
+The export also redacts one credential-shaped value from a historical RunPod
+workflow note and includes the Python 3.11 report-export compatibility fix plus
+an optional-Torch test guard discovered by the first clean GitHub CI run.

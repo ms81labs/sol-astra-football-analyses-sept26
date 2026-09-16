@@ -3,7 +3,9 @@ import json
 from types import SimpleNamespace
 
 import numpy as np
-import torch
+import pytest
+
+torch = pytest.importorskip("torch")
 
 from backend.scripts import evaluate_football_analysis_pilot_soccertrack_resolution as resolution
 
