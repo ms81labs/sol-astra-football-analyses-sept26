@@ -781,3 +781,63 @@ async def _test_frames_endpoint_pages_with_cursor_and_preserves_count(tmp_path: 
 
         after = await client.get(f"/api/matches/{match_id}/frames?afterFrame=1&limit=2")
         assert [frame["frameId"] for frame in after.json()["frames"]] == [1, 2]
+
+
+def test_hosted_match_reads_require_session_tenant_not_client_tenant(tmp_path: Path):
+    _run(_test_hosted_match_reads_require_session_tenant_not_client_tenant, tmp_path)
+
+
+async def _test_hosted_match_reads_require_session_tenant_not_client_tenant(tmp_path: Path):
+    async with api_client(tmp_path) as (_, client):
+        with TRACKING_FIXTURE.open("rb") as fixture_file:
+            response = await client.post(
+                "/api/matches",
+                data={
+                    "name": "Tenant Match",
+                    "inputMode": "tracking_json",
+                    "config": json.dumps(
+                        {
+                            "attackDirection": "right_to_left",
+                            "manualHomographyPoints": MANUAL_HOMOGRAPHY_POINTS,
+                            "rights": {"audience": "club-a"},
+                        }
+                    ),
+                },
+                files={"file": ("sample_tracking.json", fixture_file, "application/json")},
+            )
+        assert response.status_code == 202
+        match_id = response.json()["matchId"]
+
+        loopback = await client.get(f"/api/matches/{match_id}")
+        assert loopback.status_code == 200
+
+        hosted = await client.get(
+            f"/api/matches/{match_id}",
+            headers={"x-deployment-boundary": "hosted"},
+        )
+        assert hosted.status_code == 403
+        assert "UNSIGNED_OR_UNSCOPED_OBJECT_ACCESS" in hosted.json()["detail"]["reasonCodes"]
+
+        spoofed = await client.get(
+            f"/api/matches/{match_id}/frames",
+            headers={
+                "authorization": "club-b",
+                "x-object-scope": match_id,
+                "x-deployment-boundary": "hosted",
+                "x-tenant-id": "club-a",
+            },
+        )
+        assert spoofed.status_code == 403
+        assert spoofed.json()["detail"]["sessionTenant"] == "club-b"
+
+        admitted = await client.get(
+            f"/api/matches/{match_id}/analytics",
+            headers={
+                "authorization": "club-a",
+                "x-object-scope": match_id,
+                "x-deployment-boundary": "hosted",
+                "x-tenant-id": "club-b",
+            },
+        )
+        assert admitted.status_code == 200
+        assert admitted.json()["matchId"] == match_id

@@ -94,6 +94,10 @@ async def _test_frames_read_does_not_block_other_http_requests(tmp_path: Path, m
     event_loop_thread = threading.get_ident()
 
     async with _client(tmp_path) as (app, client):
+        match = app.state.storage.create_match(
+            "Held", "tracking_json", "tracking.json", tmp_path / "tracking.json", MatchConfig()
+        )
+
         def blocked_load_frames(_match_id: str):
             worker_threads.append(threading.get_ident())
             entered.set()
@@ -104,7 +108,7 @@ async def _test_frames_read_does_not_block_other_http_requests(tmp_path: Path, m
         held_response: dict[str, httpx.Response] = {}
 
         async def request_frames() -> None:
-            held_response["response"] = await client.get("/api/matches/held/frames")
+            held_response["response"] = await client.get(f"/api/matches/{match.id}/frames")
 
         with _bounded_block(release) as timed_out, anyio.fail_after(2.0):
             async with anyio.create_task_group() as tasks:

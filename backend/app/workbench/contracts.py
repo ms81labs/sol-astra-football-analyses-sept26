@@ -76,6 +76,8 @@ REASON_CODES: dict[str, str] = {
     "INDEPENDENT_ACCEPTANCE_MISSING": "A model upgrade stays unpromoted until independent acceptance exists.",
     "ANALYST_ACCEPTANCE_MISSING": "Product workflow measures stay unmeasured until an intended analyst completes a reviewed match.",
     "CROSS_TENANT_CACHE_BLOCKED": "Cross-tenant cache reuse needs an explicit privacy design.",
+    "UNSIGNED_OR_UNSCOPED_OBJECT_ACCESS": "Hosted match reads need a signed token scoped to that object.",
+    "OBJECT_ACCESS_DENIED": "Session tenant does not match the object tenant; client tenant headers are ignored.",
     "INVENTED_NUMBER": "A narrative claimed a number that is not in the fact package.",
     "YOUTH_FOOTAGE": "Youth footage requires safeguarding, club permission and local processing by default.",
     "MANUAL_INCIDENT_PACKAGE": "Incident review is a manual clip/note package, not a validated ruling.",

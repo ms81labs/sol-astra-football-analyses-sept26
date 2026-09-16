@@ -8,7 +8,7 @@ import uuid
 from pathlib import Path
 from typing import Literal
 
-from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from pydantic import ValidationError
@@ -39,6 +39,7 @@ from .schemas import (
     MatchConfig,
     MatchEventsResponse,
     MatchFramesResponse,
+    MatchRecord,
     ReviewBundleItem,
     TrustCropSchema,
     TrustCropsResponse,
@@ -50,6 +51,7 @@ from .schemas import (
 )
 from .semantic_search import search_matches_by_tactical_themes, search_bundles_by_tactical_themes, detect_themes_for_match
 from .storage import AdmissionOutcomeUncertainError, Storage, UploadTooLargeError
+from .workbench.access import object_access_decision
 from .workbench.routes import create_workbench_router
 
 
@@ -248,7 +250,7 @@ def create_app(
         allow_origins=settings.trusted_frontend_origins,
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-        allow_headers=["Content-Type", "Idempotency-Key"],
+        allow_headers=["Content-Type", "Idempotency-Key", "Authorization", "X-Object-Scope", "X-Deployment-Boundary", "X-Tenant-Id"],
     )
     app.add_middleware(BrowserOriginMiddleware, trusted_origins=settings.trusted_frontend_origins)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1"], www_redirect=False)
@@ -910,6 +912,29 @@ def create_app(
                 pass
         return response(job, outcome=dispatch_outcome, reused=False)
 
+    def require_match(
+        match_id: str,
+        authorization: str | None = Header(default=None),
+        x_object_scope: str | None = Header(default=None),
+        x_deployment_boundary: str | None = Header(default=None),
+        x_tenant_id: str | None = Header(default=None),
+    ) -> MatchRecord:
+        try:
+            match = storage.get_match(match_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Match not found") from exc
+        decision = object_access_decision(
+            object_id=match.id,
+            object_tenant=match.config.rights.audience,
+            authorization=authorization,
+            object_scope=x_object_scope,
+            deployment_boundary=x_deployment_boundary,
+            client_tenant=x_tenant_id,
+        )
+        if not decision["allowed"]:
+            raise HTTPException(status_code=403, detail=decision)
+        return match
+
     @app.get("/api/jobs/{job_id}")
     def get_job(job_id: str) -> dict:
         try:
@@ -922,23 +947,15 @@ def create_app(
         return [match.model_dump(mode="json") for match in storage.list_matches()]
 
     @app.get("/api/matches/{match_id}")
-    def get_match(match_id: str) -> dict:
-        try:
-            return storage.get_match(match_id).model_dump(mode="json")
-        except KeyError as exc:
-            raise HTTPException(status_code=404, detail="Match not found") from exc
+    def get_match(match: MatchRecord = Depends(require_match)) -> dict:
+        return match.model_dump(mode="json")
 
     @app.get("/api/matches/{match_id}/video")
-    def get_match_video(match_id: str):
-        try:
-            match = storage.get_match(match_id)
-        except KeyError as exc:
-            raise HTTPException(status_code=404, detail="Match not found") from exc
-
+    def get_match_video(match: MatchRecord = Depends(require_match)):
         if match.inputMode != "video":
             raise HTTPException(status_code=409, detail="Video playback is only available for video-backed matches.")
 
-        video_path = storage.get_match_input_path(match_id)
+        video_path = storage.get_match_input_path(match.id)
         if not video_path.exists():
             raise HTTPException(status_code=404, detail="Video file not found.")
 
@@ -946,17 +963,17 @@ def create_app(
 
     @app.get("/api/matches/{match_id}/frames")
     def get_frames(
-        match_id: str,
+        match: MatchRecord = Depends(require_match),
         afterFrame: int | None = None,
         cursor: str | None = None,
         limit: int | None = None,
     ) -> dict:
         try:
-            page = storage.load_frames_page(match_id, after_frame=afterFrame, cursor=cursor, limit=limit)
+            page = storage.load_frames_page(match.id, after_frame=afterFrame, cursor=cursor, limit=limit)
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail="Frames not ready") from exc
         response = MatchFramesResponse(
-            matchId=match_id,
+            matchId=match.id,
             frames=page["frames"],
             nextCursor=page["nextCursor"],
             frameCount=page["frameCount"],
@@ -965,13 +982,13 @@ def create_app(
         return response.model_dump(mode="json")
 
     @app.get("/api/matches/{match_id}/analytics")
-    def get_analytics(match_id: str) -> dict:
+    def get_analytics(match: MatchRecord = Depends(require_match)) -> dict:
         try:
-            summary, assignments, formation_timeline, shots = storage.load_analytics(match_id)
+            summary, assignments, formation_timeline, shots = storage.load_analytics(match.id)
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail="Analytics not ready") from exc
         response = MatchAnalyticsResponse(
-            matchId=match_id,
+            matchId=match.id,
             summary=summary,
             ballAssignments=assignments,
             formationTimeline=formation_timeline,
@@ -980,55 +997,56 @@ def create_app(
         return response.model_dump(mode="json")
 
     @app.get("/api/matches/{match_id}/events")
-    def get_events(match_id: str) -> dict:
+    def get_events(match: MatchRecord = Depends(require_match)) -> dict:
         try:
-            events = storage.load_events(match_id)
+            events = storage.load_events(match.id)
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail="Events not ready") from exc
-        response = MatchEventsResponse(matchId=match_id, events=events)
+        response = MatchEventsResponse(matchId=match.id, events=events)
         return response.model_dump(mode="json")
 
     @app.get("/api/matches/{match_id}/export/frames.csv")
-    def export_frames_csv(match_id: str) -> Response:
+    def export_frames_csv(match: MatchRecord = Depends(require_match)) -> Response:
         try:
-            frames = storage.load_frames(match_id)
+            frames = storage.load_frames(match.id)
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail="Frames not ready") from exc
         csv_payload = render_csv(flatten_frames_for_csv(frames), FRAME_CSV_FIELDS)
-        headers = {"Content-Disposition": f'attachment; filename="{match_id}-frames.csv"'}
+        headers = {"Content-Disposition": f'attachment; filename="{match.id}-frames.csv"'}
         return Response(content=csv_payload, media_type="text/csv", headers=headers)
 
     @app.get("/api/matches/{match_id}/export/events.csv")
-    def export_events_csv(match_id: str) -> Response:
+    def export_events_csv(match: MatchRecord = Depends(require_match)) -> Response:
         try:
-            events = storage.load_events(match_id)
+            events = storage.load_events(match.id)
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail="Events not ready") from exc
         csv_payload = render_csv(flatten_events_for_csv(events), EVENT_CSV_FIELDS)
-        headers = {"Content-Disposition": f'attachment; filename="{match_id}-events.csv"'}
+        headers = {"Content-Disposition": f'attachment; filename="{match.id}-events.csv"'}
         return Response(content=csv_payload, media_type="text/csv", headers=headers)
 
     @app.get("/api/matches/{match_id}/export/metrics.csv")
-    def export_metrics_csv(match_id: str) -> Response:
+    def export_metrics_csv(match: MatchRecord = Depends(require_match)) -> Response:
         try:
-            summary, _assignments, _formation, _shots = storage.load_analytics(match_id)
+            summary, _assignments, _formation, _shots = storage.load_analytics(match.id)
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail="Analytics not ready") from exc
         csv_payload = render_csv(flatten_metrics_for_csv(summary.metricAvailability), METRIC_CSV_FIELDS)
-        headers = {"Content-Disposition": f'attachment; filename="{match_id}-metrics.csv"'}
+        headers = {"Content-Disposition": f'attachment; filename="{match.id}-metrics.csv"'}
         return Response(content=csv_payload, media_type="text/csv", headers=headers)
 
     @app.get("/api/matches/{match_id}/export/match.json")
-    def export_match_json(match_id: str) -> dict:
+    def export_match_json(match: MatchRecord = Depends(require_match)) -> dict:
         try:
-            return build_match_bundle(storage, match_id)
+            return build_match_bundle(storage, match.id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Match not found") from exc
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail="Match artifacts not ready") from exc
 
     @app.post("/api/matches/{match_id}/analysis/{analysis_type}")
-    def analyze_match(match_id: str, analysis_type: str, body: dict | None = None) -> dict:
+    def analyze_match(analysis_type: str, match: MatchRecord = Depends(require_match), body: dict | None = None) -> dict:
+        match_id = match.id
         with storage.config_update_lock:
             try:
                 snapshot = storage.get_match(match_id)
@@ -1077,25 +1095,20 @@ def create_app(
         return result
 
     @app.get("/api/matches/{match_id}/report/html")
-    def get_match_report_html(match_id: str) -> HTMLResponse:
+    def get_match_report_html(match: MatchRecord = Depends(require_match)) -> HTMLResponse:
         try:
-            match = storage.get_match(match_id)
-        except KeyError as exc:
-            raise HTTPException(status_code=404, detail="Match not found") from exc
-
-        try:
-            summary, _, formation_timeline, shots = storage.load_analytics(match_id)
-            events = storage.load_events(match_id)
+            summary, _, formation_timeline, shots = storage.load_analytics(match.id)
+            events = storage.load_events(match.id)
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail="Analytics not ready") from exc
 
         try:
-            tactical_report = storage.load_analysis_artifact(match_id, "tactical_report")
+            tactical_report = storage.load_analysis_artifact(match.id, "tactical_report")
         except FileNotFoundError:
             tactical_report = None
 
         try:
-            drills = storage.load_analysis_artifact(match_id, "drills")
+            drills = storage.load_analysis_artifact(match.id, "drills")
         except FileNotFoundError:
             drills = None
 
@@ -1111,14 +1124,9 @@ def create_app(
         return HTMLResponse(content=html)
 
     @app.get("/api/matches/{match_id}/benchmark")
-    def get_match_benchmark(match_id: str, includeSelectedClusterProbe: bool = False) -> dict:
+    def get_match_benchmark(match: MatchRecord = Depends(require_match), includeSelectedClusterProbe: bool = False) -> dict:
         try:
-            storage.get_match(match_id)
-        except KeyError as exc:
-            raise HTTPException(status_code=404, detail="Match not found") from exc
-
-        try:
-            summary = summarize_match_benchmark(storage, match_id)
+            summary = summarize_match_benchmark(storage, match.id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Benchmark not ready") from exc
 
@@ -1126,11 +1134,13 @@ def create_app(
             return summary.model_dump(mode="json")
 
         response: dict[str, object] = {"saved": summary.model_dump(mode="json")}
-        response.update(build_selected_cluster_payload(storage, match_id))
+        response.update(build_selected_cluster_payload(storage, match.id))
         return response
 
     @app.patch("/api/matches/{match_id}/config")
-    def update_match_config(match_id: str, payload: dict) -> dict:
+    def update_match_config(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+        match_id = match.id
+        payload = payload or {}
         with storage.config_update_lock:
             try:
                 match = storage.get_match(match_id)
@@ -1250,67 +1260,55 @@ def create_app(
     # ===== Annotations & Issues =====
 
     @app.get("/api/matches/{match_id}/annotations")
-    def list_annotations(match_id: str) -> dict:
+    def list_annotations(match: MatchRecord = Depends(require_match)) -> dict:
         """List all annotations for a match."""
-        try:
-            annotations = storage.list_annotations(match_id)
-        except KeyError as exc:
-            raise HTTPException(status_code=404, detail="Match not found") from exc
-        return {"matchId": match_id, "annotations": [a.model_dump(mode="json") for a in annotations]}
+        annotations = storage.list_annotations(match.id)
+        return {"matchId": match.id, "annotations": [a.model_dump(mode="json") for a in annotations]}
 
     @app.post("/api/matches/{match_id}/annotations", status_code=201)
-    def create_annotation(match_id: str, request: CreateAnnotationRequest) -> dict:
+    def create_annotation(request: CreateAnnotationRequest, match: MatchRecord = Depends(require_match)) -> dict:
         """Create a new annotation on a match."""
-        try:
-            record = storage.create_annotation(match_id, request)
-        except KeyError as exc:
-            raise HTTPException(status_code=404, detail="Match not found") from exc
+        record = storage.create_annotation(match.id, request)
         return record.model_dump(mode="json")
 
     @app.delete("/api/matches/{match_id}/annotations/{annotation_id}", status_code=204)
-    def delete_annotation(match_id: str, annotation_id: str) -> None:
+    def delete_annotation(annotation_id: str, match: MatchRecord = Depends(require_match)) -> None:
         """Delete an annotation."""
         try:
-            storage.delete_annotation(match_id, annotation_id)
+            storage.delete_annotation(match.id, annotation_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Match not found") from exc
 
     @app.get("/api/matches/{match_id}/issues")
-    def list_issues(match_id: str) -> dict:
+    def list_issues(match: MatchRecord = Depends(require_match)) -> dict:
         """List all issues for a match."""
-        try:
-            issues = storage.list_issues(match_id)
-        except KeyError as exc:
-            raise HTTPException(status_code=404, detail="Match not found") from exc
-        return {"matchId": match_id, "issues": [i.model_dump(mode="json") for i in issues]}
+        issues = storage.list_issues(match.id)
+        return {"matchId": match.id, "issues": [i.model_dump(mode="json") for i in issues]}
 
     @app.post("/api/matches/{match_id}/issues", status_code=201)
-    def create_issue(match_id: str, request: CreateIssueRequest) -> dict:
+    def create_issue(request: CreateIssueRequest, match: MatchRecord = Depends(require_match)) -> dict:
         """Create a new issue on a match."""
-        try:
-            record = storage.create_issue(match_id, request)
-        except KeyError as exc:
-            raise HTTPException(status_code=404, detail="Match not found") from exc
+        record = storage.create_issue(match.id, request)
         return record.model_dump(mode="json")
 
     @app.delete("/api/matches/{match_id}/issues/{issue_id}", status_code=204)
-    def delete_issue(match_id: str, issue_id: str) -> None:
+    def delete_issue(issue_id: str, match: MatchRecord = Depends(require_match)) -> None:
         """Delete an issue."""
         try:
-            storage.delete_issue(match_id, issue_id)
+            storage.delete_issue(match.id, issue_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Match not found") from exc
 
     @app.get("/api/matches/{match_id}/trust-crops")
-    def get_trust_crops(match_id: str, limit: int = 20) -> dict:
+    def get_trust_crops(match: MatchRecord = Depends(require_match), limit: int = 20) -> dict:
         """Compute heuristic-based trust crop queue for a match.
 
         Frames are scored by uncertainty: ball teleport distance,
         track ID switch frequency, team flip rate, possession gaps.
         """
         try:
-            frames = storage.load_frames(match_id)
-            summary, assignments, _, _ = storage.load_analytics(match_id)
+            frames = storage.load_frames(match.id)
+            _summary, assignments, _, _ = storage.load_analytics(match.id)
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail="Frames or analytics not ready") from exc
 
@@ -1318,7 +1316,7 @@ def create_app(
         assignments_dicts = [a.model_dump() for a in assignments]
         crops = compute_trust_crops(frames_dicts, assignments_dicts, max_crops=limit)
         response = TrustCropsResponse(
-            matchId=match_id,
+            matchId=match.id,
             crops=[TrustCropSchema(
                 frameStart=crop.frameStart,
                 frameEnd=crop.frameEnd,
@@ -1508,21 +1506,21 @@ def create_app(
         }
 
     @app.get("/api/matches/{match_id}/themes")
-    def get_match_themes(match_id: str) -> dict:
+    def get_match_themes(match: MatchRecord = Depends(require_match)) -> dict:
         """Get detected tactical themes for a specific match.
         
         Returns:
             Match with detected tactical themes and strength scores
         """
         try:
-            summary, _, _, _ = storage.load_analytics(match_id)
+            summary, _, _, _ = storage.load_analytics(match.id)
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail="Analytics not ready") from exc
         
         theme_data = detect_themes_for_match(summary.model_dump(mode="json"))
         
         return {
-            "matchId": match_id,
+            "matchId": match.id,
             **theme_data,
         }
 

@@ -1851,13 +1851,53 @@ def test_worker_import_rejects_traversal_unrecognised_and_oversized_archives(tmp
 
 
 def test_object_access_ignores_client_tenant_and_expires_sharing_links() -> None:
-    from backend.app.workbench.access import authorize_object, mint_sharing_link, upload_quota
+    from backend.app.workbench.access import authorize_object, mint_sharing_link, object_access_decision, upload_quota
 
     decision = authorize_object(object_id="match-1", session_tenant="club-a", client_tenant="club-b")
     assert decision["allowed"] is True
     assert decision["tenant"] == "club-a"
     denied = authorize_object(object_id="match-1", session_tenant="club-a", client_tenant="club-b", object_tenant="club-b")
     assert denied["allowed"] is False
+    loopback = object_access_decision(
+        object_id="match-1",
+        object_tenant="club-a",
+        authorization=None,
+        object_scope=None,
+        deployment_boundary="loopback",
+        client_tenant="club-b",
+    )
+    assert loopback["allowed"] is True
+    assert loopback["sessionTenant"] == "club-a"
+    hosted_unsigned = object_access_decision(
+        object_id="match-1",
+        object_tenant="club-a",
+        authorization=None,
+        object_scope=None,
+        deployment_boundary="hosted",
+        client_tenant="club-a",
+    )
+    assert hosted_unsigned["allowed"] is False
+    assert "UNSIGNED_OR_UNSCOPED_OBJECT_ACCESS" in hosted_unsigned["reasonCodes"]
+    hosted_spoofed = object_access_decision(
+        object_id="match-1",
+        object_tenant="club-a",
+        authorization="club-b",
+        object_scope="match-1",
+        deployment_boundary="hosted",
+        client_tenant="club-a",
+    )
+    assert hosted_spoofed["allowed"] is False
+    assert hosted_spoofed["sessionTenant"] == "club-b"
+    hosted_ok = object_access_decision(
+        object_id="match-1",
+        object_tenant="club-a",
+        authorization="club-a",
+        object_scope="match-1",
+        deployment_boundary="hosted",
+        client_tenant="club-b",
+    )
+    assert hosted_ok["allowed"] is True
+    assert hosted_ok["sessionTenant"] == "club-a"
     link = mint_sharing_link(object_id="clip-1", now=100, ttl_seconds=10)
     assert link["expired"](100) is False
     assert link["expired"](111) is True
