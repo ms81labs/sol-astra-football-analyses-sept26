@@ -326,14 +326,14 @@ describe('App match workspace loading', () => {
     fireEvent.change(activeSelector, { target: { value: 'match-c' } });
 
     await screen.findByText('Match C', { selector: 'header span' });
-    expect(screen.getByTitle('Match C event @ 0s')).toBeTruthy();
+    expect(screen.getByTitle(/Match C event @ 0s/)).toBeTruthy();
     await act(async () => {
       if (outcome === 'success') lateB.resolve(loadedWorkspace('match-b', 'Match B', 'Match B event'));
       else lateB.reject(new Error('Late Match B failure'));
     });
 
     expect(screen.getByText('Match C', { selector: 'header span' })).toBeTruthy();
-    expect(screen.getByTitle('Match C event @ 0s')).toBeTruthy();
+    expect(screen.getByTitle(/Match C event @ 0s/)).toBeTruthy();
     expect(screen.queryByText('Match B', { selector: 'header span' })).toBeNull();
     expect(screen.queryByText('Late Match B failure')).toBeNull();
   });
@@ -768,9 +768,9 @@ it('normalizes event and imported playlist timestamps before timeline navigation
     events: [{ frameId: 200, timestamp: 2, type: 'shot', description: 'Sparse shot' }],
   });
   render(<App />);
-  fireEvent.click(await screen.findByTitle('Sparse shot @ 2s'));
+  fireEvent.click(await screen.findByTitle(/Sparse shot @ 2s/));
   expect((screen.getByLabelText('Timeline scrubber') as HTMLInputElement).value).toBe('1');
   act(() => { window.dispatchEvent(new CustomEvent('add-event', { detail: { frame: 100, timestamp: 0, label: 'Imported playlist', type: 'custom' } })); });
-  fireEvent.click(screen.getByTitle('Imported playlist @ 0s'));
+  fireEvent.click(screen.getByTitle(/Imported playlist @ 0s/));
   expect((screen.getByLabelText('Timeline scrubber') as HTMLInputElement).value).toBe('0');
 });
