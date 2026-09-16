@@ -222,6 +222,8 @@ describe('App match workspace loading', () => {
     expect(screen.getByRole('region', { name: /holdout calibration/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /measure holdout/i })).toBeTruthy();
     expect(screen.getByRole('button', { name: /swap teams/i })).toBeTruthy();
+    expect(screen.getByRole('region', { name: /typed search/i })).toBeTruthy();
+    expect(screen.getByRole('button', { name: /search evidence/i })).toBeTruthy();
     expect(screen.getByRole('region', { name: /incident review/i })).toBeTruthy();
     expect(screen.queryAllByText(/attackerX=0/)).toHaveLength(0);
     expect(screen.queryAllByText(/line=0/)).toHaveLength(0);
@@ -554,6 +556,52 @@ describe('App match workspace loading', () => {
     expect(await screen.findByText(/holdout accepted/i)).toBeTruthy();
     expect(screen.getByText(/derived distance 5.25 m/i)).toBeTruthy();
     expect(screen.queryByText(/derived distance 0(\.0)? m/i)).toBeNull();
+  });
+
+  it('runs typed tactical search on stored match events without client-injected rows', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/queries') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            query: { unanswerable: false, reason: null, eventFamily: 'turnover' },
+            results: [{ eventId: 'ev-1', timestamp: 12.4, evidenceIds: ['e-1'] }],
+          }),
+        } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    fireEvent.change(screen.getByLabelText(/^query$/i), { target: { value: 'show our second-half turnovers followed by a shot within 10 seconds' } });
+    fireEvent.click(screen.getByRole('button', { name: /search evidence/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/matches/match-a/queries'))).toBe(true);
+    });
+    const queryCall = fetchMock.mock.calls.find(([url]) => String(url).includes('/api/matches/match-a/queries'));
+    expect(queryCall?.[1]?.method).toBe('POST');
+    expect(queryCall?.[1]?.body).toContain('"query":"show our second-half turnovers followed by a shot within 10 seconds"');
+    expect(queryCall?.[1]?.body).not.toContain('"events"');
+    expect(queryCall?.[1]?.body).not.toContain('"rows"');
+    expect(await screen.findByText(/1 evidence-linked interval/i)).toBeTruthy();
   });
 
   it('swaps stored teams on the loaded match without a vision rerun', async () => {

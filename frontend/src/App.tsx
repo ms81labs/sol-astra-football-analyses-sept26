@@ -24,6 +24,7 @@ import DemoMatchIssuePanel from './components/DemoMatchIssuePanel';
 import MatchVideoPanel from './components/MatchVideoPanel';
 import PlaylistBuilder from './components/PlaylistBuilder';
 import HoldoutCalibrationPanel from './components/HoldoutCalibrationPanel';
+import TypedSearchPanel from './components/TypedSearchPanel';
 import PlayerDetailPanel from './components/PlayerDetailPanel';
 import StatsPanel from './components/StatsPanel';
 import TeamSelectionBanner from './components/TeamSelectionBanner';
@@ -1500,6 +1501,16 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           </div>
           <div className="mb-3 shrink-0">
             <HoldoutCalibrationPanel matchId={activeMatch?.id} />
+          </div>
+          <div className="mb-3 shrink-0">
+            <TypedSearchPanel
+              matchId={activeMatch?.id}
+              onSeek={(timestamp) => {
+                setIsPlaying(false);
+                const index = findNearestFrameIndex(matchData.map((frame) => frame.Timestamp), timestamp);
+                if (index >= 0) handleSeek(matchData[index]?.Frame_ID ?? index);
+              }}
+            />
           </div>
           <div className="mb-3 flex-1 overflow-y-auto">
             <AnnotationList
