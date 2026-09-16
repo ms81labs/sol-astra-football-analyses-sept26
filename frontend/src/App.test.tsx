@@ -1063,7 +1063,17 @@ describe('App match workspace loading', () => {
         return Promise.resolve({
           ok: true,
           json: async () => ({
-            items: [{ correctionId: 'clip-pending', kind: 'playlist_item', saveState: 'pending' }],
+            items: [{
+              correctionId: 'clip-pending',
+              kind: 'playlist_item',
+              saveState: 'pending',
+              payload: {
+                timestampStart: 0,
+                timestampEnd: 0.2,
+                sourceEndFrameExclusive: 1,
+                notes: 'recovered clip',
+              },
+            }],
           }),
         } as Response);
       }
@@ -1087,6 +1097,9 @@ describe('App match workspace loading', () => {
       ))).toBe(true);
     });
     expect(await screen.findByRole('button', { name: 'Undo clip-pending' })).toBeTruthy();
+    expect(await screen.findByText(/0s to 0.2s/)).toBeTruthy();
+    expect(screen.getByText(/frame 1 exclusive/i)).toBeTruthy();
+    expect(screen.getByText(/recovered clip/)).toBeTruthy();
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/matches/match-a/events'))).toBe(false);
   });
@@ -1151,6 +1164,86 @@ describe('App match workspace loading', () => {
     expect(await screen.findByText(/undo of clip-1/i)).toBeTruthy();
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/matches/match-a/events'))).toBe(false);
+  });
+
+  it('loads stored playlist clips into the review builder without undone items', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && url.includes('state=pending') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ items: [] }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            items: [
+              {
+                correctionId: 'clip-1',
+                kind: 'playlist_item',
+                saveState: 'saved',
+                undoOf: null,
+                author: 'analyst',
+                payload: {
+                  timestampStart: 0,
+                  timestampEnd: 0.2,
+                  sourceEndFrameExclusive: 1,
+                  notes: 'turnover then shot',
+                },
+              },
+              {
+                correctionId: 'clip-undone',
+                kind: 'playlist_item',
+                saveState: 'saved',
+                undoOf: null,
+                payload: {
+                  timestampStart: 12,
+                  timestampEnd: 14,
+                  sourceEndFrameExclusive: 70,
+                },
+              },
+              {
+                correctionId: 'undo-clip-undone',
+                kind: 'playlist_item',
+                saveState: 'saved',
+                undoOf: 'clip-undone',
+                payload: { undo: { timestampStart: 12, timestampEnd: 14 } },
+              },
+            ],
+          }),
+        } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    expect(await screen.findByText(/0s to 0.2s/)).toBeTruthy();
+    expect(screen.getByText(/frame 1 exclusive/i)).toBeTruthy();
+    expect(screen.getByText(/turnover then shot/)).toBeTruthy();
+    expect(screen.queryByText(/12s to 14s/)).toBeNull();
+    expect(screen.queryByText(/frame 70 exclusive/i)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Undo clip-1' })).toBeTruthy();
+    expect(screen.getByText(/do not establish a whole-match frequency/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
   it('swaps stored teams on the loaded match without a vision rerun', async () => {

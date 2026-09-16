@@ -1,19 +1,14 @@
 import { useState } from 'react';
 
+import { clipKey, type PlaylistClip } from '../utils/playlist';
 import { assembleMatchReport, exportPlaylistInterval } from '../utils/workbench';
-
-export interface PlaylistClip {
-  start: number;
-  end: number;
-  notes: string;
-  sourceEndFrameExclusive: number;
-}
 
 interface PlaylistBuilderProps {
   matchId?: string;
   reviewRange?: { startFrame: number; endFrame: number } | null;
   frames?: Array<{ Frame_ID: number; Timestamp: number }>;
   sourceFps?: number;
+  storedClips?: PlaylistClip[];
   onClipSaved?: (clip: PlaylistClip) => void | Promise<void>;
 }
 
@@ -38,6 +33,7 @@ export default function PlaylistBuilder({
   reviewRange = null,
   frames = [],
   sourceFps = 25,
+  storedClips = [],
   onClipSaved,
 }: PlaylistBuilderProps) {
   const rangeKey = reviewRange ? `${reviewRange.startFrame}:${reviewRange.endFrame}:${sourceFps}` : '';
@@ -64,8 +60,11 @@ export default function PlaylistBuilder({
         notes,
         sourceEndFrameExclusive: interval.sourceEndFrameExclusive,
       };
-      setClips((current) => [...current, clip]);
-      await onClipSaved?.(clip);
+      if (onClipSaved) {
+        await onClipSaved(clip);
+      } else {
+        setClips((current) => [...current, clip]);
+      }
     } catch (error) {
       setExportError(error instanceof Error ? error.message : 'Failed to export playlist interval');
     }
@@ -122,8 +121,8 @@ export default function PlaylistBuilder({
       ) : null}
       {exportError && <p className="text-xs text-amber-200">{exportError}</p>}
       {reportError && <p className="text-xs text-amber-200">{reportError}</p>}
-      {clips.map((clip) => (
-        <p key={`${clip.start}-${clip.end}-${clip.sourceEndFrameExclusive}-${clip.notes}`} className="text-xs text-slate-300">
+      {[...storedClips, ...clips].filter((clip, index, all) => all.findIndex((other) => clipKey(other) === clipKey(clip)) === index).map((clip) => (
+        <p key={clipKey(clip)} className="text-xs text-slate-300">
           {clip.start}s to {clip.end}s (frame {clip.sourceEndFrameExclusive} exclusive){clip.notes ? ` · ${clip.notes}` : ''}
         </p>
       ))}

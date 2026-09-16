@@ -50,6 +50,7 @@ import {
 import { buildUploadConfig, createEmptyPointInputs } from './utils/uploadConfig';
 import { getUploadFailureGuidance } from './utils/uploadErrors';
 import { findNearestFrameIndex } from './utils/videoSync';
+import { playlistClipsFromCorrections } from './utils/playlist';
 import { applyReviewShortcut, type ReviewAction } from './utils/reviewShortcuts';
 import { fetchAssistance, fetchCorrectionHistory, fetchHeatmap, fetchIncidentReview, fetchMatchFormation, fetchNative, fetchNativeMemory, fetchPendingCorrections, fetchQualityTimeline, fetchRecovery, fetchSecurity, fetchWorkbenchDossier, promoteMatchIdentity, recoverMatchCorrection, repairMatchIdentity, requestAccessDeletion, submitMatchCorrection, undoMatchCorrection, type FormationAvailability } from './utils/workbench';
 import { windowedTimelineProps } from './utils/windowedTimeline';
@@ -284,6 +285,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           saveState: item.saveState,
           undoOf: item.undoOf ?? null,
           author: item.author,
+          payload: item.payload ?? undefined,
         }));
         setCorrectionHistory(items);
         correctionHistoryRef.current = items;
@@ -377,8 +379,8 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
     [matchData, currentFrame, totalFrameCount],
   );
   const [correctionSaveState, setCorrectionSaveState] = useState<'saved' | 'pending' | 'conflicted' | 'unavailable' | null>(null);
-  const [correctionHistory, setCorrectionHistory] = useState<Array<{ correctionId: string; kind: string; saveState: string; undoOf?: string | null; author?: string }>>([]);
-  const [pendingCorrection, setPendingCorrection] = useState<{ correctionId: string; kind: string; saveState: string } | null>(null);
+  const [correctionHistory, setCorrectionHistory] = useState<Array<{ correctionId: string; kind: string; saveState: string; undoOf?: string | null; author?: string; payload?: Record<string, unknown> }>>([]);
+  const [pendingCorrection, setPendingCorrection] = useState<{ correctionId: string; kind: string; saveState: string; payload?: Record<string, unknown> | null } | null>(null);
   const [storedIncident, setStoredIncident] = useState<{
     touchStart: number;
     touchEnd: number;
@@ -746,6 +748,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
               kind: pending.kind,
               saveState: saved.saveState,
               undoOf: null,
+              payload: pending.payload ?? undefined,
             },
           ];
           correctionHistoryRef.current = next;
@@ -1018,7 +1021,19 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           setCorrectionHistory((previous) => {
             const next = [
               ...previous,
-              { correctionId: saved.correctionId, kind: 'playlist_item', saveState: saved.saveState, undoOf: null },
+              {
+                correctionId: saved.correctionId,
+                kind: 'playlist_item',
+                saveState: saved.saveState,
+                undoOf: null,
+                author: 'analyst',
+                payload: {
+                  timestampStart: clip.start,
+                  timestampEnd: clip.end,
+                  sourceEndFrameExclusive: clip.sourceEndFrameExclusive,
+                  notes: clip.notes,
+                },
+              },
             ];
             correctionHistoryRef.current = next;
             return next;
@@ -1701,6 +1716,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
               reviewRange={review.reviewRange}
               frames={matchData}
               sourceFps={fps}
+              storedClips={playlistClipsFromCorrections(correctionHistory)}
               onClipSaved={handleClipSaved}
             />
           </div>

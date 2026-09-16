@@ -110,7 +110,7 @@ export async function fetchPendingCorrections(matchId: string) {
   if (!response.ok) {
     throw new Error(`Failed to load pending corrections: ${response.status}`);
   }
-  return response.json() as Promise<{ items: Array<{ correctionId: string; kind: string; saveState: string }> }>;
+  return response.json() as Promise<{ items: Array<{ correctionId: string; kind: string; saveState: string; payload?: Record<string, unknown> | null }> }>;
 }
 
 export async function recoverMatchCorrection(matchId: string, correctionId: string) {
@@ -273,7 +273,14 @@ export async function fetchCorrectionHistory(matchId: string) {
     throw new Error(`Failed to load correction history: ${response.status}`);
   }
   return response.json() as Promise<{
-    items: Array<{ correctionId: string; kind: string; saveState: string; undoOf?: string | null; author?: string }>;
+    items: Array<{
+      correctionId: string;
+      kind: string;
+      saveState: string;
+      undoOf?: string | null;
+      author?: string;
+      payload?: Record<string, unknown> | null;
+    }>;
   }>;
 }
 
