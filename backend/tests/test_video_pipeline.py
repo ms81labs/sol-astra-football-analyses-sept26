@@ -322,3 +322,36 @@ def test_detected_rows_project_players_from_ground_contact_not_box_centre() -> N
     aerial = project_detected_rows([{"kind": "ball", "airborne": True, "bbox": (10.0, 20.0, 30.0, 80.0)}])[0]
     assert aerial["measuredGroundLocation"] is False
     assert "AERIAL_NOT_GROUND_PLANE" in aerial["reasonCodes"]
+
+
+def test_tracking_rows_project_players_from_source_box_ground_contact() -> None:
+    from backend.app.video_pipeline import project_detected_rows
+
+    player = project_detected_rows(
+        [
+            {
+                "Entity_Type": "player",
+                "Source_X1": 10.0,
+                "Source_Y1": 20.0,
+                "Source_X2": 30.0,
+                "Source_Y2": 80.0,
+            }
+        ]
+    )[0]
+    assert player["imageX"] == 20.0
+    assert player["imageY"] == 80.0
+    assert player["boxCentreIsFoot"] is False
+    aerial = project_detected_rows(
+        [
+            {
+                "Entity_Type": "ball",
+                "airborne": True,
+                "Source_X1": 10.0,
+                "Source_Y1": 20.0,
+                "Source_X2": 30.0,
+                "Source_Y2": 80.0,
+            }
+        ]
+    )[0]
+    assert aerial["measuredGroundLocation"] is False
+    assert "AERIAL_NOT_GROUND_PLANE" in aerial["reasonCodes"]

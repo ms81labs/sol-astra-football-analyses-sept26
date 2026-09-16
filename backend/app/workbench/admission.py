@@ -6,6 +6,7 @@ from typing import Literal
 
 from pydantic import Field
 
+from .access import protocol_network_allowlist
 from .contracts import StrictModel
 
 CameraProfile = Literal[
@@ -45,6 +46,7 @@ def admit_media(
     existing_digests: set[str] | None = None,
     require_audio: bool = False,
     supported_codecs: set[str] | None = None,
+    source_url: str | None = None,
 ) -> dict[str, object]:
     """Reject unsafe/unsupported/duplicate/interrupted media before allocation."""
 
@@ -66,6 +68,10 @@ def admit_media(
             reasons.append("MISSING_AUDIO")
         else:
             warnings.append("MISSING_AUDIO")
+    if source_url:
+        allow = protocol_network_allowlist(url=source_url)
+        if not allow["admitted"]:
+            reasons.extend(str(code) for code in allow["reasonCodes"])
     return {
         "admitted": not reasons,
         "reasonCodes": reasons,

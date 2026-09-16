@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from .artifacts import secrets_in_artifacts
+
 
 SECRET_KEYS = ("DAYTONA_API_KEY", "RUNPOD_", "OPENAI_API_KEY", "API_KEY", "TOKEN", "SECRET")
 
@@ -31,7 +33,7 @@ def assemble_match_package(
     cost: dict[str, Any] | None = None,
     secrets: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    del secrets
+    leak = secrets_in_artifacts(str(secrets or ""))
     return {
         "analyst": {
             "playlist": _scrub(playlist),
@@ -52,5 +54,7 @@ def assemble_match_package(
             "cost": _scrub(cost or {}),
             "cleanupStatus": "not_required",
             "errorCategories": [],
+            "secretsAdmitted": leak["admitted"],
+            "reasonCodes": list(leak["reasonCodes"]),
         },
     }

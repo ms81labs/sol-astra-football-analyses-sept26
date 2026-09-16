@@ -148,10 +148,9 @@ def project_detected_rows(rows: list[dict]) -> list[dict]:
     for row in rows:
         item = dict(row)
         kind = str(item.get("kind") or item.get("Entity_Type") or "").lower()
-        bbox = item.get("bbox")
+        box = _bbox_from_row(item)
         airborne = bool(item.get("airborne"))
-        if isinstance(bbox, (list, tuple)) and len(bbox) == 4:
-            box = (float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3]))
+        if box is not None:
             if kind == "ball" and airborne:
                 item.update(project_to_pitch(kind="ball", airborne=True, bbox=box))
             elif kind in {"player", "person"}:
@@ -160,6 +159,16 @@ def project_detected_rows(rows: list[dict]) -> list[dict]:
                 item["kind"] = "player"
         projected.append(item)
     return projected
+
+
+def _bbox_from_row(item: dict) -> tuple[float, float, float, float] | None:
+    bbox = item.get("bbox")
+    if isinstance(bbox, (list, tuple)) and len(bbox) == 4:
+        return (float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3]))
+    keys = ("Source_X1", "Source_Y1", "Source_X2", "Source_Y2")
+    if all(item.get(key) is not None for key in keys):
+        return tuple(float(item[key]) for key in keys)  # type: ignore[return-value]
+    return None
 
 
 IMAGE_SPACE_SAFE_CHANGES = {"report", "calibration", "team_mapping", "track_edit", "ownership"}

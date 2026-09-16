@@ -178,6 +178,13 @@ def test_workbench_corrections_search_jobs_and_unknown_metrics(tmp_path: Path) -
             assert media.status_code == 200
             assert media.json()["admitted"] is False
             assert "UNSUPPORTED_CODEC" in media.json()["reasonCodes"]
+            remote = await client.post(
+                "/api/workbench/media/admit",
+                json={"sourceSha256": "e" * 64, "byteSize": 12, "codec": "h264", "audioTracks": 1, "sourceUrl": "https://example.com/clip.mp4"},
+            )
+            assert remote.status_code == 200
+            assert remote.json()["admitted"] is False
+            assert "PROTOCOL_OR_NETWORK_NOT_ALLOWLISTED" in remote.json()["reasonCodes"]
             xt = await client.get("/api/workbench/xt")
             assert xt.json()["enabled"] is False
             library = await client.post(

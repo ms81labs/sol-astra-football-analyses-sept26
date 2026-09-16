@@ -118,6 +118,7 @@ class MediaAdmitBody(BaseModel):
     rotation: int = 0
     requireAudio: bool = False
     existingDigests: list[str] = Field(default_factory=list)
+    sourceUrl: str | None = None
 
 
 class LibrarySearchBody(BaseModel):
@@ -461,6 +462,7 @@ def create_workbench_router(storage_root: Path) -> APIRouter:
             identity,
             existing_digests=set(body.existingDigests),
             require_audio=body.requireAudio,
+            source_url=body.sourceUrl,
         )
 
     @router.get("/xt")

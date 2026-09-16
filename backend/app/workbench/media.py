@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Iterator, Literal
 
 from .contracts import FrameIdentity, SamplingReceipt, SourceClockIdentity
+from .access import constrained_decoder
 
 
 ColourOrder = Literal["bgr", "rgb"]
@@ -303,6 +304,9 @@ class FfmpegProbe:
             "copy",
             str(destination),
         ]
+        decision = constrained_decoder(argv=command, network_enabled=False)
+        if not decision["admitted"]:
+            raise ValueError("unconstrained decoder")
         _assert_safe_ffmpeg_argv(command)
         if cancel_event is not None and cancel_event.is_set():
             raise RuntimeError("ffmpeg export cancelled")

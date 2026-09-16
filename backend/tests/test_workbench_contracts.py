@@ -281,6 +281,20 @@ def test_ffmpeg_probe_and_cpu_fallback_and_cancellation(tmp_path: Path) -> None:
     assert transformed["colourOrder"] == "bgr"
 
 
+def test_ffmpeg_export_refuses_unconstrained_network_decoder(tmp_path: Path) -> None:
+    from backend.app.workbench.media import FfmpegProbe
+
+    probe = FfmpegProbe()
+    with pytest.raises(ValueError, match="unconstrained decoder"):
+        probe.export_clip(
+            Path("http://evil.test/clip.mp4"),
+            tmp_path / "out.mp4",
+            start_seconds=0.0,
+            duration_seconds=1.0,
+            runner=lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("ffmpeg must not run")),
+        )
+
+
 def test_correction_crash_is_recoverable_and_playlist_opens_source_interval() -> None:
     log = CorrectionLog()
     pending = log.submit(new_correction("m1", "team_mapping", {"cluster": 1}), crash_before_commit=True)
@@ -1044,6 +1058,8 @@ def test_match_package_omits_credentials_and_keeps_limitations() -> None:
     assert "DAYTONA_API_KEY" not in blob
     assert package["analyst"]["limitations"]
     assert package["operator"]["cleanupStatus"]
+    assert package["operator"]["secretsAdmitted"] is False
+    assert "SECRET_IN_ARTIFACT" in package["operator"]["reasonCodes"]
 
 
 def test_uncertain_commercial_permission_blocks_use() -> None:
@@ -1567,6 +1583,11 @@ def test_admit_media_rejects_unsafe_unsupported_duplicate_interrupted_and_missin
     assert rotated["admitted"] is True
     assert rotated["variableFrameRate"] is True
     assert rotated["rotation"] == 90
+    remote = admit_media(supported, source_url="https://example.com/footage.mp4")
+    assert remote["admitted"] is False
+    assert "PROTOCOL_OR_NETWORK_NOT_ALLOWLISTED" in remote["reasonCodes"]
+    local = admit_media(supported, source_url="file:///tmp/match.mp4")
+    assert local["admitted"] is True
 
 
 def test_pyav_and_torchcodec_stubs_are_challengers_not_defaults(tmp_path: Path) -> None:
