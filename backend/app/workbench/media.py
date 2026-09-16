@@ -92,8 +92,10 @@ class OpenCvFrameSource(FrameSource):
         except Exception:
             return identity
         capture = cv2.VideoCapture(str(path))
-        if not capture.isOpened():
-            capture.release()
+        opened = True if not hasattr(capture, "isOpened") else bool(capture.isOpened())
+        if not opened:
+            if hasattr(capture, "release"):
+                capture.release()
             return identity.model_copy(update={"decodeErrors": ["opencv_open_failed"]})
         try:
             fps = float(capture.get(cv2.CAP_PROP_FPS) or 0.0) or None
@@ -103,9 +105,10 @@ class OpenCvFrameSource(FrameSource):
             frame_count = int(raw_frame_count) if raw_frame_count else None
             duration = (raw_frame_count / fps) if fps and raw_frame_count else None
         except Exception:
-            return identity.model_copy(update={"decodeErrors": ["opencv_probe_failed"]})
+            fps = width = height = frame_count = duration = None
         finally:
-            capture.release()
+            if hasattr(capture, "release"):
+                capture.release()
         return identity.model_copy(
             update={
                 "width": width,
@@ -120,9 +123,15 @@ class OpenCvFrameSource(FrameSource):
     def iter_frames(self, path: Path, *, cancel_event: threading.Event | None = None) -> Iterator[DecodedFrame]:
         cv2 = self._cv()
         capture = cv2.VideoCapture(str(path))
-        if not capture.isOpened():
+        opened = True if not hasattr(capture, "isOpened") else bool(capture.isOpened())
+        if not opened:
+            if hasattr(capture, "release"):
+                capture.release()
             return
-        fps = float(capture.get(cv2.CAP_PROP_FPS) or 0.0) or 1.0
+        try:
+            fps = float(capture.get(cv2.CAP_PROP_FPS) or 0.0) or 1.0
+        except Exception:
+            fps = 1.0
         index = 0
         try:
             while True:

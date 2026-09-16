@@ -4910,7 +4910,7 @@ def recover_ball_rows(
 
     decode_adapter = frame_source or OpenCvFrameSource(cv2_module=cv2)
     identity = decode_adapter.probe(Path(str(video_path)))
-    if identity.decodeErrors:
+    if "opencv_open_failed" in identity.decodeErrors:
         empty_rows = []
         if return_diagnostics:
             return empty_rows, _empty_direct_seed_inference_diagnostics()
