@@ -1190,6 +1190,78 @@ async def _test_match_identity_repair_commits_stored_tracks_and_invalidates_cont
         assert new_id not in restored_by_frame[2]
 
 
+def test_match_event_review_updates_stored_events_and_undo_restores_status(tmp_path: Path):
+    _run(_test_match_event_review_updates_stored_events_and_undo_restores_status, tmp_path)
+
+
+async def _test_match_event_review_updates_stored_events_and_undo_restores_status(tmp_path: Path):
+    from backend.app.schemas import DetectedEvent
+
+    async with api_client(tmp_path) as (app, client):
+        response = await _upload_tracking_match(client)
+        assert response.status_code == 202
+        match_id = response.json()["matchId"]
+        storage = app.state.storage
+        storage.save_events(
+            match_id,
+            [
+                DetectedEvent(
+                    type="pass",
+                    frameId=1,
+                    timestamp=0.2,
+                    team="my_team",
+                    fromTrackId=7,
+                    toTrackId=7,
+                    description="Pass",
+                ),
+                DetectedEvent(
+                    type="recovery",
+                    frameId=2,
+                    timestamp=0.4,
+                    team="enemy",
+                    fromTrackId=18,
+                    toTrackId=18,
+                    description="Recovery",
+                ),
+            ],
+        )
+
+        forged = await client.post(
+            f"/api/matches/{match_id}/corrections",
+            json={"kind": "event_accept", "payload": {"eventId": "forged", "frame": 99, "reviewStatus": "accepted"}},
+        )
+        assert forged.status_code == 200
+        listed = await client.get(f"/api/matches/{match_id}/events")
+        assert listed.status_code == 200
+        by_type = {item["type"]: item for item in listed.json()["events"]}
+        assert by_type["pass"]["reviewStatus"] == "unreviewed"
+        assert by_type["recovery"]["reviewStatus"] == "unreviewed"
+
+        accepted = await client.post(
+            f"/api/matches/{match_id}/corrections",
+            json={"kind": "event_accept", "payload": {"frame": 1, "type": "pass"}},
+        )
+        assert accepted.status_code == 200
+        assert accepted.json()["saveState"] == "saved"
+        listed = await client.get(f"/api/matches/{match_id}/events")
+        by_type = {item["type"]: item for item in listed.json()["events"]}
+        assert by_type["pass"]["reviewStatus"] == "accepted"
+        assert by_type["recovery"]["reviewStatus"] == "unreviewed"
+
+        partitioned = await client.get(f"/api/matches/{match_id}/events/partition")
+        assert any(item.get("type") == "pass" for item in partitioned.json()["acceptedViews"])
+        assert all(item.get("type") != "pass" for item in partitioned.json()["retainedCandidates"])
+
+        undone = await client.post(
+            f"/api/matches/{match_id}/corrections/{accepted.json()['correctionId']}/undo"
+        )
+        assert undone.status_code == 200
+        restored = await client.get(f"/api/matches/{match_id}/events")
+        by_type = {item["type"]: item for item in restored.json()["events"]}
+        assert by_type["pass"]["reviewStatus"] == "unreviewed"
+        assert by_type["recovery"]["reviewStatus"] == "unreviewed"
+
+
 def test_match_jobs_are_idempotent_and_cancel_is_a_request(tmp_path: Path):
     _run(_test_match_jobs_are_idempotent_and_cancel_is_a_request, tmp_path)
 

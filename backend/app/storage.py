@@ -1003,15 +1003,20 @@ class Storage:
     ):
         from .workbench.review import new_correction
 
+        payload = dict(payload or {})
+        if kind in {"event_accept", "event_reject"}:
+            payload["previous"] = self._event_review_snapshot(match_id, payload)
         with self._annotation_issue_lock:
             log = self._load_correction_log(match_id)
             saved = log.submit(
-                new_correction(match_id, kind, payload or {}, author=author),  # type: ignore[arg-type]
+                new_correction(match_id, kind, payload, author=author),  # type: ignore[arg-type]
                 crash_before_commit=crash_before_commit,
                 expected_version=expected_version,
             )
             self._save_correction_log(match_id, log)
-            return saved
+        if saved.saveState == "saved":
+            self._apply_saved_correction(match_id, saved)
+        return saved
 
     def recover_correction(self, match_id: str, correction_id: str):
         with self._annotation_issue_lock:
@@ -1020,7 +1025,9 @@ class Storage:
             if saved.matchId != match_id:
                 raise KeyError(correction_id)
             self._save_correction_log(match_id, log)
-            return saved
+        if saved.saveState == "saved":
+            self._apply_saved_correction(match_id, saved)
+        return saved
 
     def undo_correction(self, match_id: str, correction_id: str, *, author: str = "analyst"):
         with self._annotation_issue_lock:
@@ -1042,12 +1049,61 @@ class Storage:
                         "newTrackId": int(source),
                     },
                 )
+        elif original is not None and original.kind in {"event_accept", "event_reject"}:
+            self._restore_event_review(match_id, list((original.payload or {}).get("previous") or []))
         return saved
 
     def list_corrections(self, match_id: str, *, state: str | None = None) -> list[dict]:
         log = self._load_correction_log(match_id)
         items = log.pending(match_id) if state == "pending" else log.history(match_id)
         return [item.model_dump(mode="json") for item in items]
+
+    def _event_review_snapshot(self, match_id: str, payload: dict) -> list[dict]:
+        from .workbench.events import event_matches_review_payload
+
+        try:
+            events = self.load_events(match_id)
+        except FileNotFoundError:
+            return []
+        previous: list[dict] = []
+        for index, event in enumerate(events):
+            if not event_matches_review_payload(event, payload, match_id=match_id, index=index):
+                continue
+            previous.append(
+                {
+                    "frameId": int(event.frameId),
+                    "timestamp": event.timestamp,
+                    "type": event.type,
+                    "reviewStatus": event.reviewStatus,
+                }
+            )
+        return previous
+
+    def _apply_saved_correction(self, match_id: str, saved) -> None:
+        if saved.kind not in {"event_accept", "event_reject"}:
+            return
+        from .workbench.events import apply_event_review
+
+        try:
+            events = self.load_events(match_id)
+        except FileNotFoundError:
+            return
+        updated, _previous = apply_event_review(
+            events,
+            kind=saved.kind,
+            payload=dict(saved.payload or {}),
+            match_id=match_id,
+        )
+        self.save_events(match_id, updated)
+
+    def _restore_event_review(self, match_id: str, previous: list[dict]) -> None:
+        from .workbench.events import restore_event_review
+
+        try:
+            events = self.load_events(match_id)
+        except FileNotFoundError:
+            return
+        self.save_events(match_id, restore_event_review(events, previous))
 
     def query_match_events(self, match_id: str, query_text: str) -> dict:
         from .workbench.assistance import events_as_query_rows, execute_typed_query, parse_typed_query

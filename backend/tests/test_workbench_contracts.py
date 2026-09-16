@@ -2415,6 +2415,34 @@ def test_rejected_events_leave_accepted_views_but_retain_the_candidate_and_reaso
     assert partitioned["rejectedRemovedFromAcceptedViews"] is True
 
 
+def test_event_review_applies_to_stored_candidates_and_ignores_unknown_ids() -> None:
+    from backend.app.schemas import DetectedEvent
+    from backend.app.workbench.events import apply_event_review, restore_event_review
+
+    events = [
+        DetectedEvent(type="pass", frameId=1, timestamp=0.2, description="Pass"),
+        DetectedEvent(type="recovery", frameId=2, timestamp=0.4, description="Recovery"),
+    ]
+    forged, previous = apply_event_review(
+        events,
+        kind="event_accept",
+        payload={"eventId": "forged", "frame": 99},
+        match_id="m1",
+    )
+    assert previous == []
+    assert [event.reviewStatus for event in forged] == ["unreviewed", "unreviewed"]
+    accepted, previous = apply_event_review(
+        events,
+        kind="event_accept",
+        payload={"frame": 1, "type": "pass"},
+        match_id="m1",
+    )
+    assert [event.reviewStatus for event in accepted] == ["accepted", "unreviewed"]
+    assert previous[0]["reviewStatus"] == "unreviewed"
+    restored = restore_event_review(accepted, previous)
+    assert [event.reviewStatus for event in restored] == ["unreviewed", "unreviewed"]
+
+
 def test_level1_touch_interval_samples_change_without_publishing_an_offside_ruling() -> None:
     from backend.app.workbench.incidents import level1_positional_aid
 

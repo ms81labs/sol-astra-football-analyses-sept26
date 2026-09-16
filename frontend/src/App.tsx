@@ -540,10 +540,11 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
     if ((action === 'accept' || action === 'reject') && activeMatch?.id) {
       const kind = action === 'accept' ? 'event_accept' : 'event_reject';
       const expectedVersion = correctionVersionRef.current;
+      const reviewed = next.events.find((event) => event.frame === next.currentFrame) ?? next.events.find((event) => event.reviewStatus === (kind === 'event_accept' ? 'accepted' : 'rejected'));
       setCorrectionSaveState('pending');
       void submitMatchCorrection(activeMatch.id, {
         kind,
-        payload: { frame: next.currentFrame },
+        payload: { frame: next.currentFrame, type: reviewed?.type },
         expectedVersion,
       })
         .then((saved) => {

@@ -133,3 +133,83 @@ def partition_events(events: list[dict[str, Any]]) -> dict[str, Any]:
         "retainedCandidates": retained,
         "rejectedRemovedFromAcceptedViews": True,
     }
+
+
+def event_review_status(kind: str) -> str | None:
+    if kind == "event_accept":
+        return "accepted"
+    if kind == "event_reject":
+        return "rejected"
+    return None
+
+
+def event_matches_review_payload(event: Any, payload: dict[str, Any], *, match_id: str, index: int) -> bool:
+    event_id = payload.get("eventId") or payload.get("id")
+    frame = payload.get("frame") if payload.get("frame") is not None else payload.get("frameId")
+    event_type = payload.get("type")
+    frame_id = int(getattr(event, "frameId", 0) or 0)
+    event_kind = str(getattr(event, "type", "") or "")
+    timestamp = getattr(event, "timestamp", None)
+    synthetic_id = f"{match_id}:{index}"
+    evidence_id = f"event:{frame_id}:{event_kind}:{timestamp}"
+    if event_id not in {None, ""}:
+        if str(event_id) not in {synthetic_id, evidence_id, str(frame_id)}:
+            return False
+    elif frame is not None:
+        if frame_id != int(frame):
+            return False
+    else:
+        return False
+    if event_type not in {None, ""} and event_kind != str(event_type):
+        return False
+    return True
+
+
+def apply_event_review(
+    events: list[Any],
+    *,
+    kind: str,
+    payload: dict[str, Any],
+    match_id: str,
+) -> tuple[list[Any], list[dict[str, Any]]]:
+    status = event_review_status(kind)
+    if status is None:
+        return events, []
+    previous: list[dict[str, Any]] = []
+    updated: list[Any] = []
+    for index, event in enumerate(events):
+        if not event_matches_review_payload(event, payload, match_id=match_id, index=index):
+            updated.append(event)
+            continue
+        previous.append(
+            {
+                "frameId": int(getattr(event, "frameId", 0) or 0),
+                "timestamp": getattr(event, "timestamp", None),
+                "type": getattr(event, "type", None),
+                "reviewStatus": getattr(event, "reviewStatus", "unreviewed"),
+            }
+        )
+        updated.append(event.model_copy(update={"reviewStatus": status}))
+    return updated, previous
+
+
+def restore_event_review(events: list[Any], previous: list[dict[str, Any]]) -> list[Any]:
+    restored: list[Any] = []
+    remaining = [dict(item) for item in previous]
+    for event in events:
+        match_index = next(
+            (
+                index
+                for index, item in enumerate(remaining)
+                if int(item.get("frameId") or 0) == int(getattr(event, "frameId", 0) or 0)
+                and item.get("type") == getattr(event, "type", None)
+                and item.get("timestamp") == getattr(event, "timestamp", None)
+            ),
+            None,
+        )
+        if match_index is None:
+            restored.append(event)
+            continue
+        snapshot = remaining.pop(match_index)
+        restored.append(event.model_copy(update={"reviewStatus": snapshot.get("reviewStatus") or "unreviewed"}))
+    return restored
