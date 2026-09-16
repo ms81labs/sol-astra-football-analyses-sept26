@@ -3203,8 +3203,7 @@ def create_app(
 
     @app.post("/api/matches/{match_id}/calibration")
     def post_match_calibration(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
-        del payload
-        return storage.calibration_for_match(match.id)
+        return storage.calibration_for_match(match.id, payload)
 
     @app.get("/api/matches/{match_id}/formation")
     def get_match_formation(match: MatchRecord = Depends(require_match)) -> dict:

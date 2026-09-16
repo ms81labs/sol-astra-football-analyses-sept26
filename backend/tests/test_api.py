@@ -1398,6 +1398,137 @@ async def _test_match_identity_promote_validates_stored_continuity_without_clien
         assert restored_players.json()["totalsWithheld"] is True
 
 
+def test_match_calibration_holdout_measures_residual_and_ignores_client_acceptance(tmp_path: Path):
+    _run(_test_match_calibration_holdout_measures_residual_and_ignores_client_acceptance, tmp_path)
+
+
+async def _test_match_calibration_holdout_measures_residual_and_ignores_client_acceptance(tmp_path: Path):
+    import cv2
+    import numpy as np
+
+    async with api_client(tmp_path) as (_, client):
+        response = await _upload_tracking_match(client)
+        assert response.status_code == 202
+        match_id = response.json()["matchId"]
+
+        leftover = await client.post(
+            "/api/geometry/preview",
+            json={"residualP95M": 0.4, "accepted": True, "committed": True, "measured": True},
+        )
+        assert leftover.status_code == 200
+        assert leftover.json()["accepted"] is False
+        assert leftover.json()["measured"] is False
+        assert leftover.json()["residualP95M"] is None
+
+        four_point = await client.post(
+            f"/api/matches/{match_id}/calibration",
+            json={"accepted": True, "independentHoldout": True, "residualP95M": 0.4, "measured": True, "committed": True},
+        )
+        assert four_point.status_code == 200
+        assert four_point.json()["evaluation"]["accepted"] is False
+        assert four_point.json()["fromStoredPoints"] is True
+        assert four_point.json().get("measured") is not True
+
+        src = np.array([[point["x"], point["y"]] for point in MANUAL_HOMOGRAPHY_POINTS], dtype=np.float32)
+        dst = np.array([[0.0, 0.0], [105.0, 0.0], [105.0, 68.0], [0.0, 68.0]], dtype=np.float32)
+        homography = cv2.getPerspectiveTransform(src, dst)
+        mapped = cv2.perspectiveTransform(np.array([[[50.0, 50.0]]], dtype=np.float32), homography)[0][0]
+
+        pending = await client.post(
+            f"/api/matches/{match_id}/calibration",
+            json={
+                "accepted": True,
+                "residualP95M": 0.4,
+                "crashBeforeCommit": True,
+                "landmarks": [
+                    {
+                        "name": "holdout-centre",
+                        "imageX": 50.0,
+                        "imageY": 50.0,
+                        "pitchX": float(mapped[0]),
+                        "pitchY": float(mapped[1]),
+                        "independentHoldout": True,
+                    }
+                ],
+            },
+        )
+        assert pending.status_code == 200
+        assert pending.json()["evaluation"]["accepted"] is False
+        fetched = await client.get(f"/api/matches/{match_id}/calibration")
+        assert fetched.json()["evaluation"]["accepted"] is False
+
+        forged = await client.post(
+            f"/api/matches/{match_id}/calibration",
+            json={
+                "accepted": True,
+                "residualP95M": 0.4,
+                "landmarks": [
+                    {
+                        "name": "wrong-holdout",
+                        "imageX": 50.0,
+                        "imageY": 50.0,
+                        "pitchX": 0.0,
+                        "pitchY": 0.0,
+                        "independentHoldout": True,
+                    }
+                ],
+            },
+        )
+        assert forged.status_code == 200
+        assert forged.json()["evaluation"]["accepted"] is False
+        assert forged.json()["measured"] is True
+        assert forged.json()["residualP95M"] != 0.4
+        assert forged.json()["visionRerun"] is False
+        await client.post(f"/api/matches/{match_id}/identity/promote", json={"reviewed": True})
+        by_name = {item["metric"]: item for item in (await client.get(f"/api/matches/{match_id}/metrics")).json()["metrics"]}
+        assert "CALIBRATION_UNAVAILABLE" in by_name["my_team_distance_m"]["reasonCodes"]
+
+        measured = await client.post(
+            f"/api/matches/{match_id}/calibration",
+            json={
+                "accepted": False,
+                "residualP95M": 99.0,
+                "landmarks": [
+                    {
+                        "name": "holdout-centre",
+                        "imageX": 50.0,
+                        "imageY": 50.0,
+                        "pitchX": float(mapped[0]),
+                        "pitchY": float(mapped[1]),
+                        "independentHoldout": True,
+                    }
+                ],
+            },
+        )
+        assert measured.status_code == 200
+        saved = measured.json()
+        assert saved["evaluation"]["accepted"] is True
+        assert saved["measured"] is True
+        assert saved["committed"] is True
+        assert saved["residualP95M"] is not None
+        assert saved["residualP95M"] <= 3.0
+        assert saved["residualP95M"] != 99.0
+        assert saved["visionRerun"] is False
+        assert saved["correction"]["kind"] == "calibration"
+        fetched = await client.get(f"/api/matches/{match_id}/calibration")
+        assert fetched.json()["evaluation"]["accepted"] is True
+        assert fetched.json()["measured"] is True
+
+        by_name = {item["metric"]: item for item in (await client.get(f"/api/matches/{match_id}/metrics")).json()["metrics"]}
+        assert "CALIBRATION_UNAVAILABLE" not in by_name["my_team_distance_m"]["reasonCodes"]
+        assert by_name["my_team_distance_m"]["availability"] == "available"
+        distance = await client.get(f"/api/matches/{match_id}/geometry/distance")
+        assert distance.json()["availability"] == "withheld"
+        assert distance.json()["value"] is None
+
+        undone = await client.post(f"/api/matches/{match_id}/corrections/{saved['correction']['correctionId']}/undo")
+        assert undone.status_code == 200
+        restored = await client.get(f"/api/matches/{match_id}/calibration")
+        assert restored.json()["evaluation"]["accepted"] is False
+        by_name = {item["metric"]: item for item in (await client.get(f"/api/matches/{match_id}/metrics")).json()["metrics"]}
+        assert "CALIBRATION_UNAVAILABLE" in by_name["my_team_distance_m"]["reasonCodes"]
+
+
 def test_match_event_review_updates_stored_events_and_undo_restores_status(tmp_path: Path):
     _run(_test_match_event_review_updates_stored_events_and_undo_restores_status, tmp_path)
 

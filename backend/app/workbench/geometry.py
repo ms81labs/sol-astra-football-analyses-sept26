@@ -67,7 +67,22 @@ def from_legacy_four_points(
         landmarks=landmarks,
         compatibleWithFourPointV1=True,
         validRegion="unknown",
+        homography=homography_from_four_points(points),
     )
+
+
+def homography_from_four_points(points: list[dict[str, float]]) -> list[list[float]] | None:
+    if len(points) != 4:
+        return None
+    try:
+        import cv2
+        import numpy as np
+    except ImportError:
+        return None
+    source = np.array([[float(point["x"]), float(point["y"])] for point in points], dtype=np.float32)
+    destination = np.array([[0.0, 0.0], [105.0, 0.0], [105.0, 68.0], [0.0, 68.0]], dtype=np.float32)
+    matrix = cv2.getPerspectiveTransform(source, destination)
+    return [[float(value) for value in row] for row in matrix.tolist()]
 
 
 def evaluate_landmarks(profile: CalibrationProfile, *, max_p95_m: float) -> dict[str, Any]:

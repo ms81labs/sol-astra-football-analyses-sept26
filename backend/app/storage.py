@@ -1057,6 +1057,8 @@ class Storage:
             self._apply_identity_edit(match_id, kind="track_join_undo", payload=dict(original.payload or {}))
         elif original is not None and original.kind == "identity_validate":
             self._recompute_identity_continuity(match_id, identity_continuous=False)
+        elif original is not None and original.kind == "calibration":
+            self._restore_calibration_evaluation(match_id, dict((original.payload or {}).get("previous") or {}))
         return saved
 
     def list_corrections(self, match_id: str, *, state: str | None = None) -> list[dict]:
@@ -1106,6 +1108,9 @@ class Storage:
             return
         if saved.kind == "identity_validate":
             self._recompute_identity_continuity(match_id, identity_continuous=True)
+            return
+        if saved.kind == "calibration":
+            self._save_calibration_evaluation(match_id, dict((saved.payload or {}).get("evaluation") or {}))
 
     def _apply_team_mapping(self, match_id: str, payload: dict) -> None:
         if payload.get("swap") is not True:
@@ -1172,7 +1177,7 @@ class Storage:
             for metric in summarize_legacy_match(
                 summary.model_dump(mode="json"),
                 identity_continuous=self._stored_identity_continuous(match_id),
-                calibration_accepted=False,
+                calibration_accepted=self._stored_calibration_accepted(match_id),
                 controlled_frames=controlled,
             )
         ]
@@ -1269,7 +1274,7 @@ class Storage:
             for metric in summarize_legacy_match(
                 summary.model_dump(mode="json"),
                 identity_continuous=self._stored_identity_continuous(match_id),
-                calibration_accepted=False,
+                calibration_accepted=self._stored_calibration_accepted(match_id),
                 controlled_frames=controlled,
             )
         ]
@@ -1357,7 +1362,7 @@ class Storage:
             for metric in summarize_legacy_match(
                 summary.model_dump(mode="json"),
                 identity_continuous=self._stored_identity_continuous(match_id),
-                calibration_accepted=False,
+                calibration_accepted=self._stored_calibration_accepted(match_id),
                 controlled_frames=controlled,
             )
         ]
@@ -1608,6 +1613,13 @@ class Storage:
             and physical.availability == "available"
             and "IDENTITY_DISCONTINUITY" not in (physical.reasonCodes or [])
         )
+
+    def _stored_calibration_accepted(self, match_id: str) -> bool:
+        try:
+            payload = self.load_analysis_artifact(match_id, "calibration_evaluation")
+        except FileNotFoundError:
+            return False
+        return bool(payload.get("accepted")) and payload.get("measured") is True
 
     def heatmap_for_match(self, match_id: str) -> dict:
         from .workbench.quantities import heatmap_availability
@@ -2155,18 +2167,107 @@ class Storage:
 
         return interrupted_upload(self.storage_root / "uploads" / "interrupted.bin")
 
-    def calibration_for_match(self, match_id: str) -> dict:
-        from .workbench.geometry import evaluate_landmarks, from_legacy_four_points, withhold_if_invalid
+    def calibration_for_match(self, match_id: str, payload: dict | None = None) -> dict:
+        from .workbench.geometry import Landmark, evaluate_landmarks, from_legacy_four_points, withhold_if_invalid
+        from .workbench.review import correction_api_payload
 
         match = self.get_match(match_id)
         points = [{"x": float(point.x), "y": float(point.y)} for point in match.config.manualHomographyPoints]
         if len(points) != 4:
             points = [{"x": 0.0, "y": 0.0}, {"x": 1.0, "y": 0.0}, {"x": 1.0, "y": 1.0}, {"x": 0.0, "y": 1.0}]
         profile = from_legacy_four_points(points, calibration_id=match_id)
-        evaluation = evaluate_landmarks(profile, max_p95_m=3.0)
+        body = dict(payload or {})
+        holdout: list = []
+        for item in body.get("landmarks") or []:
+            if not isinstance(item, dict) or item.get("independentHoldout") is not True:
+                continue
+            holdout.append(
+                Landmark(
+                    name=str(item.get("name") or f"holdout_{len(holdout)}"),
+                    imageX=float(item.get("imageX") or 0.0),
+                    imageY=float(item.get("imageY") or 0.0),
+                    pitchX=float(item.get("pitchX") or 0.0),
+                    pitchY=float(item.get("pitchY") or 0.0),
+                    independentHoldout=True,
+                )
+            )
+        stored = self._load_calibration_evaluation(match_id)
+        committed = False
+        correction = None
+        measured = False
+        residual = None
+        if holdout:
+            profile = profile.model_copy(update={"landmarks": list(profile.landmarks) + holdout})
+            measured_evaluation = evaluate_landmarks(profile, max_p95_m=3.0)
+            saved = self.submit_correction(
+                match_id,
+                kind="calibration",
+                payload={
+                    "evaluation": {**measured_evaluation, "measured": True},
+                    "previous": stored,
+                },
+                author=str(body.get("author") or "analyst"),
+                crash_before_commit=bool(body.get("crashBeforeCommit")),
+            )
+            correction = correction_api_payload(saved)
+            committed = saved.saveState == "saved"
+            if committed:
+                evaluation = measured_evaluation
+                measured = True
+                residual = measured_evaluation.get("p95M")
+                stored = {**measured_evaluation, "measured": True}
+            else:
+                evaluation = {
+                    "accepted": False,
+                    "reasonCodes": ["CALIBRATION_UNAVAILABLE"],
+                    "holdoutCount": len(holdout),
+                }
+        elif stored:
+            evaluation = {
+                "accepted": bool(stored.get("accepted")),
+                "p95M": stored.get("p95M"),
+                "holdoutCount": stored.get("holdoutCount") or 0,
+                "farSideMaxM": stored.get("farSideMaxM"),
+                "reasonCodes": list(stored.get("reasonCodes") or []),
+            }
+            measured = stored.get("measured") is True
+            residual = stored.get("p95M") if measured else None
+        else:
+            evaluation = evaluate_landmarks(profile, max_p95_m=3.0)
         withheld = withhold_if_invalid(profile, "team_width_m")
-        dumped = profile.model_dump(mode="json")
-        return {**dumped, "evaluation": evaluation, "withheld": withheld, "fromStoredPoints": True}
+        if stored.get("accepted") and stored.get("measured") is True:
+            withheld = {"metric": "team_width_m", "availability": "available", "reasonCodes": [], "value": "computed"}
+        elif stored or committed is False:
+            withheld = {"metric": "team_width_m", "availability": "withheld", "reasonCodes": list(evaluation.get("reasonCodes") or ["CALIBRATION_UNAVAILABLE"]), "value": None}
+        return {
+            **profile.model_dump(mode="json"),
+            "evaluation": evaluation,
+            "withheld": withheld,
+            "fromStoredPoints": True,
+            "measured": measured,
+            "residualP95M": residual,
+            "committed": committed,
+            "visionRerun": False,
+            "correction": correction,
+        }
+
+    def _load_calibration_evaluation(self, match_id: str) -> dict:
+        try:
+            payload = self.load_analysis_artifact(match_id, "calibration_evaluation")
+        except FileNotFoundError:
+            return {}
+        return dict(payload) if isinstance(payload, dict) else {}
+
+    def _save_calibration_evaluation(self, match_id: str, evaluation: dict) -> None:
+        if not evaluation:
+            path = self._match_dir(match_id) / "calibration_evaluation.json"
+            if path.exists():
+                path.unlink()
+            return
+        self.save_analysis_artifact(match_id, "calibration_evaluation", evaluation)
+
+    def _restore_calibration_evaluation(self, match_id: str, previous: dict) -> None:
+        self._save_calibration_evaluation(match_id, previous)
 
     def load_raw_rows(self, match_id: str) -> list[dict]:
         payload = self._read_json(self._match_dir(match_id) / "raw_rows.json")
