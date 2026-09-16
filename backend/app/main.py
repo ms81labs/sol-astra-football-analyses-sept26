@@ -48,6 +48,7 @@ from .schemas import (
 )
 from .semantic_search import search_matches_by_tactical_themes, search_bundles_by_tactical_themes, detect_themes_for_match
 from .storage import AdmissionOutcomeUncertainError, Storage, UploadTooLargeError
+from .workbench.routes import create_workbench_router
 
 
 STORAGE_ROOT_ENV = "GUERILLA_STORAGE_ROOT"
@@ -220,6 +221,7 @@ def create_app(
 
     app = FastAPI(title="Guerilla Analytics API", version="0.1.0")
     app.state.storage = storage
+    app.include_router(create_workbench_router(storage.storage_root))
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.trusted_frontend_origins,

@@ -167,6 +167,23 @@ describe('StatsPanel', () => {
     expect(scoped.getByRole('heading', { name: 'Formation' })).toBeTruthy();
   });
 
+  it('renders withheld physical metrics as unavailable rather than a measured zero', () => {
+    const { container } = render(
+      <StatsPanel
+        stats={{ ...baseStats, myTeamDistance: 0, enemyDistance: 0 }}
+        metricAvailability={[{
+          metric: 'my_team_distance_m',
+          definitionVersion: '1',
+          value: null,
+          availability: 'unknown',
+          reasonCodes: ['IDENTITY_DISCONTINUITY'],
+        }]}
+      />,
+    );
+    const scoped = within(container);
+    expect(scoped.getByText('Unavailable')).toBeTruthy();
+  });
+
   it('does not recompute profile leaders when the profile array is unchanged', () => {
     const profiles = [...sampleProfiles];
     const iterate = profiles[Symbol.iterator].bind(profiles);

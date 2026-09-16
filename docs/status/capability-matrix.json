@@ -1,0 +1,49 @@
+{
+  "planVersion": "1.1",
+  "selectedCommit": "5099e1fd50d856a7cd0449f1ef4b1695d8f930c3",
+  "declaredCameraProfile": "stitched_panoramic_view",
+  "capabilities": [
+    {
+      "id": "manual_review",
+      "label": "Manual review",
+      "status": "usable",
+      "evidenceClass": "software_verification",
+      "independentlyVisible": true
+    },
+    {
+      "id": "team_level_tactical_estimates",
+      "label": "Team-level tactical estimates",
+      "status": "review_only",
+      "evidenceClass": "independent_accuracy",
+      "independentlyVisible": true
+    },
+    {
+      "id": "event_suggestions",
+      "label": "Event suggestions",
+      "status": "experimental",
+      "evidenceClass": "independent_accuracy",
+      "independentlyVisible": true
+    },
+    {
+      "id": "player_attribution",
+      "label": "Player attribution",
+      "status": "unproven",
+      "evidenceClass": "independent_accuracy",
+      "independentlyVisible": true
+    },
+    {
+      "id": "physical_metrics",
+      "label": "Physical metrics",
+      "status": "unavailable",
+      "evidenceClass": "independent_accuracy",
+      "independentlyVisible": true
+    },
+    {
+      "id": "incident_review",
+      "label": "Incident review",
+      "status": "review_only",
+      "evidenceClass": "analyst_acceptance",
+      "independentlyVisible": true
+    }
+  ]
+}

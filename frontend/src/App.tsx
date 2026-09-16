@@ -9,6 +9,7 @@ import ReviewToolbar from './components/ReviewToolbar';
 import TacticalPitch from './components/TacticalPitch';
 import CoachInsights from './components/CoachInsights';
 import DashboardPanel from './components/DashboardPanel';
+import WorkbenchPanel from './components/WorkbenchPanel';
 import DemoMatchIssuePanel from './components/DemoMatchIssuePanel';
 import MatchVideoPanel from './components/MatchVideoPanel';
 import PlayerDetailPanel from './components/PlayerDetailPanel';
@@ -131,6 +132,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
   const [selectedPlayer, setSelectedPlayer] = useState<import('./types').PlayerProfile | null>(null);
   const [showIssuePanel, setShowIssuePanel] = useState(false);
   const [showDashboard, setShowDashboard] = useState(false);
+  const [showWorkbench, setShowWorkbench] = useState(false);
   const [showTrustCrop, setShowTrustCrop] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -847,6 +849,13 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
                 </button>
                 <button
                   type="button"
+                  onClick={() => setShowWorkbench(true)}
+                  className="px-3 py-1.5 rounded border border-sky-600/30 bg-sky-900/20 text-sky-300 text-xs font-semibold hover:bg-sky-900/40 transition-colors"
+                >
+                  Capabilities
+                </button>
+                <button
+                  type="button"
                   onClick={() => setShowTrustCrop(true)}
                   className="px-3 py-1.5 rounded border border-amber-600/30 bg-amber-900/20 text-amber-300 text-xs font-semibold hover:bg-amber-900/40 transition-colors"
                 >
@@ -872,6 +881,17 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
               playerProfiles={playerProfiles}
               comparisonStats={comparisonStats}
               comparisonName={comparisonName ?? undefined}
+              metricAvailability={
+                activeMatch?.detail.requiresTeamSelection || matchBenchmark?.fiveMinuteTruthReady === false
+                  ? [{
+                      metric: 'my_team_distance_m',
+                      definitionVersion: '1',
+                      value: null,
+                      availability: 'unknown',
+                      reasonCodes: ['IDENTITY_DISCONTINUITY'],
+                    }]
+                  : []
+              }
             />
           )}
         </div>
@@ -1053,6 +1073,25 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           onSelectMatch={(matchId) => {
             setShowDashboard(false);
             void loadWorkspaceIntoState(matchId).catch(() => undefined);
+          }}
+        />
+      )}
+
+      {showWorkbench && (
+        <WorkbenchPanel
+          onClose={() => setShowWorkbench(false)}
+          matchId={activeMatch?.id}
+          events={(activeMatch?.backendEvents ?? []).map((event) => ({
+            id: `${event.type}-${event.timestamp}`,
+            type: event.type,
+            timestamp: event.timestamp,
+            team: event.team,
+          }))}
+          onSeek={(timestamp) => {
+            setShowWorkbench(false);
+            setIsPlaying(false);
+            const index = findNearestFrameIndex(matchData.map((frame) => frame.Timestamp), timestamp);
+            if (index >= 0) handleSeek(index);
           }}
         />
       )}

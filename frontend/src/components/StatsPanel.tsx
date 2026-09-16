@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
 import type { FormationSegment, MatchBenchmarkSummary, MatchStats, PlayerProfile, ShotSummary } from '../types';
+import type { MetricAvailability } from '../utils/workbench';
 
 interface StatsPanelProps {
     stats: MatchStats | null;
@@ -9,6 +10,7 @@ interface StatsPanelProps {
     playerProfiles?: PlayerProfile[];
     comparisonStats?: MatchStats | null;
     comparisonName?: string;
+    metricAvailability?: MetricAvailability[];
 }
 
 function StatBar({ label, value, maxValue, color }: { label: string; value: number; maxValue: number; color: string }) {
@@ -76,6 +78,7 @@ export default function StatsPanel({
     playerProfiles = [],
     comparisonStats,
     comparisonName,
+    metricAvailability = [],
 }: StatsPanelProps) {
     const [topCreator, topFinisher, topBallWinner] = useMemo(() => [
         [...playerProfiles]
@@ -94,6 +97,8 @@ export default function StatsPanel({
     const isBenchmarkTruthGateFailed = benchmark ? !benchmark.fiveMinuteTruthReady : false;
     const showTacticalInterpretation = !isBallSignalUntrusted && !isBenchmarkTruthGateFailed;
     const maxDist = Math.max(stats.myTeamDistance, stats.enemyDistance, 1);
+    const physical = metricAvailability.find((metric) => metric.metric === 'my_team_distance_m');
+    const physicalUnavailable = physical != null && physical.availability !== 'available';
 
     return (
         <div className="w-full max-w-4xl mt-4 space-y-3">
@@ -128,10 +133,14 @@ export default function StatsPanel({
             <div className={`grid gap-3 ${showTacticalInterpretation ? 'grid-cols-2 lg:grid-cols-4' : 'grid-cols-1 lg:grid-cols-2'}`}>
                 <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm">
                     <h4 className="text-xs text-slate-400 mb-2 font-medium uppercase tracking-wide">Distance (m)</h4>
+                    {physicalUnavailable ? (
+                        <p className="text-xs text-slate-400">Unavailable</p>
+                    ) : (
                     <div className="space-y-1.5">
                         <StatBar label="My Team" value={stats.myTeamDistance} maxValue={maxDist} color="#3b82f6" />
                         <StatBar label="Enemy" value={stats.enemyDistance} maxValue={maxDist} color="#ef4444" />
                     </div>
+                    )}
                     {comparisonStats && (
                         <div className="mt-1 flex gap-4 justify-center text-xs">
                             <ComparisonArrow current={stats.myTeamDistance} previous={comparisonStats.myTeamDistance} />

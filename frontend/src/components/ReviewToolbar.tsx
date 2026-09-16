@@ -67,7 +67,7 @@ export default function ReviewToolbar({ onCreateNote, onCreateTaggedMoment }: Re
                     Tag
                 </button>
             </div>
-            <p className="text-[11px] text-slate-600">Press Enter for note, or use Tag for a reviewable moment.</p>
+            <p className="text-[11px] text-slate-600">Shortcuts: Space play/pause, [ ] previous/next candidate, I/O mark in/out, A accept, R reject, Z undo. Enter saves a note.</p>
         </div>
     );
 }

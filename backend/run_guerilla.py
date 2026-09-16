@@ -8010,6 +8010,16 @@ def process_video(
     fps = cap.get(cv2.CAP_PROP_FPS)
     frame_interval = int(fps / TARGET_FPS) if fps > TARGET_FPS else 1
     sample_interval = frame_interval
+    from backend.app.workbench.media import SamplingAudit
+
+    sampling_audit = SamplingAudit(
+        source_sha256="",
+        declared_target_fps=float(TARGET_FPS),
+        nominal_fps=float(fps) if fps else None,
+        frame_interval=int(frame_interval),
+        selected_backend="ultralytics_track",
+        temporal_policy="clip_local_index_modulo",
+    )
     
     # Read first frame for Homography
     ret, first_frame = cap.read()
@@ -8053,6 +8063,9 @@ def process_video(
     )
     
     for r in results:
+        sampling_audit.record_decoded_frame()
+        sampling_audit.record_primary_inference()
+        sampling_audit.record_tracker_update()
         frame_image = getattr(r, "orig_img", None)
         
         # Periodic homography recalculation to handle camera sway
@@ -8070,6 +8083,7 @@ def process_video(
                         pass  # Keep current H
         
         if frame_count % frame_interval == 0:
+            sampling_audit.record_export_sample()
             timestamp = round(frame_count / fps, 2)
             
             boxes = r.boxes
@@ -8151,6 +8165,7 @@ def process_video(
             
         frame_count += 1
         
+    ball_pipeline_trace["samplingReceipt"] = sampling_audit.receipt().model_dump(mode="json")
     if not match_data_rows:
         print("No tracking data found.")
         return empty_result() if return_rows or not output_parquet else []
@@ -8239,6 +8254,7 @@ def process_video(
     recovery_selection_started_at = time.monotonic()
     emit_worker_heartbeat("recoverySelection", "started")
     if needs_primary_recovery or needs_supplemental_recovery:
+        sampling_audit.record_recovery_inference()
         recovery_debug["recoveryAttempted"] = True
         recovery_results = run_ball_recovery_experiment(
             video_path,
@@ -8677,6 +8693,8 @@ def process_video(
         worker_returned_result=True,
     )
 
+    ball_pipeline_trace["samplingReceipt"] = sampling_audit.receipt().model_dump(mode="json")
+
     return {
         "rows": match_data_rows,
         "trackColors": {str(track_id): samples for track_id, samples in track_color_samples.items()},
@@ -8685,6 +8703,7 @@ def process_video(
         "ballPipelineTrace": ball_pipeline_trace,
         "ballTruthLayers": ball_truth_layers,
         "matchStateEvidence": match_state_evidence,
+        "samplingReceipt": ball_pipeline_trace["samplingReceipt"],
     }
 
 if __name__ == "__main__":
