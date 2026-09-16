@@ -1,5 +1,5 @@
-import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, expect, it } from 'vitest';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { afterEach, expect, it, vi } from 'vitest';
 
 import PlayerDetailPanel from './PlayerDetailPanel';
 import type { BackendEvent, PlayerProfile } from '../types';
@@ -54,4 +54,18 @@ it('shows match totals only after identity continuity is validated', () => {
   render(<PlayerDetailPanel player={player} events={events} identityContinuous />);
   expect(screen.getByText('12')).toBeTruthy();
   expect(screen.queryByText(/totals withheld/i)).toBeNull();
+});
+
+it('offers match-scoped identity split without treating the click as continuity', () => {
+  const onSplitIdentity = vi.fn();
+  render(
+    <PlayerDetailPanel
+      player={player}
+      events={events}
+      identityContinuous
+      onSplitIdentity={onSplitIdentity}
+    />,
+  );
+  fireEvent.click(screen.getByRole('button', { name: /split identity/i }));
+  expect(onSplitIdentity).toHaveBeenCalledTimes(1);
 });

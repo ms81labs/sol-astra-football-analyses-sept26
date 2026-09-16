@@ -861,6 +861,29 @@ export async function assembleMatchReport(matchId: string) {
   return response.json() as Promise<AssembleReportSnapshot>;
 }
 
+export async function repairMatchIdentity(
+  matchId: string,
+  body: { kind?: string; trackId?: string; atFrame?: number; leftTrackId?: string; rightTrackId?: string } = {},
+) {
+  const response = await fetch(`/api/matches/${matchId}/identity/repair`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to repair match identity: ${response.status}`);
+  }
+  return response.json() as Promise<{
+    committed: boolean;
+    preview: boolean;
+    identityContinuous: boolean;
+    silentlyReconnected: boolean;
+    visionRerun: boolean;
+    reasonCodes: string[];
+    correction?: { correctionId?: string; kind?: string; saveState?: string };
+  }>;
+}
+
 export async function fetchAssembleReport() {
   const response = await fetch('/api/reports/assemble', {
     method: 'POST',

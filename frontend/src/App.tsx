@@ -48,7 +48,7 @@ import { buildUploadConfig, createEmptyPointInputs } from './utils/uploadConfig'
 import { getUploadFailureGuidance } from './utils/uploadErrors';
 import { findNearestFrameIndex } from './utils/videoSync';
 import { applyReviewShortcut, type ReviewAction } from './utils/reviewShortcuts';
-import { fetchAssistance, fetchHeatmap, fetchIncidentReview, fetchMatchFormation, fetchNative, fetchNativeMemory, fetchQualityTimeline, fetchRecovery, fetchSecurity, fetchWorkbenchDossier, requestAccessDeletion, submitMatchCorrection, undoMatchCorrection, type FormationAvailability } from './utils/workbench';
+import { fetchAssistance, fetchHeatmap, fetchIncidentReview, fetchMatchFormation, fetchNative, fetchNativeMemory, fetchQualityTimeline, fetchRecovery, fetchSecurity, fetchWorkbenchDossier, repairMatchIdentity, requestAccessDeletion, submitMatchCorrection, undoMatchCorrection, type FormationAvailability } from './utils/workbench';
 import { windowedTimelineProps } from './utils/windowedTimeline';
 import { splitScores } from './utils/quantities';
 
@@ -1086,6 +1086,44 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
                 player={selectedPlayer}
                 events={activeMatch?.backendEvents ?? []}
                 identityContinuous={identityContinuous}
+                onSplitIdentity={() => {
+                  if (!activeMatch?.id || selectedPlayer.playerId == null) return;
+                  const matchId = activeMatch.id;
+                  setCorrectionSaveState('pending');
+                  void repairMatchIdentity(matchId, {
+                    kind: 'track_split',
+                    trackId: String(selectedPlayer.playerId),
+                    atFrame: currentFrame,
+                  })
+                    .then(async (payload) => {
+                      setCorrectionSaveState(payload.correction?.saveState === 'saved' ? 'saved' : 'pending');
+                      if (payload.correction?.correctionId) {
+                        setCorrectionHistory((previous) => [
+                          ...previous,
+                          {
+                            correctionId: payload.correction?.correctionId ?? '',
+                            kind: payload.correction?.kind ?? 'track_split',
+                            saveState: payload.correction?.saveState ?? 'pending',
+                            undoOf: null,
+                          },
+                        ]);
+                      }
+                      setIdentityContinuous(false);
+                      const heatmap = await fetchHeatmap(matchId);
+                      const identity = heatmap.identityContinuous === true;
+                      setIdentityContinuous(identity);
+                      setHeatmapAvail({
+                        wholeMatch: heatmap.wholeMatch === true,
+                        intervalLimited: heatmap.intervalLimited !== false,
+                        withheld: heatmap.withheld !== false,
+                      });
+                      setSpeedAvail(speedAvailability(identity));
+                      setPlayerTotalsAvail(playerPhysicalTotalsAvailability(identity));
+                    })
+                    .catch(() => {
+                      setCorrectionSaveState('unavailable');
+                    });
+                }}
               />
               <button
                 type="button"

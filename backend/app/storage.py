@@ -1535,7 +1535,119 @@ class Storage:
         payload["crossSeasonIdentity"] = cross_season_identity(requested=False)
         payload["candidateRejoin"] = candidate_rejoin()
         payload["cutCount"] = len(cuts)
+        payload["identityContinuous"] = self._stored_identity_continuous(match_id)
         return payload
+
+    def repair_identity_for_match(self, match_id: str, payload: dict | None = None) -> dict:
+        from .workbench.identity import rows_from_frames
+        from .workbench.perception import IdentityRepair, preview_identity_change
+        from .workbench.review import correction_api_payload
+
+        self.get_match(match_id)
+        body = dict(payload or {})
+        kind = str(body.get("kind") or "track_split")
+        track_id = str(body.get("trackId") or "")
+        at_frame = int(body.get("atFrame") or 0)
+        left_track_id = str(body.get("leftTrackId") or "")
+        right_track_id = str(body.get("rightTrackId") or "")
+        try:
+            frames = self.load_frames(match_id)
+        except FileNotFoundError:
+            frames = []
+        stored_ids = {str(row["trackId"]) for row in rows_from_frames(frames)}
+        preview = preview_identity_change(
+            kind=kind,
+            track_id=track_id or None,
+            at_frame=at_frame,
+            interval_start=body.get("intervalStart"),
+            interval_end=body.get("intervalEnd"),
+        )
+        known = False
+        if kind == "track_split":
+            known = track_id in stored_ids
+        elif kind == "track_join":
+            known = left_track_id in stored_ids and right_track_id in stored_ids
+        reason_codes: list[str] = []
+        if not known:
+            reason_codes.append("UNKNOWN_TRACK")
+        repair = IdentityRepair()
+        if kind == "track_join":
+            repair.join(left_track_id or "t-1", right_track_id or "t-2", author=str(body.get("author") or "analyst"))
+        else:
+            repair.split(track_id or "t-1", at_frame, author=str(body.get("author") or "analyst"))
+        correction = None
+        committed = False
+        if known and kind in {"track_split", "track_join"}:
+            saved = self.submit_correction(
+                match_id,
+                kind=kind,
+                payload={
+                    "trackId": track_id,
+                    "atFrame": at_frame,
+                    "leftTrackId": left_track_id,
+                    "rightTrackId": right_track_id,
+                },
+                author=str(body.get("author") or "analyst"),
+            )
+            correction = correction_api_payload(saved)
+            committed = saved.saveState == "saved"
+            if committed:
+                self._invalidate_stored_identity_continuity(match_id)
+        return {
+            **preview,
+            "committed": committed,
+            "identityContinuous": False,
+            "silentlyReconnected": False,
+            "visionRerun": False,
+            "reasonCodes": reason_codes,
+            "edits": repair.edits,
+            "correction": correction,
+            "storedTrack": known,
+        }
+
+    def _invalidate_stored_identity_continuity(self, match_id: str) -> None:
+        try:
+            summary, assignments, timeline, shots = self.load_analytics(match_id)
+        except FileNotFoundError:
+            return
+        physical_names = {
+            "my_team_distance_m",
+            "enemy_distance_m",
+            "my_team_top_speed_kmh",
+            "enemy_top_speed_kmh",
+            "my_team_sprints",
+            "enemy_sprints",
+        }
+        availability = []
+        for item in summary.metricAvailability:
+            if item.metric in physical_names:
+                reasons = list(item.reasonCodes or [])
+                if "IDENTITY_DISCONTINUITY" not in reasons:
+                    reasons.append("IDENTITY_DISCONTINUITY")
+                availability.append(
+                    item.model_copy(
+                        update={"availability": "withheld", "value": None, "reasonCodes": reasons}
+                    )
+                )
+            else:
+                availability.append(item)
+        self.save_analytics(
+            match_id,
+            summary.model_copy(
+                update={
+                    "metricAvailability": availability,
+                    "myTeamDistance": None,
+                    "enemyDistance": None,
+                    "myTeamTopSpeed": None,
+                    "enemyTopSpeed": None,
+                    "myTeamSprints": None,
+                    "enemySprints": None,
+                }
+            ),
+            assignments,
+            timeline,
+            shots,
+        )
 
     def formation_for_match(self, match_id: str) -> dict:
         from .workbench.quantities import formation_availability

@@ -4,6 +4,7 @@ interface PlayerDetailPanelProps {
     player: Partial<PlayerProfile>;
     events: BackendEvent[];
     identityContinuous?: boolean;
+    onSplitIdentity?: () => void;
 }
 
 type PlayerDetailSelection = PlayerDetailPanelProps['player'];
@@ -22,7 +23,7 @@ function isPlayerEvent(event: BackendEvent, player: PlayerDetailSelection) {
     return event.fromTrackId === player.playerId || event.toTrackId === player.playerId;
 }
 
-export default function PlayerDetailPanel({ player, events, identityContinuous = false }: PlayerDetailPanelProps) {
+export default function PlayerDetailPanel({ player, events, identityContinuous = false, onSplitIdentity }: PlayerDetailPanelProps) {
     const recentEvents = events
         .filter((event) => isPlayerEvent(event, player))
         .sort((left, right) => {
@@ -50,6 +51,15 @@ export default function PlayerDetailPanel({ player, events, identityContinuous =
                 <p className="text-sm text-slate-300">{player.summaryLine?.trim() || 'No profile summary available.'}</p>
                 {!identityContinuous && (
                     <p className="text-xs text-amber-200">Interval-limited observations. Totals withheld until identity continuity is validated.</p>
+                )}
+                {onSplitIdentity && (
+                    <button
+                        type="button"
+                        onClick={onSplitIdentity}
+                        className="mt-2 rounded border border-amber-600/40 bg-amber-900/20 px-2 py-1 text-[11px] font-semibold text-amber-100 hover:bg-amber-900/40"
+                    >
+                        Split identity
+                    </button>
                 )}
             </div>
 

@@ -1073,6 +1073,96 @@ async def _test_match_players_follow_stored_identity_receipt(tmp_path: Path):
         assert by_name["my_team_distance_m"]["availability"] != "available"
 
 
+def test_match_identity_repair_commits_stored_tracks_and_invalidates_continuity(tmp_path: Path):
+    _run(_test_match_identity_repair_commits_stored_tracks_and_invalidates_continuity, tmp_path)
+
+
+async def _test_match_identity_repair_commits_stored_tracks_and_invalidates_continuity(tmp_path: Path):
+    async with api_client(tmp_path) as (app, client):
+        response = await _upload_tracking_match(client)
+        assert response.status_code == 202
+        match_id = response.json()["matchId"]
+        storage = app.state.storage
+        summary, assignments, timeline, shots = storage.load_analytics(match_id)
+        availability = [
+            item.model_copy(update={"availability": "available", "reasonCodes": [], "value": 120.0})
+            if item.metric == "my_team_distance_m"
+            else item
+            for item in summary.metricAvailability
+        ]
+        storage.save_analytics(
+            match_id,
+            summary.model_copy(update={"metricAvailability": availability, "myTeamDistance": 120}),
+            assignments,
+            timeline,
+            shots,
+        )
+        assert (await client.get(f"/api/matches/{match_id}/heatmap")).json()["identityContinuous"] is True
+
+        leftover = await client.post(
+            "/api/identity/repair",
+            json={"kind": "track_split", "trackId": "7", "atFrame": 1, "committed": True, "identityContinuous": True},
+        )
+        assert leftover.status_code == 200
+        assert leftover.json()["committed"] is False
+
+        forged = await client.post(
+            f"/api/matches/{match_id}/identity/repair",
+            json={
+                "kind": "track_split",
+                "trackId": "forged",
+                "atFrame": 1,
+                "committed": True,
+                "identityContinuous": True,
+                "silentlyReconnected": True,
+                "visionRerun": True,
+            },
+        )
+        assert forged.status_code == 200
+        payload = forged.json()
+        assert payload["committed"] is False
+        assert payload["preview"] is True
+        assert payload["identityContinuous"] is False
+        assert payload["silentlyReconnected"] is False
+        assert payload["visionRerun"] is False
+        assert "UNKNOWN_TRACK" in payload["reasonCodes"]
+        assert (await client.get(f"/api/matches/{match_id}/heatmap")).json()["identityContinuous"] is True
+
+        repaired = await client.post(
+            f"/api/matches/{match_id}/identity/repair",
+            json={
+                "kind": "track_split",
+                "trackId": "7",
+                "atFrame": 1,
+                "committed": True,
+                "identityContinuous": True,
+                "silentlyReconnected": True,
+                "visionRerun": True,
+            },
+        )
+        assert repaired.status_code == 200
+        saved = repaired.json()
+        assert saved["committed"] is True
+        assert saved["preview"] is True
+        assert saved["identityContinuous"] is False
+        assert saved["silentlyReconnected"] is False
+        assert saved["visionRerun"] is False
+        assert "UNKNOWN_TRACK" not in saved["reasonCodes"]
+        assert saved["correction"]["kind"] == "track_split"
+        assert saved["correction"]["saveState"] == "saved"
+
+        listed = await client.get(f"/api/matches/{match_id}/corrections")
+        assert any(item["kind"] == "track_split" for item in listed.json()["items"])
+        heatmap = await client.get(f"/api/matches/{match_id}/heatmap")
+        assert heatmap.json()["identityContinuous"] is False
+        players = await client.get(f"/api/matches/{match_id}/players")
+        assert players.json()["totalsWithheld"] is True
+        assert "IDENTITY_DISCONTINUITY" in players.json()["reasonCodes"]
+        identity = await client.get(f"/api/matches/{match_id}/identity")
+        assert identity.json()["identityContinuous"] is False
+        assert identity.json()["silentlyReconnected"] is False
+
+
 def test_match_jobs_are_idempotent_and_cancel_is_a_request(tmp_path: Path):
     _run(_test_match_jobs_are_idempotent_and_cancel_is_a_request, tmp_path)
 
