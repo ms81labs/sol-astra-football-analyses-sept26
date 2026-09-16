@@ -1195,3 +1195,137 @@ async def _test_production_flags_dossier_library_and_stored_match_surfaces(tmp_p
         assert rates.json()["exportFpsEqualsInferenceFps"] is False
         assert rates.json()["decodeFpsEqualsExportFps"] is False
         assert "EXPORT_FPS_IS_NOT_INFERENCE_FPS" in rates.json()["notes"]
+
+
+def test_production_evaluation_operator_and_stored_metric_surfaces(tmp_path: Path):
+    _run(_test_production_evaluation_operator_and_stored_metric_surfaces, tmp_path)
+
+
+async def _test_production_evaluation_operator_and_stored_metric_surfaces(tmp_path: Path):
+    async with api_client(tmp_path) as (_, client):
+        inspected = await client.get("/api/metrics/inspect/my_team_distance_m")
+        assert inspected.status_code == 200
+        assert inspected.json()["rendered"] == "unavailable"
+        assert inspected.json()["publishedValue"] is None
+        assert inspected.json()["denominator"] == "identity_continuous_eligible_seconds"
+
+        measures = await client.get("/api/evaluation/measures")
+        assert measures.status_code == 200
+        assert measures.json()["trackevalIsGroundTruth"] is False
+        assert measures.json()["annotationServiceHealthSatisfiesLabelGate"] is False
+        assert measures.json()["analystWorkflow"]["measured"] is False
+
+        lane = await client.get("/api/research/lane")
+        assert lane.status_code == 200
+        assert lane.json()["autonomousProductionChanges"] is False
+        planned = await client.post("/api/research/tracks/possession/events/execute")
+        assert planned.status_code == 200
+        assert planned.json()["executed"] is False
+        assert "PLANNED_TRACK_INERT" in planned.json()["reasonCodes"]
+        coverage = await client.post("/api/research/tracks/supported-coverage/execute")
+        assert coverage.status_code == 200
+        assert coverage.json()["executed"] is False
+        assert "RESEARCH_ADDON_ONLY" in coverage.json()["reasonCodes"]
+
+        rolled = await client.post(
+            "/api/rollback",
+            json={"flagName": "gpu_default", "affectedOutputs": ["run-17-report"]},
+        )
+        assert rolled.status_code == 200
+        assert rolled.json()["artifactsPreserved"] is True
+        assert rolled.json()["rewrotePastTrialOutcomes"] is False
+        assert rolled.json()["newJobsAdmitted"] is False
+        assert rolled.json()["staleOutputs"] == ["run-17-report"]
+
+        xt = await client.get("/api/xt")
+        assert xt.status_code == 200
+        assert xt.json()["enabled"] is False
+        assert xt.json()["socceractionImportDoesNotValidateExtraction"] is True
+
+        credits = await client.get("/api/credits")
+        assert credits.status_code == 200
+        assert credits.json()["authorised"] is False
+        assert credits.json()["gpuCreditsDoNotPayForLabels"] is True
+
+        handheld = await client.get("/api/admission/handheld_low_angle")
+        assert handheld.status_code == 200
+        assert handheld.json()["certified"] is False
+        assert "physical_metrics" in handheld.json()["withhold"]
+
+        remote = await client.post(
+            "/api/media/admit",
+            json={
+                "sourceSha256": "a" * 64,
+                "byteSize": 12,
+                "codec": "h264",
+                "sourceUrl": "https://example.com/footage.mp4",
+            },
+        )
+        assert remote.status_code == 200
+        assert remote.json()["admitted"] is False
+
+        cost = await client.post("/api/cost/estimate", json={"allocatedCompute": 1.0, "exportFps": 5})
+        assert cost.status_code == 200
+        assert cost.json()["exportFpsEqualsInferenceFps"] is False
+        assert cost.json()["total"] == 1.0
+
+        drills = await client.get("/api/training/drills")
+        assert drills.status_code == 200
+        assert drills.json()["prescribesMedicalLoad"] is False
+        assert drills.json()["diagnosesFatigueOrInjury"] is False
+
+        rights = await client.get("/api/rights")
+        assert rights.status_code == 200
+        assert rights.json()["uncertainCommercialPermissionBlocks"] is True
+        roster = await client.get("/api/roster")
+        assert roster.status_code == 200
+        assert all(item["promoted"] is False for item in roster.json()["items"])
+        risks = await client.get("/api/risks")
+        assert risks.status_code == 200
+        assert risks.json()["items"]
+        milestones = await client.get("/api/milestones")
+        assert milestones.status_code == 200
+        assert milestones.json()["progress"]["usesMergedFilesAsSuccess"] is False
+        targets = await client.get("/api/targets")
+        assert targets.status_code == 200
+        assert targets.json()["measured"] is False
+        decisions = await client.get("/api/decisions")
+        assert decisions.status_code == 200
+        assert decisions.json()["items"]
+        residency = await client.get("/api/residency")
+        assert residency.status_code == 200
+        assert residency.json()["euProcessingProven"] is False
+
+        response = await _upload_tracking_match(client)
+        assert response.status_code == 202
+        match_id = response.json()["matchId"]
+        job_id = response.json()["jobId"]
+
+        metrics = await client.post(
+            f"/api/matches/{match_id}/metrics",
+            json={"identityContinuous": True, "calibrationAccepted": True, "controlledFrames": 999},
+        )
+        assert metrics.status_code == 200
+        by_name = {item["metric"]: item for item in metrics.json()["metrics"]}
+        assert by_name["my_team_distance_m"]["availability"] != "available"
+        assert "IDENTITY_DISCONTINUITY" in by_name["my_team_distance_m"]["reasonCodes"]
+
+        match_inspect = await client.get(f"/api/matches/{match_id}/metrics/inspect/my_team_distance_m")
+        assert match_inspect.status_code == 200
+        assert match_inspect.json()["rendered"] == "unavailable"
+        assert "IDENTITY_DISCONTINUITY" in match_inspect.json()["exclusions"]
+
+        package = await client.post(
+            f"/api/matches/{match_id}/incidents/package",
+            json={"clips": [{"id": "forged-offside", "decision": "offside"}], "notes": ["forged"]},
+        )
+        assert package.status_code == 200
+        assert package.json()["decision"] is None
+        assert package.json()["validatedMeasurement"] is False
+        assert "forged-offside" not in json.dumps(package.json())
+        assert "forged" not in json.dumps(package.json()["notes"])
+
+        rates = await client.get(f"/api/jobs/{job_id}/rates")
+        assert rates.status_code == 200
+        assert rates.json()["exportFpsEqualsInferenceFps"] is False
+        assert rates.json()["decodeFpsEqualsExportFps"] is False

@@ -19,13 +19,19 @@ import TrainingSuggestions from './TrainingSuggestions';
 import {
   exportPlaylistInterval,
   fetchJobCost,
+  fetchJobView,
+  fetchMatchSetup,
+  fetchMetricInspect,
   fetchPendingCorrections,
   fetchPlayerObservations,
+  fetchTrainingDrills,
   fetchWorkbenchDossier,
   fetchWorkbenchFlags,
   recoverMatchCorrection,
   searchMatchLibrary,
   searchWorkbenchEvents,
+  type MatchSetup,
+  type MetricInspect,
   type WorkbenchDossier,
 } from '../utils/workbench';
 
@@ -65,6 +71,17 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
   const [libraryQuery, setLibraryQuery] = useState('');
   const [libraryHits, setLibraryHits] = useState<Array<{ id: string; title?: string }>>([]);
   const [playersLimited, setPlayersLimited] = useState(false);
+  const [setup, setSetup] = useState<MatchSetup | null>(null);
+  const [metricInspect, setMetricInspect] = useState<MetricInspect | null>(null);
+  const [drills, setDrills] = useState<Array<{ name: string; coachReviewed?: boolean }>>([]);
+  const [jobView, setJobView] = useState<{
+    status?: string;
+    durablePhase?: string | null;
+    costReserved?: number;
+    costActual?: number;
+    cleanupResult?: string;
+    cancelRequested?: boolean;
+  } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -123,6 +140,15 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
       .catch(() => {
         if (!cancelled) setJobCost(null);
       });
+    fetchJobView(jobId)
+      .then((payload) => {
+        if (!cancelled && (typeof payload.status === 'string' || typeof payload.durablePhase === 'string')) {
+          setJobView(payload);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setJobView(null);
+      });
     return () => {
       cancelled = true;
     };
@@ -138,10 +164,38 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
       .catch(() => {
         if (!cancelled) setPlayersLimited(false);
       });
+    fetchMatchSetup(matchId)
+      .then((payload) => {
+        if (!cancelled && typeof payload.cameraProfile === 'string') setSetup(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setSetup(null);
+      });
+    fetchMetricInspect('my_team_distance_m', matchId)
+      .then((payload) => {
+        if (!cancelled && payload.metric) setMetricInspect(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setMetricInspect(null);
+      });
     return () => {
       cancelled = true;
     };
   }, [matchId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchTrainingDrills()
+      .then((payload) => {
+        if (!cancelled && Array.isArray(payload.items)) setDrills(payload.items);
+      })
+      .catch(() => {
+        if (!cancelled) setDrills([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   async function runSearch() {
     if (!matchId) {
@@ -265,11 +319,12 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
               {recoveryMessage && <p className="text-xs text-emerald-300">{recoveryMessage}</p>}
               <div className="rounded-lg border border-slate-700 p-3 space-y-2">
                 <OperationsView
-                  phase="running"
-                  estimatedCost={jobCost?.reservedTotal ?? 0}
-                  actualCost={0}
+                  phase={jobView?.durablePhase ?? jobView?.status ?? 'submitted'}
+                  estimatedCost={jobCost?.reservedTotal ?? jobView?.costReserved ?? 0}
+                  actualCost={jobView?.costActual ?? 0}
                   retries={0}
-                  cleanupResult="unknown"
+                  cleanupResult={jobView?.cleanupResult ?? 'unknown'}
+                  cancelRequested={Boolean(jobView?.cancelRequested)}
                 />
                 {flags && flags.experimental_shot_quality === false && (
                   <p className="text-xs text-slate-400">experimental shot quality: shadowed</p>
@@ -301,10 +356,11 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
                 {playersLimited && <p className="text-xs text-amber-200">Interval-limited player observations. Totals withheld.</p>}
               </div>
               <SetupWizard
-                cameraProfile={dossier.baseline.declaredCameraProfile}
-                automationAdmitted={false}
-                manualTaggingPermitted
-                cannotMeasure={['physical_metrics']}
+                cameraProfile={setup?.cameraProfile ?? dossier.baseline.declaredCameraProfile}
+                pitchLengthM={setup?.pitchLengthM != null ? String(setup.pitchLengthM) : ''}
+                automationAdmitted={setup?.automationAdmitted ?? false}
+                manualTaggingPermitted={setup?.manualTaggingPermitted ?? true}
+                cannotMeasure={setup?.cannotMeasure ?? ['physical_metrics']}
                 landmarkPreview={{ residualP95M: 4.2, accepted: false, committed: false }}
               />
               <ClockReadout presentationTimeSeconds={0} matchClockSeconds={0} />
@@ -335,17 +391,17 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
               ) : null}
               <TrainingSuggestions
                 observations={[{ id: 'o1', label: 'near-side recovery' }]}
-                drills={[{ name: 'near-side recovery 2v2', coachReviewed: true }]}
+                drills={drills.length ? drills : [{ name: 'near-side recovery 2v2', coachReviewed: true }]}
               />
               <MetricInspector
-                metric="my_team_distance_m"
-                unit="metres"
-                denominator="identity_continuous_eligible_seconds"
-                definitionVersion="1"
-                eligibleDuration={0}
-                exclusions={['IDENTITY_DISCONTINUITY']}
-                value={null}
-                availability="unknown"
+                metric={metricInspect?.metric ?? 'my_team_distance_m'}
+                unit={metricInspect?.unit ?? 'metres'}
+                denominator={metricInspect?.denominator ?? 'identity_continuous_eligible_seconds'}
+                definitionVersion={metricInspect?.definitionVersion ?? '1'}
+                eligibleDuration={metricInspect?.eligibleDuration ?? 0}
+                exclusions={metricInspect?.exclusions ?? ['IDENTITY_DISCONTINUITY']}
+                value={metricInspect?.publishedValue ?? null}
+                availability={metricInspect?.rendered === 'unavailable' ? 'unknown' : 'available'}
               />
               <div className="rounded-lg border border-slate-700 p-3 space-y-2">
                 <h4 className="text-xs uppercase tracking-wide text-slate-500">Playlist source interval</h4>

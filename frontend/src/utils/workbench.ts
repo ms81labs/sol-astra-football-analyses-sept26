@@ -180,3 +180,63 @@ export async function fetchPlayerObservations(matchId: string) {
   }
   return response.json() as Promise<{ intervalLimited: boolean; totalsWithheld: boolean; reasonCodes: string[] }>;
 }
+
+export interface MatchSetup {
+  cameraProfile: string;
+  automationAdmitted: boolean;
+  manualTaggingPermitted: boolean;
+  cannotMeasure: string[];
+  certified: boolean;
+  pitchLengthM: number | null;
+}
+
+export interface MetricInspect {
+  metric: string;
+  unit: string | null;
+  denominator: string | null;
+  definitionVersion: string;
+  eligibleDuration: number;
+  exclusions: string[];
+  rendered: string;
+  publishedValue: number | null;
+}
+
+export async function fetchMatchSetup(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/setup`);
+  if (!response.ok) {
+    throw new Error(`Failed to load match setup: ${response.status}`);
+  }
+  return response.json() as Promise<MatchSetup>;
+}
+
+export async function fetchMetricInspect(metric: string, matchId?: string) {
+  const url = matchId ? `/api/matches/${matchId}/metrics/inspect/${metric}` : `/api/metrics/inspect/${metric}`;
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to inspect metric: ${response.status}`);
+  }
+  return response.json() as Promise<MetricInspect>;
+}
+
+export async function fetchTrainingDrills() {
+  const response = await fetch('/api/training/drills');
+  if (!response.ok) {
+    throw new Error(`Failed to load training drills: ${response.status}`);
+  }
+  return response.json() as Promise<{ items: Array<{ name: string; coachReviewed?: boolean }>; prescribesMedicalLoad: boolean; diagnosesFatigueOrInjury: boolean }>;
+}
+
+export async function fetchJobView(jobId: string) {
+  const response = await fetch(`/api/jobs/${jobId}`);
+  if (!response.ok) {
+    throw new Error(`Failed to load job: ${response.status}`);
+  }
+  return response.json() as Promise<{
+    status?: string;
+    durablePhase?: string | null;
+    costReserved?: number;
+    costActual?: number;
+    cleanupResult?: string;
+    cancelRequested?: boolean;
+  }>;
+}

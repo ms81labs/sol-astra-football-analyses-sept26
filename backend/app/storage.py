@@ -1233,6 +1233,56 @@ class Storage:
             "notes": notes,
         }
 
+    def match_metrics_for_match(self, match_id: str) -> dict:
+        from .workbench.evidence import summarize_legacy_match
+
+        summary, _, _, _ = self.load_analytics(match_id)
+        try:
+            frames = self.load_frames(match_id)
+        except FileNotFoundError:
+            frames = []
+        controlled = sum(
+            1
+            for frame in frames
+            if frame.possession is not None and frame.possession.team in {"my_team", "enemy"}
+        )
+        metrics = [
+            metric.model_dump(mode="json")
+            for metric in summarize_legacy_match(
+                summary.model_dump(mode="json"),
+                identity_continuous=False,
+                calibration_accepted=False,
+                controlled_frames=controlled,
+            )
+        ]
+        return {"metrics": metrics}
+
+    def inspect_match_metric(self, match_id: str, metric: str) -> dict:
+        from .workbench.evidence import inspect_metric
+
+        payload = self.match_metrics_for_match(match_id)
+        item = next((row for row in payload["metrics"] if row.get("metric") == metric), None)
+        if item is None:
+            return inspect_metric(metric)
+        return inspect_metric(
+            metric,
+            value=item.get("value"),
+            availability=str(item.get("availability") or "unknown"),
+            eligible_duration=float(item.get("eligibleSeconds") or 0.0),
+            exclusions=list(item.get("reasonCodes") or []),
+        )
+
+    def incident_package_for_match(self, match_id: str) -> dict:
+        from .workbench.incidents import level0_incident_package
+
+        self.get_match(match_id)
+        clips = [
+            item.get("payload") or item
+            for item in self.list_corrections(match_id)
+            if item.get("kind") == "playlist_item"
+        ]
+        return level0_incident_package(clips=clips, notes=[], bookmarks=[])
+
     def load_raw_rows(self, match_id: str) -> list[dict]:
         payload = self._read_json(self._match_dir(match_id) / "raw_rows.json")
         return [dict(item) for item in payload]
