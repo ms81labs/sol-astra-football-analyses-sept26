@@ -2,12 +2,14 @@ interface NativePackagingProps {
   approved?: boolean;
   rpcFleetEnabled?: boolean;
   universallyPortable?: boolean;
+  completeRuntimeMemory?: boolean;
 }
 
 export default function NativePackaging({
   approved,
   rpcFleetEnabled,
   universallyPortable,
+  completeRuntimeMemory,
 }: NativePackagingProps) {
   return (
     <section aria-label="Native packaging" className="rounded-lg border border-slate-700 bg-slate-900 p-3 text-xs text-slate-300 space-y-1">
@@ -19,6 +21,7 @@ export default function NativePackaging({
       {universallyPortable === false && <p>Pinned native artifacts are not portable.</p>}
       {rpcFleetEnabled === false && <p>RPC fleet remains disabled.</p>}
       {approved === false && <p>Native gate is closed.</p>}
+      {completeRuntimeMemory === false && <p>Quantized weight size is not runtime memory.</p>}
     </section>
   );
 }

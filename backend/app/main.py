@@ -67,6 +67,7 @@ from .workbench.assistance import (
     dual_budgets,
     embeddings_retrieve,
     escalation_requires_quality_gap,
+    network_failure_preserves_unknown,
     providers_disabled_fallback,
 )
 from .workbench.incidents import (
@@ -87,11 +88,12 @@ from .workbench.jobs import (
     vector_database,
 )
 from .workbench.contracts import SourceClockIdentity
-from .workbench.costs import credit_allocation, decimal_gb_to_gib, match_cost, scale_scenario
+from .workbench.costs import credit_allocation, decimal_gb_to_gib, historical_capacity_seconds, match_cost, scale_scenario
 from .workbench.decisions import architecture_decisions
 from .workbench.dossier import http_dossier
 from .workbench.evaluation import evaluation_measures, score_hota_idf1
 from .workbench.events import learned_temporal
+from .workbench.geometry import ground_contact_point, project_to_pitch
 from .workbench.evidence import inspect_metric, metric_dictionary
 from .workbench.flags import feature_flags
 from .workbench.identity import (
@@ -111,9 +113,13 @@ from .workbench.native import (
     pinned_native_artifacts,
     probe_gpu,
     qualified_os_profiles,
+    quantized_weight_memory,
 )
 from .workbench.privacy import dpia_screen, residency_claim
-from .workbench.recovery import recovery_objectives, unresolved_incidents
+from .workbench.quantities import pitch_axes
+from .workbench.recovery import recovery_objectives, support_bundle, unresolved_incidents
+from .workbench.repository import RepositoryAdapter, http_may_run_gpu, vector_broker_required
+from .workbench.reports import held_out_questions
 from .workbench.research import execute_track, research_lane
 from .workbench.retention import PROTECTED, may_delete
 from .workbench.media import decode_memory_policy, vid_stride_policy
@@ -124,6 +130,7 @@ from .workbench.rollback import rollback_release
 from .workbench.roster import model_roster
 from .workbench.routes import create_workbench_router
 from .workbench.shot_model import tree_challenger
+from .workbench.timing import gpu_timing_scope
 from .workbench.targets import metadata_api_targets
 from .workbench.training import drill_library
 from .workbench.xt import xt_deferred_plan
@@ -1531,6 +1538,73 @@ def create_app(
             "columnar": columnar_observation_store(),
         }
 
+    @app.get("/api/quantities/axes")
+    def get_pitch_axes() -> dict:
+        return pitch_axes()
+
+    @app.get("/api/timing/gpu")
+    def get_gpu_timing() -> dict:
+        return gpu_timing_scope(submission_ms=0.0, completed_ms=None, device_aware=False)
+
+    @app.get("/api/native/memory")
+    def get_native_memory() -> dict:
+        return quantized_weight_memory(weight_bytes=0)
+
+    @app.get("/api/capacity")
+    def get_capacity() -> dict:
+        return historical_capacity_seconds()
+
+    @app.get("/api/repository")
+    def get_repository() -> dict:
+        return {
+            "httpMayRunGpu": http_may_run_gpu(),
+            "vectorBrokerRequired": vector_broker_required(),
+            "replacesStorageModule": RepositoryAdapter.replaces_storage_module,
+            "backendName": RepositoryAdapter.backend_name,
+        }
+
+    def _support_bundle_view() -> dict:
+        payload = support_bundle(consented=False, ttl_seconds=0.0, now=0.0)
+        return {key: value for key, value in payload.items() if key != "expired"}
+
+    @app.get("/api/support/bundle")
+    def get_support_bundle() -> dict:
+        return _support_bundle_view()
+
+    @app.post("/api/support/bundle")
+    def post_support_bundle(payload: dict | None = None) -> dict:
+        del payload
+        return _support_bundle_view()
+
+    @app.get("/api/geometry/contact")
+    def get_geometry_contact() -> dict:
+        return ground_contact_point((0.0, 0.0, 10.0, 20.0))
+
+    @app.post("/api/geometry/contact")
+    def post_geometry_contact(payload: dict | None = None) -> dict:
+        body = payload or {}
+        raw = body.get("bbox") or [0.0, 0.0, 10.0, 20.0]
+        bbox = (float(raw[0]), float(raw[1]), float(raw[2]), float(raw[3]))
+        kind = str(body.get("kind") or "player")
+        airborne = bool(body.get("airborne"))
+        if kind == "ball" or airborne:
+            return project_to_pitch(kind=kind if kind in {"player", "ball"} else "player", airborne=airborne, bbox=bbox)
+        contact = ground_contact_point(bbox)
+        return {**contact, "kind": kind, "airborne": False, "measuredGroundLocation": True, "reasonCodes": []}
+
+    @app.get("/api/metrics/network-failure")
+    def get_network_failure() -> dict:
+        return network_failure_preserves_unknown(metric_value=None, generated_number=0.0)
+
+    @app.post("/api/metrics/network-failure")
+    def post_network_failure(payload: dict | None = None) -> dict:
+        del payload
+        return network_failure_preserves_unknown(metric_value=None, generated_number=0.0)
+
+    @app.get("/api/reports/held-out")
+    def get_held_out_questions() -> dict:
+        return {"questions": held_out_questions()}
+
     @app.post("/api/search")
     def post_typed_search(payload: dict | None = None) -> dict:
         body = payload or {}
@@ -1849,6 +1923,57 @@ def create_app(
     @app.get("/api/matches/{match_id}/identity")
     def get_match_identity(match: MatchRecord = Depends(require_match)) -> dict:
         return storage.identity_for_match(match.id)
+
+    @app.get("/api/matches/{match_id}/formation")
+    def get_match_formation(match: MatchRecord = Depends(require_match)) -> dict:
+        return storage.formation_for_match(match.id)
+
+    @app.post("/api/matches/{match_id}/formation")
+    def post_match_formation(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+        del payload
+        return storage.formation_for_match(match.id)
+
+    @app.get("/api/matches/{match_id}/events/partition")
+    def get_match_event_partition(match: MatchRecord = Depends(require_match)) -> dict:
+        return storage.partition_events_for_match(match.id)
+
+    @app.post("/api/matches/{match_id}/events/partition")
+    def post_match_event_partition(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+        del payload
+        return storage.partition_events_for_match(match.id)
+
+    @app.get("/api/matches/{match_id}/reports/provenance")
+    def get_match_report_provenance(match: MatchRecord = Depends(require_match)) -> dict:
+        return storage.provenance_for_match(match.id)
+
+    @app.post("/api/matches/{match_id}/reports/provenance")
+    def post_match_report_provenance(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+        body = payload or {}
+        claimed = body.get("claims")
+        claimed_ids: list[str] | None = None
+        if isinstance(claimed, list):
+            claimed_ids = [
+                evidence_id
+                for claim in claimed
+                if isinstance(claim, dict)
+                for evidence_id in (claim.get("evidenceIds") or [])
+            ]
+        elif body.get("claimedEvidenceIds") is not None:
+            claimed_ids = list(body.get("claimedEvidenceIds") or [])
+        return storage.provenance_for_match(match.id, claimed_evidence_ids=claimed_ids)
+
+    @app.get("/api/matches/{match_id}/reports/coverage")
+    def get_match_report_coverage(match: MatchRecord = Depends(require_match)) -> dict:
+        return storage.coverage_for_match(match.id)
+
+    @app.get("/api/matches/{match_id}/shots/quality")
+    def get_match_shot_quality(match: MatchRecord = Depends(require_match)) -> dict:
+        return storage.shot_quality_for_match(match.id)
+
+    @app.post("/api/matches/{match_id}/shots/quality")
+    def post_match_shot_quality(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+        del payload
+        return storage.shot_quality_for_match(match.id)
 
     @app.post("/api/matches/{match_id}/assistance/report")
     def post_match_assistance_report(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:

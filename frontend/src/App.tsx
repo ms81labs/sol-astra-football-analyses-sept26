@@ -47,7 +47,7 @@ import { buildUploadConfig, createEmptyPointInputs } from './utils/uploadConfig'
 import { getUploadFailureGuidance } from './utils/uploadErrors';
 import { findNearestFrameIndex } from './utils/videoSync';
 import { applyReviewShortcut, type ReviewAction } from './utils/reviewShortcuts';
-import { fetchAssistance, fetchIncidentReview, fetchNative, fetchQualityTimeline, fetchRecovery, fetchSecurity, fetchWorkbenchDossier, requestAccessDeletion, submitMatchCorrection, undoMatchCorrection } from './utils/workbench';
+import { fetchAssistance, fetchIncidentReview, fetchMatchFormation, fetchNative, fetchNativeMemory, fetchQualityTimeline, fetchRecovery, fetchSecurity, fetchWorkbenchDossier, requestAccessDeletion, submitMatchCorrection, undoMatchCorrection, type FormationAvailability } from './utils/workbench';
 import { windowedTimelineProps } from './utils/windowedTimeline';
 import { splitScores } from './utils/quantities';
 
@@ -194,6 +194,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
     if (!activeMatch?.id) {
       setStoredIncident(null);
       setQualityItems([]);
+      setFormationAvailability(null);
       return;
     }
     let cancelled = false;
@@ -217,6 +218,14 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
       })
       .catch(() => {
         if (!cancelled) setQualityItems([]);
+      });
+    fetchMatchFormation(activeMatch.id)
+      .then((payload) => {
+        if (cancelled || typeof payload.availability !== 'string') return;
+        setFormationAvailability(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setFormationAvailability(null);
       });
     return () => {
       cancelled = true;
@@ -276,15 +285,25 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
     fetchNative()
       .then((payload) => {
         if (cancelled || typeof payload.approved !== 'boolean') return;
-        setNative({
+        setNative((current) => ({
+          ...current,
           approved: payload.approved,
           rpcFleetEnabled: payload.rpcFleet?.enabled,
           universallyPortable: payload.pinned?.universallyPortable,
-        });
+        }));
       })
       .catch(() => {
         if (!cancelled) setNative(null);
       });
+    fetchNativeMemory()
+      .then((payload) => {
+        if (cancelled || payload.completeRuntimeMemory !== false) return;
+        setNative((current) => ({
+          ...current,
+          completeRuntimeMemory: payload.completeRuntimeMemory,
+        }));
+      })
+      .catch(() => undefined);
     return () => {
       cancelled = true;
     };
@@ -310,6 +329,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
   const [deploymentBoundary, setDeploymentBoundary] = useState('loopback');
   const [providersEnabled, setProvidersEnabled] = useState(false);
   const [qualityItems, setQualityItems] = useState<Array<{ id: string; label: string; impact: string }>>([]);
+  const [formationAvailability, setFormationAvailability] = useState<FormationAvailability | null>(null);
   const [security, setSecurity] = useState<{
     modelTrusted?: boolean;
     hostedEncryptionProven?: boolean;
@@ -320,6 +340,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
     approved?: boolean;
     rpcFleetEnabled?: boolean;
     universallyPortable?: boolean;
+    completeRuntimeMemory?: boolean;
   } | null>(null);
   const correctionVersionRef = useRef(0);
   const matchStats = activeMatch?.stats || null;
@@ -1151,6 +1172,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
               stats={matchStats || emptyStats()}
               benchmark={matchBenchmark}
               formationTimeline={activeMatch?.formationTimeline ?? []}
+              formationAvailability={formationAvailability ?? undefined}
               shotSummary={shotSummary}
               playerProfiles={playerProfiles}
               comparisonStats={comparisonStats}
@@ -1242,6 +1264,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
               approved={native?.approved}
               rpcFleetEnabled={native?.rpcFleetEnabled}
               universallyPortable={native?.universallyPortable}
+              completeRuntimeMemory={native?.completeRuntimeMemory}
             />
           </div>
           <div className="mb-3 shrink-0">

@@ -1515,6 +1515,90 @@ class Storage:
         payload["cutCount"] = len(cuts)
         return payload
 
+    def formation_for_match(self, match_id: str) -> dict:
+        from .workbench.quantities import formation_availability
+
+        match = self.get_match(match_id)
+        try:
+            _, _, timeline, _ = self.load_analytics(match_id)
+        except FileNotFoundError:
+            timeline = []
+        role_context = match.config.myTeamCluster is not None
+        return formation_availability(eligible_windows=len(timeline), role_context=role_context)
+
+    def partition_events_for_match(self, match_id: str) -> dict:
+        from .workbench.assistance import events_as_query_rows
+        from .workbench.events import partition_events
+
+        self.get_match(match_id)
+        try:
+            events = self.load_events(match_id)
+        except FileNotFoundError:
+            events = []
+        return partition_events(events_as_query_rows(events, match_id=match_id))
+
+    def provenance_for_match(self, match_id: str, claimed_evidence_ids: list[str] | None = None) -> dict:
+        from .workbench.assistance import events_as_query_rows
+        from .workbench.evidence import records_from_match
+        from .workbench.reports import claim_provenance
+
+        self.get_match(match_id)
+        try:
+            frames = self.load_frames(match_id)
+        except FileNotFoundError:
+            frames = []
+        try:
+            events = self.load_events(match_id)
+        except FileNotFoundError:
+            events = []
+        known = {record.evidenceId for record in records_from_match(frames, events)}
+        if claimed_evidence_ids is None:
+            claims = [
+                {"evidenceIds": list(row.get("evidenceIds") or [])}
+                for row in events_as_query_rows(events, match_id=match_id)
+            ]
+        else:
+            claims = [{"evidenceIds": list(claimed_evidence_ids)}]
+        return claim_provenance(claims=claims, known_evidence_ids=known)
+
+    def coverage_for_match(self, match_id: str) -> dict:
+        from .workbench.assistance import events_as_query_rows
+        from .workbench.reports import coverage_aware_selector
+
+        self.get_match(match_id)
+        try:
+            frames = self.load_frames(match_id)
+        except FileNotFoundError:
+            frames = []
+        try:
+            events = self.load_events(match_id)
+        except FileNotFoundError:
+            events = []
+        frame_rows = [{"frameId": frame.frameId, "timestamp": frame.timestamp} for frame in frames]
+        return coverage_aware_selector(
+            frames=frame_rows,
+            events=events_as_query_rows(events, match_id=match_id),
+            max_frames=3,
+        )
+
+    def shot_quality_for_match(self, match_id: str) -> dict:
+        from .workbench.shot_model import experimental_shot_quality, extract_shot_features
+
+        self.get_match(match_id)
+        try:
+            _, _, _, shots = self.load_analytics(match_id)
+        except FileNotFoundError:
+            shots = []
+        items = []
+        for shot in shots:
+            features = extract_shot_features({"x": float(shot.x), "y": float(shot.y), "inBox": bool(shot.inBox)})
+            items.append(experimental_shot_quality(features).model_dump(mode="json"))
+        return {
+            "publishedLabel": "experimental_shot_quality",
+            "calibratedXg": False,
+            "items": items,
+        }
+
     def load_raw_rows(self, match_id: str) -> list[dict]:
         payload = self._read_json(self._match_dir(match_id) / "raw_rows.json")
         return [dict(item) for item in payload]

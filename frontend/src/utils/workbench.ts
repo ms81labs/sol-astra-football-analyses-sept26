@@ -387,3 +387,102 @@ export async function fetchNative() {
   }
   return response.json() as Promise<NativeSnapshot>;
 }
+
+export interface PitchAxes {
+  x: string;
+  y: string;
+  origin: string;
+  legacyDisplay: string;
+}
+
+export async function fetchPitchAxes() {
+  const response = await fetch('/api/quantities/axes');
+  if (!response.ok) {
+    throw new Error(`Failed to load pitch axes: ${response.status}`);
+  }
+  return response.json() as Promise<PitchAxes>;
+}
+
+export interface FormationAvailability {
+  availability: string;
+  reasonCodes?: string[];
+  value?: string | null;
+}
+
+export async function fetchMatchFormation(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/formation`);
+  if (!response.ok) {
+    throw new Error(`Failed to load formation availability: ${response.status}`);
+  }
+  return response.json() as Promise<FormationAvailability>;
+}
+
+export interface GpuTimingSnapshot {
+  admitted?: boolean;
+  usesSubmissionAsCompletedWork?: boolean;
+  completedMs?: number | null;
+  reasonCodes?: string[];
+}
+
+export async function fetchGpuTiming() {
+  const response = await fetch('/api/timing/gpu');
+  if (!response.ok) {
+    throw new Error(`Failed to load GPU timing: ${response.status}`);
+  }
+  return response.json() as Promise<GpuTimingSnapshot>;
+}
+
+export interface NativeMemorySnapshot {
+  completeRuntimeMemory?: boolean;
+  admitted?: boolean;
+  reasonCodes?: string[];
+}
+
+export async function fetchNativeMemory() {
+  const response = await fetch('/api/native/memory');
+  if (!response.ok) {
+    throw new Error(`Failed to load native memory policy: ${response.status}`);
+  }
+  return response.json() as Promise<NativeMemorySnapshot>;
+}
+
+export interface CapacitySnapshot {
+  seconds?: number;
+  billableCurrentSource?: boolean;
+  exportFpsEqualsInferenceFps?: boolean;
+}
+
+export async function fetchCapacity() {
+  const response = await fetch('/api/capacity');
+  if (!response.ok) {
+    throw new Error(`Failed to load capacity: ${response.status}`);
+  }
+  return response.json() as Promise<CapacitySnapshot>;
+}
+
+export interface RepositorySnapshot {
+  httpMayRunGpu?: boolean;
+  vectorBrokerRequired?: boolean;
+  replacesStorageModule?: boolean;
+}
+
+export async function fetchRepository() {
+  const response = await fetch('/api/repository');
+  if (!response.ok) {
+    throw new Error(`Failed to load repository policy: ${response.status}`);
+  }
+  return response.json() as Promise<RepositorySnapshot>;
+}
+
+export interface SupportBundleSnapshot {
+  released?: boolean;
+  reasonCodes?: string[];
+}
+
+export async function fetchSupportBundle() {
+  const response = await fetch('/api/support/bundle');
+  if (!response.ok) {
+    throw new Error(`Failed to load support bundle policy: ${response.status}`);
+  }
+  return response.json() as Promise<SupportBundleSnapshot>;
+}

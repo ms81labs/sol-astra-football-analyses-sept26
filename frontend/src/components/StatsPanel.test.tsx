@@ -178,6 +178,21 @@ describe('StatsPanel', () => {
     expect(scoped.getByRole('heading', { name: 'Formation' })).toBeTruthy();
   });
 
+  it('withholds formation when stored availability is not eligible', () => {
+    const { container } = render(
+      <StatsPanel
+        stats={baseStats}
+        benchmark={benchmarkTruthReady}
+        shotSummary={shotSummary}
+        formationAvailability={{ availability: 'withheld', reasonCodes: ['SINGLE_FRAME_FORMATION'], value: null }}
+      />,
+    );
+    const scoped = within(container);
+    expect(scoped.getByRole('heading', { name: 'Formation' })).toBeTruthy();
+    expect(scoped.getByText('Unavailable')).toBeTruthy();
+    expect(container.textContent).not.toContain('4-3-3');
+  });
+
   it('does not publish player-card distances when physical totals are withheld', () => {
     const { container } = render(
       <StatsPanel

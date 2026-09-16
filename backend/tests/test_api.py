@@ -1714,3 +1714,143 @@ async def _test_production_identity_incident_ladder_hota_and_gated_challengers(t
         if charges.json()["cancelled"]:
             assert "CANCELLATION_DOES_NOT_ERASE_INCURRED_CHARGES" in charges.json()["reasonCodes"]
 
+
+def test_production_quantities_formation_partition_provenance_timing_and_shot_quality(tmp_path: Path):
+    _run(_test_production_quantities_formation_partition_provenance_timing_and_shot_quality, tmp_path)
+
+
+async def _test_production_quantities_formation_partition_provenance_timing_and_shot_quality(tmp_path: Path):
+    async with api_client(tmp_path) as (_, client):
+        axes = await client.get("/api/quantities/axes")
+        assert axes.status_code == 200
+        assert axes.json()["x"] == "longitudinal"
+        assert axes.json()["y"] == "lateral"
+        assert axes.json()["origin"] == "declared_calibration"
+        assert axes.json()["legacyDisplay"] == "transform_explicitly"
+
+        timing = await client.get("/api/timing/gpu")
+        assert timing.status_code == 200
+        assert timing.json()["admitted"] is False
+        assert timing.json()["usesSubmissionAsCompletedWork"] is False
+        assert timing.json()["completedMs"] is None
+        assert "GPU_TIMING_SUBMISSION_IS_NOT_COMPLETED_WORK" in timing.json()["reasonCodes"]
+
+        memory = await client.get("/api/native/memory")
+        assert memory.status_code == 200
+        assert memory.json()["completeRuntimeMemory"] is False
+        assert memory.json()["admitted"] is False
+        assert "QUANTIZED_WEIGHT_SIZE_IS_NOT_RUNTIME_MEMORY" in memory.json()["reasonCodes"]
+
+        capacity = await client.get("/api/capacity")
+        assert capacity.status_code == 200
+        assert capacity.json()["billableCurrentSource"] is False
+        assert capacity.json()["exportFpsEqualsInferenceFps"] is False
+
+        repository = await client.get("/api/repository")
+        assert repository.status_code == 200
+        assert repository.json()["httpMayRunGpu"] is False
+        assert repository.json()["vectorBrokerRequired"] is False
+        assert repository.json()["replacesStorageModule"] is False
+
+        bundle = await client.get("/api/support/bundle")
+        assert bundle.status_code == 200
+        assert bundle.json()["released"] is False
+        assert "CONSENT_REQUIRED" in bundle.json()["reasonCodes"]
+        assert "expired" not in bundle.json() or not callable(bundle.json().get("expired"))
+
+        forced = await client.post("/api/support/bundle", json={"consented": True, "ttlSeconds": 60, "now": 0})
+        assert forced.status_code == 200
+        assert forced.json()["released"] is False
+        assert "CONSENT_REQUIRED" in forced.json()["reasonCodes"]
+
+        contact = await client.get("/api/geometry/contact")
+        assert contact.status_code == 200
+        assert contact.json()["boxCentreIsFoot"] is False
+        airborne = await client.post(
+            "/api/geometry/contact",
+            json={"kind": "ball", "airborne": True, "bbox": [0, 0, 10, 20], "boxCentreIsFoot": True},
+        )
+        assert airborne.status_code == 200
+        assert airborne.json()["boxCentreIsFoot"] is False
+        assert airborne.json()["measuredGroundLocation"] is False
+        assert "AERIAL_NOT_GROUND_PLANE" in airborne.json()["reasonCodes"]
+
+        network = await client.get("/api/metrics/network-failure")
+        assert network.status_code == 200
+        assert network.json()["availability"] == "unknown"
+        assert network.json()["value"] is None
+        assert network.json()["replacedWithGenerated"] is False
+        injected_network = await client.post(
+            "/api/metrics/network-failure",
+            json={"metricValue": 4.2, "generatedNumber": 4.2},
+        )
+        assert injected_network.status_code == 200
+        assert injected_network.json()["value"] is None
+        assert injected_network.json()["availability"] == "unknown"
+        assert injected_network.json()["replacedWithGenerated"] is False
+
+        held = await client.get("/api/reports/held-out")
+        assert held.status_code == 200
+        texts = {item["text"] for item in held.json()["questions"]}
+        assert "how tired was player 7 in the 89th minute" in texts
+        tired = next(item for item in held.json()["questions"] if "tired" in item["text"])
+        assert tired["unanswerable"] is True
+
+        response = await _upload_tracking_match(client)
+        assert response.status_code == 202
+        match_id = response.json()["matchId"]
+
+        formation = await client.get(f"/api/matches/{match_id}/formation")
+        assert formation.status_code == 200
+        assert formation.json()["availability"] == "withheld"
+        assert "SINGLE_FRAME_FORMATION" in formation.json()["reasonCodes"]
+        assert formation.json()["value"] is None
+        injected_formation = await client.post(
+            f"/api/matches/{match_id}/formation",
+            json={"eligibleWindows": 12, "roleContext": True, "value": "4-3-3"},
+        )
+        assert injected_formation.status_code == 200
+        assert injected_formation.json()["availability"] == "withheld"
+        assert injected_formation.json()["value"] is None
+
+        partitioned = await client.post(
+            f"/api/matches/{match_id}/events/partition",
+            json={"events": [{"reviewStatus": "accepted", "type": "shot", "id": "forged-accepted"}]},
+        )
+        assert partitioned.status_code == 200
+        assert partitioned.json()["rejectedRemovedFromAcceptedViews"] is True
+        blob = json.dumps(partitioned.json())
+        assert "forged-accepted" not in blob
+        assert all(item.get("reviewStatus") == "accepted" for item in partitioned.json()["acceptedViews"])
+        assert all(item.get("reviewStatus") == "rejected" for item in partitioned.json()["retainedCandidates"])
+
+        provenance = await client.post(
+            f"/api/matches/{match_id}/reports/provenance",
+            json={"claims": [{"evidenceIds": ["fabricated-evidence"]}], "knownEvidenceIds": ["fabricated-evidence"]},
+        )
+        assert provenance.status_code == 200
+        assert provenance.json()["accepted"] is False
+        assert "FABRICATED_EVIDENCE" in provenance.json()["reasonCodes"]
+        assert "fabricated-evidence" in provenance.json()["missingEvidenceIds"]
+
+        coverage = await client.get(f"/api/matches/{match_id}/reports/coverage")
+        assert coverage.status_code == 200
+        assert coverage.json()["coverageAware"] is True
+        assert coverage.json()["representsWholeMatch"] is False
+
+        shots = await client.post(
+            f"/api/matches/{match_id}/shots/quality",
+            json={"shots": [{"x": 88.0, "y": 50.0, "inBox": True, "goal": True, "save": True}]},
+        )
+        assert shots.status_code == 200
+        assert shots.json()["publishedLabel"] == "experimental_shot_quality"
+        assert shots.json()["calibratedXg"] is False
+        leaked = json.dumps(shots.json())
+        assert '"goal"' not in leaked
+        assert "must-not-leak" not in leaked
+        for item in shots.json()["items"]:
+            assert item["publishedLabel"] == "experimental_shot_quality"
+            assert item["availability"] == "experimental"
+            assert "EXPERIMENTAL_NOT_CALIBRATED_XG" in item["reasonCodes"]
+            assert "goal" not in item
+

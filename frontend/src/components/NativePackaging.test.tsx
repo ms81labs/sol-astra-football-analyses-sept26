@@ -14,3 +14,8 @@ it('keeps native wheels unportable and custom native code unapproved', () => {
   expect(screen.getByText(/custom native code remains unapproved/i)).toBeTruthy();
   expect(screen.queryByText(/rust rewrite accepted/i)).toBeNull();
 });
+
+it('states that quantized weight size is not runtime memory', () => {
+  render(<NativePackaging completeRuntimeMemory={false} />);
+  expect(screen.getByText(/quantized weight size is not runtime memory/i)).toBeTruthy();
+});

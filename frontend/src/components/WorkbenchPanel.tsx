@@ -19,7 +19,9 @@ import TrainingSuggestions from './TrainingSuggestions';
 import {
   exportPlaylistInterval,
   fetchAssistance,
+  fetchCapacity,
   fetchCorrectionHistory,
+  fetchGpuTiming,
   fetchIncidentReview,
   fetchJobCost,
   fetchJobView,
@@ -28,11 +30,15 @@ import {
   fetchMatchSetup,
   fetchMetricInspect,
   fetchNative,
+  fetchNativeMemory,
   fetchPendingCorrections,
+  fetchPitchAxes,
   fetchPlayerObservations,
   fetchQualityTimeline,
   fetchRecovery,
+  fetchRepository,
   fetchSecurity,
+  fetchSupportBundle,
   fetchTrainingDrills,
   fetchWorkbenchDossier,
   fetchWorkbenchFlags,
@@ -41,13 +47,19 @@ import {
   searchMatchLibrary,
   searchWorkbenchEvents,
   undoMatchCorrection,
+  type CapacitySnapshot,
+  type GpuTimingSnapshot,
   type LandmarkPreview,
   type MatchSetup,
   type MetricInspect,
+  type NativeMemorySnapshot,
+  type NativeSnapshot,
+  type PitchAxes,
   type QualityTimelinePayload,
   type RecoverySnapshot,
-  type NativeSnapshot,
+  type RepositorySnapshot,
   type SecuritySnapshot,
+  type SupportBundleSnapshot,
   type WorkbenchDossier,
 } from '../utils/workbench';
 
@@ -111,6 +123,12 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
   const [providersEnabled, setProvidersEnabled] = useState(false);
   const [security, setSecurity] = useState<SecuritySnapshot | null>(null);
   const [native, setNative] = useState<NativeSnapshot | null>(null);
+  const [axes, setAxes] = useState<PitchAxes | null>(null);
+  const [gpuTiming, setGpuTiming] = useState<GpuTimingSnapshot | null>(null);
+  const [nativeMemory, setNativeMemory] = useState<NativeMemorySnapshot | null>(null);
+  const [capacity, setCapacity] = useState<CapacitySnapshot | null>(null);
+  const [repository, setRepository] = useState<RepositorySnapshot | null>(null);
+  const [supportBundle, setSupportBundle] = useState<SupportBundleSnapshot | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -148,6 +166,48 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
       })
       .catch(() => {
         if (!cancelled) setNative(null);
+      });
+    fetchPitchAxes()
+      .then((payload) => {
+        if (!cancelled && payload.x === 'longitudinal') setAxes(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setAxes(null);
+      });
+    fetchGpuTiming()
+      .then((payload) => {
+        if (!cancelled && payload.admitted === false) setGpuTiming(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setGpuTiming(null);
+      });
+    fetchNativeMemory()
+      .then((payload) => {
+        if (!cancelled && payload.completeRuntimeMemory === false) setNativeMemory(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setNativeMemory(null);
+      });
+    fetchCapacity()
+      .then((payload) => {
+        if (!cancelled && payload.billableCurrentSource === false) setCapacity(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setCapacity(null);
+      });
+    fetchRepository()
+      .then((payload) => {
+        if (!cancelled && payload.httpMayRunGpu === false) setRepository(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setRepository(null);
+      });
+    fetchSupportBundle()
+      .then((payload) => {
+        if (!cancelled && payload.released === false) setSupportBundle(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setSupportBundle(null);
       });
     return () => {
       cancelled = true;
@@ -388,7 +448,23 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
                 approved={native?.approved}
                 rpcFleetEnabled={native?.rpcFleet?.enabled}
                 universallyPortable={native?.pinned?.universallyPortable}
+                completeRuntimeMemory={nativeMemory?.completeRuntimeMemory}
               />
+              {axes && (
+                <p className="text-xs text-slate-400">Pitch x is {axes.x}; y is {axes.y}. Legacy display must transform explicitly.</p>
+              )}
+              {gpuTiming?.admitted === false && (
+                <p className="text-xs text-slate-400">GPU timing uses completed work, not submission.</p>
+              )}
+              {capacity?.billableCurrentSource === false && (
+                <p className="text-xs text-slate-400">Historical two-half duration is not current billable capacity.</p>
+              )}
+              {repository?.httpMayRunGpu === false && (
+                <p className="text-xs text-slate-400">HTTP control plane may not run GPU work.</p>
+              )}
+              {supportBundle?.released === false && (
+                <p className="text-xs text-slate-400">Support bundle requires consent.</p>
+              )}
               <div className="rounded-lg border border-slate-700 p-3">
                 <h4 className="text-xs uppercase tracking-wide text-slate-500 mb-2">Capability matrix</h4>
                 <ul className="space-y-2">

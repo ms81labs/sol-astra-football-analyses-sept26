@@ -264,6 +264,24 @@ it('loads recovery and landmark preview from production routes and posts deletio
         egress: { defaultDeny: true },
       }), { status: 200 });
     }
+    if (url.endsWith('/api/quantities/axes')) {
+      return new Response(JSON.stringify({ x: 'longitudinal', y: 'lateral', origin: 'declared_calibration', legacyDisplay: 'transform_explicitly' }), { status: 200 });
+    }
+    if (url.endsWith('/api/capacity')) {
+      return new Response(JSON.stringify({ seconds: 16523.971, billableCurrentSource: false, exportFpsEqualsInferenceFps: false }), { status: 200 });
+    }
+    if (url.endsWith('/api/repository')) {
+      return new Response(JSON.stringify({ httpMayRunGpu: false, vectorBrokerRequired: false, replacesStorageModule: false }), { status: 200 });
+    }
+    if (url.endsWith('/api/support/bundle')) {
+      return new Response(JSON.stringify({ released: false, reasonCodes: ['CONSENT_REQUIRED'] }), { status: 200 });
+    }
+    if (url.endsWith('/api/timing/gpu')) {
+      return new Response(JSON.stringify({ admitted: false, usesSubmissionAsCompletedWork: false, completedMs: null }), { status: 200 });
+    }
+    if (url.endsWith('/api/native/memory')) {
+      return new Response(JSON.stringify({ completeRuntimeMemory: false, admitted: false, reasonCodes: ['QUANTIZED_WEIGHT_SIZE_IS_NOT_RUNTIME_MEMORY'] }), { status: 200 });
+    }
     return new Response(JSON.stringify({ query: { unanswerable: true, reason: 'x', eventFamily: 'pass' }, results: [] }), { status: 200 });
   });
   vi.stubGlobal('fetch', fetchMock);
@@ -275,6 +293,9 @@ it('loads recovery and landmark preview from production routes and posts deletio
   expect(screen.getByText(/hosted encryption is unproven/i)).toBeTruthy();
   expect(screen.getByText(/public exposure remains blocked/i)).toBeTruthy();
   expect(screen.getByText(/native gate is closed/i)).toBeTruthy();
+  expect(await screen.findByText(/support bundle requires consent/i)).toBeTruthy();
+  expect(screen.getByText(/http control plane may not run gpu work/i)).toBeTruthy();
+  expect(screen.getByText(/historical two-half duration is not current billable capacity/i)).toBeTruthy();
   await fireEvent.click(screen.getByRole('button', { name: /request deletion/i }));
   const deletionCall = fetchMock.mock.calls.find(([url, init]) => String(url).endsWith('/api/access/deletion') && init?.method === 'POST');
   expect(deletionCall).toBeTruthy();

@@ -7,6 +7,7 @@ interface StatsPanelProps {
     stats: MatchStats | null;
     benchmark?: MatchBenchmarkSummary | null;
     formationTimeline?: FormationSegment[];
+    formationAvailability?: { availability: string; reasonCodes?: string[]; value?: string | null };
     shotSummary?: ShotSummary | null;
     playerProfiles?: PlayerProfile[];
     comparisonStats?: MatchStats | null;
@@ -75,6 +76,7 @@ export default function StatsPanel({
     stats,
     benchmark = null,
     formationTimeline = [],
+    formationAvailability,
     shotSummary,
     playerProfiles = [],
     comparisonStats,
@@ -107,6 +109,9 @@ export default function StatsPanel({
     const myPpda = metricAvailability.find((metric) => metric.metric === 'my_team_ppda');
     const enemyPpda = metricAvailability.find((metric) => metric.metric === 'enemy_ppda');
     const ppdaHidden = (record?: { availability: string }) => record != null && record.availability !== 'available' && record.availability !== 'experimental';
+    const formationWithheld = formationAvailability != null
+      && formationAvailability.availability !== 'available'
+      && formationAvailability.availability !== 'experimental';
 
     return (
         <div className="w-full max-w-4xl mt-4 space-y-3">
@@ -224,17 +229,28 @@ export default function StatsPanel({
                         {/* Formation */}
                         <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm">
                             <h4 className="text-xs text-slate-400 mb-1 font-medium uppercase tracking-wide">Formation</h4>
-                            <p className="text-xl font-bold text-emerald-400 font-mono mb-1">{stats.formation}</p>
-                            <FormationDiagram formation={stats.formation} />
-                            {formationTimeline.length > 0 && (
-                                <div className="mt-3 space-y-1 border-t border-slate-700 pt-2">
-                                    {formationTimeline.slice(-3).map((segment) => (
-                                        <div key={`${segment.startFrameId}-${segment.endFrameId}-${segment.formation}`} className="flex items-center justify-between text-[11px] text-slate-400 font-mono">
-                                            <span>{segment.formation}</span>
-                                            <span>{segment.startTimestamp.toFixed(1)}s-{segment.endTimestamp.toFixed(1)}s</span>
+                            {formationWithheld ? (
+                                <>
+                                    <p className="text-xl font-bold text-slate-400 font-mono mb-1">Unavailable</p>
+                                    {formationAvailability?.reasonCodes?.length ? (
+                                        <p className="text-[11px] text-slate-500 font-mono">{formationAvailability.reasonCodes.join(', ')}</p>
+                                    ) : null}
+                                </>
+                            ) : (
+                                <>
+                                    <p className="text-xl font-bold text-emerald-400 font-mono mb-1">{stats.formation}</p>
+                                    <FormationDiagram formation={stats.formation} />
+                                    {formationTimeline.length > 0 && (
+                                        <div className="mt-3 space-y-1 border-t border-slate-700 pt-2">
+                                            {formationTimeline.slice(-3).map((segment) => (
+                                                <div key={`${segment.startFrameId}-${segment.endFrameId}-${segment.formation}`} className="flex items-center justify-between text-[11px] text-slate-400 font-mono">
+                                                    <span>{segment.formation}</span>
+                                                    <span>{segment.startTimestamp.toFixed(1)}s-{segment.endTimestamp.toFixed(1)}s</span>
+                                                </div>
+                                            ))}
                                         </div>
-                                    ))}
-                                </div>
+                                    )}
+                                </>
                             )}
                         </div>
                     </>
