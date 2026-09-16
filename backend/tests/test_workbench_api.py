@@ -285,3 +285,42 @@ def test_workbench_concurrent_requests_do_not_change_factual_measurements(tmp_pa
             assert inert.json()["executed"] is False
 
     _run(body)
+
+
+def test_hosted_job_reads_require_signed_scoped_access(tmp_path: Path) -> None:
+    async def body():
+        async for client in _client(tmp_path):
+            created = await client.post(
+                "/api/workbench/jobs",
+                json={"requestId": "r-signed", "matchId": "m1", "sourceSha256": "e" * 64, "budget": 1.0},
+            )
+            assert created.status_code == 200
+            hosted = await client.get(
+                "/api/workbench/jobs/r-signed",
+                headers={"x-deployment-boundary": "hosted"},
+            )
+            assert hosted.status_code == 403
+            assert "UNSIGNED_OR_UNSCOPED_JOB_ACCESS" in hosted.json()["detail"]["reasonCodes"]
+            wrong_scope = await client.get(
+                "/api/workbench/jobs/r-signed",
+                headers={
+                    "authorization": "token-1",
+                    "x-job-scope": "other-job",
+                    "x-deployment-boundary": "hosted",
+                },
+            )
+            assert wrong_scope.status_code == 403
+            admitted = await client.get(
+                "/api/workbench/jobs/r-signed",
+                headers={
+                    "authorization": "token-1",
+                    "x-job-scope": "r-signed",
+                    "x-deployment-boundary": "hosted",
+                },
+            )
+            assert admitted.status_code == 200
+            assert admitted.json()["status"] == "submitted"
+            local = await client.get("/api/workbench/jobs/r-signed")
+            assert local.status_code == 200
+
+    _run(body)

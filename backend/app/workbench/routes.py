@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from .admission import admit_camera, admit_media
@@ -19,7 +19,7 @@ from .flags import feature_flags
 from .geometry import review_incident_geometry
 from .identity import player_observations
 from .incidents import level0_incident_package
-from .jobs import DurableJobLedger, JobRequest
+from .jobs import DurableJobLedger, JobRequest, signed_scoped_job_access
 from .library import search_match_library
 from .media import FourRatesReceipt
 from .milestones import milestone_plan, owners, progress_signal
@@ -44,6 +44,21 @@ _correction_log = CorrectionLog()
 _job_ledger = DurableJobLedger()
 _router_assistance = AssistanceRouter(providers_enabled=False)
 _evidence_store = EvidenceStore()
+
+
+def _require_job_access(
+    request_id: str,
+    *,
+    authorization: str | None,
+    job_scope: str | None,
+    deployment_boundary: str | None,
+) -> None:
+    boundary = (deployment_boundary or "loopback").lower()
+    if boundary == "loopback" and not authorization:
+        return
+    access = signed_scoped_job_access(token=authorization, job_id=request_id, token_job_id=job_scope)
+    if not access["admitted"]:
+        raise HTTPException(status_code=403, detail=access)
 
 
 class CorrectionBody(BaseModel):
@@ -306,7 +321,18 @@ def create_workbench_router(storage_root: Path) -> APIRouter:
         )
 
     @router.get("/jobs/{request_id}")
-    def get_job(request_id: str) -> dict:
+    def get_job(
+        request_id: str,
+        authorization: str | None = Header(default=None),
+        x_job_scope: str | None = Header(default=None),
+        x_deployment_boundary: str | None = Header(default=None),
+    ) -> dict:
+        _require_job_access(
+            request_id,
+            authorization=authorization,
+            job_scope=x_job_scope,
+            deployment_boundary=x_deployment_boundary,
+        )
         try:
             receipt = jsonable(_job_ledger.receipt(request_id))
         except KeyError as exc:
@@ -316,7 +342,18 @@ def create_workbench_router(storage_root: Path) -> APIRouter:
         return receipt
 
     @router.get("/jobs/{request_id}/cost")
-    def job_cost(request_id: str) -> dict:
+    def job_cost(
+        request_id: str,
+        authorization: str | None = Header(default=None),
+        x_job_scope: str | None = Header(default=None),
+        x_deployment_boundary: str | None = Header(default=None),
+    ) -> dict:
+        _require_job_access(
+            request_id,
+            authorization=authorization,
+            job_scope=x_job_scope,
+            deployment_boundary=x_deployment_boundary,
+        )
         del request_id
         return _job_ledger.cost_summary()
 
