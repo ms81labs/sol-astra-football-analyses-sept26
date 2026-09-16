@@ -181,9 +181,7 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
   }
 
   async function runLibrarySearch() {
-    const result = await searchMatchLibrary(libraryQuery, [
-      { id: 'm-lib', title: 'elevated training', cameraProfile: 'stable_elevated_wide' },
-    ]);
+    const result = await searchMatchLibrary(libraryQuery);
     setLibraryHits(result.results);
   }
 

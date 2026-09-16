@@ -67,7 +67,7 @@ export interface JobCostSummary {
 }
 
 export async function fetchWorkbenchDossier(): Promise<WorkbenchDossier> {
-  const response = await fetch('/api/workbench/dossier');
+  const response = await fetch('/api/dossier');
   if (!response.ok) {
     throw new Error(`Failed to load workbench dossier: ${response.status}`);
   }
@@ -146,7 +146,7 @@ export async function exportPlaylistInterval(timestampStart: number, timestampEn
 }
 
 export async function fetchWorkbenchFlags() {
-  const response = await fetch('/api/workbench/flags');
+  const response = await fetch('/api/flags');
   if (!response.ok) {
     throw new Error(`Failed to load feature flags: ${response.status}`);
   }
@@ -161,11 +161,11 @@ export async function fetchJobCost(jobId: string) {
   return response.json() as Promise<JobCostSummary>;
 }
 
-export async function searchMatchLibrary(query: string, matches: Array<Record<string, unknown>> = []) {
-  const response = await fetch('/api/workbench/library/search', {
+export async function searchMatchLibrary(query: string) {
+  const response = await fetch('/api/library/search', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query, matches }),
+    body: JSON.stringify({ query }),
   });
   if (!response.ok) {
     throw new Error(`Failed to search match library: ${response.status}`);
@@ -173,12 +173,8 @@ export async function searchMatchLibrary(query: string, matches: Array<Record<st
   return response.json() as Promise<{ results: Array<{ id: string; title?: string }> }>;
 }
 
-export async function fetchPlayerObservations(matchId: string, rows: Array<Record<string, unknown>> = []) {
-  const response = await fetch(`/api/workbench/matches/${matchId}/players`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ rows, identityContinuous: false }),
-  });
+export async function fetchPlayerObservations(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/players`);
   if (!response.ok) {
     throw new Error(`Failed to load player observations: ${response.status}`);
   }

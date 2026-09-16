@@ -52,7 +52,9 @@ from .schemas import (
 from .semantic_search import search_matches_by_tactical_themes, search_bundles_by_tactical_themes, detect_themes_for_match
 from .storage import AdmissionOutcomeUncertainError, Storage, UploadTooLargeError
 from .workbench.access import object_access_decision
+from .workbench.dossier import http_dossier
 from .workbench.evidence import metric_dictionary
+from .workbench.flags import feature_flags
 from .workbench.jobs import attach_durable_job_view
 from .workbench.review import correction_api_payload, playlist_export_interval
 from .workbench.routes import create_workbench_router
@@ -1024,6 +1026,24 @@ def create_app(
     def get_metric_dictionary() -> dict:
         return {"metrics": metric_dictionary()}
 
+    @app.get("/api/flags")
+    def get_feature_flags() -> dict:
+        return feature_flags()
+
+    @app.get("/api/dossier")
+    def get_dossier() -> dict:
+        payload = http_dossier()
+        return {key: payload[key] for key in ("baseline", "release", "evaluation", "gpu", "native")}
+
+    @app.get("/api/capabilities")
+    def get_capabilities() -> dict:
+        return {"capabilities": http_dossier()["capabilities"]}
+
+    @app.post("/api/library/search")
+    def post_library_search(payload: dict | None = None) -> dict:
+        body = payload or {}
+        return storage.search_stored_library(str(body.get("query") or ""))
+
     @app.post("/api/playlists/export-interval")
     def export_playlist_interval(payload: dict | None = None) -> dict:
         body = payload or {}
@@ -1193,6 +1213,62 @@ def create_app(
             )
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail="Analytics not ready") from exc
+
+    @app.get("/api/matches/{match_id}/players")
+    def get_match_players(match: MatchRecord = Depends(require_match)) -> dict:
+        try:
+            return storage.player_observations_for_match(match.id)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="Frames not ready") from exc
+
+    @app.post("/api/matches/{match_id}/players")
+    def post_match_players(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+        del payload
+        return get_match_players(match)
+
+    @app.get("/api/matches/{match_id}/ownership")
+    def get_match_ownership(match: MatchRecord = Depends(require_match)) -> dict:
+        try:
+            return storage.classify_match_ownership(match.id)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="Frames not ready") from exc
+
+    @app.post("/api/matches/{match_id}/ownership")
+    def post_match_ownership(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+        del payload
+        return get_match_ownership(match)
+
+    @app.get("/api/matches/{match_id}/package")
+    def get_match_package(match: MatchRecord = Depends(require_match)) -> dict:
+        try:
+            return storage.assemble_stored_match_package(match.id)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="Analytics not ready") from exc
+
+    @app.post("/api/matches/{match_id}/package")
+    def post_match_package(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+        del payload
+        return get_match_package(match)
+
+    @app.get("/api/matches/{match_id}/incidents/geometry")
+    def get_match_incident_geometry(match: MatchRecord = Depends(require_match)) -> dict:
+        try:
+            return storage.incident_geometry_for_match(match.id)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="Frames not ready") from exc
+
+    @app.post("/api/matches/{match_id}/incidents/geometry")
+    def post_match_incident_geometry(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+        del payload
+        return get_match_incident_geometry(match)
+
+    @app.get("/api/matches/{match_id}/setup")
+    def match_setup(match: MatchRecord = Depends(require_match)) -> dict:
+        return storage.assess_stored_match_setup(match.id)
+
+    @app.get("/api/matches/{match_id}/rates")
+    def match_rates(match: MatchRecord = Depends(require_match)) -> dict:
+        return storage.four_rates_for_match(match.id)
 
     @app.get("/api/matches/{match_id}/events")
     def get_events(match: MatchRecord = Depends(require_match)) -> dict:

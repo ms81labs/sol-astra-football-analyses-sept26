@@ -45,6 +45,30 @@ def cluster_mapping(*, cluster_id: int, selected_semantic: str | None) -> Cluste
     return ClusterMapping(clusterId=cluster_id, semanticTeam=semantic, suggestion=semantic is None)
 
 
+def rows_from_frames(frames: list[Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for frame in frames:
+        stamp = float(getattr(frame, "timestamp", 0.0))
+        frame_id = getattr(frame, "frameId", None)
+        for team, players in (
+            ("my_team", getattr(frame, "myTeam", None) or []),
+            ("enemy", getattr(frame, "enemies", None) or []),
+            ("unassigned", getattr(frame, "unassignedPlayers", None) or []),
+        ):
+            for player in players:
+                rows.append(
+                    {
+                        "trackId": str(getattr(player, "id", "")),
+                        "t": stamp,
+                        "x": getattr(player, "x", None),
+                        "y": getattr(player, "y", None),
+                        "team": team,
+                        "frameId": frame_id,
+                    }
+                )
+    return rows
+
+
 def player_observations(rows: list[dict[str, Any]], *, identity_continuous: bool) -> dict[str, Any]:
     if identity_continuous:
         return {"intervalLimited": False, "totalsWithheld": False, "rows": rows, "reasonCodes": []}

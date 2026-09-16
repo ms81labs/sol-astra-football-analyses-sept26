@@ -12,8 +12,8 @@ from .assistance import AssistancePolicy, AssistanceRouter, execute_typed_query,
 from .contracts import SourceClockIdentity, jsonable
 from .costs import credit_allocation, match_cost
 from .decisions import architecture_decisions
-from .dossier import build_baseline_dossier, build_release_dossier
-from .evaluation import current_repository_evaluation_gate, evaluation_measures
+from .dossier import build_baseline_dossier
+from .evaluation import evaluation_measures
 from .evidence import EvidenceStore, inspect_metric, metric_dictionary, summarize_legacy_match
 from .flags import feature_flags
 from .geometry import review_incident_geometry
@@ -23,7 +23,6 @@ from .jobs import DurableJobLedger, JobRequest, signed_scoped_job_access
 from .library import search_match_library
 from .media import FourRatesReceipt
 from .milestones import milestone_plan, owners, progress_signal
-from .native import native_gate, probe_gpu
 from .ownership import classify_ownership
 from .package import assemble_match_package
 from .privacy import residency_claim
@@ -137,20 +136,17 @@ def create_workbench_router(storage_root: Path) -> APIRouter:
 
     @router.get("/dossier")
     def get_dossier() -> dict:
-        dossier = build_baseline_dossier()
-        store.save_dossier(dossier)
-        return {
-            "baseline": jsonable(dossier),
-            "release": build_release_dossier(dossier),
-            "evaluation": jsonable(current_repository_evaluation_gate()),
-            "gpu": jsonable(probe_gpu()),
-            "native": jsonable(native_gate(repo_root=Path(__file__).resolve().parents[3])),
-        }
+        from .dossier import http_dossier
+
+        payload = http_dossier(repo_root=Path(__file__).resolve().parents[3])
+        store.save_dossier(build_baseline_dossier())
+        return {key: payload[key] for key in ("baseline", "release", "evaluation", "gpu", "native")}
 
     @router.get("/capabilities")
     def get_capabilities() -> dict:
-        dossier = build_baseline_dossier()
-        return {"capabilities": [jsonable(entry) for entry in dossier.capabilities]}
+        from .dossier import http_dossier
+
+        return {"capabilities": http_dossier()["capabilities"]}
 
     @router.post("/matches/{match_id}/corrections")
     def post_correction(match_id: str, body: CorrectionBody) -> dict:

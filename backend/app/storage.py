@@ -1094,6 +1094,145 @@ class Storage:
             narrative=narrative,
         )
 
+    def player_observations_for_match(self, match_id: str) -> dict:
+        from .workbench.identity import player_observations, rows_from_frames
+
+        return player_observations(rows_from_frames(self.load_frames(match_id)), identity_continuous=False)
+
+    def search_stored_library(self, query: str) -> dict:
+        from .workbench.library import search_match_library
+
+        matches = [
+            {
+                "id": match.id,
+                "title": match.name,
+                "name": match.name,
+                "cameraProfile": match.config.cameraProfile,
+                "inputMode": match.inputMode,
+                "status": match.status,
+            }
+            for match in self.list_matches()
+        ]
+        return search_match_library(query=query, matches=matches)
+
+    def classify_match_ownership(self, match_id: str) -> dict:
+        from .workbench.ownership import classify_ownership
+
+        frames = self.load_frames(match_id)
+        if not frames:
+            observation = classify_ownership(
+                ball_visible=False,
+                nearest_team=None,
+                nearest_distance=None,
+                relative_motion=None,
+                persistence_frames=0,
+                calibrated=False,
+            )
+            return observation.model_dump(mode="json")
+        frame = frames[0]
+        possession = frame.possession
+        nearest_team = None
+        nearest_distance = None
+        if possession is not None and possession.team in {"my_team", "enemy"}:
+            nearest_team = possession.team
+            nearest_distance = possession.distance
+        observation = classify_ownership(
+            ball_visible=frame.ball is not None,
+            nearest_team=nearest_team,
+            nearest_distance=nearest_distance,
+            relative_motion=None,
+            persistence_frames=0,
+            calibrated=False,
+        )
+        return observation.model_dump(mode="json")
+
+    def assemble_stored_match_package(self, match_id: str) -> dict:
+        from .workbench.assistance import events_as_query_rows
+        from .workbench.evidence import summarize_legacy_match
+        from .workbench.package import assemble_match_package
+
+        try:
+            events = self.load_events(match_id)
+        except FileNotFoundError:
+            events = []
+        frames = self.load_frames(match_id)
+        summary, _, _, _ = self.load_analytics(match_id)
+        controlled = sum(
+            1
+            for frame in frames
+            if frame.possession is not None and frame.possession.team in {"my_team", "enemy"}
+        )
+        metrics = [
+            metric.model_dump(mode="json")
+            for metric in summarize_legacy_match(
+                summary.model_dump(mode="json"),
+                identity_continuous=False,
+                calibration_accepted=False,
+                controlled_frames=controlled,
+            )
+        ]
+        corrections = self.list_corrections(match_id)
+        playlist = [item.get("payload") or item for item in corrections if item.get("kind") == "playlist_item"]
+        return assemble_match_package(
+            playlist=playlist,
+            events=events_as_query_rows(events, match_id=match_id),
+            metrics=metrics,
+            corrections=corrections,
+            cost={},
+            secrets={},
+        )
+
+    def incident_geometry_for_match(self, match_id: str) -> dict:
+        from .workbench.geometry import review_incident_geometry
+
+        match = self.get_match(match_id)
+        frames = self.load_frames(match_id)
+        if not frames:
+            raise FileNotFoundError(match_id)
+        frame = frames[0]
+        ball = frame.ball
+        return review_incident_geometry(
+            my_team=[{"x": float(player.x), "y": float(player.y)} for player in frame.myTeam],
+            enemies=[{"x": float(player.x), "y": float(player.y)} for player in frame.enemies],
+            ball=None if ball is None else {"x": float(ball.x), "y": float(ball.y)},
+            attack_direction=match.config.attackDirection,
+        )
+
+    def assess_stored_match_setup(self, match_id: str) -> dict:
+        from .workbench.setup import assess_match_setup
+
+        match = self.get_match(match_id)
+        config = match.config
+        return assess_match_setup(
+            camera_profile=config.cameraProfile,
+            pitch_length_m=config.pitchLengthM,
+            rights=config.rights.model_dump(mode="json"),
+            periods=[period.model_dump(mode="json") for period in config.periods],
+        )
+
+    def four_rates_for_match(self, match_id: str) -> dict:
+        self.get_match(match_id)
+        try:
+            payload = self.load_analysis_artifact(match_id, "four_rates")
+        except FileNotFoundError:
+            payload = None
+        body = dict(payload or {})
+        notes = [str(item) for item in body.get("notes") or []]
+        if payload is None:
+            notes.append("FOUR_RATES_UNRECORDED")
+        if "EXPORT_FPS_IS_NOT_INFERENCE_FPS" not in notes:
+            notes.append("EXPORT_FPS_IS_NOT_INFERENCE_FPS")
+        return {
+            "decodeCount": int(body.get("decodeCount") or 0),
+            "detectorPrimaryCount": int(body.get("detectorPrimaryCount") or body.get("inferenceCount") or 0),
+            "detectorRecoveryCount": int(body.get("detectorRecoveryCount") or 0),
+            "trackerUpdateCount": int(body.get("trackerUpdateCount") or 0),
+            "exportCount": int(body.get("exportCount") or 0),
+            "exportFpsEqualsInferenceFps": False,
+            "decodeFpsEqualsExportFps": False,
+            "notes": notes,
+        }
+
     def load_raw_rows(self, match_id: str) -> list[dict]:
         payload = self._read_json(self._match_dir(match_id) / "raw_rows.json")
         return [dict(item) for item in payload]

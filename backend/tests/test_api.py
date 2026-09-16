@@ -1072,3 +1072,126 @@ async def _test_metric_dictionary_and_playlist_export_are_on_production_routes(t
         assert interval.json()["sourceStartSeconds"] == 3
         assert interval.json()["sourceEndSeconds"] == 5
         assert interval.json()["sourceEndFrameExclusive"] == 125
+
+
+def test_production_flags_dossier_library_and_stored_match_surfaces(tmp_path: Path):
+    _run(_test_production_flags_dossier_library_and_stored_match_surfaces, tmp_path)
+
+
+async def _test_production_flags_dossier_library_and_stored_match_surfaces(tmp_path: Path):
+    async with api_client(tmp_path) as (_, client):
+        flags = await client.get("/api/flags")
+        assert flags.status_code == 200
+        payload = flags.json()
+        assert payload["gpu_default"] is False
+        assert payload["native_code"] is False
+        assert payload["experimental_shot_quality"] is False
+
+        dossier = await client.get("/api/dossier")
+        assert dossier.status_code == 200
+        matrix = dossier.json()
+        assert matrix["evaluation"]["accepted"] is False
+        assert matrix["gpu"]["canPromoteDefault"] is False
+        assert matrix["native"]["approved"] is False
+        assert matrix["baseline"]["declaredCameraProfile"] == "stitched_panoramic_view"
+        assert "independent_labels_0_of_18" in matrix["baseline"]["unresolvedGates"]
+
+        capabilities = await client.get("/api/capabilities")
+        assert capabilities.status_code == 200
+        assert any(item["id"] == "manual_review" for item in capabilities.json()["capabilities"])
+
+        response = await _upload_tracking_match(client)
+        assert response.status_code == 202
+        match_id = response.json()["matchId"]
+
+        injected_players = await client.post(
+            f"/api/matches/{match_id}/players",
+            json={"rows": [{"trackId": "forged", "t": 0.0}], "identityContinuous": True},
+        )
+        assert injected_players.status_code == 200
+        players = injected_players.json()
+        assert players["intervalLimited"] is True
+        assert players["totalsWithheld"] is True
+        assert "IDENTITY_DISCONTINUITY" in players["reasonCodes"]
+        track_ids = {str(row["trackId"]) for row in players["rows"]}
+        assert "7" in track_ids
+        assert "18" in track_ids
+        assert "forged" not in track_ids
+
+        listed = await client.get(f"/api/matches/{match_id}/players")
+        assert listed.status_code == 200
+        assert listed.json()["intervalLimited"] is True
+        assert {str(row["trackId"]) for row in listed.json()["rows"]} == track_ids
+
+        library = await client.post(
+            "/api/library/search",
+            json={"query": "Sample", "matches": [{"id": "forged", "title": "Sample forged"}]},
+        )
+        assert library.status_code == 200
+        library_ids = [item["id"] for item in library.json()["results"]]
+        assert match_id in library_ids
+        assert "forged" not in library_ids
+
+        ownership = await client.post(
+            f"/api/matches/{match_id}/ownership",
+            json={
+                "ballVisible": True,
+                "nearestTeam": "my_team",
+                "relativeMotion": "aligned",
+                "persistenceFrames": 5,
+                "calibrated": True,
+            },
+        )
+        assert ownership.status_code == 200
+        assert ownership.json()["mode"] == "unknown"
+        assert "NEAREST_PLAYER_INSUFFICIENT" in ownership.json()["reasonCodes"]
+
+        geometry = await client.post(
+            f"/api/matches/{match_id}/incidents/geometry",
+            json={
+                "myTeam": [{"x": 999}],
+                "enemies": [{"x": 1}, {"x": 2}],
+                "ball": {"x": 0},
+                "attackDirection": "left_to_right",
+            },
+        )
+        assert geometry.status_code == 200
+        assert geometry.json()["decision"] is None
+        assert geometry.json()["validatedMeasurement"] is False
+        assert geometry.json()["attackDirection"] == "right_to_left"
+        assert geometry.json()["mostAdvancedTeammateX"] == 21.0
+        assert "IFAB_LAW_11_NOT_APPLIED" in geometry.json()["reasonCodes"]
+
+        package = await client.post(
+            f"/api/matches/{match_id}/package",
+            json={
+                "events": [{"eventId": "forged", "id": "forged"}],
+                "metrics": [],
+                "playlist": [],
+                "secrets": {"DAYTONA_API_KEY": "must-not-leak"},
+            },
+        )
+        assert package.status_code == 200
+        assembled = package.json()
+        blob = json.dumps(assembled)
+        assert "must-not-leak" not in blob
+        assert "DAYTONA_API_KEY" not in blob
+        assert assembled["analyst"]["limitations"]
+        event_ids = {
+            str(item.get("eventId") or item.get("id") or "")
+            for item in assembled["analyst"]["events"]
+        }
+        assert "forged" not in event_ids
+        assert assembled["operator"]["secretsAdmitted"] is True
+
+        setup = await client.get(f"/api/matches/{match_id}/setup")
+        assert setup.status_code == 200
+        assert setup.json()["cameraProfile"] == "stitched_panoramic_view"
+        assert setup.json()["certified"] is False
+        assert setup.json()["manualTaggingPermitted"] is True
+
+        rates = await client.get(f"/api/matches/{match_id}/rates")
+        assert rates.status_code == 200
+        assert rates.json()["exportFpsEqualsInferenceFps"] is False
+        assert rates.json()["decodeFpsEqualsExportFps"] is False
+        assert "EXPORT_FPS_IS_NOT_INFERENCE_FPS" in rates.json()["notes"]

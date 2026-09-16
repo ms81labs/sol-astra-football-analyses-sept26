@@ -145,6 +145,23 @@ def build_baseline_dossier(*, selected_commit: str | None = None) -> BaselineDos
     )
 
 
+def http_dossier(*, repo_root: Path | None = None) -> dict[str, Any]:
+    from .contracts import jsonable
+    from .evaluation import current_repository_evaluation_gate
+    from .native import native_gate, probe_gpu
+
+    dossier = build_baseline_dossier()
+    root = repo_root or Path(__file__).resolve().parents[3]
+    return {
+        "baseline": jsonable(dossier),
+        "release": build_release_dossier(dossier),
+        "evaluation": jsonable(current_repository_evaluation_gate()),
+        "gpu": jsonable(probe_gpu()),
+        "native": jsonable(native_gate(repo_root=root)),
+        "capabilities": [jsonable(entry) for entry in dossier.capabilities],
+    }
+
+
 def build_release_dossier(baseline: BaselineDossier, *, loopback_only: bool = True) -> dict[str, Any]:
     return {
         "planVersion": baseline.planVersion,

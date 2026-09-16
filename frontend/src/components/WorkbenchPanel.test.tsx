@@ -11,7 +11,7 @@ afterEach(() => {
 it('renders independently visible capability statuses from the dossier', async () => {
   const fetchMock = vi.fn(async (input: RequestInfo) => {
     const url = String(input);
-    if (url.endsWith('/api/workbench/dossier')) {
+    if (url.endsWith('/api/dossier')) {
       return new Response(JSON.stringify({
         baseline: {
           selectedCommit: '5099e1f',
@@ -58,7 +58,7 @@ it('renders independently visible capability statuses from the dossier', async (
 it('recovers a pending playlist correction after a simulated crash', async () => {
   const fetchMock = vi.fn(async (input: RequestInfo, init?: RequestInit) => {
     const url = String(input);
-    if (url.endsWith('/api/workbench/dossier')) {
+    if (url.endsWith('/api/dossier')) {
       return new Response(JSON.stringify({
         baseline: {
           selectedCommit: '5099e1f',
@@ -106,7 +106,7 @@ it('recovers a pending playlist correction after a simulated crash', async () =>
 it('shows feature flags, live job cost, match library hits and interval-limited players', async () => {
   const fetchMock = vi.fn(async (input: RequestInfo, init?: RequestInit) => {
     const url = String(input);
-    if (url.endsWith('/api/workbench/dossier')) {
+    if (url.endsWith('/api/dossier')) {
       return new Response(JSON.stringify({
         baseline: {
           selectedCommit: '5099e1f',
@@ -124,16 +124,16 @@ it('shows feature flags, live job cost, match library hits and interval-limited 
         native: { approved: false, reasonCodes: ['NATIVE_GATE_CLOSED'] },
       }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
-    if (url.endsWith('/api/workbench/flags')) {
+    if (url.endsWith('/api/flags')) {
       return new Response(JSON.stringify({ experimental_shot_quality: false, gpu_default: false, native_code: false }), { status: 200 });
     }
     if (url.endsWith('/api/jobs/live/cost')) {
       return new Response(JSON.stringify({ reservedTotal: 1.5, actualTotal: 0, p50Reserved: 1.5 }), { status: 200 });
     }
-    if (url.endsWith('/api/workbench/library/search') && init?.method === 'POST') {
+    if (url.endsWith('/api/library/search') && init?.method === 'POST') {
       return new Response(JSON.stringify({ results: [{ id: 'm-lib', title: 'elevated training' }] }), { status: 200 });
     }
-    if (url.endsWith('/api/workbench/matches/m1/players') && init?.method === 'POST') {
+    if (url.endsWith('/api/matches/m1/players')) {
       return new Response(JSON.stringify({ intervalLimited: true, totalsWithheld: true, reasonCodes: ['IDENTITY_DISCONTINUITY'] }), { status: 200 });
     }
     return new Response(JSON.stringify({ query: { unanswerable: true, reason: 'x', eventFamily: 'pass' }, results: [] }), { status: 200 });
@@ -152,7 +152,7 @@ it('shows feature flags, live job cost, match library hits and interval-limited 
 it('shows the quality timeline only when experimental UI is enabled', async () => {
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo) => {
     const url = String(input);
-    if (url.endsWith('/api/workbench/dossier')) {
+    if (url.endsWith('/api/dossier')) {
       return new Response(JSON.stringify({
         baseline: {
           selectedCommit: '5099e1f',
@@ -170,7 +170,7 @@ it('shows the quality timeline only when experimental UI is enabled', async () =
         native: { approved: false, reasonCodes: ['NATIVE_GATE_CLOSED'] },
       }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
-    if (url.endsWith('/api/workbench/flags')) {
+    if (url.endsWith('/api/flags')) {
       return new Response(JSON.stringify({
         experimental_shot_quality: false,
         gpu_default: false,
