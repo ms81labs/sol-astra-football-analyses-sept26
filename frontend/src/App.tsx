@@ -1125,6 +1125,44 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
                       setCorrectionSaveState('unavailable');
                     });
                 }}
+                onJoinIdentity={(rightTrackId) => {
+                  if (!activeMatch?.id || selectedPlayer.playerId == null) return;
+                  const matchId = activeMatch.id;
+                  setCorrectionSaveState('pending');
+                  void repairMatchIdentity(matchId, {
+                    kind: 'track_join',
+                    leftTrackId: String(selectedPlayer.playerId),
+                    rightTrackId,
+                  })
+                    .then(async (payload) => {
+                      setCorrectionSaveState(payload.correction?.saveState === 'saved' ? 'saved' : 'pending');
+                      if (payload.correction?.correctionId) {
+                        setCorrectionHistory((previous) => [
+                          ...previous,
+                          {
+                            correctionId: payload.correction?.correctionId ?? '',
+                            kind: payload.correction?.kind ?? 'track_join',
+                            saveState: payload.correction?.saveState ?? 'pending',
+                            undoOf: null,
+                          },
+                        ]);
+                      }
+                      setIdentityContinuous(false);
+                      const heatmap = await fetchHeatmap(matchId);
+                      const identity = heatmap.identityContinuous === true;
+                      setIdentityContinuous(identity);
+                      setHeatmapAvail({
+                        wholeMatch: heatmap.wholeMatch === true,
+                        intervalLimited: heatmap.intervalLimited !== false,
+                        withheld: heatmap.withheld !== false,
+                      });
+                      setSpeedAvail(speedAvailability(identity));
+                      setPlayerTotalsAvail(playerPhysicalTotalsAvailability(identity));
+                    })
+                    .catch(() => {
+                      setCorrectionSaveState('unavailable');
+                    });
+                }}
               />
               <button
                 type="button"

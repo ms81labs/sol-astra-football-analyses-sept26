@@ -1053,6 +1053,8 @@ class Storage:
             self._restore_event_review(match_id, list((original.payload or {}).get("previous") or []))
         elif original is not None and original.kind == "team_mapping":
             self._apply_team_mapping(match_id, dict(original.payload or {}))
+        elif original is not None and original.kind == "track_join":
+            self._apply_identity_edit(match_id, kind="track_join_undo", payload=dict(original.payload or {}))
         return saved
 
     def list_corrections(self, match_id: str, *, state: str | None = None) -> list[dict]:
@@ -1637,6 +1639,7 @@ class Storage:
     def repair_identity_for_match(self, match_id: str, payload: dict | None = None) -> dict:
         from .workbench.identity import (
             frames_have_identity_overlap,
+            frames_with_track,
             next_available_track_id,
             rows_from_frames,
         )
@@ -1692,6 +1695,8 @@ class Storage:
             }
             if kind == "track_split" and new_track_id is not None:
                 payload["newTrackId"] = new_track_id
+            if kind == "track_join":
+                payload["rightFrameIds"] = frames_with_track(frames, right_track_id)
             saved = self.submit_correction(
                 match_id,
                 kind=kind,
@@ -1716,13 +1721,14 @@ class Storage:
         }
 
     def _apply_identity_edit(self, match_id: str, *, kind: str, payload: dict) -> None:
-        from .workbench.identity import apply_track_join, apply_track_split, remap_track_references
+        from .workbench.identity import apply_track_join, apply_track_split, apply_track_unjoin, remap_track_references
 
         try:
             frames = self.load_frames(match_id)
         except FileNotFoundError:
             return
         at_frame = int(payload.get("atFrame") or 0)
+        frame_ids = None
         if kind == "track_split":
             source = str(payload.get("trackId") or "")
             dest = int(payload["newTrackId"])
@@ -1731,6 +1737,19 @@ class Storage:
             source = str(payload.get("rightTrackId") or "")
             dest = int(payload.get("leftTrackId"))
             frames = apply_track_join(frames, left_track_id=str(dest), right_track_id=source)
+            at_frame = 0
+        elif kind == "track_join_undo":
+            source = str(payload.get("leftTrackId") or "")
+            dest = int(payload.get("rightTrackId"))
+            frame_ids = [int(frame_id) for frame_id in payload.get("rightFrameIds") or []]
+            if not frame_ids:
+                return
+            frames = apply_track_unjoin(
+                frames,
+                left_track_id=source,
+                right_track_id=str(dest),
+                right_frame_ids=frame_ids,
+            )
             at_frame = 0
         else:
             return
@@ -1742,7 +1761,13 @@ class Storage:
         if events:
             self.save_events(
                 match_id,
-                remap_track_references(events, track_id=source, new_track_id=dest, at_frame=at_frame),
+                remap_track_references(
+                    events,
+                    track_id=source,
+                    new_track_id=dest,
+                    at_frame=at_frame,
+                    frame_ids=frame_ids,
+                ),
             )
         try:
             summary, assignments, timeline, shots = self.load_analytics(match_id)
@@ -1751,9 +1776,21 @@ class Storage:
         self.save_analytics(
             match_id,
             summary,
-            remap_track_references(assignments, track_id=source, new_track_id=dest, at_frame=at_frame),
+            remap_track_references(
+                assignments,
+                track_id=source,
+                new_track_id=dest,
+                at_frame=at_frame,
+                frame_ids=frame_ids,
+            ),
             timeline,
-            remap_track_references(shots, track_id=source, new_track_id=dest, at_frame=at_frame),
+            remap_track_references(
+                shots,
+                track_id=source,
+                new_track_id=dest,
+                at_frame=at_frame,
+                frame_ids=frame_ids,
+            ),
         )
 
     def _invalidate_stored_identity_continuity(self, match_id: str) -> None:

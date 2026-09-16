@@ -195,6 +195,43 @@ def apply_track_join(frames: list[Any], *, left_track_id: str, right_track_id: s
     return [_remap_frame_track(frame, source=right_track_id, dest=dest) for frame in frames]
 
 
+def frames_with_track(frames: list[Any], track_id: str) -> list[int]:
+    found: list[int] = []
+    for frame in frames:
+        ids = {
+            str(getattr(player, "id", ""))
+            for players in (
+                getattr(frame, "myTeam", None) or [],
+                getattr(frame, "enemies", None) or [],
+                getattr(frame, "unassignedPlayers", None) or [],
+            )
+            for player in players
+        }
+        if track_id in ids:
+            found.append(int(getattr(frame, "frameId", 0) or 0))
+    return found
+
+
+def apply_track_unjoin(
+    frames: list[Any],
+    *,
+    left_track_id: str,
+    right_track_id: str,
+    right_frame_ids: list[int],
+) -> list[Any]:
+    """Restore the right track only on frames that originally held it."""
+
+    allowed = {int(frame_id) for frame_id in right_frame_ids}
+    dest = int(right_track_id)
+    updated: list[Any] = []
+    for frame in frames:
+        if int(getattr(frame, "frameId", 0) or 0) in allowed:
+            updated.append(_remap_frame_track(frame, source=left_track_id, dest=dest))
+        else:
+            updated.append(frame)
+    return updated
+
+
 def apply_team_swap(frames: list[Any]) -> list[Any]:
     """Swap labeled my_team and enemy sides. Does not rerun vision."""
 
@@ -241,12 +278,17 @@ def remap_track_references(
     track_id: str,
     new_track_id: int,
     at_frame: int = 0,
+    frame_ids: list[int] | None = None,
     frame_attr: str = "frameId",
     fields: tuple[str, ...] = ("trackId", "fromTrackId", "toTrackId", "playerId", "controllingTrackId"),
 ) -> list[Any]:
+    allowed = {int(frame_id) for frame_id in frame_ids} if frame_ids is not None else None
     updated: list[Any] = []
     for item in items:
         frame_id = int(getattr(item, frame_attr, 0) or 0)
+        if allowed is not None and frame_id not in allowed:
+            updated.append(item)
+            continue
         if frame_id < at_frame:
             updated.append(item)
             continue

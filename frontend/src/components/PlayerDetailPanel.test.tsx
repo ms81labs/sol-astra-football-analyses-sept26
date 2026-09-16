@@ -69,3 +69,19 @@ it('offers match-scoped identity split without treating the click as continuity'
   fireEvent.click(screen.getByRole('button', { name: /split identity/i }));
   expect(onSplitIdentity).toHaveBeenCalledTimes(1);
 });
+
+it('offers match-scoped identity join without treating the click as continuity', () => {
+  const onJoinIdentity = vi.fn();
+  render(
+    <PlayerDetailPanel
+      player={player}
+      events={events}
+      identityContinuous
+      onJoinIdentity={onJoinIdentity}
+    />,
+  );
+  fireEvent.change(screen.getByLabelText(/join from track/i), { target: { value: '19' } });
+  fireEvent.click(screen.getByRole('button', { name: /join identity/i }));
+  expect(onJoinIdentity).toHaveBeenCalledTimes(1);
+  expect(onJoinIdentity).toHaveBeenCalledWith('19');
+});

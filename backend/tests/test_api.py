@@ -1223,6 +1223,101 @@ async def _test_match_identity_repair_commits_stored_tracks_and_invalidates_cont
         assert new_id not in restored_by_frame[2]
 
 
+def test_match_identity_join_commits_nonoverlapping_tracks_and_undo_restores(tmp_path: Path):
+    _run(_test_match_identity_join_commits_nonoverlapping_tracks_and_undo_restores, tmp_path)
+
+
+async def _test_match_identity_join_commits_nonoverlapping_tracks_and_undo_restores(tmp_path: Path):
+    async with api_client(tmp_path) as (_, client):
+        response = await _upload_tracking_match(client)
+        assert response.status_code == 202
+        match_id = response.json()["matchId"]
+
+        overlapping = await client.post(
+            f"/api/matches/{match_id}/identity/repair",
+            json={
+                "kind": "track_join",
+                "leftTrackId": "7",
+                "rightTrackId": "18",
+                "committed": True,
+                "identityContinuous": True,
+                "silentlyReconnected": True,
+                "visionRerun": True,
+            },
+        )
+        assert overlapping.status_code == 200
+        overlap_payload = overlapping.json()
+        assert overlap_payload["committed"] is False
+        assert overlap_payload["identityContinuous"] is False
+        assert overlap_payload["silentlyReconnected"] is False
+        assert overlap_payload["visionRerun"] is False
+        assert "IDENTITY_OVERLAP" in overlap_payload["reasonCodes"]
+        players = await client.get(f"/api/matches/{match_id}/players")
+        by_frame = {}
+        for row in players.json()["rows"]:
+            by_frame.setdefault(int(row["frameId"]), set()).add(str(row["trackId"]))
+        assert "7" in by_frame[0]
+        assert "18" in by_frame[0]
+
+        split = await client.post(
+            f"/api/matches/{match_id}/identity/repair",
+            json={"kind": "track_split", "trackId": "7", "atFrame": 1},
+        )
+        assert split.status_code == 200
+        assert split.json()["committed"] is True
+        new_id = str(split.json()["correction"]["payload"]["newTrackId"])
+
+        joined = await client.post(
+            f"/api/matches/{match_id}/identity/repair",
+            json={
+                "kind": "track_join",
+                "leftTrackId": "7",
+                "rightTrackId": new_id,
+                "committed": True,
+                "identityContinuous": True,
+                "silentlyReconnected": True,
+                "visionRerun": True,
+            },
+        )
+        assert joined.status_code == 200
+        saved = joined.json()
+        assert saved["committed"] is True
+        assert saved["identityContinuous"] is False
+        assert saved["silentlyReconnected"] is False
+        assert saved["visionRerun"] is False
+        assert "IDENTITY_OVERLAP" not in saved["reasonCodes"]
+        assert saved["correction"]["kind"] == "track_join"
+        assert saved["correction"]["saveState"] == "saved"
+        assert saved["correction"]["payload"]["rightFrameIds"] == [1, 2]
+        joined_players = await client.get(f"/api/matches/{match_id}/players")
+        joined_by_frame: dict[int, set[str]] = {}
+        for row in joined_players.json()["rows"]:
+            joined_by_frame.setdefault(int(row["frameId"]), set()).add(str(row["trackId"]))
+        assert "7" in joined_by_frame[0]
+        assert "7" in joined_by_frame[1]
+        assert "7" in joined_by_frame[2]
+        assert new_id not in joined_by_frame[1]
+        assert new_id not in joined_by_frame[2]
+        heatmap = await client.get(f"/api/matches/{match_id}/heatmap")
+        assert heatmap.json()["identityContinuous"] is False
+
+        undone = await client.post(
+            f"/api/matches/{match_id}/corrections/{saved['correction']['correctionId']}/undo"
+        )
+        assert undone.status_code == 200
+        assert undone.json()["undoOf"] == saved["correction"]["correctionId"]
+        restored = await client.get(f"/api/matches/{match_id}/players")
+        restored_by_frame: dict[int, set[str]] = {}
+        for row in restored.json()["rows"]:
+            restored_by_frame.setdefault(int(row["frameId"]), set()).add(str(row["trackId"]))
+        assert "7" in restored_by_frame[0]
+        assert new_id not in restored_by_frame[0]
+        assert "7" not in restored_by_frame[1]
+        assert new_id in restored_by_frame[1]
+        assert "7" not in restored_by_frame[2]
+        assert new_id in restored_by_frame[2]
+
+
 def test_match_event_review_updates_stored_events_and_undo_restores_status(tmp_path: Path):
     _run(_test_match_event_review_updates_stored_events_and_undo_restores_status, tmp_path)
 

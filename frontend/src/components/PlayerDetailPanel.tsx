@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { BackendEvent, PlayerProfile } from '../types';
 
 interface PlayerDetailPanelProps {
@@ -5,6 +6,7 @@ interface PlayerDetailPanelProps {
     events: BackendEvent[];
     identityContinuous?: boolean;
     onSplitIdentity?: () => void;
+    onJoinIdentity?: (rightTrackId: string) => void;
 }
 
 type PlayerDetailSelection = PlayerDetailPanelProps['player'];
@@ -23,7 +25,8 @@ function isPlayerEvent(event: BackendEvent, player: PlayerDetailSelection) {
     return event.fromTrackId === player.playerId || event.toTrackId === player.playerId;
 }
 
-export default function PlayerDetailPanel({ player, events, identityContinuous = false, onSplitIdentity }: PlayerDetailPanelProps) {
+export default function PlayerDetailPanel({ player, events, identityContinuous = false, onSplitIdentity, onJoinIdentity }: PlayerDetailPanelProps) {
+    const [joinTrackId, setJoinTrackId] = useState('');
     const recentEvents = events
         .filter((event) => isPlayerEvent(event, player))
         .sort((left, right) => {
@@ -60,6 +63,31 @@ export default function PlayerDetailPanel({ player, events, identityContinuous =
                     >
                         Split identity
                     </button>
+                )}
+                {onJoinIdentity && (
+                    <div className="mt-2 flex items-center gap-2">
+                        <label className="flex min-w-0 flex-1 items-center gap-2 text-[11px] text-slate-400">
+                            Join from track
+                            <input
+                                type="text"
+                                inputMode="numeric"
+                                value={joinTrackId}
+                                onChange={(event) => setJoinTrackId(event.target.value)}
+                                className="w-16 rounded border border-slate-600 bg-slate-800 px-1.5 py-1 font-mono text-[11px] text-slate-100"
+                            />
+                        </label>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                const rightTrackId = joinTrackId.trim();
+                                if (!rightTrackId || rightTrackId === String(player.playerId ?? '')) return;
+                                onJoinIdentity(rightTrackId);
+                            }}
+                            className="rounded border border-amber-600/40 bg-amber-900/20 px-2 py-1 text-[11px] font-semibold text-amber-100 hover:bg-amber-900/40"
+                        >
+                            Join identity
+                        </button>
+                    </div>
                 )}
             </div>
 

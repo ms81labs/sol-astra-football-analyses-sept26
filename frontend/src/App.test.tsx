@@ -339,6 +339,77 @@ describe('App match workspace loading', () => {
     expect(screen.queryByText(/totals withheld until identity continuity/i)).toBeNull();
   });
 
+  it('posts match-scoped identity join through production HTTP', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue({
+      ...loadedWorkspace('match-a', 'Match A'),
+      frames: [{
+        Frame_ID: 0,
+        Timestamp: 0,
+        Ball: null,
+        My_Team: [{ id: 7, x: 25, y: 40, conf: 1 }],
+        Enemies: [],
+      }],
+      events: [{
+        type: 'pass',
+        frameId: 0,
+        timestamp: 0,
+        team: 'my_team',
+        fromTrackId: 7,
+        toTrackId: 8,
+        description: 'Pass by track 7',
+      }],
+    });
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: true,
+            wholeMatch: true,
+            intervalLimited: false,
+            withheld: false,
+            reasonCodes: [],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/identity/repair') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            committed: true,
+            preview: true,
+            identityContinuous: false,
+            silentlyReconnected: false,
+            visionRerun: false,
+            reasonCodes: [],
+            correction: { correctionId: 'join-1', kind: 'track_join', saveState: 'saved' },
+          }),
+        } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => {
+      expect(screen.queryByText(/whole-match heatmap withheld until identity continuity/i)).toBeNull();
+    });
+    fireEvent.click(screen.getByRole('img'), { clientX: 25, clientY: 40 });
+    expect(screen.getByText('Track 7')).toBeTruthy();
+    fireEvent.change(screen.getByLabelText(/join from track/i), { target: { value: '19' } });
+    fireEvent.click(screen.getByRole('button', { name: /join identity/i }));
+    await waitFor(() => {
+      const repairCall = fetchMock.mock.calls.find(([url]) => String(url).includes('/identity/repair'));
+      expect(repairCall?.[1]?.body).toContain('"kind":"track_join"');
+      expect(repairCall?.[1]?.body).toContain('"leftTrackId":"7"');
+      expect(repairCall?.[1]?.body).toContain('"rightTrackId":"19"');
+    });
+  });
+
   it('loads a selected match once and does not reload the active match', async () => {
     stubPitchCanvas();
     const listedMatches = [readyMatch('match-a', 'Match A'), readyMatch('match-b', 'Match B')];
