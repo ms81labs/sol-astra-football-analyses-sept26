@@ -726,3 +726,56 @@ export async function fetchDeploymentChoice() {
   }
   return response.json() as Promise<DeploymentChoiceSnapshot>;
 }
+
+export interface EvaluationProtocolSnapshot {
+  accepted?: boolean;
+  completeTasks?: number;
+  protocolVersion?: string;
+  reasonCodes?: string[];
+}
+
+export async function fetchEvaluationProtocol() {
+  const response = await fetch('/api/evaluation/protocol', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ accepted: true, completeTasks: 18 }),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to load evaluation protocol: ${response.status}`);
+  }
+  return response.json() as Promise<EvaluationProtocolSnapshot>;
+}
+
+export interface FeatureEnabledSnapshot {
+  name?: string;
+  enabled?: boolean;
+}
+
+export async function fetchGpuDefaultFlag() {
+  const response = await fetch('/api/flags/gpu_default/enabled', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled: true }),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to load GPU flag: ${response.status}`);
+  }
+  return response.json() as Promise<FeatureEnabledSnapshot>;
+}
+
+export interface FourRatesSnapshot {
+  exportFpsEqualsInferenceFps?: boolean;
+  notes?: string[];
+}
+
+export async function fetchFourRates() {
+  const response = await fetch('/api/rates/four', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ exportFpsEqualsInferenceFps: true }),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to load four rates: ${response.status}`);
+  }
+  return response.json() as Promise<FourRatesSnapshot>;
+}

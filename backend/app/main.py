@@ -53,6 +53,7 @@ from .semantic_search import search_matches_by_tactical_themes, search_bundles_b
 from .storage import AdmissionOutcomeUncertainError, Storage, UploadTooLargeError
 from .workbench.access import (
     access_deletion_procedure,
+    authorize_object,
     constrained_decoder,
     deployment_encryption,
     least_privilege_storage,
@@ -81,6 +82,7 @@ from .workbench.assistance import (
     policy_log,
     preemptible_allowed,
     providers_disabled_fallback,
+    template_report,
 )
 from .workbench.incidents import (
     broadcast_replay_not_simultaneous,
@@ -117,7 +119,12 @@ from .workbench.costs import (
 from .workbench.benchmarks import experiment_receipt, quality_gate_holds
 from .workbench.decisions import architecture_decisions
 from .workbench.dossier import http_dossier
-from .workbench.evaluation import analyst_workflow_measures, evaluation_measures, score_hota_idf1
+from .workbench.evaluation import (
+    analyst_workflow_measures,
+    current_repository_evaluation_gate,
+    evaluation_measures,
+    score_hota_idf1,
+)
 from .workbench.events import learned_temporal, ownership_invalidation, propose_event, score_events
 from .workbench.geometry import (
     CalibrationProfile,
@@ -128,9 +135,9 @@ from .workbench.geometry import (
     project_to_pitch,
     withhold_if_invalid,
 )
-from .workbench.evidence import DEFINITION_VERSION, inspect_metric, metric_dictionary, round_trip_unknown
+from .workbench.evidence import DEFINITION_VERSION, evaluate_metric_spec, inspect_metric, metric_dictionary, round_trip_unknown
 from .workbench.cache import recompute_plan
-from .workbench.flags import feature_flags, shadow_metric
+from .workbench.flags import feature_enabled, feature_flags, shadow_metric
 from .workbench.identity import (
     IdentityRecord,
     appearance_embedding_policy,
@@ -176,13 +183,20 @@ from .workbench.research import execute_track, may_write_product_paths, research
 from .workbench.retention import PROTECTED, may_delete
 from .workbench.media import (
     DecodedFrame,
+    SamplingAudit,
     apply_crop_and_rotation,
     align_clip_start_to_grid,
     colour_round_trip,
     cpu_fallback,
     decode_memory_policy,
     detect_camera_cuts,
+    four_rates_receipt,
+    frame_interval_for_target_fps,
+    map_decoded_to_sample,
+    map_original_to_proxy_pts,
     pixels_from_decoded_frame,
+    pts_to_seconds,
+    resolve_declared_interval,
     sample_decode_anchors,
     torso_colour_pixels,
     vid_stride_policy,
@@ -194,6 +208,8 @@ from .workbench.risks import independent_reviewer, risk_register, worked_match_f
 from .workbench.rollback import rollback_release
 from .workbench.roster import frontier_provider_role, label_products, model_roster, promotion_gate, video_model_roster
 from .workbench.routes import create_workbench_router
+from .workbench.receipts import promotion_receipt
+from .workbench.ownership import OwnershipHysteresis, possession_from_states
 from .workbench.shot_model import tree_challenger
 from .workbench.timing import gpu_timing_scope, stage_timing
 from .workbench.targets import metadata_api_targets
@@ -282,6 +298,47 @@ def _legacy_geometry(points: list | None = None) -> dict:
     withheld = withhold_if_invalid(profile, "team_width_m")
     dumped = profile.model_dump(mode="json")
     return {**dumped, "evaluation": evaluation, "withheld": withheld}
+
+
+def _four_rates_view() -> dict:
+    audit = SamplingAudit(
+        source_sha256="0" * 64,
+        declared_target_fps=5.0,
+        nominal_fps=25.0,
+        frame_interval=5,
+        selected_backend="ultralytics_track",
+    )
+    for _ in range(25):
+        audit.record_decoded_frame()
+        audit.record_primary_inference()
+        audit.record_tracker_update()
+    for _ in range(3):
+        audit.record_recovery_inference()
+    for _ in range(5):
+        audit.record_export_sample()
+    return four_rates_receipt(audit).model_dump(mode="json")
+
+
+def _unpromoted_receipt() -> dict:
+    return promotion_receipt(
+        source_sha256="0" * 64,
+        weights="unpromoted",
+        configuration="evidence_v1",
+        hardware="cpu",
+        native_builds=[],
+        selected_backend="opencv+ultralytics_track",
+        frame_count=0,
+        call_count=0,
+        cold_timing_ms=0.0,
+        warm_timing_ms=0.0,
+        peak_memory_bytes=0,
+        transferred_bytes=0,
+        output_quality="unproven",
+        accepted_coverage=0.0,
+        failure_cases=["labels_incomplete"],
+        allocated_spend=0.0,
+        fallback_event="cpu_local",
+    )
 
 
 class BrowserOriginMiddleware:
@@ -1421,6 +1478,15 @@ def create_app(
         del payload
         return analyst_workflow_measures()
 
+    @app.get("/api/evaluation/protocol")
+    def get_evaluation_protocol() -> dict:
+        return current_repository_evaluation_gate().model_dump(mode="json")
+
+    @app.post("/api/evaluation/protocol")
+    def post_evaluation_protocol(payload: dict | None = None) -> dict:
+        del payload
+        return current_repository_evaluation_gate().model_dump(mode="json")
+
     @app.get("/api/research/lane")
     def get_research_lane() -> dict:
         return research_lane()
@@ -1964,6 +2030,15 @@ def create_app(
     def get_shadow_metric(name: str) -> dict:
         return shadow_metric(name)
 
+    @app.get("/api/flags/{name}/enabled")
+    def get_feature_enabled(name: str) -> dict:
+        return {"name": name, "enabled": feature_enabled(name, env={})}
+
+    @app.post("/api/flags/{name}/enabled")
+    def post_feature_enabled(name: str, payload: dict | None = None) -> dict:
+        del payload
+        return {"name": name, "enabled": feature_enabled(name, env={})}
+
     @app.get("/api/quantities/display")
     def get_legacy_display() -> dict:
         return transform_legacy_display(x=0.0, y=0.0, from_display=True)
@@ -2208,6 +2283,114 @@ def create_app(
         dumped = restored.model_dump(mode="json")
         dumped["publishedValue"] = restored.published_value()
         return dumped
+
+    @app.post("/api/metrics/spec")
+    def post_metric_spec(payload: dict | None = None) -> dict:
+        body = payload or {}
+        metric = evaluate_metric_spec(
+            str(body.get("metric") or "my_team_distance_m"),
+            value=body.get("value"),
+            denominator=float(body.get("denominator") or 0.0),
+            identity_continuous=False,
+            calibration_accepted=False,
+        )
+        return metric.model_dump(mode="json")
+
+    @app.post("/api/access/object")
+    def post_authorize_object(payload: dict | None = None) -> dict:
+        body = payload or {}
+        return authorize_object(
+            object_id=str(body.get("objectId") or ""),
+            session_tenant="loopback",
+            client_tenant=body.get("clientTenant"),
+            object_tenant=body.get("objectTenant"),
+        )
+
+    @app.post("/api/decode/sample")
+    def post_decode_sample(payload: dict | None = None) -> dict:
+        body = payload or {}
+        interval = frame_interval_for_target_fps(25.0, 5.0)
+        index = int(body.get("sourceFrameIndex") or 0)
+        frame = DecodedFrame(index, index, index / 25.0, 8, 8, "bgr", 0, b"\x00\x00\x00", "fixture")
+        mapped = map_decoded_to_sample(frame, frame_interval=interval)
+        return {
+            "exported": mapped is not None,
+            "frameInterval": interval,
+            "targetFpsEqualsInferenceFps": False,
+            "sample": None if mapped is None else mapped.model_dump(mode="json"),
+        }
+
+    @app.post("/api/decode/pts")
+    def post_decode_pts(payload: dict | None = None) -> dict:
+        body = payload or {}
+        return {
+            "seconds": pts_to_seconds(
+                int(body.get("pts") or 0),
+                int(body.get("timeBaseNum") or 1),
+                int(body.get("timeBaseDen") or 1),
+            )
+        }
+
+    @app.post("/api/decode/proxy-pts")
+    def post_decode_proxy_pts(payload: dict | None = None) -> dict:
+        body = payload or {}
+        original = [int(item) for item in list(body.get("originalPts") or [])]
+        proxy = [int(item) for item in list(body.get("proxyPts") or original)]
+        time_base = body.get("timeBase") or [1, 1]
+        mapping = map_original_to_proxy_pts(
+            original_pts=original,
+            proxy_pts=proxy,
+            time_base=(int(time_base[0]), int(time_base[1])),
+        )
+        return {"mapping": mapping, "replacesOriginal": False}
+
+    @app.post("/api/decode/interval")
+    def post_decode_interval(payload: dict | None = None) -> dict:
+        body = payload or {}
+        start, end = resolve_declared_interval(
+            str(body.get("kind") or "source"),
+            float(body.get("startSeconds") or 0.0),
+            float(body.get("endSeconds") or 0.0),
+            list(body.get("mapping") or []),
+        )
+        return {"interval": [start, end]}
+
+    @app.get("/api/rates/four")
+    def get_four_rates() -> dict:
+        return _four_rates_view()
+
+    @app.post("/api/rates/four")
+    def post_four_rates(payload: dict | None = None) -> dict:
+        del payload
+        return _four_rates_view()
+
+    @app.post("/api/ownership/hysteresis")
+    def post_ownership_hysteresis(payload: dict | None = None) -> dict:
+        del payload
+        hyst = OwnershipHysteresis(min_persistence=3)
+        return {"owner": hyst.observe("my_team"), "minPersistence": 3}
+
+    @app.post("/api/metrics/possession-states")
+    def post_possession_states(payload: dict | None = None) -> dict:
+        body = payload or {}
+        summary = possession_from_states(list(body.get("states") or []), float(body.get("requestedSeconds") or 0.0))
+        dumped = summary.model_dump(mode="json")
+        dumped["publishedValue"] = summary.published_value()
+        return dumped
+
+    @app.post("/api/reports/template")
+    def post_template_report(payload: dict | None = None) -> dict:
+        del payload
+        return template_report([], [])
+
+    @app.get("/api/receipts/promotion")
+    def get_promotion_receipt() -> dict:
+        return _unpromoted_receipt()
+
+    @app.post("/api/receipts/promotion")
+    def post_promotion_receipt(payload: dict | None = None) -> dict:
+        del payload
+        return _unpromoted_receipt()
 
     @app.post("/api/ownership/invalidate")
     def post_ownership_invalidate(payload: dict | None = None) -> dict:

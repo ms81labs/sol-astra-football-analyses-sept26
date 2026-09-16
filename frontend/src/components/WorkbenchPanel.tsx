@@ -55,6 +55,9 @@ import {
   fetchCalibrationHoldout,
   fetchEventScore,
   fetchDeploymentChoice,
+  fetchEvaluationProtocol,
+  fetchGpuDefaultFlag,
+  fetchFourRates,
   fetchWorkbenchDossier,
   fetchWorkbenchFlags,
   recoverMatchCorrection,
@@ -91,6 +94,9 @@ import {
   type CalibrationHoldoutSnapshot,
   type EventScoreSnapshot,
   type DeploymentChoiceSnapshot,
+  type EvaluationProtocolSnapshot,
+  type FeatureEnabledSnapshot,
+  type FourRatesSnapshot,
   type WorkbenchDossier,
 } from '../utils/workbench';
 
@@ -176,6 +182,9 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
   const [calibrationHoldout, setCalibrationHoldout] = useState<CalibrationHoldoutSnapshot | null>(null);
   const [eventScore, setEventScore] = useState<EventScoreSnapshot | null>(null);
   const [deploymentChoice, setDeploymentChoice] = useState<DeploymentChoiceSnapshot | null>(null);
+  const [evaluationProtocol, setEvaluationProtocol] = useState<EvaluationProtocolSnapshot | null>(null);
+  const [gpuDefaultFlag, setGpuDefaultFlag] = useState<FeatureEnabledSnapshot | null>(null);
+  const [fourRates, setFourRates] = useState<FourRatesSnapshot | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -353,6 +362,27 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
       })
       .catch(() => {
         if (!cancelled) setDeploymentChoice(null);
+      });
+    fetchEvaluationProtocol()
+      .then((payload) => {
+        if (!cancelled && payload.accepted === false) setEvaluationProtocol(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setEvaluationProtocol(null);
+      });
+    fetchGpuDefaultFlag()
+      .then((payload) => {
+        if (!cancelled && payload.enabled === false) setGpuDefaultFlag(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setGpuDefaultFlag(null);
+      });
+    fetchFourRates()
+      .then((payload) => {
+        if (!cancelled && payload.exportFpsEqualsInferenceFps === false) setFourRates(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setFourRates(null);
       });
     return () => {
       cancelled = true;
@@ -671,6 +701,15 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
               )}
               {deploymentChoice?.alwaysOnGpuCommitted === false && (
                 <p className="text-xs text-slate-400">Deployment does not commit always-on GPU.</p>
+              )}
+              {evaluationProtocol?.accepted === false && (
+                <p className="text-xs text-slate-400">Frozen evaluation protocol remains incomplete.</p>
+              )}
+              {gpuDefaultFlag?.enabled === false && (
+                <p className="text-xs text-slate-400">GPU default flag stays off.</p>
+              )}
+              {fourRates?.exportFpsEqualsInferenceFps === false && (
+                <p className="text-xs text-slate-400">Export fps is not inference fps.</p>
               )}
               <div className="rounded-lg border border-slate-700 p-3">
                 <h4 className="text-xs uppercase tracking-wide text-slate-500 mb-2">Capability matrix</h4>

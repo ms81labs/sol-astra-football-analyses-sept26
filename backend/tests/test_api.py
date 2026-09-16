@@ -2496,3 +2496,114 @@ async def _test_production_calibration_decode_event_score_and_deployment_surface
         assert calibration.json()["evaluation"]["accepted"] is False
         assert calibration.json()["fromStoredPoints"] is True
 
+
+def test_production_protocol_flags_metric_spec_clock_and_four_rates_surfaces(tmp_path: Path):
+    _run(_test_production_protocol_flags_metric_spec_clock_and_four_rates_surfaces, tmp_path)
+
+
+async def _test_production_protocol_flags_metric_spec_clock_and_four_rates_surfaces(tmp_path: Path):
+    async with api_client(tmp_path) as (_, client):
+        protocol = await client.post(
+            "/api/evaluation/protocol",
+            json={"completeTasks": 18, "lockedLabelsPresent": True, "accepted": True},
+        )
+        assert protocol.status_code == 200
+        assert protocol.json()["accepted"] is False
+        assert protocol.json()["completeTasks"] == 0
+        assert protocol.json()["protocolVersion"] == "football_analysis_pilot_labels_v3"
+        assert "LABELS_INCOMPLETE" in protocol.json()["reasonCodes"]
+
+        enabled = await client.post("/api/flags/gpu_default/enabled", json={"enabled": True, "env": {"GA_FLAG_GPU_DEFAULT": "1"}})
+        assert enabled.status_code == 200
+        assert enabled.json()["enabled"] is False
+        assert enabled.json()["name"] == "gpu_default"
+
+        spec = await client.post(
+            "/api/metrics/spec",
+            json={"metric": "my_team_distance_m", "value": 12000, "identityContinuous": True, "calibrationAccepted": True, "denominator": 90},
+        )
+        assert spec.status_code == 200
+        assert spec.json()["availability"] == "withheld"
+        assert spec.json()["value"] is None
+        assert "IDENTITY_DISCONTINUITY" in spec.json()["reasonCodes"]
+        assert "CALIBRATION_UNAVAILABLE" in spec.json()["reasonCodes"]
+
+        access = await client.post(
+            "/api/access/object",
+            json={"objectId": "clip-1", "sessionTenant": "evil", "clientTenant": "evil", "objectTenant": "evil", "allowed": True},
+        )
+        assert access.status_code == 200
+        assert access.json()["allowed"] is False
+        assert access.json()["tenant"] == "loopback"
+
+        sample = await client.post("/api/decode/sample", json={"sourceFrameIndex": 1, "frameInterval": 2, "exported": True})
+        assert sample.status_code == 200
+        assert sample.json()["exported"] is False
+        assert sample.json()["frameInterval"] == 5
+        on_grid = await client.post("/api/decode/sample", json={"sourceFrameIndex": 0, "frameInterval": 1})
+        assert on_grid.status_code == 200
+        assert on_grid.json()["exported"] is True
+        assert on_grid.json()["sample"]["sourceFrameIndex"] == 0
+
+        pts = await client.post("/api/decode/pts", json={"pts": 90000, "timeBaseNum": 1, "timeBaseDen": 90000, "seconds": 0})
+        assert pts.status_code == 200
+        assert pts.json()["seconds"] == 1.0
+
+        proxy = await client.post(
+            "/api/decode/proxy-pts",
+            json={"originalPts": [0, 90000], "proxyPts": [0, 45000], "timeBase": [1, 90000]},
+        )
+        assert proxy.status_code == 200
+        assert proxy.json()["mapping"][1]["originalSeconds"] == 1.0
+        assert proxy.json()["replacesOriginal"] is False
+
+        declared = await client.post(
+            "/api/decode/interval",
+            json={"kind": "proxy", "startSeconds": 12.0, "endSeconds": 14.0, "mapping": [{"originalSeconds": 0, "proxySeconds": 99}]},
+        )
+        assert declared.status_code == 200
+        assert declared.json()["interval"] == [12.0, 14.0]
+
+        rates = await client.post("/api/rates/four", json={"exportFpsEqualsInferenceFps": True, "decodeCount": 0})
+        assert rates.status_code == 200
+        assert rates.json()["exportFpsEqualsInferenceFps"] is False
+        assert rates.json()["decodeFpsEqualsExportFps"] is False
+        assert "EXPORT_FPS_IS_NOT_INFERENCE_FPS" in rates.json()["notes"]
+        assert rates.json()["decodeCount"] == 25
+        assert rates.json()["exportCount"] == 5
+
+        hysteresis = await client.post("/api/ownership/hysteresis", json={"team": "my_team", "owner": "my_team"})
+        assert hysteresis.status_code == 200
+        assert hysteresis.json()["owner"] == "unknown"
+
+        possession = await client.post(
+            "/api/metrics/possession-states",
+            json={
+                "states": [
+                    {"mode": "controlled_possession", "controllingTeam": "my_team", "seconds": 10.0},
+                    {"mode": "unknown", "controllingTeam": "none", "seconds": 20.0},
+                    {"mode": "controlled_possession", "controllingTeam": "enemy", "seconds": 10.0},
+                ],
+                "requestedSeconds": 40.0,
+                "value": 61,
+            },
+        )
+        assert possession.status_code == 200
+        assert possession.json()["availability"] == "insufficient_coverage"
+        assert possession.json()["publishedValue"] is None
+        assert possession.json()["unknownSeconds"] == 20.0
+
+        template = await client.post(
+            "/api/reports/template",
+            json={"metrics": [{"metric": "possession_pct", "availability": "available", "value": 61}], "events": [{"id": "e1"}]},
+        )
+        assert template.status_code == 200
+        assert template.json()["kind"] == "deterministic_template"
+        assert template.json()["availableMetrics"] == []
+        assert template.json()["eventCount"] == 0
+
+        receipt = await client.post("/api/receipts/promotion", json={"completeMatchAccepted": True, "acceptedCoverage": 1.0})
+        assert receipt.status_code == 200
+        assert receipt.json()["completeMatchAccepted"] is False
+        assert receipt.json()["stageBenchmarkIsCompleteMatchAcceptance"] is False
+

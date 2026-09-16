@@ -330,6 +330,15 @@ it('loads recovery and landmark preview from production routes and posts deletio
     if (url.endsWith('/api/costs/deployment')) {
       return new Response(JSON.stringify({ selected: 'local', alwaysOnGpuCommitted: false }), { status: 200 });
     }
+    if (url.endsWith('/api/evaluation/protocol')) {
+      return new Response(JSON.stringify({ accepted: false, completeTasks: 0, protocolVersion: 'football_analysis_pilot_labels_v3', reasonCodes: ['LABELS_INCOMPLETE'] }), { status: 200 });
+    }
+    if (url.endsWith('/api/flags/gpu_default/enabled')) {
+      return new Response(JSON.stringify({ name: 'gpu_default', enabled: false }), { status: 200 });
+    }
+    if (url.endsWith('/api/rates/four')) {
+      return new Response(JSON.stringify({ exportFpsEqualsInferenceFps: false, notes: ['EXPORT_FPS_IS_NOT_INFERENCE_FPS'] }), { status: 200 });
+    }
     return new Response(JSON.stringify({ query: { unanswerable: true, reason: 'x', eventFamily: 'pass' }, results: [] }), { status: 200 });
   });
   vi.stubGlobal('fetch', fetchMock);
@@ -360,6 +369,9 @@ it('loads recovery and landmark preview from production routes and posts deletio
   expect(await screen.findByText(/calibration holdout labels remain unavailable/i)).toBeTruthy();
   expect(screen.getByText(/event scoring does not treat labels as independent/i)).toBeTruthy();
   expect(screen.getByText(/deployment does not commit always-on gpu/i)).toBeTruthy();
+  expect(await screen.findByText(/frozen evaluation protocol remains incomplete/i)).toBeTruthy();
+  expect(screen.getByText(/gpu default flag stays off/i)).toBeTruthy();
+  expect(screen.getByText(/export fps is not inference fps/i)).toBeTruthy();
   await fireEvent.click(screen.getByRole('button', { name: /request deletion/i }));
   const deletionCall = fetchMock.mock.calls.find(([url, init]) => String(url).endsWith('/api/access/deletion') && init?.method === 'POST');
   expect(deletionCall).toBeTruthy();
