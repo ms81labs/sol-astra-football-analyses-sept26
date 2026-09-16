@@ -2299,3 +2299,37 @@ def test_research_lane_keeps_planned_tracks_inert_and_cannot_write_product_paths
     assert may_write_product_paths(["backend/app/main.py", "frontend/src/App.tsx"]) is False
     assert may_write_product_paths(["research-addon/research_addon/cli.py"]) is True
 
+
+def test_change_history_is_undoable_and_does_not_rewrite_past_outcomes() -> None:
+    from backend.app.workbench.review import change_history
+
+    log = CorrectionLog()
+    first = log.submit(new_correction("m1", "team_mapping", {"cluster": 1}))
+    undone = log.undo(first.correctionId, author="analyst")
+    history = change_history(log.history("m1"))
+    assert history["undoable"] is True
+    assert history["rewrotePastOutcomes"] is False
+    ids = [item["correctionId"] for item in history["items"]]
+    assert first.correctionId in ids
+    assert undone.correctionId in ids
+    assert any(item.get("undoOf") == first.correctionId for item in history["items"])
+    original = next(item for item in history["items"] if item["correctionId"] == first.correctionId)
+    assert original["payload"]["cluster"] == 1
+
+
+def test_disabled_providers_leave_review_metrics_and_template_reports_operational() -> None:
+    from backend.app.workbench.assistance import providers_disabled_fallback
+
+    fallback = providers_disabled_fallback(
+        metrics=[{"metric": "ppda", "availability": "unknown", "reasonCodes": ["ZERO_DENOMINATOR"]}],
+        events=[{"id": "e1", "reviewStatus": "accepted", "label": "shot"}],
+    )
+    assert fallback["reviewOperational"] is True
+    assert fallback["metricsOperational"] is True
+    assert fallback["templateReportOperational"] is True
+    assert fallback["route"] == "template"
+    assert "PROVIDER_DISABLED" in fallback["reasonCodes"]
+    assert fallback["output"]["kind"] == "deterministic_template"
+    assert fallback["output"]["eventCount"] == 1
+    assert fallback["concealedPartialProcessing"] is False
+

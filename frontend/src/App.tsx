@@ -11,6 +11,8 @@ import CoachInsights from './components/CoachInsights';
 import DashboardPanel from './components/DashboardPanel';
 import EvidenceInspector from './components/EvidenceInspector';
 import IncidentReview from './components/IncidentReview';
+import ChangeHistory from './components/ChangeHistory';
+import AiUnavailableBanner from './components/AiUnavailableBanner';
 import QualityTimeline from './components/QualityTimeline';
 import WorkbenchPanel from './components/WorkbenchPanel';
 import DemoMatchIssuePanel from './components/DemoMatchIssuePanel';
@@ -39,7 +41,7 @@ import { buildUploadConfig, createEmptyPointInputs } from './utils/uploadConfig'
 import { getUploadFailureGuidance } from './utils/uploadErrors';
 import { findNearestFrameIndex } from './utils/videoSync';
 import { applyReviewShortcut, type ReviewAction } from './utils/reviewShortcuts';
-import { submitMatchCorrection } from './utils/workbench';
+import { submitMatchCorrection, undoMatchCorrection } from './utils/workbench';
 import { windowedTimelineProps } from './utils/windowedTimeline';
 
 interface MatchEntry {
@@ -180,6 +182,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
   const matchData = useMemo(() => activeMatch?.data || [], [activeMatch]);
   const timelineWindow = useMemo(() => windowedTimelineProps(matchData, currentFrame), [matchData, currentFrame]);
   const [correctionSaveState, setCorrectionSaveState] = useState<'saved' | 'pending' | 'conflicted' | 'unavailable' | null>(null);
+  const [correctionHistory, setCorrectionHistory] = useState<Array<{ correctionId: string; kind: string; saveState: string; undoOf?: string | null }>>([]);
   const correctionVersionRef = useRef(0);
   const matchStats = activeMatch?.stats || null;
   const matchBenchmark = activeMatch?.benchmark || null;
@@ -334,6 +337,12 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           setCorrectionSaveState(saved.saveState as 'saved' | 'pending' | 'conflicted' | 'unavailable');
           if (saved.saveState === 'saved' && typeof saved.version === 'number') {
             correctionVersionRef.current = saved.version;
+          }
+          if (saved.correctionId) {
+            setCorrectionHistory((previous) => [
+              ...previous,
+              { correctionId: saved.correctionId, kind, saveState: saved.saveState, undoOf: null },
+            ]);
           }
         })
         .catch(() => {
@@ -1008,6 +1017,29 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
               onShortcut={handleReviewShortcut}
               saveState={correctionSaveState}
             />
+          </div>
+          <div className="mb-3 shrink-0">
+            <ChangeHistory
+              items={correctionHistory}
+              onUndo={(correctionId) => {
+                if (!activeMatch?.id) return;
+                const original = correctionHistory.find((item) => item.correctionId === correctionId);
+                void undoMatchCorrection(activeMatch.id, correctionId).then((saved) => {
+                  setCorrectionHistory((previous) => [
+                    ...previous,
+                    {
+                      correctionId: saved.correctionId,
+                      kind: original?.kind ?? 'undo',
+                      saveState: 'saved',
+                      undoOf: saved.undoOf,
+                    },
+                  ]);
+                });
+              }}
+            />
+          </div>
+          <div className="mb-3 shrink-0">
+            <AiUnavailableBanner providersEnabled={false} />
           </div>
           <div className="mb-3 shrink-0">
             <DrawingToolbar

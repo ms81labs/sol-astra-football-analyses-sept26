@@ -6,6 +6,8 @@ import OperationsView from './OperationsView';
 import PlaylistBuilder from './PlaylistBuilder';
 import ClockReadout from './ClockReadout';
 import IncidentReview from './IncidentReview';
+import ChangeHistory from './ChangeHistory';
+import AiUnavailableBanner from './AiUnavailableBanner';
 import QualityTimeline from './QualityTimeline';
 import SetupWizard from './SetupWizard';
 import TrainingSuggestions from './TrainingSuggestions';
@@ -294,6 +296,14 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
                 landmarkPreview={{ residualP95M: 4.2, accepted: false, committed: false }}
               />
               <ClockReadout presentationTimeSeconds={0} matchClockSeconds={0} />
+              <AiUnavailableBanner providersEnabled={false} />
+              <ChangeHistory
+                items={
+                  pendingCorrection
+                    ? [{ correctionId: pendingCorrection.correctionId, kind: pendingCorrection.kind, saveState: pendingCorrection.saveState }]
+                    : []
+                }
+              />
               <IncidentReview
                 touchStart={0}
                 touchEnd={0.12}

@@ -181,6 +181,23 @@ def template_report(metrics: list[dict[str, Any]], events: list[dict[str, Any]])
     }
 
 
+def providers_disabled_fallback(
+    *,
+    metrics: list[dict[str, Any]],
+    events: list[dict[str, Any]],
+) -> dict[str, Any]:
+    template = template_report(metrics, events)
+    return {
+        "reviewOperational": True,
+        "metricsOperational": True,
+        "templateReportOperational": True,
+        "route": "template",
+        "reasonCodes": ["PROVIDER_DISABLED"],
+        "output": template,
+        "concealedPartialProcessing": False,
+    }
+
+
 class AssistanceRouter:
     def __init__(self, *, providers_enabled: bool = False, provider=None) -> None:
         self.providers_enabled = providers_enabled

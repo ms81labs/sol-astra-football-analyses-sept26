@@ -132,6 +132,20 @@ def new_correction(
     )
 
 
+def change_history(items: list[Correction] | list[dict[str, Any]]) -> dict[str, Any]:
+    serialised: list[dict[str, Any]] = []
+    for item in items:
+        if isinstance(item, Correction):
+            serialised.append(item.model_dump())
+        else:
+            serialised.append(dict(item))
+    return {
+        "undoable": True,
+        "rewrotePastOutcomes": False,
+        "items": serialised,
+    }
+
+
 def collaboration_lock(
     *,
     mode: str,
