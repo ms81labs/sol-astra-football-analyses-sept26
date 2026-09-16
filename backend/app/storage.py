@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from contextlib import contextmanager
+import hashlib
 import os
 import shutil
 import sqlite3
@@ -873,7 +874,25 @@ class Storage:
         self._write_json(self._match_dir(match_id) / "events.json", [event.model_dump(mode="json") for event in events])
 
     def save_analysis_artifact(self, match_id: str, analysis_type: str, payload: dict) -> None:
-        self._write_json(self._match_dir(match_id) / f"{analysis_type}.json", payload)
+        path = self._match_dir(match_id) / f"{analysis_type}.json"
+        if analysis_type.endswith(".receipt") or analysis_type in {"worker_progress", "remote_worker_progress"}:
+            self._write_json(path, payload)
+            return
+        previous = path.read_bytes() if path.exists() else b""
+        previous_digest = hashlib.sha256(previous).hexdigest() if previous else "0" * 64
+        encoded = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+        from .workbench.artifacts import ArtifactStore, write_alongside
+
+        receipt = write_alongside(
+            ArtifactStore(self.storage_root / "artifacts"),
+            previous_digest=previous_digest,
+            payload=encoded,
+            namespace=analysis_type,
+        )
+        self._write_json(path, payload)
+        receipt_path = self._match_dir(match_id) / "receipts" / f"{analysis_type}.json"
+        receipt_path.parent.mkdir(parents=True, exist_ok=True)
+        self._write_json(receipt_path, receipt)
 
     def invalidate_coach_analysis(self, match_id: str) -> None:
         for analysis_type in ("tactical_report", "drills"):

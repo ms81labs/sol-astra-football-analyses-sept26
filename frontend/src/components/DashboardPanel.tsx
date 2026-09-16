@@ -73,7 +73,7 @@ export default function DashboardPanel({ onClose, onSelectMatch }: DashboardPane
                                             <div className="text-2xl font-bold text-slate-100">{summary.avgPossession === null ? 'Not measured' : `${summary.avgPossession}%`}</div>
                                         </div>
                                         <div className="bg-slate-900 rounded-lg p-3">
-                                            <div className="text-slate-400 text-xs mb-1">xG For / Against</div>
+                                            <div className="text-slate-400 text-xs mb-1">Experimental shot quality For / Against</div>
                                             <div className="text-lg font-bold">
                                                 <span className="text-emerald-400">{summary.avgMyTeamXg.toFixed(2)}</span>
                                                 <span className="text-slate-500 mx-1">/</span>
@@ -81,7 +81,7 @@ export default function DashboardPanel({ onClose, onSelectMatch }: DashboardPane
                                             </div>
                                         </div>
                                         <div className="bg-slate-900 rounded-lg p-3">
-                                            <div className="text-slate-400 text-xs mb-1">xG Diff</div>
+                                            <div className="text-slate-400 text-xs mb-1">Experimental shot quality Diff</div>
                                             <div className={`text-lg font-bold ${summary.avgXgDiff >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                                                 {summary.avgXgDiff >= 0 ? '+' : ''}{summary.avgXgDiff.toFixed(2)}
                                             </div>
@@ -120,7 +120,7 @@ export default function DashboardPanel({ onClose, onSelectMatch }: DashboardPane
                                         </div>
                                         <div className="flex flex-wrap gap-3 mb-3">
                                             <DeltaBadge label="Possession" value={comparison.possessionDelta} />
-                                            <DeltaBadge label="xG Diff" value={comparison.xgDiffDelta} />
+                                            <DeltaBadge label="Experimental shot quality" value={comparison.xgDiffDelta} />
                                             <DeltaBadge label="Sprints" value={comparison.myTeamSprintsDelta} />
                                         </div>
                                     </div>
@@ -180,7 +180,7 @@ export default function DashboardPanel({ onClose, onSelectMatch }: DashboardPane
                                                 <div className="text-right">
                                                     <div className="text-sm font-mono text-slate-200">{t.summary?.possession == null ? 'Not measured' : `${t.summary.possession}%`}</div>
                                                     <div className="text-xs text-slate-500 font-mono">
-                                                        xG {t.summary?.myTeamXg?.toFixed(1) ?? '?'} / {t.summary?.enemyXg?.toFixed(1) ?? '?'}
+                                                        experimental shot quality {t.summary?.myTeamXg?.toFixed(1) ?? '?'} / {t.summary?.enemyXg?.toFixed(1) ?? '?'}
                                                     </div>
                                                 </div>
                                             </div>

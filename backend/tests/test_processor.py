@@ -1770,3 +1770,99 @@ def test_persist_video_outputs_preserves_producer_sample_interval_for_sparse_bal
     assert truth_layers["unknownGaps"] == [
         {"startFrame": 5, "endFrame": 5, "frameCount": 1},
     ]
+
+
+def test_persist_video_outputs_saves_four_rates_projection_and_cache_identity(tmp_path, monkeypatch):
+    storage = Storage(tmp_path)
+    config = MatchConfig()
+    match = storage.create_match(
+        name="four rates persist",
+        input_mode="video",
+        original_filename="clip.mp4",
+        input_path=tmp_path / "clip.mp4",
+        config=config,
+    )
+    job = storage.create_job(match.id)
+    (tmp_path / "clip.mp4").write_bytes(b"video")
+    monkeypatch.setattr(
+        processor,
+        "_compute_outputs_and_match_state",
+        lambda frames, **_kwargs: (
+            frames,
+            MatchSummary(
+                possession=55,
+                myTeamDistance=1000,
+                enemyDistance=950,
+                myTeamAvgPos={"x": 52.0, "y": 48.0},
+                enemyAvgPos={"x": 48.0, "y": 52.0},
+                myTeamTopSpeed=30.1,
+                enemyTopSpeed=29.0,
+                myTeamSprints=10,
+                enemySprints=9,
+                formation="4-3-3",
+            ),
+            [],
+            [],
+            [],
+            [],
+            {"stateContinuityAppliedFrames": 0, "frames": []},
+        ),
+    )
+    _persist_video_outputs(
+        storage,
+        job.id,
+        match.id,
+        config,
+        {
+            "rows": [
+                {"Frame_ID": 0, "Timestamp": 0.0, "Entity_Type": "ball", "Track_ID": -1, "X": 52.0, "Y": 50.0, "Conf": 0.95},
+                {"Frame_ID": 0, "Timestamp": 0.0, "Entity_Type": "player", "Track_ID": 4, "X": 51.0, "Y": 50.0, "Conf": 0.9},
+            ],
+            "trackColors": {},
+            "fourRates": {"exportFpsEqualsInferenceFps": False, "decodeCount": 25, "inferenceCount": 25, "exportCount": 5},
+            "projectionPolicy": {
+                "playerAnchor": "ground_contact",
+                "boxCentreIsFoot": False,
+                "aerialBallMeasuredGroundLocation": False,
+            },
+            "cacheIdentity": "cache-abc",
+            "sampling": {"selectedBackend": "opencv+ultralytics_track", "exportFpsEqualsInferenceFps": False},
+            "vidStridePolicy": {"addsVidStrideAlone": False, "targetFpsEqualsInferenceFps": False},
+            "decodeMemoryPolicy": {"retainAllDecodedFrames": False, "gpuResident": False},
+        },
+        processing_backend="local",
+        video_path=tmp_path / "clip.mp4",
+        worker_path="local",
+    )
+    rates = storage.load_analysis_artifact(match.id, "four_rates")
+    assert rates["exportFpsEqualsInferenceFps"] is False
+    policy = storage.load_analysis_artifact(match.id, "projection_policy")
+    assert policy["boxCentreIsFoot"] is False
+    assert policy["playerAnchor"] == "ground_contact"
+    cache = storage.load_analysis_artifact(match.id, "cache_identity")
+    assert cache["cacheIdentity"] == "cache-abc"
+    sampling = storage.load_analysis_artifact(match.id, "sampling")
+    assert sampling["selectedBackend"] == "opencv+ultralytics_track"
+    stride = storage.load_analysis_artifact(match.id, "vid_stride_policy")
+    assert stride["addsVidStrideAlone"] is False
+
+
+def test_save_analysis_artifact_writes_alongside_previous_digest(tmp_path):
+    storage = Storage(tmp_path)
+    match = storage.create_match(
+        name="alongside",
+        input_mode="video",
+        original_filename="clip.mp4",
+        input_path=tmp_path / "clip.mp4",
+        config=MatchConfig(),
+    )
+    storage.save_analysis_artifact(match.id, "projection_policy", {"playerAnchor": "box_centre"})
+    first = storage.load_analysis_artifact(match.id, "projection_policy")
+    storage.save_analysis_artifact(match.id, "projection_policy", {"playerAnchor": "ground_contact"})
+    live = storage.load_analysis_artifact(match.id, "projection_policy")
+    receipt = json.loads((storage._match_dir(match.id) / "receipts" / "projection_policy.json").read_text(encoding="utf-8"))
+    assert live["playerAnchor"] == "ground_contact"
+    assert receipt["mutatedHistorical"] is False
+    assert receipt["previousDigest"]
+    assert receipt["digest"] != receipt["previousDigest"]
+    assert first["playerAnchor"] == "box_centre" or receipt["previousDigest"]

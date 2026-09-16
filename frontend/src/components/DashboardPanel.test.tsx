@@ -67,5 +67,31 @@ it('does not publish sprint averages when physical totals are withheld', async (
   expect(card).not.toBeNull();
   expect(within(card as HTMLElement).getByText('Unavailable')).toBeTruthy();
   expect(card!.textContent).not.toMatch(/\b12\b/);
-  expect(screen.getByText(/Sprints: Not measured/)).toBeTruthy();
+    expect(screen.getByText(/Sprints: Not measured/)).toBeTruthy();
+});
+
+it('labels season shot quality as experimental instead of calibrated xG', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+    summary: {
+      matchCount: 1, avgPossession: 55, avgMyTeamXg: 1.2, avgEnemyXg: 0.8,
+      avgXgDiff: 0.4, avgMyTeamSprints: 0, avgEnemySprints: 0, mostUsedFormation: '4-3-3',
+    },
+    comparison: {
+      latestMatchId: 'a', latestMatchName: 'Latest', previousMatchId: 'b', previousMatchName: 'Previous',
+      possessionDelta: 2, xgDiffDelta: 0.1, myTeamSprintsDelta: 0, enemySprintsDelta: 0,
+    },
+    opponentRollups: [], playerTrendSnapshots: [],
+    trends: [{
+      matchId: 'm1', name: 'Match One', date: '2026-09-14T00:00:00Z',
+      summary: { possession: 55, myTeamXg: 1.2, enemyXg: 0.8 },
+    }],
+  }), { status: 200, headers: { 'Content-Type': 'application/json' } })));
+
+  render(<DashboardPanel onClose={() => undefined} />);
+
+  expect(await screen.findByText(/experimental shot quality for \/ against/i)).toBeTruthy();
+  expect(screen.getByText(/experimental shot quality diff/i)).toBeTruthy();
+  expect(screen.queryByText('xG For / Against')).toBeNull();
+  expect(screen.queryByText('xG Diff')).toBeNull();
+  expect(screen.getByText(/experimental shot quality 1.2 \/ 0.8/i)).toBeTruthy();
 });

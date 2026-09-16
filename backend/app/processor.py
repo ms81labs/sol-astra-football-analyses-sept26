@@ -932,6 +932,23 @@ def _persist_prepared_video_outputs(
         decode_memory = video_result.get("decodeMemoryPolicy")
         if isinstance(decode_memory, dict):
             storage.save_analysis_artifact(match_id, "decode_memory_policy", decode_memory)
+        four_rates = video_result.get("fourRates")
+        if isinstance(four_rates, dict):
+            storage.save_analysis_artifact(match_id, "four_rates", four_rates)
+        projection_policy = video_result.get("projectionPolicy")
+        if isinstance(projection_policy, dict):
+            storage.save_analysis_artifact(match_id, "projection_policy", projection_policy)
+        sampling = video_result.get("sampling")
+        if isinstance(sampling, dict):
+            storage.save_analysis_artifact(match_id, "sampling", sampling)
+        vid_stride = video_result.get("vidStridePolicy")
+        if isinstance(vid_stride, dict):
+            storage.save_analysis_artifact(match_id, "vid_stride_policy", vid_stride)
+        cache_identity = video_result.get("cacheIdentity")
+        if isinstance(cache_identity, dict):
+            storage.save_analysis_artifact(match_id, "cache_identity", cache_identity)
+        elif cache_identity:
+            storage.save_analysis_artifact(match_id, "cache_identity", {"cacheIdentity": cache_identity})
     _upsert_ball_pipeline_stage(ball_pipeline_trace, raw_rows_stage)
     if not raw_rows_saved:
         storage.save_raw_rows(match_id, ball_rows)
