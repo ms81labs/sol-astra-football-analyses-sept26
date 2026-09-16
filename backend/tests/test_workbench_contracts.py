@@ -437,6 +437,18 @@ def test_typed_search_answers_known_and_unanswerable_queries_without_sql() -> No
     unknown = parse_typed_query("how many fouls did the referee invent")
     assert unknown.unanswerable is True
     assert execute_typed_query(events, unknown, match_id="m1") == []
+    rejected = [
+        {**events[0], "reviewStatus": "rejected"},
+        events[1],
+        events[2],
+    ]
+    assert [hit.eventId for hit in execute_typed_query(rejected, query, match_id="m1")] == []
+    rejected_successor = [
+        events[0],
+        {**events[1], "reviewStatus": "rejected"},
+        events[2],
+    ]
+    assert [hit.eventId for hit in execute_typed_query(rejected_successor, query, match_id="m1")] == []
 
 
 def test_assistance_rejects_fabricated_evidence_and_falls_back_without_provider() -> None:

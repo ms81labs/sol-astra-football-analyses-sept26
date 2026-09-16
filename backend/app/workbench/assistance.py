@@ -117,6 +117,8 @@ def execute_typed_query(events: list[dict[str, Any]], query: TypedQuery, *, matc
     hits: list[SearchHit] = []
     ordered = sorted(events, key=lambda item: float(item.get("timestamp") or 0.0))
     for index, event in enumerate(ordered):
+        if _is_rejected_event(event):
+            continue
         if str(event.get("type")) != query.eventFamily:
             continue
         if query.team and event.get("team") not in {query.team, None}:
@@ -151,8 +153,14 @@ def _find_successor(
         if max_gap is not None and stamp - start > max_gap:
             return None
         if str(candidate.get("type")) == successor:
+            if _is_rejected_event(candidate):
+                continue
             return candidate
     return None
+
+
+def _is_rejected_event(event: dict[str, Any]) -> bool:
+    return str(event.get("reviewStatus") or "") == "rejected"
 
 
 def _canonical_event(token: str) -> str:

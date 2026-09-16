@@ -1152,7 +1152,11 @@ class Storage:
                 controlled_frames=controlled,
             )
         ]
-        event_rows = events_as_query_rows(events, match_id=match_id)
+        event_rows = [
+            row
+            for row in events_as_query_rows(events, match_id=match_id)
+            if row.get("reviewStatus") != "rejected"
+        ]
         if claimed_evidence_ids is None:
             claimed = [evidence_id for row in event_rows for evidence_id in row.get("evidenceIds") or []]
         else:
@@ -1249,7 +1253,11 @@ class Storage:
         playlist = [item.get("payload") or item for item in corrections if item.get("kind") == "playlist_item"]
         return assemble_match_package(
             playlist=playlist,
-            events=events_as_query_rows(events, match_id=match_id),
+            events=[
+                row
+                for row in events_as_query_rows(events, match_id=match_id)
+                if row.get("reviewStatus") != "rejected"
+            ],
             metrics=metrics,
             corrections=corrections,
             cost={},

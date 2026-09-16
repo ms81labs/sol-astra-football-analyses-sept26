@@ -941,6 +941,39 @@ async def _test_match_queries_use_stored_events_and_ignore_client_rows(tmp_path:
         assert results[0]["evidenceIds"]
 
 
+def test_match_queries_and_reports_omit_rejected_events(tmp_path: Path):
+    _run(_test_match_queries_and_reports_omit_rejected_events, tmp_path)
+
+
+async def _test_match_queries_and_reports_omit_rejected_events(tmp_path: Path):
+    async with api_client(tmp_path) as (_, client):
+        response = await _upload_tracking_match(client)
+        assert response.status_code == 202
+        match_id = response.json()["matchId"]
+
+        events = await client.get(f"/api/matches/{match_id}/events")
+        assert events.status_code == 200
+        turnover = next(item for item in events.json()["events"] if item["type"] == "turnover")
+        rejected = await client.post(
+            f"/api/matches/{match_id}/corrections",
+            json={"kind": "event_reject", "payload": {"frame": turnover["frameId"], "type": "turnover"}},
+        )
+        assert rejected.status_code == 200
+        assert rejected.json()["saveState"] == "saved"
+
+        turnovers = await client.post(f"/api/matches/{match_id}/queries", json={"query": "turnovers"})
+        assert turnovers.status_code == 200
+        assert all(item["timestamp"] != turnover["timestamp"] for item in turnovers.json()["results"])
+
+        report = await client.post(f"/api/matches/{match_id}/reports", json={})
+        assert report.status_code == 200
+        published = report.json()["factPackage"]["events"]
+        assert all(item.get("reviewStatus") != "rejected" for item in published)
+        assert all(item.get("timestamp") != turnover["timestamp"] for item in published)
+        partitioned = await client.get(f"/api/matches/{match_id}/events/partition")
+        assert any(item.get("timestamp") == turnover["timestamp"] for item in partitioned.json()["retainedCandidates"])
+
+
 def test_match_reports_assemble_from_stored_evidence(tmp_path: Path):
     _run(_test_match_reports_assemble_from_stored_evidence, tmp_path)
 
