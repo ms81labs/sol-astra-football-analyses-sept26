@@ -841,3 +841,150 @@ async def _test_hosted_match_reads_require_session_tenant_not_client_tenant(tmp_
         )
         assert admitted.status_code == 200
         assert admitted.json()["matchId"] == match_id
+
+
+def test_match_evidence_endpoint_returns_bounded_interval_page(tmp_path: Path):
+    _run(_test_match_evidence_endpoint_returns_bounded_interval_page, tmp_path)
+
+
+async def _test_match_evidence_endpoint_returns_bounded_interval_page(tmp_path: Path):
+    async with api_client(tmp_path) as (_, client):
+        response = await _upload_tracking_match(client)
+        assert response.status_code == 202
+        match_id = response.json()["matchId"]
+
+        page = await client.get(f"/api/matches/{match_id}/evidence?intervalStart=0&intervalEnd=1&limit=2")
+        assert page.status_code == 200
+        payload = page.json()
+        assert payload["intervalEndpoint"] == "half_open"
+        assert payload["coordinateSpace"] == "pitch"
+        assert payload["definitionVersion"] == "1"
+        assert len(payload["items"]) == 2
+        assert payload["nextCursor"]
+        assert payload["items"][0]["payload"]["coordinateSpace"] == "pitch"
+        assert payload["items"][0]["schemaVersion"] == "evidence_v1"
+
+        nxt = await client.get(
+            f"/api/matches/{match_id}/evidence?intervalStart=0&intervalEnd=1&cursor={payload['nextCursor']}&limit=10"
+        )
+        assert nxt.status_code == 200
+        assert nxt.json()["items"]
+        assert nxt.json()["items"][0]["evidenceId"] == payload["nextCursor"]
+        assert payload["matchId"] == match_id
+
+
+def test_match_corrections_persist_pending_then_recover(tmp_path: Path):
+    _run(_test_match_corrections_persist_pending_then_recover, tmp_path)
+
+
+async def _test_match_corrections_persist_pending_then_recover(tmp_path: Path):
+    async with api_client(tmp_path) as (_, client):
+        response = await _upload_tracking_match(client)
+        assert response.status_code == 202
+        match_id = response.json()["matchId"]
+
+        pending = await client.post(
+            f"/api/matches/{match_id}/corrections",
+            json={"kind": "playlist_item", "payload": {"timestampStart": 0.0, "timestampEnd": 0.4}, "crashBeforeCommit": True},
+        )
+        assert pending.status_code == 200
+        payload = pending.json()
+        assert payload["saveState"] == "pending"
+        assert payload["rebuild"] == []
+        correction_id = payload["correctionId"]
+
+        listed = await client.get(f"/api/matches/{match_id}/corrections?state=pending")
+        assert listed.status_code == 200
+        assert listed.json()["items"][0]["correctionId"] == correction_id
+
+        recovered = await client.post(f"/api/matches/{match_id}/corrections/{correction_id}/recover")
+        assert recovered.status_code == 200
+        assert recovered.json()["saveState"] == "saved"
+        assert recovered.json()["rebuild"]
+
+        history = await client.get(f"/api/matches/{match_id}/corrections")
+        assert history.status_code == 200
+        assert history.json()["items"][0]["correctionId"] == correction_id
+        assert history.json()["items"][0]["saveState"] == "saved"
+
+
+def test_match_queries_use_stored_events_and_ignore_client_rows(tmp_path: Path):
+    _run(_test_match_queries_use_stored_events_and_ignore_client_rows, tmp_path)
+
+
+async def _test_match_queries_use_stored_events_and_ignore_client_rows(tmp_path: Path):
+    async with api_client(tmp_path) as (_, client):
+        response = await _upload_tracking_match(client)
+        assert response.status_code == 202
+        match_id = response.json()["matchId"]
+
+        injected = await client.post(
+            f"/api/matches/{match_id}/queries",
+            json={
+                "query": "shots",
+                "events": [{"type": "shot", "timestamp": 0.1, "team": "my_team", "id": "forged"}],
+            },
+        )
+        assert injected.status_code == 200
+        assert injected.json()["query"]["unanswerable"] is False
+        assert injected.json()["results"] == []
+
+        turnovers = await client.post(
+            f"/api/matches/{match_id}/queries",
+            json={"query": "turnovers"},
+        )
+        assert turnovers.status_code == 200
+        results = turnovers.json()["results"]
+        assert results
+        assert results[0]["matchId"] == match_id
+        assert results[0]["label"] == "turnover"
+        assert results[0]["evidenceIds"]
+
+
+def test_match_reports_assemble_from_stored_evidence(tmp_path: Path):
+    _run(_test_match_reports_assemble_from_stored_evidence, tmp_path)
+
+
+async def _test_match_reports_assemble_from_stored_evidence(tmp_path: Path):
+    async with api_client(tmp_path) as (_, client):
+        response = await _upload_tracking_match(client)
+        assert response.status_code == 202
+        match_id = response.json()["matchId"]
+
+        events = await client.get(f"/api/matches/{match_id}/events")
+        assert events.status_code == 200
+        evidence_page = await client.get(f"/api/matches/{match_id}/evidence")
+        assert evidence_page.status_code == 200
+        evidence_id = next(
+            item["evidenceId"]
+            for item in evidence_page.json()["items"]
+            if item["payload"].get("kind") == "event"
+        )
+
+        report = await client.post(f"/api/matches/{match_id}/reports", json={})
+        assert report.status_code == 200
+        payload = report.json()
+        assert payload["publication"]["requiresAnalyst"] is True
+        assert payload["factualCheck"]["accepted"] is True
+        assert payload["factPackage"]["template"]["kind"] == "deterministic_template"
+        assert "IDENTITY_DISCONTINUITY" in {
+            code
+            for metric in payload["factPackage"]["metrics"]
+            for code in metric.get("reasonCodes") or []
+        }
+
+        forged = await client.post(
+            f"/api/matches/{match_id}/reports",
+            json={"claimedEvidenceIds": ["forged-evidence"]},
+        )
+        assert forged.status_code == 200
+        assert forged.json()["factualCheck"]["accepted"] is False
+        assert "FABRICATED_EVIDENCE" in forged.json()["factualCheck"]["reasonCodes"]
+
+        grounded = await client.post(
+            f"/api/matches/{match_id}/reports",
+            json={"claimedEvidenceIds": [evidence_id]},
+        )
+        assert grounded.status_code == 200
+        assert grounded.json()["factualCheck"]["accepted"] is True
+        assert evidence_id in grounded.json()["evidenceSelection"]["evidenceIds"]

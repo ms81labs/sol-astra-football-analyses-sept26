@@ -5,6 +5,7 @@ import {
   buildMatchReportExportUrl,
   buildMatchVideoUrl,
   createMatchUpload,
+  fetchMatchEvidence,
   fetchMatchWorkspace,
   mapBackendEventsToTags,
   updateMatchConfig,
@@ -280,6 +281,27 @@ describe('fetchMatchWorkspace', () => {
           truthGateReasons: ['Need at least 3 event families'],
           artifactPresence: { frames: true, analytics: true, events: true, rawRows: true },
         }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          matchId: 'match-1',
+          items: [
+            {
+              evidenceId: 'frame:0',
+              schemaVersion: 'evidence_v1',
+              observationSource: 'observed',
+              reviewStatus: 'unreviewed',
+              intervalStart: 0,
+              intervalEnd: 0.2,
+              payload: { kind: 'frame', coordinateSpace: 'pitch', definitionVersion: '1' },
+            },
+          ],
+          nextCursor: null,
+          intervalEndpoint: 'half_open',
+          coordinateSpace: 'pitch',
+          definitionVersion: '1',
+        }),
       });
     vi.stubGlobal('fetch', fetchMock);
 
@@ -297,9 +319,13 @@ describe('fetchMatchWorkspace', () => {
     expect(workspace.analytics.shots[0].xg).toBe(0.42);
     expect(workspace.events[0].type).toBe('turnover');
     expect(workspace.benchmark?.truthGateReasons).toEqual(['Need at least 3 event families']);
-    expect(fetchMock).toHaveBeenCalledTimes(5);
+    expect(workspace.evidence?.coordinateSpace).toBe('pitch');
+    expect(workspace.evidence?.definitionVersion).toBe('1');
+    expect(fetchMock).toHaveBeenCalledTimes(6);
     expect(String(fetchMock.mock.calls[1][0])).toContain('/api/matches/match-1/frames?limit=240');
+    expect(String(fetchMock.mock.calls[5][0])).toContain('/api/matches/match-1/evidence?limit=100');
     expect(fetchMock.mock.calls.map(([, init]) => (init as RequestInit).signal)).toEqual([
+      controller.signal,
       controller.signal,
       controller.signal,
       controller.signal,
@@ -308,6 +334,31 @@ describe('fetchMatchWorkspace', () => {
     ]);
     controller.abort();
     expect(fetchMock.mock.calls.every(([, init]) => (init as RequestInit).signal?.aborted)).toBe(true);
+  });
+});
+
+describe('fetchMatchEvidence', () => {
+  it('queries a bounded interval page from the production match route', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        matchId: 'match-1',
+        items: [{ evidenceId: 'frame:0', schemaVersion: 'evidence_v1', payload: { coordinateSpace: 'pitch' } }],
+        nextCursor: 'frame:1',
+        intervalEndpoint: 'half_open',
+        coordinateSpace: 'pitch',
+        definitionVersion: '1',
+      }),
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    const page = await fetchMatchEvidence('match-1', { intervalStart: 0, intervalEnd: 1, limit: 2 });
+
+    expect(page.coordinateSpace).toBe('pitch');
+    expect(page.nextCursor).toBe('frame:1');
+    expect(String(fetchMock.mock.calls[0][0])).toContain('/api/matches/match-1/evidence?');
+    expect(String(fetchMock.mock.calls[0][0])).toContain('intervalStart=0');
+    expect(String(fetchMock.mock.calls[0][0])).toContain('limit=2');
   });
 });
 

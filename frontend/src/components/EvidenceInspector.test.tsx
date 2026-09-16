@@ -36,6 +36,20 @@ it('keeps observation source separate from review status', () => {
   expect(screen.getByText(/does not convert an inferred location/)).toBeTruthy();
 });
 
+it('shows coordinate space and definition version from the evidence page', () => {
+  render(
+    <EvidenceInspector
+      frame={frame}
+      coordinateSpace="pitch"
+      definitionVersion="1"
+    />,
+  );
+  expect(screen.getByText(/coordinate space/i)).toBeTruthy();
+  expect(screen.getByText('pitch')).toBeTruthy();
+  expect(screen.getByText(/definition version/i)).toBeTruthy();
+  expect(screen.getByText('1')).toBeTruthy();
+});
+
 it('keeps detector score, calibrated probability and confidence interval as distinct quantities', () => {
   render(
     <EvidenceInspector

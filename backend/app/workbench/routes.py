@@ -29,7 +29,7 @@ from .package import assemble_match_package
 from .privacy import residency_claim
 from .reports import assemble_report
 from .research import execute_track, research_lane
-from .review import CorrectionLog, new_correction, playlist_export_interval
+from .review import CorrectionLog, correction_api_payload, new_correction, playlist_export_interval
 from .rights import rights_register
 from .risks import risk_register
 from .rollback import rollback_release
@@ -131,28 +131,6 @@ class PlayerBody(BaseModel):
     identityContinuous: bool = False
 
 
-_CORRECTION_INVALIDATION = {
-    "team_mapping": "team_mapping",
-    "track_split": "track_edit",
-    "track_join": "track_edit",
-    "event_reject": "ownership",
-    "event_accept": "ownership",
-    "ownership": "ownership",
-    "calibration": "calibration",
-    "playlist_item": "report",
-}
-
-
-def _correction_response(saved) -> dict:
-    payload = jsonable(saved)
-    if saved.saveState == "saved":
-        change = _CORRECTION_INVALIDATION.get(saved.kind, "report")
-        payload["rebuild"] = _job_ledger.invalidate_for(change)  # type: ignore[arg-type]
-    else:
-        payload["rebuild"] = []
-    return payload
-
-
 def create_workbench_router(storage_root: Path) -> APIRouter:
     store = WorkbenchStore(storage_root)
     router = APIRouter(prefix="/api/workbench", tags=["workbench"])
@@ -184,7 +162,7 @@ def create_workbench_router(storage_root: Path) -> APIRouter:
         )
         if saved.saveState == "saved":
             store.append_correction(saved)
-        return _correction_response(saved)
+        return correction_api_payload(saved)
 
     @router.post("/matches/{match_id}/corrections/{correction_id}/recover")
     def recover_correction(match_id: str, correction_id: str) -> dict:
@@ -192,13 +170,13 @@ def create_workbench_router(storage_root: Path) -> APIRouter:
         if saved.matchId != match_id:
             raise HTTPException(status_code=404, detail="Correction not found")
         store.append_correction(saved)
-        return _correction_response(saved)
+        return correction_api_payload(saved)
 
     @router.post("/matches/{match_id}/corrections/{correction_id}/undo")
     def undo_correction(match_id: str, correction_id: str) -> dict:
         undone = _correction_log.undo(correction_id, author="analyst")
         store.append_correction(undone)
-        return _correction_response(undone)
+        return correction_api_payload(undone)
 
     @router.get("/matches/{match_id}/corrections")
     def list_corrections(match_id: str, state: str | None = None) -> dict:

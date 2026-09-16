@@ -74,11 +74,12 @@ export async function fetchWorkbenchDossier(): Promise<WorkbenchDossier> {
   return response.json() as Promise<WorkbenchDossier>;
 }
 
-export async function searchWorkbenchEvents(query: string, matchId: string, events: Array<Record<string, unknown>>) {
-  const response = await fetch('/api/workbench/search', {
+export async function searchWorkbenchEvents(query: string, matchId: string, events: Array<Record<string, unknown>> = []) {
+  void events;
+  const response = await fetch(`/api/matches/${matchId}/queries`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query, matchId, events }),
+    body: JSON.stringify({ query }),
   });
   if (!response.ok) {
     throw new Error(`Failed to run typed search: ${response.status}`);
@@ -93,7 +94,7 @@ export async function submitMatchCorrection(
   matchId: string,
   body: { kind: string; payload?: Record<string, unknown>; expectedVersion?: number; author?: string },
 ) {
-  const response = await fetch(`/api/workbench/matches/${matchId}/corrections`, {
+  const response = await fetch(`/api/matches/${matchId}/corrections`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -105,7 +106,7 @@ export async function submitMatchCorrection(
 }
 
 export async function fetchPendingCorrections(matchId: string) {
-  const response = await fetch(`/api/workbench/matches/${matchId}/corrections?state=pending`);
+  const response = await fetch(`/api/matches/${matchId}/corrections?state=pending`);
   if (!response.ok) {
     throw new Error(`Failed to load pending corrections: ${response.status}`);
   }
@@ -113,7 +114,7 @@ export async function fetchPendingCorrections(matchId: string) {
 }
 
 export async function recoverMatchCorrection(matchId: string, correctionId: string) {
-  const response = await fetch(`/api/workbench/matches/${matchId}/corrections/${correctionId}/recover`, {
+  const response = await fetch(`/api/matches/${matchId}/corrections/${correctionId}/recover`, {
     method: 'POST',
   });
   if (!response.ok) {
@@ -123,7 +124,7 @@ export async function recoverMatchCorrection(matchId: string, correctionId: stri
 }
 
 export async function undoMatchCorrection(matchId: string, correctionId: string) {
-  const response = await fetch(`/api/workbench/matches/${matchId}/corrections/${correctionId}/undo`, {
+  const response = await fetch(`/api/matches/${matchId}/corrections/${correctionId}/undo`, {
     method: 'POST',
   });
   if (!response.ok) {

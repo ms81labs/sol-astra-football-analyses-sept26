@@ -49,6 +49,9 @@ class EvidencePage(StrictModel):
     items: list[EvidenceRecord] = Field(default_factory=list)
     nextCursor: str | None = None
     intervalEndpoint: str = "half_open"
+    coordinateSpace: str = "pitch"
+    definitionVersion: str = DEFINITION_VERSION
+    matchId: str | None = None
 
 
 class EvidenceStore:
@@ -117,6 +120,104 @@ class EvidenceStore:
         page_items = records[:limit]
         next_cursor = records[limit].evidenceId if len(records) > limit else None
         return EvidencePage(items=page_items, nextCursor=next_cursor)
+
+
+def _dump_player(player: Any) -> dict[str, Any]:
+    if hasattr(player, "model_dump"):
+        return player.model_dump(mode="json")
+    return {
+        "id": getattr(player, "id", None),
+        "x": getattr(player, "x", None),
+        "y": getattr(player, "y", None),
+        "confidence": getattr(player, "confidence", 0.0),
+    }
+
+
+def _half_open_end(start: float, end: float | None) -> float:
+    if end is None or end <= start:
+        return start + 1e-6
+    return end
+
+
+def records_from_match(
+    frames: list[Any],
+    events: list[Any],
+    *,
+    interval_start: float | None = None,
+    interval_end: float | None = None,
+) -> list[EvidenceRecord]:
+    start = float("-inf") if interval_start is None else interval_start
+    end = float("inf") if interval_end is None else interval_end
+    records: list[EvidenceRecord] = []
+    ordered = list(frames)
+    for index, frame in enumerate(ordered):
+        stamp = float(frame.timestamp)
+        following = float(ordered[index + 1].timestamp) if index + 1 < len(ordered) else None
+        record = EvidenceRecord(
+            evidenceId=f"frame:{frame.frameId}",
+            observationSource="observed" if frame.ball is not None else "unknown",
+            reviewStatus="unreviewed",
+            intervalStart=stamp,
+            intervalEnd=_half_open_end(stamp, following),
+            payload={
+                "kind": "frame",
+                "frameId": frame.frameId,
+                "coordinateSpace": "pitch",
+                "definitionVersion": DEFINITION_VERSION,
+                "ball": frame.ball.model_dump(mode="json") if frame.ball is not None else None,
+                "myTeam": [_dump_player(player) for player in frame.myTeam],
+                "enemies": [_dump_player(player) for player in frame.enemies],
+            },
+        )
+        if record.intervalStart < end and record.intervalEnd > start:
+            records.append(record)
+    for event in events:
+        stamp = float(event.intervalStart if event.intervalStart is not None else event.timestamp)
+        record = EvidenceRecord(
+            evidenceId=f"event:{event.frameId}:{event.type}:{event.timestamp}",
+            observationSource="inferred",
+            reviewStatus=event.reviewStatus,
+            intervalStart=stamp,
+            intervalEnd=_half_open_end(stamp, event.intervalEnd),
+            payload={
+                "kind": "event",
+                "coordinateSpace": "pitch",
+                "definitionVersion": DEFINITION_VERSION,
+                "event": event.model_dump(mode="json"),
+            },
+        )
+        if record.intervalStart < end and record.intervalEnd > start:
+            records.append(record)
+    return records
+
+
+def query_match_evidence(
+    frames: list[Any],
+    events: list[Any],
+    *,
+    interval_start: float | None = None,
+    interval_end: float | None = None,
+    cursor: str | None = None,
+    limit: int = 100,
+    match_id: str | None = None,
+) -> EvidencePage:
+    store = EvidenceStore()
+    for record in records_from_match(frames, events, interval_start=interval_start, interval_end=interval_end):
+        store.put(record)
+    size = min(max(int(limit), 1), 240)
+    page = store.query(
+        interval_start=interval_start,
+        interval_end=interval_end,
+        cursor=cursor,
+        limit=size,
+    )
+    return page.model_copy(
+        update={
+            "coordinateSpace": "pitch",
+            "definitionVersion": DEFINITION_VERSION,
+            "matchId": match_id,
+        }
+    )
 
 
 def metric_dictionary() -> dict[str, dict[str, str]]:

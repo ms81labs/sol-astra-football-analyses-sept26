@@ -33,6 +33,25 @@ interface CreateMatchUploadResponse {
   status: string;
 }
 
+export interface EvidenceRecord {
+  evidenceId: string;
+  schemaVersion: string;
+  observationSource: string;
+  reviewStatus: string;
+  intervalStart: number;
+  intervalEnd: number;
+  payload: Record<string, unknown>;
+}
+
+export interface EvidencePage {
+  matchId?: string | null;
+  items: EvidenceRecord[];
+  nextCursor: string | null;
+  intervalEndpoint: string;
+  coordinateSpace: string;
+  definitionVersion: string;
+}
+
 interface MatchWorkspace {
   detail: MatchRecord;
   frames: FrameData[];
@@ -41,6 +60,7 @@ interface MatchWorkspace {
   benchmark: MatchBenchmarkSummary | null;
   frameCount: number;
   nextCursor: string | null;
+  evidence: EvidencePage | null;
 }
 
 export const WORKSPACE_FRAME_LIMIT = 240;
@@ -66,6 +86,35 @@ export async function fetchMatchFrames(
     frameCount: payload.frameCount ?? frames.length,
     nextCursor: payload.nextCursor ?? null,
   };
+}
+
+export async function fetchMatchEvidence(
+  matchId: string,
+  options: {
+    intervalStart?: number;
+    intervalEnd?: number;
+    cursor?: string;
+    limit?: number;
+    signal?: AbortSignal;
+  } = {},
+): Promise<EvidencePage> {
+  const params = new URLSearchParams();
+  if (options.intervalStart != null) params.set('intervalStart', String(options.intervalStart));
+  if (options.intervalEnd != null) params.set('intervalEnd', String(options.intervalEnd));
+  if (options.cursor) params.set('cursor', options.cursor);
+  params.set('limit', String(options.limit ?? 100));
+  const response = await fetch(`/api/matches/${matchId}/evidence?${params.toString()}`, { signal: options.signal });
+  if (response.status === 404) {
+    return {
+      matchId,
+      items: [],
+      nextCursor: null,
+      intervalEndpoint: 'half_open',
+      coordinateSpace: 'pitch',
+      definitionVersion: '1',
+    };
+  }
+  return parseJson<EvidencePage>(response);
 }
 
 async function parseJson<T>(response: Response): Promise<T> {
@@ -185,7 +234,7 @@ export async function updateMatchConfig(matchId: string, payload: Record<string,
 }
 
 export async function fetchMatchWorkspace(matchId: string, signal?: AbortSignal): Promise<MatchWorkspace> {
-  const [detail, framesPayload, analyticsPayload, eventsPayload, benchmark] = await Promise.all([
+  const [detail, framesPayload, analyticsPayload, eventsPayload, benchmark, evidence] = await Promise.all([
     fetch(`/api/matches/${matchId}`, { signal }).then((response) => parseJson<MatchRecord>(response)),
     fetchMatchFrames(matchId, { limit: WORKSPACE_FRAME_LIMIT, signal }),
     fetch(`/api/matches/${matchId}/analytics`, { signal }).then((response) =>
@@ -201,6 +250,7 @@ export async function fetchMatchWorkspace(matchId: string, signal?: AbortSignal)
       parseJson<{ matchId: string; events: BackendEvent[] }>(response),
     ),
     fetchMatchBenchmark(matchId, signal),
+    fetchMatchEvidence(matchId, { limit: 100, signal }),
   ]);
 
   return {
@@ -216,6 +266,7 @@ export async function fetchMatchWorkspace(matchId: string, signal?: AbortSignal)
     },
     events: eventsPayload.events,
     benchmark,
+    evidence,
   };
 }
 

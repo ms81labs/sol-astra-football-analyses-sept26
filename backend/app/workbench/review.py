@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import threading
 import uuid
 from datetime import datetime, timezone
@@ -10,7 +9,8 @@ from typing import Any, Literal
 
 from pydantic import Field
 
-from .contracts import StrictModel
+from .contracts import StrictModel, jsonable
+from .cache import REBUILD_FOR
 
 EditKind = Literal[
     "team_mapping",
@@ -22,6 +22,17 @@ EditKind = Literal[
     "playlist_item",
 ]
 SaveState = Literal["saved", "pending", "conflicted"]
+
+CORRECTION_INVALIDATION: dict[str, str] = {
+    "team_mapping": "team_mapping",
+    "track_split": "track_edit",
+    "track_join": "track_edit",
+    "event_reject": "ownership",
+    "event_accept": "ownership",
+    "ownership": "ownership",
+    "calibration": "calibration",
+    "playlist_item": "report",
+}
 
 
 class Correction(StrictModel):
@@ -107,6 +118,25 @@ class CorrectionLog:
     def history(self, match_id: str) -> list[Correction]:
         return [item for item in self._items if item.matchId == match_id]
 
+    def dump(self) -> dict[str, Any]:
+        with self._lock:
+            return {
+                "items": [item.model_dump(mode="json") for item in self._items],
+                "pending": [item.model_dump(mode="json") for item in self._pending.values()],
+            }
+
+    @classmethod
+    def from_payload(cls, payload: dict[str, Any] | None) -> "CorrectionLog":
+        log = cls()
+        if not payload:
+            return log
+        for item in payload.get("items") or []:
+            log._items.append(Correction.model_validate(item))
+        for item in payload.get("pending") or []:
+            pending = Correction.model_validate(item)
+            log._pending[pending.correctionId] = pending
+        return log
+
     def _require(self, correction_id: str) -> Correction:
         for item in self._items:
             if item.correctionId == correction_id:
@@ -187,3 +217,13 @@ def playlist_export_interval(item: dict[str, Any], source_fps: float) -> dict[st
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def correction_api_payload(saved: Correction) -> dict[str, Any]:
+    payload = jsonable(saved)
+    if saved.saveState == "saved":
+        change = CORRECTION_INVALIDATION.get(saved.kind, "report")
+        payload["rebuild"] = list(REBUILD_FOR[change])
+    else:
+        payload["rebuild"] = []
+    return payload

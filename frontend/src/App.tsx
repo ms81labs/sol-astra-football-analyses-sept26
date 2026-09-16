@@ -63,6 +63,7 @@ interface MatchEntry {
   shotAnalytics: ShotMarker[];
   backendEvents: BackendEvent[];
   baseEvents: EventTag[];
+  evidence: Awaited<ReturnType<typeof fetchMatchWorkspace>>['evidence'];
 }
 
 export function formatJobStatus(job: ProcessingJob): string {
@@ -111,6 +112,7 @@ function workspaceToEntry(workspace: Awaited<ReturnType<typeof fetchMatchWorkspa
     shotAnalytics: workspace.analytics.shots,
     backendEvents: workspace.events,
     baseEvents: mapBackendEventsToTags(workspace.events, workspace.frames),
+    evidence: workspace.evidence,
   };
 }
 
@@ -1114,6 +1116,9 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
               frame={currentFrameRecord}
               cameraProfile={activeMatch?.detail.config?.cameraProfile ?? uploadCameraProfile}
               reviewStatus={currentEvent?.reviewStatus ?? 'unreviewed'}
+              configVersion={activeMatch?.evidence?.items[0]?.schemaVersion ?? 'evidence_v1'}
+              coordinateSpace={activeMatch?.evidence?.coordinateSpace}
+              definitionVersion={activeMatch?.evidence?.definitionVersion}
               {...splitScores({
                 detectorScore: currentFrameRecord?.Ball?.conf ?? null,
                 calibratedProbability: null,

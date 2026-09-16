@@ -945,6 +945,42 @@ def test_evidence_interval_query_is_half_open_and_cursor_bounded() -> None:
     assert INTERVAL_ENDPOINT == "half_open"
 
 
+def test_query_match_evidence_pages_interval_with_coordinate_version() -> None:
+    from backend.app.schemas import BallData, DetectedEvent, FrameData, PlayerData
+    from backend.app.workbench.evidence import query_match_evidence
+
+    frames = [
+        FrameData(
+            frameId=0,
+            timestamp=0.0,
+            ball=BallData(x=10, y=20, confidence=0.9),
+            myTeam=[PlayerData(id=7, x=8, y=20, confidence=0.9)],
+        ),
+        FrameData(frameId=1, timestamp=0.2, ball=BallData(x=12, y=20, confidence=0.9)),
+        FrameData(frameId=2, timestamp=1.0),
+    ]
+    events = [
+        DetectedEvent(type="pass", frameId=1, timestamp=0.2, team="my_team", description="Pass completed"),
+    ]
+    page = query_match_evidence(frames, events, interval_start=0.0, interval_end=0.5, limit=10)
+    assert page.intervalEndpoint == "half_open"
+    assert page.coordinateSpace == "pitch"
+    assert page.definitionVersion == "1"
+    kinds = {item.payload.get("kind") for item in page.items}
+    assert kinds == {"frame", "event"}
+    assert all(item.schemaVersion == "evidence_v1" for item in page.items)
+    assert all(item.payload.get("coordinateSpace") == "pitch" for item in page.items)
+    assert all(item.intervalStart < 0.5 and item.intervalEnd > 0.0 for item in page.items)
+    bounded = query_match_evidence(frames, events, interval_start=0.0, interval_end=2.0, limit=2)
+    assert len(bounded.items) == 2
+    assert bounded.nextCursor is not None
+    nxt = query_match_evidence(frames, events, interval_start=0.0, interval_end=2.0, cursor=bounded.nextCursor, limit=10)
+    assert nxt.items
+    assert nxt.items[0].evidenceId == bounded.nextCursor
+    outside = query_match_evidence(frames, events, interval_start=5.0, interval_end=6.0, limit=10)
+    assert outside.items == []
+
+
 def test_feature_flags_keep_experimental_metrics_and_native_code_shadowed() -> None:
     from backend.app.workbench.flags import feature_enabled
 

@@ -925,6 +925,153 @@ class Storage:
             limit=limit,
         )
 
+    def load_evidence_page(
+        self,
+        match_id: str,
+        *,
+        interval_start: float | None = None,
+        interval_end: float | None = None,
+        cursor: str | None = None,
+        limit: int = 100,
+    ) -> dict:
+        from .workbench.evidence import query_match_evidence
+
+        frames = self.load_frames(match_id)
+        try:
+            events = self.load_events(match_id)
+        except FileNotFoundError:
+            events = []
+        page = query_match_evidence(
+            frames,
+            events,
+            interval_start=interval_start,
+            interval_end=interval_end,
+            cursor=cursor,
+            limit=limit,
+            match_id=match_id,
+        )
+        return page.model_dump(mode="json")
+
+    def _corrections_path(self, match_id: str) -> Path:
+        self.get_match(match_id)
+        path = self._match_dir(match_id) / "corrections.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def _load_correction_log(self, match_id: str):
+        from .workbench.review import CorrectionLog
+
+        path = self._corrections_path(match_id)
+        if not path.exists():
+            return CorrectionLog()
+        return CorrectionLog.from_payload(self._read_json(path))
+
+    def _save_correction_log(self, match_id: str, log) -> None:
+        self._write_json(self._corrections_path(match_id), log.dump())
+
+    def submit_correction(
+        self,
+        match_id: str,
+        *,
+        kind: str,
+        payload: dict | None = None,
+        author: str = "analyst",
+        expected_version: int | None = None,
+        crash_before_commit: bool = False,
+    ):
+        from .workbench.review import new_correction
+
+        with self._annotation_issue_lock:
+            log = self._load_correction_log(match_id)
+            saved = log.submit(
+                new_correction(match_id, kind, payload or {}, author=author),  # type: ignore[arg-type]
+                crash_before_commit=crash_before_commit,
+                expected_version=expected_version,
+            )
+            self._save_correction_log(match_id, log)
+            return saved
+
+    def recover_correction(self, match_id: str, correction_id: str):
+        with self._annotation_issue_lock:
+            log = self._load_correction_log(match_id)
+            saved = log.recover(correction_id)
+            if saved.matchId != match_id:
+                raise KeyError(correction_id)
+            self._save_correction_log(match_id, log)
+            return saved
+
+    def undo_correction(self, match_id: str, correction_id: str, *, author: str = "analyst"):
+        with self._annotation_issue_lock:
+            log = self._load_correction_log(match_id)
+            saved = log.undo(correction_id, author=author)
+            self._save_correction_log(match_id, log)
+            return saved
+
+    def list_corrections(self, match_id: str, *, state: str | None = None) -> list[dict]:
+        log = self._load_correction_log(match_id)
+        items = log.pending(match_id) if state == "pending" else log.history(match_id)
+        return [item.model_dump(mode="json") for item in items]
+
+    def query_match_events(self, match_id: str, query_text: str) -> dict:
+        from .workbench.assistance import events_as_query_rows, execute_typed_query, parse_typed_query
+
+        try:
+            events = self.load_events(match_id)
+        except FileNotFoundError:
+            events = []
+        query = parse_typed_query(query_text)
+        hits = execute_typed_query(events_as_query_rows(events, match_id=match_id), query, match_id=match_id)
+        return {
+            "query": query.model_dump(mode="json"),
+            "results": [hit.model_dump(mode="json") for hit in hits],
+        }
+
+    def assemble_match_report(
+        self,
+        match_id: str,
+        *,
+        claimed_evidence_ids: list[str] | None = None,
+        narrative: dict | None = None,
+    ) -> dict:
+        from .workbench.assistance import events_as_query_rows
+        from .workbench.evidence import records_from_match, summarize_legacy_match
+        from .workbench.reports import assemble_report
+
+        summary, _, _, _ = self.load_analytics(match_id)
+        try:
+            events = self.load_events(match_id)
+        except FileNotFoundError:
+            events = []
+        frames = self.load_frames(match_id)
+        records = records_from_match(frames, events)
+        known = {record.evidenceId for record in records}
+        controlled = sum(
+            1
+            for frame in frames
+            if frame.possession is not None and frame.possession.team in {"my_team", "enemy"}
+        )
+        metrics = [
+            metric.model_dump(mode="json")
+            for metric in summarize_legacy_match(
+                summary.model_dump(mode="json"),
+                identity_continuous=False,
+                calibration_accepted=False,
+                controlled_frames=controlled,
+            )
+        ]
+        event_rows = events_as_query_rows(events, match_id=match_id)
+        if claimed_evidence_ids is None:
+            claimed = [evidence_id for row in event_rows for evidence_id in row.get("evidenceIds") or []]
+        else:
+            claimed = list(claimed_evidence_ids)
+        return assemble_report(
+            metrics=metrics,
+            events=event_rows,
+            claimed_evidence_ids=claimed,
+            known_evidence_ids=known,
+            narrative=narrative,
+        )
+
     def load_raw_rows(self, match_id: str) -> list[dict]:
         payload = self._read_json(self._match_dir(match_id) / "raw_rows.json")
         return [dict(item) for item in payload]

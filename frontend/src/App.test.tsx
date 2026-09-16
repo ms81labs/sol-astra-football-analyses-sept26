@@ -50,6 +50,7 @@ function workspace(id: string, name: string, eventLabel?: string, possession = 5
       ? [{ type: 'turnover', frameId: 0, timestamp: 0, description: eventLabel }]
       : [],
     benchmark: null,
+    evidence: null,
   };
 }
 
@@ -120,6 +121,7 @@ function reviewWorkspace(): Workspace {
     analytics: { summary: reviewStats, formationTimeline: [], shots: [], ballAssignments: [] },
     events: [],
     benchmark: null,
+    evidence: null,
   };
 }
 
@@ -526,13 +528,13 @@ describe('App upload polling', () => {
         target: { files: [new File(['[]'], 'match.json', { type: 'application/json' })] },
       });
     });
-    expect(requests).toHaveLength(5);
+    expect(requests).toHaveLength(6);
 
     await act(async () => requests[0].reject(new Error('Workspace unavailable')));
 
     expect(screen.getAllByText('Workspace unavailable').length).toBeGreaterThan(0);
     expect(input.disabled).toBe(false);
-    expect(requests.slice(1).map(({ signal }) => signal.aborted)).toEqual([true, true, true, true]);
+    expect(requests.slice(1).map(({ signal }) => signal.aborted)).toEqual([true, true, true, true, true]);
   });
 
   it('aborts terminal-poll workspace hydration on unmount', async () => {

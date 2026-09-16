@@ -52,6 +52,7 @@ from .schemas import (
 from .semantic_search import search_matches_by_tactical_themes, search_bundles_by_tactical_themes, detect_themes_for_match
 from .storage import AdmissionOutcomeUncertainError, Storage, UploadTooLargeError
 from .workbench.access import object_access_decision
+from .workbench.review import correction_api_payload
 from .workbench.routes import create_workbench_router
 
 
@@ -981,6 +982,25 @@ def create_app(
         )
         return response.model_dump(mode="json")
 
+    @app.get("/api/matches/{match_id}/evidence")
+    def get_match_evidence(
+        match: MatchRecord = Depends(require_match),
+        intervalStart: float | None = None,
+        intervalEnd: float | None = None,
+        cursor: str | None = None,
+        limit: int = 100,
+    ) -> dict:
+        try:
+            return storage.load_evidence_page(
+                match.id,
+                interval_start=intervalStart,
+                interval_end=intervalEnd,
+                cursor=cursor,
+                limit=limit,
+            )
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="Evidence not ready") from exc
+
     @app.get("/api/matches/{match_id}/analytics")
     def get_analytics(match: MatchRecord = Depends(require_match)) -> dict:
         try:
@@ -995,6 +1015,63 @@ def create_app(
             shots=shots,
         )
         return response.model_dump(mode="json")
+
+    @app.post("/api/matches/{match_id}/corrections")
+    def post_match_correction(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+        body = payload or {}
+        try:
+            saved = storage.submit_correction(
+                match.id,
+                kind=str(body.get("kind") or ""),
+                payload=dict(body.get("payload") or {}),
+                author=str(body.get("author") or "analyst"),
+                expected_version=body.get("expectedVersion"),
+                crash_before_commit=bool(body.get("crashBeforeCommit")),
+            )
+        except ValidationError as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=exc.errors(include_context=False, include_input=False),
+            ) from exc
+        return correction_api_payload(saved)
+
+    @app.post("/api/matches/{match_id}/corrections/{correction_id}/recover")
+    def recover_match_correction(correction_id: str, match: MatchRecord = Depends(require_match)) -> dict:
+        try:
+            saved = storage.recover_correction(match.id, correction_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Correction not found") from exc
+        return correction_api_payload(saved)
+
+    @app.post("/api/matches/{match_id}/corrections/{correction_id}/undo")
+    def undo_match_correction(correction_id: str, match: MatchRecord = Depends(require_match)) -> dict:
+        try:
+            saved = storage.undo_correction(match.id, correction_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Correction not found") from exc
+        return correction_api_payload(saved)
+
+    @app.get("/api/matches/{match_id}/corrections")
+    def list_match_corrections(match: MatchRecord = Depends(require_match), state: str | None = None) -> dict:
+        return {"items": storage.list_corrections(match.id, state=state)}
+
+    @app.post("/api/matches/{match_id}/queries")
+    def post_match_query(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+        body = payload or {}
+        return storage.query_match_events(match.id, str(body.get("query") or ""))
+
+    @app.post("/api/matches/{match_id}/reports")
+    def post_match_report(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+        body = payload or {}
+        claimed = body.get("claimedEvidenceIds")
+        try:
+            return storage.assemble_match_report(
+                match.id,
+                claimed_evidence_ids=list(claimed) if claimed is not None else None,
+                narrative=body.get("narrative"),
+            )
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="Analytics not ready") from exc
 
     @app.get("/api/matches/{match_id}/events")
     def get_events(match: MatchRecord = Depends(require_match)) -> dict:

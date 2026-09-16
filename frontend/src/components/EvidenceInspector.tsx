@@ -7,6 +7,8 @@ interface EvidenceInspectorProps {
   reviewStatus?: 'unreviewed' | 'accepted' | 'rejected' | 'corrected';
   modelHash?: string;
   configVersion?: string;
+  coordinateSpace?: string;
+  definitionVersion?: string;
   uncertainty?: string;
   detectorScore?: number | null;
   calibratedProbability?: number | null;
@@ -26,6 +28,8 @@ export default function EvidenceInspector({
   reviewStatus = 'unreviewed',
   modelHash,
   configVersion,
+  coordinateSpace,
+  definitionVersion,
   uncertainty,
   detectorScore,
   calibratedProbability,
@@ -45,6 +49,8 @@ export default function EvidenceInspector({
       {cameraProfile && <p>Camera profile: <span className="font-mono">{cameraProfile}</span></p>}
       {modelHash && <p>Model: <span className="font-mono">{modelHash}</span></p>}
       {configVersion && <p>Config: <span className="font-mono">{configVersion}</span></p>}
+      {coordinateSpace && <p>Coordinate space: <span className="font-mono">{coordinateSpace}</span></p>}
+      {definitionVersion && <p>Definition version: <span className="font-mono">{definitionVersion}</span></p>}
       {uncertainty && <p>Uncertainty: <span className="font-mono">{uncertainty}</span></p>}
       {detectorScore != null && (
         <p>Detector score: <span className="font-mono">{detectorScore}</span></p>

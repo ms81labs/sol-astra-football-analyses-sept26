@@ -169,6 +169,17 @@ def _canonical_event(token: str) -> str:
     return mapping.get(token.lower(), token.lower())
 
 
+def events_as_query_rows(events: list[Any], *, match_id: str) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for index, event in enumerate(events):
+        payload = event.model_dump(mode="json") if hasattr(event, "model_dump") else dict(event)
+        evidence_id = f"event:{payload.get('frameId')}:{payload.get('type')}:{payload.get('timestamp')}"
+        payload["id"] = payload.get("id") or f"{match_id}:{index}"
+        payload["evidenceIds"] = list(payload.get("evidenceIds") or [evidence_id])
+        rows.append(payload)
+    return rows
+
+
 def template_report(metrics: list[dict[str, Any]], events: list[dict[str, Any]]) -> dict[str, Any]:
     available = [metric for metric in metrics if metric.get("availability") == "available"]
     unknown = [metric for metric in metrics if metric.get("availability") != "available"]

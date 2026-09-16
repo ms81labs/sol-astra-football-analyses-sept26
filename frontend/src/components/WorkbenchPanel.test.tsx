@@ -9,7 +9,7 @@ afterEach(() => {
 });
 
 it('renders independently visible capability statuses from the dossier', async () => {
-  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo) => {
+  const fetchMock = vi.fn(async (input: RequestInfo) => {
     const url = String(input);
     if (url.endsWith('/api/workbench/dossier')) {
       return new Response(JSON.stringify({
@@ -36,7 +36,8 @@ it('renders independently visible capability statuses from the dossier', async (
       query: { unanswerable: true, reason: 'refused_code_execution', eventFamily: 'pass' },
       results: [],
     }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-  }));
+  });
+  vi.stubGlobal('fetch', fetchMock);
 
   render(<WorkbenchPanel onClose={() => undefined} matchId="m1" events={[]} />);
 
@@ -49,6 +50,9 @@ it('renders independently visible capability statuses from the dossier', async (
 
   await fireEvent.click(screen.getByRole('button', { name: 'Search evidence' }));
   expect(await screen.findByText(/Unanswerable/)).toBeTruthy();
+  const queryCall = fetchMock.mock.calls.find(([url, init]) => String(url).includes('/api/matches/m1/queries') && init?.method === 'POST');
+  expect(queryCall).toBeTruthy();
+  expect(JSON.parse(String(queryCall?.[1]?.body))).toEqual({ query: 'show our second-half turnovers followed by a shot within 10 seconds' });
 });
 
 it('recovers a pending playlist correction after a simulated crash', async () => {
