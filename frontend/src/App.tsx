@@ -376,6 +376,8 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
     completeRuntimeMemory?: boolean;
   } | null>(null);
   const correctionVersionRef = useRef(0);
+  const correctionHistoryRef = useRef(correctionHistory);
+  correctionHistoryRef.current = correctionHistory;
   const matchStats = activeMatch?.stats || null;
   const matchBenchmark = activeMatch?.benchmark || null;
   const requiresTeamSelection = activeMatch?.detail.requiresTeamSelection ?? false;
@@ -519,6 +521,22 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
     coach.clearResponse();
   }, [coach, totalFrameCount]);
 
+  const applyStoredMatchEvents = useCallback(async (matchId: string, frames: FrameData[]) => {
+    const storedEvents = await fetchMatchEvents(matchId);
+    const tags = mapBackendEventsToTags(storedEvents, frames);
+    setActiveMatch((previous) => {
+      if (!previous || previous.id !== matchId) {
+        return previous;
+      }
+      return {
+        ...previous,
+        backendEvents: storedEvents,
+        baseEvents: tags,
+      };
+    });
+    setEvents(tags);
+  }, []);
+
   const handleReviewShortcut = useCallback((action: ReviewAction) => {
     const next = applyReviewShortcut(action, {
       isPlaying,
@@ -558,33 +576,66 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
             correctionVersionRef.current = saved.version;
           }
           if (saved.correctionId) {
-            setCorrectionHistory((previous) => [
-              ...previous,
-              { correctionId: saved.correctionId, kind, saveState: saved.saveState, undoOf: null },
-            ]);
+            setCorrectionHistory((previous) => {
+              const next = [
+                ...previous,
+                { correctionId: saved.correctionId, kind, saveState: saved.saveState, undoOf: null },
+              ];
+              correctionHistoryRef.current = next;
+              return next;
+            });
           }
           if (saved.saveState !== 'saved') {
             return;
           }
-          const storedEvents = await fetchMatchEvents(matchId);
-          const tags = mapBackendEventsToTags(storedEvents, frames);
-          setActiveMatch((previous) => {
-            if (!previous || previous.id !== matchId) {
-              return previous;
-            }
-            return {
+          await applyStoredMatchEvents(matchId, frames);
+        })
+        .catch(() => {
+          setCorrectionSaveState('unavailable');
+        });
+      return;
+    }
+    if (action === 'undo' && activeMatch) {
+      const history = correctionHistoryRef.current;
+      const undoneIds = new Set(
+        history
+          .map((item) => item.undoOf)
+          .filter((undoOf): undoOf is string => typeof undoOf === 'string' && undoOf.length > 0),
+      );
+      const target = [...history].reverse().find((item) => (
+        (item.kind === 'event_accept' || item.kind === 'event_reject')
+        && item.saveState === 'saved'
+        && !undoneIds.has(item.correctionId)
+      ));
+      if (!target) {
+        return;
+      }
+      const matchId = activeMatch.id;
+      const frames = activeMatch.data;
+      setCorrectionSaveState('pending');
+      void undoMatchCorrection(matchId, target.correctionId)
+        .then(async (saved) => {
+          setCorrectionSaveState('saved');
+          setCorrectionHistory((previous) => {
+            const next = [
               ...previous,
-              backendEvents: storedEvents,
-              baseEvents: tags,
-            };
+              {
+                correctionId: saved.correctionId,
+                kind: target.kind,
+                saveState: 'saved',
+                undoOf: saved.undoOf,
+              },
+            ];
+            correctionHistoryRef.current = next;
+            return next;
           });
-          setEvents(tags);
+          await applyStoredMatchEvents(matchId, frames);
         })
         .catch(() => {
           setCorrectionSaveState('unavailable');
         });
     }
-  }, [activeMatch, currentFrame, events, handleSeek, isPlaying, totalFrameCount, review]);
+  }, [activeMatch, applyStoredMatchEvents, currentFrame, events, handleSeek, isPlaying, totalFrameCount, review]);
 
   const handleDrawingAnnotation = useCallback(
     (x: number, y: number, x2?: number, y2?: number) => {
