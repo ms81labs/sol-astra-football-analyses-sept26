@@ -7,6 +7,7 @@ from typing import Any, Literal
 
 from pydantic import Field
 
+from .cache import cache_identity
 from .contracts import JobPhase, StrictModel
 
 MAX_ATTEMPTS = 3
@@ -155,7 +156,23 @@ class DurableJobLedger:
             costReserved=attempt.reservedCost,
             costActual=attempt.actualCost,
             cleanupResult=attempt.cleanupResult,
+            cacheIdentity=cache_identity(
+                source_sha256=request.sourceSha256,
+                interval_start=request.intervalStart,
+                interval_end=request.intervalEnd,
+                decoder_version=request.decoderVersion,
+                model_hash=request.modelHash,
+                temporal_policy=request.temporalPolicy,
+                output_schema=request.outputSchema,
+            ),
         )
+
+    def cancel_requested(self, request_id: str) -> bool:
+        return request_id in self.cancel_flags
+
+    def terminated(self, request_id: str) -> bool:
+        status = self.attempts[request_id][-1].status
+        return status in {"cancelled", "complete", "failed"}
 
     def import_attempt(
         self,
@@ -172,3 +189,22 @@ class DurableJobLedger:
 
     def disk_exhaustion(self, request_id: str) -> JobAttempt:
         return self.transition(request_id, "failed", error="disk_exhaustion")
+
+    def cost_summary(self) -> dict[str, float | int]:
+        reserved = [entry.reserved for entry in self.costs]
+        actual = [entry.actual for entry in self.costs if entry.actual is not None]
+        return {
+            "attempts": len(self.costs),
+            "reservedTotal": round(sum(reserved), 4) if reserved else 0.0,
+            "actualTotal": round(sum(actual), 4) if actual else 0.0,
+            "p50Reserved": _percentile(reserved, 50),
+            "p95Reserved": _percentile(reserved, 95),
+        }
+
+
+def _percentile(values: list[float], percentile: int) -> float:
+    if not values:
+        return 0.0
+    ordered = sorted(values)
+    index = min(len(ordered) - 1, max(0, int(round((percentile / 100) * (len(ordered) - 1)))))
+    return float(ordered[index])

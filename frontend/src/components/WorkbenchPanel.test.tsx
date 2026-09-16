@@ -1,9 +1,12 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 
 import WorkbenchPanel from './WorkbenchPanel';
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 it('renders independently visible capability statuses from the dossier', async () => {
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo) => {
@@ -75,6 +78,13 @@ it('recovers a pending playlist correction after a simulated crash', async () =>
     if (url.endsWith('/corrections/c-pending/recover') && init?.method === 'POST') {
       return new Response(JSON.stringify({ correctionId: 'c-pending', saveState: 'saved' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
+    if (url.endsWith('/api/workbench/playlists/export-interval') && init?.method === 'POST') {
+      return new Response(JSON.stringify({
+        sourceStartSeconds: 3,
+        sourceEndSeconds: 5,
+        sourceEndFrameExclusive: 125,
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
     return new Response(JSON.stringify({ query: { unanswerable: true, reason: 'x', eventFamily: 'pass' }, results: [] }), { status: 200 });
   });
   vi.stubGlobal('fetch', fetchMock);
@@ -83,4 +93,6 @@ it('recovers a pending playlist correction after a simulated crash', async () =>
   expect(await screen.findByText(/pending playlist edit/i)).toBeTruthy();
   await fireEvent.click(screen.getByRole('button', { name: /recover pending edit/i }));
   expect(await screen.findByText(/saved/i)).toBeTruthy();
+  await fireEvent.click(screen.getByRole('button', { name: /export source interval/i }));
+  expect(await screen.findByText(/Source interval 3s to 5s/i)).toBeTruthy();
 });

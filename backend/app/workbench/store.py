@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -47,3 +48,27 @@ class WorkbenchStore:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
         return path
+
+    def publish_artifact(self, name: str, payload: dict[str, Any], *, interrupt: bool = False) -> Path:
+        dest = self.root / "artifacts" / name
+        staging = self.root / ".staging" / f"{name}.tmp"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        staging.parent.mkdir(parents=True, exist_ok=True)
+        staging.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+        if interrupt:
+            staging.unlink(missing_ok=True)
+            raise RuntimeError("interrupted publication")
+        staging.replace(dest)
+        return dest
+
+    def accepted_artifact(self, name: str) -> Path | None:
+        path = self.root / "artifacts" / name
+        return path if path.exists() else None
+
+    def restore_to(self, destination: Path) -> Path:
+        dest = Path(destination)
+        dest.mkdir(parents=True, exist_ok=True)
+        source = self.root / "artifacts"
+        if source.exists():
+            shutil.copytree(source, dest / "artifacts", dirs_exist_ok=True)
+        return dest

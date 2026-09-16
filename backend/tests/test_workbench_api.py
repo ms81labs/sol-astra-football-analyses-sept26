@@ -114,5 +114,27 @@ def test_workbench_corrections_search_jobs_and_unknown_metrics(tmp_path: Path) -
             pending = await client.get("/api/workbench/matches/m1/corrections?state=pending")
             assert pending.status_code == 200
             assert pending.json()["items"] == []
+            dictionary = await client.get("/api/workbench/metrics/dictionary")
+            assert dictionary.status_code == 200
+            assert dictionary.json()["metrics"]["experimental_shot_quality"]["publishedLabel"] == "experimental_shot_quality"
+            geometry = await client.post(
+                "/api/workbench/matches/m1/incidents/geometry",
+                json={"myTeam": [{"id": 7, "x": 8}], "enemies": [{"id": 18, "x": 12}, {"id": 19, "x": 14}], "ball": {"x": 20}},
+            )
+            assert geometry.json()["validatedMeasurement"] is False
+            assert geometry.json()["decision"] is None
+            job_status = await client.get("/api/workbench/jobs/r1")
+            assert job_status.status_code == 200
+            assert job_status.json()["status"] == "outcome_unknown"
+            assert job_status.json()["cacheIdentity"]
+            assert job_status.json()["terminated"] is False
+            cost = await client.get("/api/workbench/jobs/r1/cost")
+            assert cost.status_code == 200
+            assert "p50Reserved" in cost.json()
+            flags = await client.get("/api/workbench/flags")
+            assert flags.json()["native_code"] is False
+            evidence = await client.get("/api/workbench/matches/m1/evidence?intervalStart=0&intervalEnd=30")
+            assert evidence.status_code == 200
+            assert evidence.json()["intervalEndpoint"] == "half_open"
 
     _run(body)

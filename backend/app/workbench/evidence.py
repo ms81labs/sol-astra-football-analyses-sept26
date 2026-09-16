@@ -40,7 +40,15 @@ class EvidenceRecord(StrictModel):
     modelHash: str | None = None
     decoderVersion: str | None = None
     temporalPolicy: str | None = None
+    intervalStart: float = 0.0
+    intervalEnd: float = 0.0
     payload: dict[str, Any] = Field(default_factory=dict)
+
+
+class EvidencePage(StrictModel):
+    items: list[EvidenceRecord] = Field(default_factory=list)
+    nextCursor: str | None = None
+    intervalEndpoint: str = "half_open"
 
 
 class EvidenceStore:
@@ -87,6 +95,29 @@ class EvidenceStore:
             chain.append(self.get(parent_id))
         return chain
 
+    def query(
+        self,
+        *,
+        interval_start: float | None = None,
+        interval_end: float | None = None,
+        cursor: str | None = None,
+        limit: int = 100,
+    ) -> EvidencePage:
+        records = [self._records[evidence_id] for evidence_id in self._order]
+        if interval_start is not None or interval_end is not None:
+            start = float("-inf") if interval_start is None else interval_start
+            end = float("inf") if interval_end is None else interval_end
+            records = [item for item in records if item.intervalStart < end and item.intervalEnd > start]
+        if cursor:
+            try:
+                index = next(i for i, item in enumerate(records) if item.evidenceId == cursor)
+                records = records[index:]
+            except StopIteration:
+                records = []
+        page_items = records[:limit]
+        next_cursor = records[limit].evidenceId if len(records) > limit else None
+        return EvidencePage(items=page_items, nextCursor=next_cursor)
+
 
 def metric_dictionary() -> dict[str, dict[str, str]]:
     return {
@@ -94,38 +125,99 @@ def metric_dictionary() -> dict[str, dict[str, str]]:
             "unit": "percent",
             "denominator": "controlled_possession_frames",
             "definition": "Share of controlled-possession frames assigned to my_team.",
+            "withholdUnless": "controlled_frames",
+            "publishedLabel": "possession",
+            "compatibilityFields": "possession",
         },
         "my_team_distance_m": {
             "unit": "metres",
             "denominator": "identity_continuous_eligible_seconds",
             "definition": "Sum of accepted pitch displacements for reviewed match identities.",
+            "withholdUnless": "identity_continuous,calibration_accepted",
+            "publishedLabel": "distance",
+            "compatibilityFields": "myTeamDistance",
         },
         "enemy_distance_m": {
             "unit": "metres",
             "denominator": "identity_continuous_eligible_seconds",
             "definition": "Sum of accepted pitch displacements for opposing reviewed identities.",
+            "withholdUnless": "identity_continuous,calibration_accepted",
+            "publishedLabel": "distance",
+            "compatibilityFields": "enemyDistance",
         },
         "team_width_m": {
             "unit": "metres",
             "denominator": "eligible_seconds_with_team_visibility",
             "definition": "Lateral spread of accepted on-pitch teammates.",
+            "withholdUnless": "calibration_accepted,team_visibility",
+            "publishedLabel": "team width",
+            "compatibilityFields": "",
         },
         "my_team_ppda": {
             "unit": "passes_per_defensive_action",
             "denominator": "pressing_actions",
             "definition": "Passes allowed per defensive action in the pressing zone. Unknown when the denominator is empty.",
+            "withholdUnless": "nonzero_denominator",
+            "publishedLabel": "PPDA",
+            "compatibilityFields": "myTeamPpda",
         },
         "experimental_shot_quality": {
             "unit": "probability",
             "denominator": "labelled_shots",
             "definition": "Heuristic shot quality. Compatibility field remains `xg`; this is not a calibrated xG model.",
+            "withholdUnless": "",
+            "publishedLabel": "experimental_shot_quality",
+            "compatibilityFields": "xg",
         },
         EVENT_HEURISTIC_NAME: {
             "unit": "count",
             "denominator": "reviewed_or_protocol_eligible_events",
             "definition": "Heuristic event suggestions. Not independent event truth.",
+            "withholdUnless": "independent_event_labels",
+            "publishedLabel": "provisional event suggestion",
+            "compatibilityFields": "",
         },
     }
+
+
+def evaluate_metric_spec(
+    metric: str,
+    *,
+    value: float | None,
+    denominator: float,
+    identity_continuous: bool,
+    calibration_accepted: bool,
+) -> MetricAvailability:
+    spec = metric_dictionary().get(metric, {})
+    required = {item for item in (spec.get("withholdUnless") or "").split(",") if item}
+    reasons: list[str] = []
+    if "identity_continuous" in required and not identity_continuous:
+        reasons.append("IDENTITY_DISCONTINUITY")
+    if "calibration_accepted" in required and not calibration_accepted:
+        reasons.append("CALIBRATION_UNAVAILABLE")
+    if "nonzero_denominator" in required and denominator <= 0:
+        reasons.append("ZERO_DENOMINATOR")
+    if "controlled_frames" in required and denominator <= 0:
+        reasons.append("ZERO_DENOMINATOR")
+    if reasons:
+        availability = "unknown" if reasons == ["ZERO_DENOMINATOR"] else "withheld"
+        return MetricAvailability(
+            metric=metric,
+            definitionVersion=DEFINITION_VERSION,
+            value=None,
+            availability=availability,
+            reasonCodes=reasons,
+            unit=spec.get("unit"),
+            denominator=spec.get("denominator"),
+        )
+    return MetricAvailability(
+        metric=metric,
+        definitionVersion=DEFINITION_VERSION,
+        value=value,
+        availability="experimental" if metric == "experimental_shot_quality" else "available",
+        unit=spec.get("unit"),
+        denominator=spec.get("denominator"),
+    )
 
 
 def summarize_legacy_match(

@@ -107,6 +107,41 @@ def withhold_if_invalid(profile: CalibrationProfile, metric_name: str, *, max_p9
     return {"metric": metric_name, "availability": "available", "reasonCodes": [], "value": "computed"}
 
 
+def review_incident_geometry(
+    *,
+    my_team: list[dict[str, float | int]],
+    enemies: list[dict[str, float | int]],
+    ball: dict[str, float] | None,
+    attack_direction: Literal["left_to_right", "right_to_left"],
+) -> dict[str, Any]:
+    """Deterministic geometry for review. Never publishes a validated offside decision."""
+
+    attacking_increasing_x = attack_direction == "left_to_right"
+    opponent_xs = sorted(float(player["x"]) for player in enemies)
+    if len(opponent_xs) >= 2:
+        second_last = opponent_xs[-2] if attacking_increasing_x else opponent_xs[1]
+    else:
+        second_last = opponent_xs[0] if opponent_xs else None
+    most_advanced = None
+    if my_team:
+        xs = [float(player["x"]) for player in my_team]
+        most_advanced = max(xs) if attacking_increasing_x else min(xs)
+    return {
+        "decision": None,
+        "availability": "review_only",
+        "validatedMeasurement": False,
+        "reasonCodes": ["IFAB_LAW_11_NOT_APPLIED", "INVOLVEMENT_AND_TIMING_UNMEASURED"],
+        "attackDirection": attack_direction,
+        "secondLastOpponentX": second_last,
+        "mostAdvancedTeammateX": most_advanced,
+        "ballX": None if ball is None else float(ball["x"]),
+        "limitations": [
+            "Position facts are not an offside offence.",
+            "Eligible body parts, first contact, restarts and involvement are not measured.",
+        ],
+    }
+
+
 def detect_zoom_or_cut(previous: CalibrationProfile, current: CalibrationProfile) -> bool:
     if previous.cameraModel != current.cameraModel:
         return True

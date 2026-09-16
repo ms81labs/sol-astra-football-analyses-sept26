@@ -34,6 +34,29 @@ class DecodedFrame:
     image: object | None = None
 
 
+@dataclass
+class FrameBuffer:
+    """4.5B ownership contract. Football coordinates stay outside this object."""
+
+    device: Literal["cpu", "cuda"]
+    shape: tuple[int, ...]
+    strides: tuple[int, ...] | None
+    dtype: str
+    lifetime: Literal["borrowed", "owned"]
+    batch_index: int | None
+    sync_required: bool
+    payload: bytes
+    _released: bool = False
+
+    def release(self) -> None:
+        self._released = True
+
+    def as_array(self) -> bytes:
+        if self._released:
+            raise RuntimeError("use after buffer reuse")
+        return self.payload
+
+
 class FrameSource(ABC):
     """Replaceable decode adapter. Football semantics stay in Python."""
 
@@ -157,6 +180,35 @@ class OpenCvFrameSource(FrameSource):
                 index += 1
         finally:
             capture.release()
+
+
+class FfmpegFrameSource(FrameSource):
+    """GA-16 decoder challenger. Football semantics stay in Python."""
+
+    name = "ffmpeg"
+
+    def __init__(
+        self,
+        frames: list[DecodedFrame] | None = None,
+        identity: SourceClockIdentity | None = None,
+        probe: FfmpegProbe | None = None,
+    ):
+        self._frames = list(frames or [])
+        self._identity = identity
+        self._probe = probe or FfmpegProbe()
+
+    def probe(self, path: Path) -> SourceClockIdentity:
+        if self._identity is not None:
+            digest = hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else self._identity.sourceSha256
+            return self._identity.model_copy(update={"sourceSha256": digest, "byteSize": path.stat().st_size if path.exists() else 0})
+        return self._probe.probe_identity(path)
+
+    def iter_frames(self, path: Path, *, cancel_event: threading.Event | None = None) -> Iterator[DecodedFrame]:
+        del path
+        for frame in self._frames:
+            if cancel_event is not None and cancel_event.is_set():
+                return
+            yield frame
 
 
 def iter_bgr_frames(

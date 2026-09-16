@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import threading
 from pathlib import Path
 
@@ -17,11 +18,12 @@ from backend.app.workbench.assistance import (
 from backend.app.workbench.contracts import CAPABILITY_IDS, INTERVAL_ENDPOINT, migrate_legacy_zero, unknown_metric
 from backend.app.workbench.dossier import build_baseline_dossier, build_release_dossier, default_capabilities
 from backend.app.workbench.evaluation import FROZEN_TASK_COUNT, current_repository_evaluation_gate, evaluate_protocol_prerequisites
-from backend.app.workbench.evidence import EvidenceRecord, EvidenceStore, round_trip_unknown, summarize_legacy_match
-from backend.app.workbench.geometry import CalibrationProfile, Landmark, detect_zoom_or_cut, evaluate_landmarks, from_legacy_four_points, withhold_if_invalid
+from backend.app.workbench.evidence import EvidenceRecord, EvidenceStore, evaluate_metric_spec, metric_dictionary, round_trip_unknown, summarize_legacy_match
+from backend.app.workbench.geometry import CalibrationProfile, Landmark, detect_zoom_or_cut, evaluate_landmarks, from_legacy_four_points, review_incident_geometry, withhold_if_invalid
 from backend.app.workbench.jobs import DurableJobLedger, JobRequest
 from backend.app.workbench.media import (
     DecodedFrame,
+    FfmpegFrameSource,
     FfmpegProbe,
     FixtureFrameSource,
     SamplingAudit,
@@ -32,8 +34,9 @@ from backend.app.workbench.media import (
     map_decoded_to_sample,
     pts_to_seconds,
 )
+from backend.app.workbench.store import WorkbenchStore
 from backend.app.workbench.native import native_gate, probe_gpu
-from backend.app.workbench.perception import Detection, IdentityRepair, Label, TrackerAdapter, score_detections, separate_ball_states
+from backend.app.workbench.perception import Detection, IdentityRepair, Label, TrackerAdapter, score_detections, score_detections_by_stratum, separate_ball_states
 from backend.app.workbench.review import CorrectionLog, new_correction, playlist_export_interval
 
 
@@ -486,3 +489,233 @@ def test_gpu_and_native_gates_are_inert_by_default(tmp_path: Path) -> None:
     assert gate.approved is False
     assert "NATIVE_GATE_CLOSED" in gate.reasonCodes
     assert not (tmp_path / "native").exists()
+
+
+def test_metric_specs_withhold_physical_totals_and_unknown_ppda() -> None:
+    dictionary = metric_dictionary()
+    assert dictionary["experimental_shot_quality"]["publishedLabel"] == "experimental_shot_quality"
+    assert "xg" in dictionary["experimental_shot_quality"]["compatibilityFields"]
+    withheld = evaluate_metric_spec(
+        "my_team_distance_m",
+        value=412.0,
+        denominator=18.0,
+        identity_continuous=False,
+        calibration_accepted=True,
+    )
+    assert withheld.availability == "withheld"
+    assert withheld.published_value() is None
+    unknown = evaluate_metric_spec(
+        "my_team_ppda",
+        value=0.0,
+        denominator=0.0,
+        identity_continuous=True,
+        calibration_accepted=True,
+    )
+    assert unknown.availability == "unknown"
+    assert "ZERO_DENOMINATOR" in unknown.reasonCodes
+
+
+def test_cache_identity_is_incompatible_when_decoder_or_model_changes() -> None:
+    from backend.app.workbench.cache import cache_compatible, cache_identity
+
+    opencv = cache_identity(
+        source_sha256="a" * 64,
+        interval_start=0.0,
+        interval_end=60.0,
+        decoder_version="opencv",
+        model_hash="weights-v1",
+        temporal_policy="clip_local_index_modulo",
+        output_schema="evidence_v1",
+        crop=None,
+        colour_order="bgr",
+    )
+    ffmpeg = cache_identity(
+        source_sha256="a" * 64,
+        interval_start=0.0,
+        interval_end=60.0,
+        decoder_version="ffmpeg",
+        model_hash="weights-v1",
+        temporal_policy="clip_local_index_modulo",
+        output_schema="evidence_v1",
+        crop=None,
+        colour_order="bgr",
+    )
+    assert opencv != ffmpeg
+    assert cache_compatible(opencv, opencv) is True
+    assert cache_compatible(opencv, ffmpeg) is False
+
+
+def test_ffmpeg_frame_source_is_a_cancellable_decoder_challenger(tmp_path: Path) -> None:
+    frames = [
+        DecodedFrame(0, 0, 0.0, 2, 2, "bgr", 0, b"aa", "ffmpeg", image=object()),
+        DecodedFrame(1, 1, 0.04, 2, 2, "bgr", 0, b"bb", "ffmpeg", image=object()),
+    ]
+    source = tmp_path / "clip.bin"
+    source.write_bytes(b"src")
+    adapter = FfmpegFrameSource(
+        frames=frames,
+        identity=__import__("backend.app.workbench.contracts", fromlist=["SourceClockIdentity"]).SourceClockIdentity(
+            sourceSha256="a" * 64,
+            byteSize=3,
+            codec="h264",
+        ),
+    )
+    assert adapter.name == "ffmpeg"
+    assert list(adapter.iter_frames(source))[0].backend == "ffmpeg"
+    cancel = threading.Event()
+    cancel.set()
+    assert list(adapter.iter_frames(source, cancel_event=cancel)) == []
+    assert cpu_fallback("ffmpeg", {"opencv", "ffmpeg"}) == "ffmpeg"
+
+
+def test_incident_geometry_does_not_publish_a_validated_offside_decision() -> None:
+    review = review_incident_geometry(
+        my_team=[{"id": 7, "x": 8.0, "y": 50.0}],
+        enemies=[{"id": 18, "x": 12.0, "y": 48.0}, {"id": 19, "x": 14.0, "y": 52.0}],
+        ball={"x": 20.0, "y": 50.0},
+        attack_direction="left_to_right",
+    )
+    assert review["decision"] is None
+    assert review["availability"] == "review_only"
+    assert review["validatedMeasurement"] is False
+    assert "IFAB_LAW_11_NOT_APPLIED" in review["reasonCodes"]
+    assert review["secondLastOpponentX"] == 12.0
+
+
+def test_tiling_benchmark_reports_far_stratum_separately() -> None:
+    detections = [
+        Detection(frameId=0, bbox=(0, 0, 10, 10), score=0.9, kind="player", stratum="near"),
+        Detection(frameId=0, bbox=(80, 80, 90, 90), score=0.2, kind="player", stratum="far"),
+    ]
+    labels = [
+        Label(frameId=0, bbox=(0, 0, 10, 10), kind="player", stratum="near"),
+        Label(frameId=0, bbox=(40, 40, 42, 42), kind="player", stratum="far"),
+    ]
+    receipt = score_detections_by_stratum(
+        detections,
+        labels,
+        task="player_coverage",
+        configuration="tiles_1280",
+        labels_independent=False,
+    )
+    assert receipt.byStratum["near"].recall == 1.0
+    assert receipt.byStratum["far"].falseNegatives == 1
+    assert receipt.labelsIndependent is False
+
+
+def test_ai_policy_grounds_outputs_and_refuses_fabricated_evidence() -> None:
+    from backend.app.ai_policy import ground_output, select_evidence
+
+    assert select_evidence(["e1", "e2"], known_ids={"e1", "e2"}) == ["e1", "e2"]
+    rejected = ground_output({"summary": "ok", "evidence": ["missing"]}, known_ids={"e1"})
+    assert rejected["route"] == "rejected"
+    assert "FABRICATED_EVIDENCE" in rejected["reasonCodes"]
+    grounded = ground_output({"summary": "ok", "evidence": ["e1"]}, known_ids={"e1"})
+    assert grounded["route"] == "template"
+    assert grounded["output"]["evidence"] == ["e1"]
+
+
+def test_job_receipt_includes_cache_identity_and_treats_cancel_as_a_request() -> None:
+    from backend.app.workbench.cache import cache_identity
+
+    ledger = DurableJobLedger()
+    request = JobRequest(
+        requestId="req-cache",
+        matchId="m1",
+        sourceSha256="d" * 64,
+        intervalStart=0.0,
+        intervalEnd=30.0,
+        temporalPolicy="clip_local_index_modulo",
+        decoderVersion="opencv",
+        modelHash="weights-v1",
+        outputSchema="evidence_v1",
+        budget=2.0,
+        authorisedLocation="local",
+    )
+    ledger.submit(request)
+    receipt = ledger.receipt("req-cache")
+    expected = cache_identity(
+        source_sha256="d" * 64,
+        interval_start=0.0,
+        interval_end=30.0,
+        decoder_version="opencv",
+        model_hash="weights-v1",
+        temporal_policy="clip_local_index_modulo",
+        output_schema="evidence_v1",
+    )
+    assert receipt.cacheIdentity == expected
+    cancelled = ledger.cancel("req-cache")
+    assert cancelled.status == "cancelling"
+    assert ledger.cancel_requested("req-cache") is True
+    assert ledger.terminated("req-cache") is False
+
+
+def test_atomic_artifact_publication_leaves_no_accepted_partial(tmp_path: Path) -> None:
+    store = WorkbenchStore(tmp_path)
+    with pytest.raises(RuntimeError, match="interrupted"):
+        store.publish_artifact("observations.json", {"rows": [1]}, interrupt=True)
+    assert store.accepted_artifact("observations.json") is None
+    published = store.publish_artifact("observations.json", {"rows": [1]})
+    assert published.exists()
+    restored = store.restore_to(tmp_path / "disposable-restore")
+    assert (restored / "artifacts" / "observations.json").exists()
+    assert json.loads((restored / "artifacts" / "observations.json").read_text(encoding="utf-8")) == {"rows": [1]}
+
+
+def test_evidence_interval_query_is_half_open_and_cursor_bounded() -> None:
+    store = EvidenceStore()
+    store.put(
+        EvidenceRecord(
+            evidenceId="e-early",
+            observationSource="observed",
+            reviewStatus="unreviewed",
+            intervalStart=0.0,
+            intervalEnd=10.0,
+        )
+    )
+    store.put(
+        EvidenceRecord(
+            evidenceId="e-late",
+            observationSource="inferred",
+            reviewStatus="unreviewed",
+            intervalStart=10.0,
+            intervalEnd=20.0,
+        )
+    )
+    window = store.query(interval_start=0.0, interval_end=10.0)
+    assert [item.evidenceId for item in window.items] == ["e-early"]
+    page = store.query(interval_start=0.0, interval_end=20.0, limit=1)
+    assert [item.evidenceId for item in page.items] == ["e-early"]
+    assert page.nextCursor == "e-late"
+    next_page = store.query(interval_start=0.0, interval_end=20.0, cursor=page.nextCursor, limit=10)
+    assert [item.evidenceId for item in next_page.items] == ["e-late"]
+    assert INTERVAL_ENDPOINT == "half_open"
+
+
+def test_feature_flags_keep_experimental_metrics_and_native_code_shadowed() -> None:
+    from backend.app.workbench.flags import feature_enabled
+
+    assert feature_enabled("experimental_shot_quality", env={}) is False
+    assert feature_enabled("gpu_default", env={}) is False
+    assert feature_enabled("native_code", env={}) is False
+    assert feature_enabled("experimental_shot_quality", env={"GA_FLAG_EXPERIMENTAL_SHOT_QUALITY": "1"}) is True
+
+
+def test_frame_buffer_refuses_use_after_reuse() -> None:
+    from backend.app.workbench.media import FrameBuffer
+
+    buffer = FrameBuffer(
+        device="cpu",
+        shape=(2, 2, 3),
+        strides=(12, 6, 2),
+        dtype="uint8",
+        lifetime="borrowed",
+        batch_index=0,
+        sync_required=False,
+        payload=b"frame",
+    )
+    assert buffer.as_array() == b"frame"
+    buffer.release()
+    with pytest.raises(RuntimeError, match="use after buffer reuse"):
+        buffer.as_array()
+

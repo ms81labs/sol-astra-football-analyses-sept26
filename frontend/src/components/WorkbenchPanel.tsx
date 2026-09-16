@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 
 import ModalDialog from './ModalDialog';
 import {
+  exportPlaylistInterval,
   fetchPendingCorrections,
   fetchWorkbenchDossier,
   recoverMatchCorrection,
@@ -32,6 +33,9 @@ export default function WorkbenchPanel({ onClose, matchId, events = [], onSeek }
   const [searchMessage, setSearchMessage] = useState<string | null>(null);
   const [pendingCorrection, setPendingCorrection] = useState<{ correctionId: string; kind: string; saveState: string } | null>(null);
   const [recoveryMessage, setRecoveryMessage] = useState<string | null>(null);
+  const [playlistStart, setPlaylistStart] = useState('3');
+  const [playlistEnd, setPlaylistEnd] = useState('5');
+  const [playlistMessage, setPlaylistMessage] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -85,6 +89,18 @@ export default function WorkbenchPanel({ onClose, matchId, events = [], onSeek }
     const saved = await recoverMatchCorrection(matchId, pendingCorrection.correctionId);
     setPendingCorrection(null);
     setRecoveryMessage(saved.saveState);
+  }
+
+  async function exportPlaylist() {
+    const start = Number(playlistStart);
+    const end = Number(playlistEnd);
+    if (!Number.isFinite(start) || !Number.isFinite(end)) {
+      setPlaylistMessage('Enter a numeric source interval.');
+      return;
+    }
+    const interval = await exportPlaylistInterval(start, end, 25);
+    setPlaylistMessage(`Source interval ${interval.sourceStartSeconds}s to ${interval.sourceEndSeconds}s (frame ${interval.sourceEndFrameExclusive} exclusive).`);
+    onSeek?.(interval.sourceStartSeconds);
   }
 
   return (
@@ -156,6 +172,21 @@ export default function WorkbenchPanel({ onClose, matchId, events = [], onSeek }
                 </div>
               )}
               {recoveryMessage && <p className="text-xs text-emerald-300">{recoveryMessage}</p>}
+              <div className="rounded-lg border border-slate-700 p-3 space-y-2">
+                <h4 className="text-xs uppercase tracking-wide text-slate-500">Playlist source interval</h4>
+                <label className="block text-xs text-slate-400">
+                  Start seconds
+                  <input value={playlistStart} onChange={(event) => setPlaylistStart(event.target.value)} className="mt-1 w-full rounded border border-slate-600 bg-slate-900 px-2 py-1 text-slate-200" />
+                </label>
+                <label className="block text-xs text-slate-400">
+                  End seconds
+                  <input value={playlistEnd} onChange={(event) => setPlaylistEnd(event.target.value)} className="mt-1 w-full rounded border border-slate-600 bg-slate-900 px-2 py-1 text-slate-200" />
+                </label>
+                <button type="button" onClick={() => void exportPlaylist()} className="px-3 py-1.5 rounded bg-slate-700 text-xs font-semibold text-white">
+                  Export source interval
+                </button>
+                {playlistMessage && <p className="text-xs text-slate-300">{playlistMessage}</p>}
+              </div>
             </>
           )}
         </div>

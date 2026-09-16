@@ -116,6 +116,34 @@ def score_detections(
     )
 
 
+class StratumBenchmark(StrictModel):
+    byStratum: dict[str, BenchmarkReceipt]
+    labelsIndependent: bool
+
+
+def score_detections_by_stratum(
+    detections: list[Detection],
+    labels: list[Label],
+    *,
+    task: Literal["player_coverage", "ball_detection"],
+    configuration: str,
+    iou_threshold: float = 0.5,
+    labels_independent: bool,
+) -> StratumBenchmark:
+    strata = sorted({item.stratum for item in detections} | {item.stratum for item in labels})
+    by_stratum: dict[str, BenchmarkReceipt] = {}
+    for stratum in strata:
+        by_stratum[stratum] = score_detections(
+            [item for item in detections if item.stratum == stratum],
+            [item for item in labels if item.stratum == stratum],
+            task=task,
+            configuration=f"{configuration}:{stratum}",
+            iou_threshold=iou_threshold,
+            labels_independent=labels_independent,
+        )
+    return StratumBenchmark(byStratum=by_stratum, labelsIndependent=labels_independent)
+
+
 class TrackerAdapter:
     name = "botsort_baseline"
 

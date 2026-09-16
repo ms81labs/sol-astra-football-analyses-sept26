@@ -100,3 +100,15 @@ export async function undoMatchCorrection(matchId: string, correctionId: string)
   }
   return response.json() as Promise<{ correctionId: string; undoOf: string }>;
 }
+
+export async function exportPlaylistInterval(timestampStart: number, timestampEnd: number, sourceFps: number) {
+  const response = await fetch('/api/workbench/playlists/export-interval', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ timestampStart, timestampEnd, sourceFps }),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to export playlist interval: ${response.status}`);
+  }
+  return response.json() as Promise<{ sourceStartSeconds: number; sourceEndSeconds: number; sourceEndFrameExclusive: number }>;
+}

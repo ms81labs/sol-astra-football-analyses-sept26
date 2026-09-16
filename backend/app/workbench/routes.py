@@ -11,7 +11,9 @@ from .assistance import AssistancePolicy, AssistanceRouter, execute_typed_query,
 from .contracts import jsonable
 from .dossier import build_baseline_dossier, build_release_dossier
 from .evaluation import current_repository_evaluation_gate
-from .evidence import summarize_legacy_match
+from .evidence import EvidenceStore, metric_dictionary, summarize_legacy_match
+from .flags import feature_flags
+from .geometry import review_incident_geometry
 from .jobs import DurableJobLedger, JobRequest
 from .native import native_gate, probe_gpu
 from .review import CorrectionLog, new_correction, playlist_export_interval
@@ -20,6 +22,7 @@ from .store import WorkbenchStore
 _correction_log = CorrectionLog()
 _job_ledger = DurableJobLedger()
 _router_assistance = AssistanceRouter(providers_enabled=False)
+_evidence_store = EvidenceStore()
 
 
 class CorrectionBody(BaseModel):
@@ -214,5 +217,56 @@ def create_workbench_router(storage_root: Path) -> APIRouter:
             controlled_frames=int(body.get("controlledFrames") or 0),
         )
         return {"metrics": [jsonable(metric) for metric in metrics]}
+
+    @router.get("/metrics/dictionary")
+    def get_metric_dictionary() -> dict:
+        return {"metrics": metric_dictionary()}
+
+    @router.get("/matches/{match_id}/evidence")
+    def get_evidence(
+        match_id: str,
+        intervalStart: float | None = None,
+        intervalEnd: float | None = None,
+        cursor: str | None = None,
+        limit: int = 100,
+    ) -> dict:
+        del match_id
+        page = _evidence_store.query(
+            interval_start=intervalStart,
+            interval_end=intervalEnd,
+            cursor=cursor,
+            limit=limit,
+        )
+        return jsonable(page)
+
+    @router.post("/matches/{match_id}/incidents/geometry")
+    def incident_geometry(match_id: str, payload: dict | None = None) -> dict:
+        del match_id
+        body = payload or {}
+        return review_incident_geometry(
+            my_team=list(body.get("myTeam") or []),
+            enemies=list(body.get("enemies") or []),
+            ball=body.get("ball"),
+            attack_direction=body.get("attackDirection") or "left_to_right",
+        )
+
+    @router.get("/jobs/{request_id}")
+    def get_job(request_id: str) -> dict:
+        try:
+            receipt = jsonable(_job_ledger.receipt(request_id))
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Job not found") from exc
+        receipt["cancelRequested"] = _job_ledger.cancel_requested(request_id)
+        receipt["terminated"] = _job_ledger.terminated(request_id)
+        return receipt
+
+    @router.get("/jobs/{request_id}/cost")
+    def job_cost(request_id: str) -> dict:
+        del request_id
+        return _job_ledger.cost_summary()
+
+    @router.get("/flags")
+    def get_flags() -> dict:
+        return feature_flags()
 
     return router

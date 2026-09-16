@@ -7,6 +7,8 @@ from typing import Any, Literal
 
 from pydantic import Field
 
+from backend.app.ai_policy import ground_output
+
 from .contracts import StrictModel
 
 ALLOWED_EVENT_FAMILIES = frozenset(
@@ -195,12 +197,12 @@ class AssistanceRouter:
     ) -> AssistanceDisposition:
         known = known_evidence_ids or set()
         claimed = claimed_evidence_ids or []
-        fabricated = [item for item in claimed if item not in known]
-        if fabricated:
+        grounded = ground_output({"evidence": claimed}, known_ids=known) if claimed else None
+        if grounded and grounded["route"] == "rejected":
             return AssistanceDisposition(
                 route="rejected",
-                reasonCodes=["FABRICATED_EVIDENCE"],
-                output={"fabricated": fabricated},
+                reasonCodes=list(grounded["reasonCodes"]),
+                output=grounded["output"],
             )
         if not self.providers_enabled or not policy.allowedModelIds or policy.spendCap <= 0:
             return AssistanceDisposition(

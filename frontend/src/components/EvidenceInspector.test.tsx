@@ -13,9 +13,20 @@ const frame: FrameData = {
 };
 
 it('keeps observation source separate from review status', () => {
-  render(<EvidenceInspector frame={frame} cameraProfile="stitched_panoramic_view" reviewStatus="unreviewed" />);
+  render(
+    <EvidenceInspector
+      frame={frame}
+      cameraProfile="stitched_panoramic_view"
+      reviewStatus="unreviewed"
+      modelHash="weights-v1"
+      configVersion="evidence_v1"
+      uncertainty="unmeasured"
+    />,
+  );
   expect(screen.getByText(/Observation source/)).toBeTruthy();
   expect(screen.getByText('observed')).toBeTruthy();
   expect(screen.getByText('unreviewed')).toBeTruthy();
+  expect(screen.getByText(/weights-v1/)).toBeTruthy();
+  expect(screen.getByText(/evidence_v1/)).toBeTruthy();
   expect(screen.getByText(/does not convert an inferred location/)).toBeTruthy();
 });

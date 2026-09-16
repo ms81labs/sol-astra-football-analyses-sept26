@@ -409,7 +409,9 @@ def build_prompt(
             direction_context + "You are a football tactician API. Based on this frame data: "
             f"{json.dumps(current_frame.model_dump(mode='json'))}. "
             'Determine if any my-team player is behind the last enemy defender. '
-            'Return JSON {"offside": boolean, "offside_x": number, "explanation": string}.'
+            'Return JSON {"offside": boolean, "offside_x": number, "explanation": string}. '
+            "This is a review prompt only: do not present it as a validated IFAB Law 11 decision; "
+            "involvement, first contact, restarts and eligible body parts are not measured."
         )
     if analysis_type == "spacing" and current_frame:
         return (
