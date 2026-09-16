@@ -64,6 +64,14 @@ REASON_CODES: dict[str, str] = {
     "LEGACY_ZERO_DEFAULT": "A historical zero default is preserved for readers and is not a measurement.",
     "CAMERA_PROFILE_UNSUPPORTED": "Automated measurement is withheld for this camera profile.",
     "OUTCOME_UNKNOWN": "Remote submission timed out before a confirmed lifecycle state existed.",
+    "NEAREST_PLAYER_INSUFFICIENT": "Nearest-player proximity is not sufficient evidence of control.",
+    "UNKNOWN_INTERVALS_EXCLUDED": "Unknown ownership intervals are disclosed and excluded from full-match certainty.",
+    "MISSING_RELEASE_OR_RECEIPT": "A pass candidate needs both an accepted release and a teammate receipt.",
+    "UNCERTAIN_COMMERCIAL_PERMISSION": "Uncertain commercial permission blocks this use.",
+    "PROVIDER_TIMEOUT": "The language provider timed out; a deterministic template was used.",
+    "MALFORMED_PROVIDER_OUTPUT": "Provider output failed validation; a deterministic template was used.",
+    "SPEND_CAP": "The assistance spend cap was reached.",
+    "EXPERIMENTAL_NOT_CALIBRATED_XG": "Shot quality is experimental and is not a calibrated xG model.",
 }
 
 CAPABILITY_IDS: tuple[str, ...] = (

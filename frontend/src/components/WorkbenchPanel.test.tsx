@@ -44,6 +44,8 @@ it('renders independently visible capability statuses from the dossier', async (
   expect(screen.getByText('Usable')).toBeTruthy();
   expect(screen.getByText('Unavailable')).toBeTruthy();
   expect(screen.getByText(/Independent labels 0\/18 complete/)).toBeTruthy();
+  expect(screen.getByText(/cancellation is a request/i)).toBeTruthy();
+  expect(screen.getByText(/native code remain gated/i)).toBeTruthy();
 
   await fireEvent.click(screen.getByRole('button', { name: 'Search evidence' }));
   expect(await screen.findByText(/Unanswerable/)).toBeTruthy();

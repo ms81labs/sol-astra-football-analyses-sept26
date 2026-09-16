@@ -136,5 +136,18 @@ def test_workbench_corrections_search_jobs_and_unknown_metrics(tmp_path: Path) -
             evidence = await client.get("/api/workbench/matches/m1/evidence?intervalStart=0&intervalEnd=30")
             assert evidence.status_code == 200
             assert evidence.json()["intervalEndpoint"] == "half_open"
+            ownership = await client.post(
+                "/api/workbench/matches/m1/ownership",
+                json={"ballVisible": True, "nearestTeam": "my_team", "nearestDistance": 2.0, "persistenceFrames": 1},
+            )
+            assert ownership.json()["mode"] == "unknown"
+            package = await client.post(
+                "/api/workbench/matches/m1/package",
+                json={"playlist": [{"start": 3, "end": 5}], "events": [], "metrics": [], "secrets": {"DAYTONA_API_KEY": "nope"}},
+            )
+            assert package.status_code == 200
+            assert "nope" not in str(package.json())
+            rights = await client.get("/api/workbench/rights")
+            assert rights.json()["uncertainCommercialPermissionBlocks"] is True
 
     _run(body)

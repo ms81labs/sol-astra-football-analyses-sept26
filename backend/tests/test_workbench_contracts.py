@@ -719,3 +719,208 @@ def test_frame_buffer_refuses_use_after_reuse() -> None:
     with pytest.raises(RuntimeError, match="use after buffer reuse"):
         buffer.as_array()
 
+
+def test_nearest_player_alone_is_not_controlled_possession() -> None:
+    from backend.app.workbench.ownership import classify_ownership
+
+    nearest_only = classify_ownership(
+        ball_visible=True,
+        nearest_team="my_team",
+        nearest_distance=2.0,
+        relative_motion=None,
+        persistence_frames=1,
+        calibrated=False,
+    )
+    assert nearest_only.mode == "unknown"
+    assert "NEAREST_PLAYER_INSUFFICIENT" in nearest_only.reasonCodes
+    asserted = classify_ownership(
+        ball_visible=True,
+        nearest_team="my_team",
+        nearest_distance=2.0,
+        relative_motion="closing",
+        persistence_frames=4,
+        calibrated=True,
+    )
+    assert asserted.mode == "controlled_possession"
+    assert asserted.controllingTeam == "my_team"
+
+
+def test_ownership_hysteresis_avoids_alternating_owners() -> None:
+    from backend.app.workbench.ownership import OwnershipHysteresis
+
+    hyst = OwnershipHysteresis(min_persistence=3)
+    first = hyst.observe("my_team")
+    second = hyst.observe("enemy")
+    third = hyst.observe("enemy")
+    held = hyst.observe("enemy")
+    assert first == "unknown"
+    assert second == "unknown"
+    assert third == "unknown"
+    assert held == "enemy"
+
+
+def test_possession_discloses_unknown_duration_instead_of_full_match_certainty() -> None:
+    from backend.app.workbench.ownership import possession_from_states
+
+    summary = possession_from_states(
+        [
+            {"mode": "controlled_possession", "controllingTeam": "my_team", "seconds": 10.0},
+            {"mode": "unknown", "controllingTeam": "none", "seconds": 20.0},
+            {"mode": "controlled_possession", "controllingTeam": "enemy", "seconds": 10.0},
+        ],
+        requested_seconds=40.0,
+    )
+    assert summary.availability == "insufficient_coverage"
+    assert summary.unknownSeconds == 20.0
+    assert summary.published_value() is None
+    assert "UNKNOWN_INTERVALS_EXCLUDED" in summary.reasonCodes
+
+
+def test_pass_candidate_is_an_interval_and_stays_unaccepted() -> None:
+    from backend.app.workbench.events import propose_event
+
+    withheld = propose_event(
+        family="pass",
+        release={"playerId": 7, "team": "my_team", "time": 12.0},
+        receipt=None,
+    )
+    assert withheld.status == "withheld"
+    candidate = propose_event(
+        family="pass",
+        release={"playerId": 7, "team": "my_team", "time": 12.0},
+        receipt={"playerId": 11, "team": "my_team", "time": 13.4},
+    )
+    assert candidate.status == "candidate"
+    assert candidate.intervalStart == 12.0
+    assert candidate.intervalEnd == 13.4
+    assert candidate.timingUncertainty is not None
+    assert candidate.accepted is False
+
+
+def test_event_scorer_uses_frozen_tolerances_and_reports_boundary_error() -> None:
+    from backend.app.workbench.events import score_events
+
+    receipt = score_events(
+        predictions=[{"family": "shot", "intervalStart": 8.0, "intervalEnd": 9.2}],
+        labels=[{"family": "shot", "intervalStart": 8.0, "intervalEnd": 8.4}],
+        labels_independent=False,
+    )
+    assert receipt.byClass["shot"].boundaryErrors == 1
+    assert receipt.toleranceSeconds == 0.5
+    assert receipt.labelsIndependent is False
+
+
+def test_shot_model_rejects_post_outcome_features_and_stays_experimental() -> None:
+    from backend.app.workbench.shot_model import experimental_shot_quality, extract_shot_features
+
+    with pytest.raises(ValueError, match="post-outcome"):
+        extract_shot_features({"x": 88.0, "y": 50.0, "goal": True})
+    features = extract_shot_features({"x": 88.0, "y": 50.0, "inBox": True})
+    score = experimental_shot_quality(features)
+    assert score.publishedLabel == "experimental_shot_quality"
+    assert score.availability == "experimental"
+    assert "xg" in score.compatibilityFields
+
+
+def test_tracklet_is_not_promoted_to_a_roster_identity() -> None:
+    from backend.app.workbench.identity import IdentityRecord, promote_identity
+
+    tracklet = IdentityRecord(kind="tracklet", trackId="t-4", intervalStart=0.0, intervalEnd=3.0)
+    assert promote_identity(tracklet, target="roster_player", reviewed=False).kind == "tracklet"
+    match_id = promote_identity(tracklet, target="match_identity", reviewed=True)
+    assert match_id.kind == "match_identity"
+    roster = promote_identity(match_id, target="roster_player", reviewed=True, rosterId="shirt-9")
+    assert roster.kind == "roster_player"
+    assert roster.rosterId == "shirt-9"
+
+
+def test_match_package_omits_credentials_and_keeps_limitations() -> None:
+    from backend.app.workbench.package import assemble_match_package
+
+    package = assemble_match_package(
+        playlist=[{"start": 3.0, "end": 5.0, "evidenceIds": ["e1"]}],
+        events=[{"eventId": "event-52", "status": "accepted", "family": "turnover"}],
+        metrics=[{"metric": "possession_pct", "availability": "unknown", "value": None}],
+        corrections=[{"correctionId": "edit-8"}],
+        cost={"reservedTotal": 1.5, "actualTotal": 0.0},
+        secrets={"DAYTONA_API_KEY": "must-not-leak"},
+    )
+    blob = str(package)
+    assert "must-not-leak" not in blob
+    assert "DAYTONA_API_KEY" not in blob
+    assert package["analyst"]["limitations"]
+    assert package["operator"]["cleanupStatus"]
+
+
+def test_uncertain_commercial_permission_blocks_use() -> None:
+    from backend.app.workbench.rights import evaluate_rights
+
+    blocked = evaluate_rights({"asset": "soccernet_clip", "commercialPermission": "uncertain", "licence": "research"})
+    assert blocked.allowed is False
+    assert "UNCERTAIN_COMMERCIAL_PERMISSION" in blocked.reasonCodes
+    local = evaluate_rights({"asset": "club_upload", "commercialPermission": "granted", "licence": "club_agreement", "cloudPermitted": False})
+    assert local.allowed is True
+    assert local.cloudPermitted is False
+
+
+def test_gpu_benchmark_receipts_stay_experimental_without_hardware() -> None:
+    from backend.app.workbench.benchmarks import experiment_receipt
+
+    b0 = experiment_receipt("B0", hardware_verified=False)
+    assert b0.promoted is False
+    assert b0.exportFpsEqualsInferenceFps is False
+    b2 = experiment_receipt("B2", hardware_verified=False)
+    assert b2.status == "experimental"
+    assert "HARDWARE_UNAVAILABLE" in b2.reasonCodes
+    native = experiment_receipt("B5", hardware_verified=True, bottleneck_documented=False)
+    assert native.status == "inert"
+    assert "NATIVE_GATE_CLOSED" in native.reasonCodes
+
+
+def test_assistance_caps_survive_spend_timeout_and_malformed_output() -> None:
+    from backend.app.workbench.assistance import AssistancePolicy, AssistanceRouter
+
+    metrics = [{"metric": "possession_pct", "availability": "unknown", "value": None, "reasonCodes": ["ZERO_DENOMINATOR"]}]
+
+    def boom(**kwargs):
+        raise TimeoutError("provider timeout")
+
+    timed_out = AssistanceRouter(providers_enabled=True, provider=boom).run(
+        policy=AssistancePolicy(taskType="report", spendCap=1.0, allowedModelIds=["local-1"]),
+        metrics=metrics,
+        events=[],
+    )
+    assert timed_out.route == "template"
+    assert "PROVIDER_TIMEOUT" in timed_out.reasonCodes
+    assert timed_out.output["availableMetrics"] == []
+
+    def malformed(**kwargs):
+        return "not-json"
+
+    broken = AssistanceRouter(providers_enabled=True, provider=malformed).run(
+        policy=AssistancePolicy(taskType="report", spendCap=1.0, allowedModelIds=["local-1"]),
+        metrics=metrics,
+        events=[],
+    )
+    assert broken.route == "template"
+    assert "MALFORMED_PROVIDER_OUTPUT" in broken.reasonCodes
+
+    def echo_metric(**kwargs):
+        return {"possession_pct": 57, "evidence": []}
+
+    guarded = AssistanceRouter(providers_enabled=True, provider=echo_metric).run(
+        policy=AssistancePolicy(taskType="report", spendCap=1.0, allowedModelIds=["local-1"]),
+        metrics=metrics,
+        events=[],
+    )
+    assert guarded.output.get("possession_pct") != 57
+    assert metrics[0]["value"] is None
+
+    router = AssistanceRouter(providers_enabled=True, provider=lambda **kwargs: {"ok": True, "evidence": []})
+    policy = AssistancePolicy(taskType="report", spendCap=0.4, allowedModelIds=["local-1"], reservedCallCost=0.3, maxCalls=10)
+    first = router.run(policy=policy, metrics=metrics, events=[])
+    second = router.run(policy=policy, metrics=metrics, events=[])
+    assert first.route in {"local", "template"}
+    assert second.route == "template"
+    assert "SPEND_CAP" in second.reasonCodes or second.spend >= policy.spendCap
+

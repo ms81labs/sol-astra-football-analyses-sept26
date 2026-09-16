@@ -173,6 +173,12 @@ export default function WorkbenchPanel({ onClose, matchId, events = [], onSeek }
               )}
               {recoveryMessage && <p className="text-xs text-emerald-300">{recoveryMessage}</p>}
               <div className="rounded-lg border border-slate-700 p-3 space-y-2">
+                <h4 className="text-xs uppercase tracking-wide text-slate-500">Operations</h4>
+                <p className="text-xs text-slate-400">
+                  Job cancellation is a request, not proof of termination. GPU default and native code remain gated.
+                </p>
+              </div>
+              <div className="rounded-lg border border-slate-700 p-3 space-y-2">
                 <h4 className="text-xs uppercase tracking-wide text-slate-500">Playlist source interval</h4>
                 <label className="block text-xs text-slate-400">
                   Start seconds

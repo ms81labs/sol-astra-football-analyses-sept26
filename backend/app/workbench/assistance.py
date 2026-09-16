@@ -54,6 +54,7 @@ class AssistancePolicy(StrictModel):
     maxCalls: int = 1
     maxRepairAttempts: int = 1
     spendCap: float = 0.0
+    reservedCallCost: float = 0.0
     allowedModelIds: list[str] = Field(default_factory=list)
     timeoutSeconds: float = 30.0
     cloudPermitted: bool = False
@@ -181,10 +182,12 @@ def template_report(metrics: list[dict[str, Any]], events: list[dict[str, Any]])
 
 
 class AssistanceRouter:
-    def __init__(self, *, providers_enabled: bool = False) -> None:
+    def __init__(self, *, providers_enabled: bool = False, provider=None) -> None:
         self.providers_enabled = providers_enabled
+        self.provider = provider
         self.calls = 0
         self.spend = 0.0
+        self.reserved = 0.0
 
     def run(
         self,
@@ -204,24 +207,70 @@ class AssistanceRouter:
                 reasonCodes=list(grounded["reasonCodes"]),
                 output=grounded["output"],
             )
+        template = template_report(metrics, events)
         if not self.providers_enabled or not policy.allowedModelIds or policy.spendCap <= 0:
             return AssistanceDisposition(
                 route="template",
                 reasonCodes=["PROVIDER_DISABLED"],
-                output=template_report(metrics, events),
+                output=template,
             )
-        if self.calls >= policy.maxCalls or self.spend >= policy.spendCap:
+        reserved = max(0.0, policy.reservedCallCost)
+        if self.calls >= policy.maxCalls or self.spend + self.reserved + reserved > policy.spendCap:
+            reason = "SPEND_CAP" if self.spend + self.reserved + reserved > policy.spendCap else "PROVIDER_DISABLED"
+            return AssistanceDisposition(
+                route="template",
+                reasonCodes=[reason],
+                callsUsed=self.calls,
+                spend=self.spend,
+                output=template,
+            )
+        metric_names = {str(item.get("metric")) for item in metrics if item.get("metric")}
+        if self.provider is None:
+            self.calls += 1
+            return AssistanceDisposition(
+                route="local" if not policy.cloudPermitted else "cloud",
+                callsUsed=self.calls,
+                spend=self.spend,
+                output={"status": "provider_stub"},
+            )
+        self.reserved += reserved
+        try:
+            raw = self.provider(metrics=metrics, events=events, policy=policy)
+        except TimeoutError:
+            self.reserved -= reserved
+            self.spend += reserved
+            return AssistanceDisposition(
+                route="template",
+                reasonCodes=["PROVIDER_TIMEOUT"],
+                callsUsed=self.calls,
+                spend=self.spend,
+                output=template,
+            )
+        except Exception:
+            self.reserved -= reserved
             return AssistanceDisposition(
                 route="template",
                 reasonCodes=["PROVIDER_DISABLED"],
                 callsUsed=self.calls,
                 spend=self.spend,
-                output=template_report(metrics, events),
+                output=template,
             )
+        self.reserved -= reserved
+        self.spend += reserved
         self.calls += 1
+        if not isinstance(raw, dict):
+            return AssistanceDisposition(
+                route="template",
+                reasonCodes=["MALFORMED_PROVIDER_OUTPUT"],
+                callsUsed=self.calls,
+                spend=self.spend,
+                output=template,
+            )
+        sanitized = {key: value for key, value in raw.items() if key not in metric_names}
         return AssistanceDisposition(
             route="local" if not policy.cloudPermitted else "cloud",
+            reasonCodes=["GROUNDED"] if "evidence" in sanitized else [],
             callsUsed=self.calls,
             spend=self.spend,
-            output={"status": "provider_stub"},
+            output=sanitized,
         )

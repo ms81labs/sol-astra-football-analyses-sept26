@@ -16,7 +16,10 @@ from .flags import feature_flags
 from .geometry import review_incident_geometry
 from .jobs import DurableJobLedger, JobRequest
 from .native import native_gate, probe_gpu
+from .ownership import classify_ownership
+from .package import assemble_match_package
 from .review import CorrectionLog, new_correction, playlist_export_interval
+from .rights import rights_register
 from .store import WorkbenchStore
 
 _correction_log = CorrectionLog()
@@ -75,8 +78,9 @@ _CORRECTION_INVALIDATION = {
     "team_mapping": "team_mapping",
     "track_split": "track_edit",
     "track_join": "track_edit",
-    "event_reject": "team_mapping",
-    "event_accept": "team_mapping",
+    "event_reject": "ownership",
+    "event_accept": "ownership",
+    "ownership": "ownership",
     "calibration": "calibration",
     "playlist_item": "report",
 }
@@ -268,5 +272,37 @@ def create_workbench_router(storage_root: Path) -> APIRouter:
     @router.get("/flags")
     def get_flags() -> dict:
         return feature_flags()
+
+    @router.post("/matches/{match_id}/ownership")
+    def match_ownership(match_id: str, payload: dict | None = None) -> dict:
+        del match_id
+        body = payload or {}
+        return jsonable(
+            classify_ownership(
+                ball_visible=bool(body.get("ballVisible", True)),
+                nearest_team=body.get("nearestTeam"),
+                nearest_distance=body.get("nearestDistance"),
+                relative_motion=body.get("relativeMotion"),
+                persistence_frames=int(body.get("persistenceFrames") or 0),
+                calibrated=bool(body.get("calibrated")),
+            )
+        )
+
+    @router.post("/matches/{match_id}/package")
+    def match_package(match_id: str, payload: dict | None = None) -> dict:
+        del match_id
+        body = payload or {}
+        return assemble_match_package(
+            playlist=list(body.get("playlist") or []),
+            events=list(body.get("events") or []),
+            metrics=list(body.get("metrics") or []),
+            corrections=list(body.get("corrections") or []),
+            cost=body.get("cost") or {},
+            secrets=body.get("secrets") or {},
+        )
+
+    @router.get("/rights")
+    def get_rights() -> dict:
+        return rights_register()
 
     return router
