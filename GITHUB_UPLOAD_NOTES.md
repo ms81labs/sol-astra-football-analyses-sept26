@@ -33,6 +33,11 @@ verifier until the omitted artifacts are restored. Their identities remain in
 `docs/reports/2026-09-13-football-analysis-readiness.md`, and the concise live
 handoff is `docs/status/current.md`.
 
+GitHub CI therefore runs the artifact-independent backend suite, research
+sidecar, frontend tests/lint/typechecks/build, backend import, and production
+dependency audit. Run `scripts/verify.sh` only after restoring the documented
+artifacts.
+
 No credential is required or included in this export. Keep provider and GitHub
 tokens outside the repository.
 
