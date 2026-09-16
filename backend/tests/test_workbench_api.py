@@ -223,6 +223,15 @@ def test_workbench_corrections_search_jobs_and_unknown_metrics(tmp_path: Path) -
             rolled = await client.post("/api/workbench/rollback", json={"flagName": "gpu_default", "affectedOutputs": ["run-17"]})
             assert rolled.json()["newJobsAdmitted"] is False
             assert rolled.json()["rewrotePastTrialOutcomes"] is False
+            nested_job = await client.post(
+                "/api/workbench/matches/m1/jobs",
+                json={"requestId": "r-nested", "matchId": "m1", "sourceSha256": "d" * 64, "budget": 0.5},
+            )
+            assert nested_job.status_code == 200
+            assert nested_job.json()["status"] == "submitted"
+            measures = await client.get("/api/workbench/evaluation/measures")
+            assert measures.json()["trackevalIsGroundTruth"] is False
+            assert measures.json()["annotationServiceHealthSatisfiesLabelGate"] is False
 
     _run(body)
 

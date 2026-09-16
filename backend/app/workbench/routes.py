@@ -13,7 +13,7 @@ from .contracts import SourceClockIdentity, jsonable
 from .costs import credit_allocation, match_cost
 from .decisions import architecture_decisions
 from .dossier import build_baseline_dossier, build_release_dossier
-from .evaluation import current_repository_evaluation_gate
+from .evaluation import current_repository_evaluation_gate, evaluation_measures
 from .evidence import EvidenceStore, inspect_metric, metric_dictionary, summarize_legacy_match
 from .flags import feature_flags
 from .geometry import review_incident_geometry
@@ -243,6 +243,12 @@ def create_workbench_router(storage_root: Path) -> APIRouter:
         )
         attempt = _job_ledger.submit(request)
         return jsonable(_job_ledger.receipt(body.requestId)) | {"attemptId": attempt.attemptId}
+
+    @router.post("/matches/{match_id}/jobs")
+    def create_match_job(match_id: str, body: JobBody) -> dict:
+        if body.matchId != match_id:
+            body = body.model_copy(update={"matchId": match_id})
+        return create_job(body)
 
     @router.post("/jobs/{request_id}/timeout")
     def job_timeout(request_id: str) -> dict:
@@ -521,5 +527,9 @@ def create_workbench_router(storage_root: Path) -> APIRouter:
             flag_name=str(body.get("flagName") or "unspecified"),
             affected_outputs=list(body.get("affectedOutputs") or []),
         )
+
+    @router.get("/evaluation/measures")
+    def get_evaluation_measures() -> dict:
+        return evaluation_measures()
 
     return router

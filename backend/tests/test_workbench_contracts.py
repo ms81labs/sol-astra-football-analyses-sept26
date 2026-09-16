@@ -481,6 +481,18 @@ def test_evaluation_gate_fails_closed_without_independent_labels() -> None:
     assert passing.accepted is True
 
 
+def test_evaluation_measures_require_compatible_labels_and_do_not_treat_health_as_the_label_gate() -> None:
+    from backend.app.workbench.evaluation import evaluation_measures
+
+    measures = evaluation_measures()
+    assert measures["hotaIdf1RequiresCompatibleImageSpaceLabels"] is True
+    assert measures["officialPitchPositionsAreNotHotaLabels"] is True
+    assert measures["trackevalIsGroundTruth"] is False
+    assert measures["annotationServiceHealthSatisfiesLabelGate"] is False
+    assert measures["pooledAverageOnly"] is False
+    assert measures["handEditedSummaryIsResult"] is False
+
+
 def test_gpu_and_native_gates_are_inert_by_default(tmp_path: Path) -> None:
     gpu = probe_gpu(nvidia_smi_ok=False, torch_cuda=False)
     assert gpu.available is False

@@ -74,3 +74,14 @@ def current_repository_evaluation_gate() -> EvaluationGate:
         team_declarations_present=False,
         scorer_replayable=True,
     )
+
+
+def evaluation_measures() -> dict[str, bool]:
+    return {
+        "hotaIdf1RequiresCompatibleImageSpaceLabels": True,
+        "officialPitchPositionsAreNotHotaLabels": True,
+        "trackevalIsGroundTruth": False,
+        "annotationServiceHealthSatisfiesLabelGate": False,
+        "pooledAverageOnly": False,
+        "handEditedSummaryIsResult": False,
+    }

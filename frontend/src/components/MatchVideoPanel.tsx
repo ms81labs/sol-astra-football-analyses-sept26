@@ -23,6 +23,13 @@ export default function MatchVideoPanel({
   const [isReady, setIsReady] = useState(false);
   const appliedSeekRef = useRef<number | undefined>(undefined);
   const [hasError, setHasError] = useState(false);
+  const [playbackRate, setPlaybackRate] = useState(1);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.playbackRate = playbackRate;
+  }, [playbackRate]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -85,6 +92,19 @@ export default function MatchVideoPanel({
           setHasError(true);
         }}
       />
+      <label className="absolute bottom-2 left-2 rounded bg-slate-900/80 px-2 py-1 text-[11px] text-slate-300">
+        Playback speed
+        <select
+          value={playbackRate}
+          onChange={(event) => setPlaybackRate(Number(event.target.value))}
+          className="ml-2 rounded border border-slate-600 bg-slate-800 px-1 py-0.5 text-slate-200"
+        >
+          <option value={0.5}>0.5x</option>
+          <option value={1}>1x</option>
+          <option value={1.5}>1.5x</option>
+          <option value={2}>2x</option>
+        </select>
+      </label>
 
       {hasError && (
         <div className="absolute inset-0 flex items-center justify-center bg-slate-950/90 p-6 text-center">

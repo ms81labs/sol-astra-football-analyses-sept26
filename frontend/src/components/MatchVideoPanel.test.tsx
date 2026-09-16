@@ -45,6 +45,21 @@ describe('MatchVideoPanel', () => {
 });
 
 
+it('exposes variable playback speed without treating it as inference fps', () => {
+  render(
+    <MatchVideoPanel
+      videoUrl="/api/matches/match-1/video"
+      currentTimestamp={0}
+      isPlaying={false}
+      onVideoTimeChange={() => undefined}
+    />,
+  );
+  const video = screen.getByTestId('match-video') as HTMLVideoElement;
+  fireEvent.change(screen.getByLabelText(/playback speed/i), { target: { value: '0.5' } });
+  expect(video.playbackRate).toBe(0.5);
+});
+
+
 it('seeks during playback, ignores frame ticks, and reapplies pre-metadata play intent', () => {
   const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
   const onVideoTimeChange = vi.fn();

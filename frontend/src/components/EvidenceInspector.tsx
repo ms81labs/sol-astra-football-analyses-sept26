@@ -1,4 +1,5 @@
 import type { FrameData } from '../types';
+import ClockReadout from './ClockReadout';
 
 interface EvidenceInspectorProps {
   frame: FrameData | null;
@@ -39,6 +40,10 @@ export default function EvidenceInspector({
       {modelHash && <p>Model: <span className="font-mono">{modelHash}</span></p>}
       {configVersion && <p>Config: <span className="font-mono">{configVersion}</span></p>}
       {uncertainty && <p>Uncertainty: <span className="font-mono">{uncertainty}</span></p>}
+      <ClockReadout
+        presentationTimeSeconds={frame?.Timestamp ?? 0}
+        matchClockSeconds={frame?.Timestamp ?? 0}
+      />
       <p className="text-slate-500">Reviewed does not convert an inferred location into a directly observed one.</p>
     </section>
   );
