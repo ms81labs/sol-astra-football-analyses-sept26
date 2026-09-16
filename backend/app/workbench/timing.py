@@ -47,3 +47,15 @@ def stage_timing(
         overlappedStagesAreAdditive=False if overlapped else stage_sum == wall_time,
         notes=["Overlapped stage durations are not additive wall time.", "Time completed work, not asynchronous submission."],
     )
+
+
+def gpu_timing_scope(*, submission_ms: float, completed_ms: float | None, device_aware: bool) -> dict[str, object]:
+    admitted = completed_ms is not None and device_aware
+    return {
+        "submissionMs": submission_ms,
+        "completedMs": completed_ms,
+        "deviceAware": device_aware,
+        "usesSubmissionAsCompletedWork": False,
+        "admitted": admitted,
+        "reasonCodes": [] if admitted else ["GPU_TIMING_SUBMISSION_IS_NOT_COMPLETED_WORK"],
+    }

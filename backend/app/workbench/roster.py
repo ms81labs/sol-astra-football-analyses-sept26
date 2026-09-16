@@ -39,3 +39,12 @@ def video_model_roster() -> dict[str, Any]:
         "mvitv2": {"promoted": False, "role": "pretrained_video_reference"},
         "videomae_v2": {"promoted": False, "role": "pretrained_video_reference"},
     }
+
+
+def frontier_provider_role(*, model_id: str) -> dict[str, Any]:
+    return {
+        "modelId": model_id,
+        "role": "frontier",
+        "hardCodedModelName": False,
+        "promoted": False,
+    }

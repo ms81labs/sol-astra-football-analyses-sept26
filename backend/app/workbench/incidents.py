@@ -85,3 +85,39 @@ def level3_multiview() -> dict[str, Any]:
         "validatedMeasurement": False,
         "reasonCodes": ["NEW_DATASET_REQUIRED", "CALIBRATION_PROTOCOL_REQUIRED"],
     }
+
+
+def vlm_confidence_is_not_referee(*, confidence: float) -> dict[str, Any]:
+    del confidence
+    return {
+        "refereeGroundTruth": False,
+        "decision": None,
+        "validatedMeasurement": False,
+        "reasonCodes": ["VLM_CONFIDENCE_IS_NOT_REFEREE_GROUND_TRUTH"],
+    }
+
+
+def broadcast_replay_not_simultaneous(*, same_timestamp: bool) -> dict[str, Any]:
+    return {
+        "simultaneous": False,
+        "admitted": bool(same_timestamp),
+        "reasonCodes": [] if same_timestamp else ["SIMULTANEOUS_EVIDENCE_UNPROVEN"],
+    }
+
+
+def elevated_body_part_homography(*, part: str) -> dict[str, Any]:
+    del part
+    return {
+        "preciseOffsideLine": False,
+        "validatedMeasurement": False,
+        "reasonCodes": ["GROUND_PLANE_NOT_BODY_PART"],
+    }
+
+
+def invisible_entity_not_repaired_by_larger_model(*, visible: bool) -> dict[str, Any]:
+    return {
+        "visible": visible,
+        "repaired": False,
+        "admitted": bool(visible),
+        "reasonCodes": [] if visible else ["INVISIBLE_ENTITY_NOT_REPAIRED_BY_LARGER_MODEL"],
+    }

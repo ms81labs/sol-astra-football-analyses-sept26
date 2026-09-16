@@ -43,6 +43,10 @@ export default function IncidentReview({ touchStart, touchEnd, samples }: Incide
         />
       </label>
       {indeterminate && <p className="text-amber-200">Indeterminate across the chosen touch interval.</p>}
+      <p>Video-language model confidence is not referee ground truth.</p>
+      <p>Broadcast replays from different times are not simultaneous evidence.</p>
+      <p>Elevated body parts through a ground-plane homography are not a precise offside line.</p>
+      <p>An invisible player or ball cannot be repaired by a larger model.</p>
       <ul className="space-y-1 font-mono text-slate-500">
         {samples.map((sample) => (
           <li key={sample.time}>

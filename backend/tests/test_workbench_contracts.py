@@ -2513,6 +2513,59 @@ def test_network_allowlist_constrained_decoder_and_egress_stay_fail_closed() -> 
     assert loopback_ok["publicExposureAllowed"] is False
 
 
+def test_gpu_timing_quality_gates_and_incident_overlays_stay_honest() -> None:
+    from backend.app.workbench.benchmarks import quality_gate_holds
+    from backend.app.workbench.incidents import (
+        broadcast_replay_not_simultaneous,
+        elevated_body_part_homography,
+        invisible_entity_not_repaired_by_larger_model,
+        vlm_confidence_is_not_referee,
+    )
+    from backend.app.workbench.native import quantized_weight_memory
+    from backend.app.workbench.roster import frontier_provider_role
+    from backend.app.workbench.timing import gpu_timing_scope
+
+    submission = gpu_timing_scope(submission_ms=12.0, completed_ms=None, device_aware=False)
+    assert submission["usesSubmissionAsCompletedWork"] is False
+    assert submission["admitted"] is False
+    assert "GPU_TIMING_SUBMISSION_IS_NOT_COMPLETED_WORK" in submission["reasonCodes"]
+    completed = gpu_timing_scope(submission_ms=12.0, completed_ms=40.0, device_aware=True)
+    assert completed["completedMs"] == 40.0
+    assert completed["usesSubmissionAsCompletedWork"] is False
+
+    faster = quality_gate_holds(
+        faster=True,
+        quality_passed=False,
+        viewed_results=True,
+        original_threshold=0.8,
+        proposed_threshold=0.5,
+    )
+    assert faster["status"] == "experimental"
+    assert faster["promoted"] is False
+    assert faster["threshold"] == 0.8
+    assert "QUALITY_GATE_NOT_REDUCED_AFTER_VIEWING" in faster["reasonCodes"]
+
+    vlm = vlm_confidence_is_not_referee(confidence=0.99)
+    assert vlm["refereeGroundTruth"] is False
+    assert vlm["decision"] is None
+    replay = broadcast_replay_not_simultaneous(same_timestamp=False)
+    assert replay["simultaneous"] is False
+    assert "SIMULTANEOUS_EVIDENCE_UNPROVEN" in replay["reasonCodes"]
+    shoulder = elevated_body_part_homography(part="shoulder")
+    assert shoulder["preciseOffsideLine"] is False
+    assert "GROUND_PLANE_NOT_BODY_PART" in shoulder["reasonCodes"]
+    hidden = invisible_entity_not_repaired_by_larger_model(visible=False)
+    assert hidden["repaired"] is False
+    assert hidden["admitted"] is False
+
+    quant = quantized_weight_memory(weight_bytes=1_000_000)
+    assert quant["completeRuntimeMemory"] is False
+    assert "QUANTIZED_WEIGHT_SIZE_IS_NOT_RUNTIME_MEMORY" in quant["reasonCodes"]
+    frontier = frontier_provider_role(model_id="gemini-flash")
+    assert frontier["role"] == "frontier"
+    assert frontier["hardCodedModelName"] is False
+
+
 def test_native_wheels_os_profiles_and_ffmpeg_builds_stay_unportable() -> None:
     from backend.app.workbench.native import (
         custom_native_justification,

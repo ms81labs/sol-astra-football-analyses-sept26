@@ -47,3 +47,26 @@ def experiment_receipt(
         hardwareVerified=hardware_verified,
         reasonCodes=["EXPORT_FPS_IS_NOT_INFERENCE_FPS"],
     )
+
+
+def quality_gate_holds(
+    *,
+    faster: bool,
+    quality_passed: bool,
+    viewed_results: bool,
+    original_threshold: float,
+    proposed_threshold: float,
+) -> dict[str, object]:
+    del faster
+    reduced = viewed_results and proposed_threshold < original_threshold
+    reasons: list[str] = []
+    if not quality_passed:
+        reasons.append("QUALITY_GATE_FAILED")
+    if reduced:
+        reasons.append("QUALITY_GATE_NOT_REDUCED_AFTER_VIEWING")
+    return {
+        "status": "experimental" if not quality_passed else "recorded",
+        "promoted": bool(quality_passed) and not reduced,
+        "threshold": original_threshold,
+        "reasonCodes": reasons,
+    }

@@ -21,6 +21,10 @@ it('lets the reviewer choose a touch interval and stays indeterminate without an
   expect(screen.getByText(/indeterminate/i)).toBeTruthy();
   expect(screen.queryByText(/offside ruling/i)).toBeNull();
   expect(screen.getByText(/not a validated measurement/i)).toBeTruthy();
+  expect(screen.getByText(/video-language model confidence is not referee ground truth/i)).toBeTruthy();
+  expect(screen.getByText(/broadcast replays from different times are not simultaneous evidence/i)).toBeTruthy();
+  expect(screen.getByText(/elevated body parts through a ground-plane homography are not a precise offside line/i)).toBeTruthy();
+  expect(screen.getByText(/an invisible player or ball cannot be repaired by a larger model/i)).toBeTruthy();
   fireEvent.change(screen.getByLabelText(/touch interval end/i), { target: { value: '12.20' } });
   expect((screen.getByLabelText(/touch interval end/i) as HTMLInputElement).value).toBe('12.20');
 });

@@ -104,6 +104,15 @@ def custom_native_justification(*, measured_savings: bool, required_capability: 
     }
 
 
+def quantized_weight_memory(*, weight_bytes: int) -> dict[str, Any]:
+    del weight_bytes
+    return {
+        "completeRuntimeMemory": False,
+        "admitted": False,
+        "reasonCodes": ["QUANTIZED_WEIGHT_SIZE_IS_NOT_RUNTIME_MEMORY"],
+    }
+
+
 def native_gate(*, repo_root: Path, approval_env: dict[str, str] | None = None) -> NativeGate:
     env = approval_env if approval_env is not None else {}
     native_dir = repo_root / DEFAULT_NATIVE_DIR
