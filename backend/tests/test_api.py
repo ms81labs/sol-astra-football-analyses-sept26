@@ -2332,3 +2332,55 @@ async def _test_production_colour_perception_worker_training_cycle_and_recovery_
         assert direction.json()["direction"] == "right_to_left"
         assert direction.json()["fromStoredConfig"] is True
 
+
+def test_workbench_leftovers_ignore_client_injected_rows(tmp_path: Path):
+    _run(_test_workbench_leftovers_ignore_client_injected_rows, tmp_path)
+
+
+async def _test_workbench_leftovers_ignore_client_injected_rows(tmp_path: Path):
+    async with api_client(tmp_path) as (_, client):
+        search = await client.post(
+            "/api/workbench/search",
+            json={
+                "query": "show our second-half turnovers followed by a shot within 10 seconds",
+                "matchId": "m1",
+                "events": [
+                    {"id": "t1", "type": "turnover", "team": "my_team", "period": 2, "timestamp": 70, "evidenceIds": ["e1"]},
+                    {"id": "s1", "type": "shot", "team": "my_team", "period": 2, "timestamp": 72, "evidenceIds": ["e2"]},
+                ],
+            },
+        )
+        assert search.status_code == 200
+        assert search.json()["results"] == []
+
+        metrics = await client.post(
+            "/api/workbench/matches/m1/metrics",
+            json={"possession": 61, "identityContinuous": True, "calibrationAccepted": True, "controlledFrames": 9000, "myTeamDistance": 12000},
+        )
+        assert metrics.status_code == 200
+        possession = next(item for item in metrics.json()["metrics"] if item["metric"] == "possession_pct")
+        assert possession["availability"] == "unknown"
+        assert possession["value"] is None
+
+        assembled = await client.post(
+            "/api/workbench/matches/m1/reports/assemble",
+            json={"claimedEvidenceIds": ["ev-1"], "knownEvidenceIds": ["ev-1"], "metrics": [{"metric": "possession_pct", "value": 61, "availability": "available"}]},
+        )
+        assert assembled.status_code == 200
+        assert assembled.json()["publication"]["accepted"] is False
+
+        setup = await client.post(
+            "/api/workbench/setup/assess",
+            json={"cameraProfile": "stable_elevated_wide", "pitchLengthM": 105, "rights": {"cloudPermission": True}},
+        )
+        assert setup.status_code == 200
+        assert setup.json()["automationAdmitted"] is False
+
+        job = await client.post(
+            "/api/workbench/jobs",
+            json={"requestId": "wb-prod", "matchId": "m1", "sourceSha256": "c" * 64, "budget": 1.0, "authorisedLocation": "daytona"},
+        )
+        assert job.status_code == 200
+        assert job.json()["namespace"] == "production"
+        assert job.json()["authorisedLocation"] == "local"
+

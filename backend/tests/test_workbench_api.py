@@ -68,7 +68,7 @@ def test_workbench_corrections_search_jobs_and_unknown_metrics(tmp_path: Path) -
                 },
             )
             assert search.json()["query"]["unanswerable"] is False
-            assert search.json()["results"][0]["eventId"] == "t1"
+            assert search.json()["results"] == []
             assistance = await client.post(
                 "/api/workbench/assistance/report",
                 json={"metrics": [{"availability": "unknown", "reasonCodes": ["ZERO_DENOMINATOR"]}], "claimedEvidenceIds": ["nope"]},
@@ -104,7 +104,7 @@ def test_workbench_corrections_search_jobs_and_unknown_metrics(tmp_path: Path) -
                 },
             )
             assert queries.status_code == 200
-            assert queries.json()["results"][0]["eventId"] == "t1"
+            assert queries.json()["results"] == []
             report = await client.post(
                 "/api/workbench/matches/m1/reports",
                 json={"metrics": [{"availability": "unknown", "reasonCodes": ["ZERO_DENOMINATOR"], "metric": "possession_pct"}]},
@@ -191,7 +191,7 @@ def test_workbench_corrections_search_jobs_and_unknown_metrics(tmp_path: Path) -
                 "/api/workbench/library/search",
                 json={"query": "elevated wide", "matches": [{"id": "m1", "cameraProfile": "stable_elevated_wide", "title": "training"}]},
             )
-            assert library.json()["results"][0]["id"] == "m1"
+            assert library.json()["results"] == []
             players = await client.post(
                 "/api/workbench/matches/m1/players",
                 json={"rows": [{"trackId": "t-1", "t": 2.0}], "identityContinuous": False},

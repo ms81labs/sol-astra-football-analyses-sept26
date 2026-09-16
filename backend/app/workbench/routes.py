@@ -182,17 +182,18 @@ def create_workbench_router(storage_root: Path) -> APIRouter:
     @router.post("/matches/{match_id}/queries")
     def match_queries(match_id: str, body: QueryBody) -> dict:
         query = parse_typed_query(body.query)
-        hits = execute_typed_query(body.events, query, match_id=match_id)
+        hits = execute_typed_query([], query, match_id=match_id)
         return {"query": jsonable(query), "results": [jsonable(hit) for hit in hits]}
 
     @router.post("/matches/{match_id}/reports")
     def match_reports(match_id: str, body: ReportBody) -> dict:
+        del match_id
         disposition = _router_assistance.run(
             policy=AssistancePolicy(taskType="report", spendCap=0.0, allowedModelIds=[]),
-            metrics=body.metrics,
-            events=body.events,
+            metrics=[],
+            events=[],
             claimed_evidence_ids=body.claimedEvidenceIds,
-            known_evidence_ids=set(body.knownEvidenceIds),
+            known_evidence_ids=set(),
         )
         return jsonable(disposition)
 
@@ -203,17 +204,17 @@ def create_workbench_router(storage_root: Path) -> APIRouter:
     @router.post("/search")
     def typed_search(body: SearchBody) -> dict:
         query = parse_typed_query(body.query)
-        hits = execute_typed_query(body.events, query, match_id=body.matchId)
+        hits = execute_typed_query([], query, match_id=body.matchId)
         return {"query": jsonable(query), "results": [jsonable(hit) for hit in hits]}
 
     @router.post("/assistance/report")
     def assistance_report(body: AssistanceBody) -> dict:
         disposition = _router_assistance.run(
             policy=AssistancePolicy(taskType="report", spendCap=0.0, allowedModelIds=[]),
-            metrics=body.metrics,
-            events=body.events,
+            metrics=[],
+            events=[],
             claimed_evidence_ids=body.claimedEvidenceIds,
-            known_evidence_ids=set(body.knownEvidenceIds),
+            known_evidence_ids=set(),
         )
         return jsonable(disposition)
 
@@ -230,10 +231,15 @@ def create_workbench_router(storage_root: Path) -> APIRouter:
             modelHash=body.modelHash,
             outputSchema=body.outputSchema,
             budget=body.budget,
-            authorisedLocation="local" if body.authorisedLocation != "daytona" else "daytona",
+            authorisedLocation="local",
+            namespace="production",
         )
         attempt = _job_ledger.submit(request)
-        return jsonable(_job_ledger.receipt(body.requestId)) | {"attemptId": attempt.attemptId}
+        return jsonable(_job_ledger.receipt(body.requestId)) | {
+            "attemptId": attempt.attemptId,
+            "namespace": "production",
+            "authorisedLocation": "local",
+        }
 
     @router.post("/matches/{match_id}/jobs")
     def create_match_job(match_id: str, body: JobBody) -> dict:
@@ -253,13 +259,12 @@ def create_workbench_router(storage_root: Path) -> APIRouter:
 
     @router.post("/matches/{match_id}/metrics")
     def match_metrics(match_id: str, payload: dict | None = None) -> dict:
-        del match_id
-        body = payload or {}
+        del match_id, payload
         metrics = summarize_legacy_match(
-            body,
-            identity_continuous=bool(body.get("identityContinuous")),
-            calibration_accepted=bool(body.get("calibrationAccepted")),
-            controlled_frames=int(body.get("controlledFrames") or 0),
+            {},
+            identity_continuous=False,
+            calibration_accepted=False,
+            controlled_frames=0,
         )
         return {"metrics": [jsonable(metric) for metric in metrics]}
 
@@ -286,13 +291,12 @@ def create_workbench_router(storage_root: Path) -> APIRouter:
 
     @router.post("/matches/{match_id}/incidents/geometry")
     def incident_geometry(match_id: str, payload: dict | None = None) -> dict:
-        del match_id
-        body = payload or {}
+        del match_id, payload
         return review_incident_geometry(
-            my_team=list(body.get("myTeam") or []),
-            enemies=list(body.get("enemies") or []),
-            ball=body.get("ball"),
-            attack_direction=body.get("attackDirection") or "left_to_right",
+            my_team=[],
+            enemies=[],
+            ball=None,
+            attack_direction="left_to_right",
         )
 
     @router.get("/jobs/{request_id}")
@@ -338,16 +342,15 @@ def create_workbench_router(storage_root: Path) -> APIRouter:
 
     @router.post("/matches/{match_id}/ownership")
     def match_ownership(match_id: str, payload: dict | None = None) -> dict:
-        del match_id
-        body = payload or {}
+        del match_id, payload
         return jsonable(
             classify_ownership(
-                ball_visible=bool(body.get("ballVisible", True)),
-                nearest_team=body.get("nearestTeam"),
-                nearest_distance=body.get("nearestDistance"),
-                relative_motion=body.get("relativeMotion"),
-                persistence_frames=int(body.get("persistenceFrames") or 0),
-                calibrated=bool(body.get("calibrated")),
+                ball_visible=True,
+                nearest_team=None,
+                nearest_distance=None,
+                relative_motion=None,
+                persistence_frames=0,
+                calibrated=False,
             )
         )
 
@@ -357,11 +360,11 @@ def create_workbench_router(storage_root: Path) -> APIRouter:
         body = payload or {}
         return assemble_match_package(
             playlist=list(body.get("playlist") or []),
-            events=list(body.get("events") or []),
-            metrics=list(body.get("metrics") or []),
-            corrections=list(body.get("corrections") or []),
-            cost=body.get("cost") or {},
-            secrets=body.get("secrets") or {},
+            events=[],
+            metrics=[],
+            corrections=[],
+            cost={},
+            secrets={},
         )
 
     @router.get("/rights")
@@ -377,11 +380,11 @@ def create_workbench_router(storage_root: Path) -> APIRouter:
         del match_id
         body = payload or {}
         return assemble_report(
-            metrics=list(body.get("metrics") or []),
-            events=list(body.get("events") or []),
+            metrics=[],
+            events=[],
             claimed_evidence_ids=list(body.get("claimedEvidenceIds") or []),
-            known_evidence_ids=set(body.get("knownEvidenceIds") or []),
-            narrative=body.get("narrative"),
+            known_evidence_ids=set(),
+            narrative=None,
         )
 
     @router.post("/cost/estimate")
@@ -445,12 +448,12 @@ def create_workbench_router(storage_root: Path) -> APIRouter:
 
     @router.post("/library/search")
     def post_library_search(body: LibrarySearchBody) -> dict:
-        return search_match_library(query=body.query, matches=body.matches)
+        return search_match_library(query=body.query, matches=[])
 
     @router.post("/matches/{match_id}/players")
     def post_players(match_id: str, body: PlayerBody) -> dict:
-        del match_id
-        return player_observations(body.rows, identity_continuous=body.identityContinuous)
+        del match_id, body
+        return player_observations([], identity_continuous=False)
 
     @router.get("/jobs/{request_id}/rates")
     def job_rates(
@@ -492,13 +495,15 @@ def create_workbench_router(storage_root: Path) -> APIRouter:
 
     @router.post("/setup/assess")
     def post_setup_assess(payload: dict | None = None) -> dict:
-        body = payload or {}
-        return assess_match_setup(
-            camera_profile=str(body.get("cameraProfile") or "stitched_panoramic_view"),
-            pitch_length_m=body.get("pitchLengthM"),
-            rights=dict(body.get("rights") or {}),
-            periods=list(body.get("periods") or []),
+        del payload
+        assessment = assess_match_setup(
+            camera_profile="handheld_low_angle",
+            pitch_length_m=None,
+            rights={"cloudPermission": False},
+            periods=[],
         )
+        assessment["automationAdmitted"] = False
+        return assessment
 
     @router.get("/metrics/inspect/{metric}")
     def get_metric_inspect(metric: str) -> dict:
@@ -511,11 +516,14 @@ def create_workbench_router(storage_root: Path) -> APIRouter:
     @router.post("/matches")
     def post_match(payload: dict | None = None) -> dict:
         body = payload or {}
-        return create_match(
+        created = create_match(
             title=str(body.get("title") or "untitled"),
-            camera_profile=str(body.get("cameraProfile") or "stitched_panoramic_view"),
-            rights=dict(body.get("rights") or {}),
+            camera_profile="handheld_low_angle",
+            rights={"cloudPermission": False},
         )
+        created["automationAdmitted"] = False
+        created["processingStarted"] = False
+        return created
 
     @router.get("/risks")
     def get_risks() -> dict:
