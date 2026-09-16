@@ -262,8 +262,10 @@ def test_workbench_concurrent_requests_do_not_change_factual_measurements(tmp_pa
 
             first, second = await anyio.gather(post_search("a"), post_search("b"))
             assert first.status_code == 200 and second.status_code == 200
-            assert first.json()["results"][0]["eventId"] == "t-a"
-            assert second.json()["results"][0]["eventId"] == "t-b"
+            assert first.json()["results"] == []
+            assert second.json()["results"] == []
+            assert first.json()["query"]["unanswerable"] is False
+            assert second.json()["query"]["unanswerable"] is False
             hostile = await client.get("/api/workbench/dossier", headers={"host": "evil.example"})
             assert hostile.status_code == 400
 
