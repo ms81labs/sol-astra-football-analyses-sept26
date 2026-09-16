@@ -342,7 +342,11 @@ def _build_match_signals(summary: MatchSummary | None, formation_timeline: list[
     enemy_ppda = _published_metric(summary, "enemy_ppda")
     pressing_edge = None if my_ppda is None or enemy_ppda is None else _round_two(enemy_ppda - my_ppda)
     if not summary.metricAvailability:
-        pressing_edge = _round_two(summary.enemyPpda - summary.myTeamPpda)
+        pressing_edge = (
+            None
+            if summary.enemyPpda is None or summary.myTeamPpda is None
+            else _round_two(summary.enemyPpda - summary.myTeamPpda)
+        )
     return {
         "possession": summary.possession,
         "xgBalance": _round_two(summary.myTeamXg - summary.enemyXg),

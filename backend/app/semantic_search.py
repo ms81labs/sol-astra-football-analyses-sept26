@@ -104,10 +104,10 @@ def _detect_themes_from_summary(summary: dict) -> list[tuple[str, float]]:
     if possession is not None:
         summary_text_parts.append(f"possession {possession} percent")
     
-    ppda_my = summary.get("myTeamPpda", 0)
-    if 0 < ppda_my < 8:
+    ppda_my = summary.get("myTeamPpda")
+    if ppda_my is not None and 0 < ppda_my < 8:
         summary_text_parts.append("high press aggressive press ppda")
-    elif ppda_my > 15:
+    elif ppda_my is not None and ppda_my > 15:
         summary_text_parts.append("low press passive press ppda")
     
     # Defensive line height
@@ -235,11 +235,11 @@ def _calculate_query_relevance(
     
     # Mention of press/pressing
     if "press" in query_lower:
-        ppda = summary.get("myTeamPpda", 10)
-        if "aggressive" in query_lower or "high" in query_lower:
+        ppda = summary.get("myTeamPpda")
+        if ppda is not None and ("aggressive" in query_lower or "high" in query_lower):
             if 0 < ppda < 8:
                 base_score += 20
-        elif "low" in query_lower or "passive" in query_lower:
+        elif ppda is not None and ("low" in query_lower or "passive" in query_lower):
             if ppda > 15:
                 base_score += 20
     
@@ -261,10 +261,10 @@ def _generate_match_summary_text(summary: dict, matched_themes: list[str]) -> st
     if block:
         parts.append(f"{block.replace('_', ' ')}")
     
-    ppda = summary.get("myTeamPpda", 0)
-    if ppda > 15:
+    ppda = summary.get("myTeamPpda")
+    if ppda is not None and ppda > 15:
         parts.append(f"High PPDA ({ppda}) - passive approach")
-    elif 0 < ppda < 8:
+    elif ppda is not None and 0 < ppda < 8:
         parts.append(f"Low PPDA ({ppda}) - aggressive press")
     
     if matched_themes:

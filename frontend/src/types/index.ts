@@ -88,22 +88,22 @@ export interface MatchStats {
     possession: number | null;  // null when no controlled frames exist
     ballSignalStatus: string;
     ballSignalMessage: string | null;
-    myTeamDistance: number;     // total meters
-    enemyDistance: number;      // total meters
+    myTeamDistance: number | null;
+    enemyDistance: number | null;
     myTeamAvgPos: { x: number; y: number };
     enemyAvgPos: { x: number; y: number };
-    myTeamTopSpeed: number;    // km/h
-    enemyTopSpeed: number;     // km/h
-    myTeamSprints: number;
-    enemySprints: number;
+    myTeamTopSpeed: number | null;
+    enemyTopSpeed: number | null;
+    myTeamSprints: number | null;
+    enemySprints: number | null;
     myTeamXg: number;
     enemyXg: number;
     myTeamDefensiveLineHeight: number;
     enemyDefensiveLineHeight: number;
     myTeamDefensiveTeamLength: number;
     enemyDefensiveTeamLength: number;
-    myTeamPpda: number;
-    enemyPpda: number;
+    myTeamPpda: number | null;
+    enemyPpda: number | null;
     myTeamHighPressRegains: number;
     enemyHighPressRegains: number;
     myTeamCounterpressRecoverySeconds: number;

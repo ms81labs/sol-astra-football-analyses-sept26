@@ -210,7 +210,7 @@ describe('StatsPanel', () => {
   it('renders withheld physical metrics as unavailable rather than a measured zero', () => {
     const { container } = render(
       <StatsPanel
-        stats={{ ...baseStats, myTeamDistance: 0, enemyDistance: 0 }}
+        stats={{ ...baseStats, myTeamDistance: null, enemyDistance: null, myTeamTopSpeed: null, enemyTopSpeed: null, myTeamSprints: null, enemySprints: null }}
         metricAvailability={[{
           metric: 'my_team_distance_m',
           definitionVersion: '1',
@@ -292,6 +292,20 @@ describe('StatsPanel', () => {
     const scoped = within(container);
     expect(scoped.getAllByText('Unavailable').length).toBeGreaterThanOrEqual(2);
     expect(scoped.getAllByText(/experimental shot quality/i).length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('renders null PPDA without availability records as unavailable rather than a measured zero', () => {
+    const { container } = render(
+      <StatsPanel
+        stats={{ ...baseStats, myTeamPpda: null, enemyPpda: null }}
+        benchmark={benchmarkTruthReady}
+        shotSummary={shotSummary}
+      />,
+    );
+    const pressing = within(container).getByText('Pressing').closest('div');
+    expect(pressing).toBeTruthy();
+    expect(within(pressing as HTMLElement).getAllByText('Unavailable').length).toBeGreaterThanOrEqual(2);
+    expect(pressing!.textContent).not.toContain('6.1');
   });
 
   it('does not recompute profile leaders when the profile array is unchanged', () => {

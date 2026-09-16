@@ -289,7 +289,7 @@ def _is_pressing_zone(team: str, x: float) -> bool:
 def _summarize_pressing_metrics(
     frames: list[FrameData],
     events: list[DetectedEvent],
-) -> tuple[float, float, int, int, float, float]:
+) -> tuple[float | None, float | None, int, int, float, float]:
     frame_by_id = {frame.frameId: frame for frame in frames}
     regain_types = {"turnover", "recovery", "tackle"}
     teams = ("my_team", "enemy")
@@ -334,7 +334,7 @@ def _summarize_pressing_metrics(
                 pressing_actions[event.team] += 1
 
     ppda = {
-        team: round(passes_allowed[team] / pressing_actions[team], 1) if pressing_actions[team] > 0 else 0.0
+        team: round(passes_allowed[team] / pressing_actions[team], 1) if pressing_actions[team] > 0 else None
         for team in teams
     }
 
@@ -1139,14 +1139,14 @@ def summarize_match(
     possession = round((my_team_ownership / controlled_frames) * 100) if controlled_frames else None
     summary = MatchSummary(
         possession=possession,
-        myTeamDistance=round(my_team_total_dist) if identity_continuous else 0,
-        enemyDistance=round(enemy_total_dist) if identity_continuous else 0,
+        myTeamDistance=round(my_team_total_dist) if identity_continuous else None,
+        enemyDistance=round(enemy_total_dist) if identity_continuous else None,
         myTeamAvgPos={"x": round(my_team_avg_x, 1), "y": round(my_team_avg_y, 1)},
         enemyAvgPos={"x": round(enemy_avg_x, 1), "y": round(enemy_avg_y, 1)},
-        myTeamTopSpeed=round(my_team_top_speed, 1) if identity_continuous else 0.0,
-        enemyTopSpeed=round(enemy_top_speed, 1) if identity_continuous else 0.0,
-        myTeamSprints=my_team_sprints if identity_continuous else 0,
-        enemySprints=enemy_sprints if identity_continuous else 0,
+        myTeamTopSpeed=round(my_team_top_speed, 1) if identity_continuous else None,
+        enemyTopSpeed=round(enemy_top_speed, 1) if identity_continuous else None,
+        myTeamSprints=my_team_sprints if identity_continuous else None,
+        enemySprints=enemy_sprints if identity_continuous else None,
         myTeamXg=my_team_xg,
         enemyXg=enemy_xg,
         myTeamDefensiveLineHeight=my_team_defensive_line_height,
@@ -1180,7 +1180,7 @@ def summarize_match(
     )
 
 
-def _ppda_availability(metric: str, value: float, pressing_actions: int) -> MetricAvailabilityRecord:
+def _ppda_availability(metric: str, value: float | None, pressing_actions: int) -> MetricAvailabilityRecord:
     if pressing_actions <= 0:
         return MetricAvailabilityRecord(
             metric=metric,
@@ -1218,12 +1218,12 @@ def _summary_metric_availability(
     )
     physical_reason = ["CALIBRATION_UNAVAILABLE", "IDENTITY_DISCONTINUITY"]
     physical_values = {
-        "my_team_distance_m": float(summary.myTeamDistance),
-        "enemy_distance_m": float(summary.enemyDistance),
-        "my_team_top_speed_kmh": float(summary.myTeamTopSpeed),
-        "enemy_top_speed_kmh": float(summary.enemyTopSpeed),
-        "my_team_sprints": float(summary.myTeamSprints),
-        "enemy_sprints": float(summary.enemySprints),
+        "my_team_distance_m": None if summary.myTeamDistance is None else float(summary.myTeamDistance),
+        "enemy_distance_m": None if summary.enemyDistance is None else float(summary.enemyDistance),
+        "my_team_top_speed_kmh": None if summary.myTeamTopSpeed is None else float(summary.myTeamTopSpeed),
+        "enemy_top_speed_kmh": None if summary.enemyTopSpeed is None else float(summary.enemyTopSpeed),
+        "my_team_sprints": None if summary.myTeamSprints is None else float(summary.myTeamSprints),
+        "enemy_sprints": None if summary.enemySprints is None else float(summary.enemySprints),
     }
     physical = [
         MetricAvailabilityRecord(

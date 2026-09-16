@@ -117,22 +117,22 @@ class MetricAvailabilityRecord(BaseModel):
 
 class MatchSummary(BaseModel):
     possession: int | None
-    myTeamDistance: int
-    enemyDistance: int
+    myTeamDistance: int | None
+    enemyDistance: int | None
     myTeamAvgPos: dict[str, float]
     enemyAvgPos: dict[str, float]
-    myTeamTopSpeed: float
-    enemyTopSpeed: float
-    myTeamSprints: int
-    enemySprints: int
+    myTeamTopSpeed: float | None
+    enemyTopSpeed: float | None
+    myTeamSprints: int | None
+    enemySprints: int | None
     myTeamXg: float = 0.0
     enemyXg: float = 0.0
     myTeamDefensiveLineHeight: float = 0.0
     enemyDefensiveLineHeight: float = 0.0
     myTeamDefensiveTeamLength: float = 0.0
     enemyDefensiveTeamLength: float = 0.0
-    myTeamPpda: float = 0.0
-    enemyPpda: float = 0.0
+    myTeamPpda: float | None = None
+    enemyPpda: float | None = None
     myTeamHighPressRegains: int = 0
     enemyHighPressRegains: int = 0
     myTeamCounterpressRecoverySeconds: float = 0.0

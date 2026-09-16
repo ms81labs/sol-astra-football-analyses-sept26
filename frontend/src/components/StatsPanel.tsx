@@ -99,16 +99,17 @@ export default function StatsPanel({
     const isBallSignalUntrusted = stats.ballSignalStatus === 'untrusted';
     const isBenchmarkTruthGateFailed = benchmark ? !benchmark.fiveMinuteTruthReady : false;
     const showTacticalInterpretation = !isBallSignalUntrusted && !isBenchmarkTruthGateFailed;
-    const maxDist = Math.max(stats.myTeamDistance, stats.enemyDistance, 1);
+    const maxDist = Math.max(stats.myTeamDistance ?? 0, stats.enemyDistance ?? 0, 1);
     const withheld = (record?: MetricAvailability) => record != null && record.availability !== 'available' && record.availability !== 'experimental';
     const physical = metricAvailability.find((metric) => metric.metric === 'my_team_distance_m');
     const speed = metricAvailability.find((metric) => metric.metric === 'my_team_top_speed_kmh');
     const sprints = metricAvailability.find((metric) => metric.metric === 'my_team_sprints');
-    const physicalUnavailable = withheld(physical);
-    const speedUnavailable = withheld(speed) || withheld(sprints) || physicalUnavailable;
+    const physicalUnavailable = withheld(physical) || stats.myTeamDistance == null || stats.enemyDistance == null;
+    const speedUnavailable = withheld(speed) || withheld(sprints) || physicalUnavailable || stats.myTeamTopSpeed == null || stats.enemyTopSpeed == null || stats.myTeamSprints == null || stats.enemySprints == null;
     const myPpda = metricAvailability.find((metric) => metric.metric === 'my_team_ppda');
     const enemyPpda = metricAvailability.find((metric) => metric.metric === 'enemy_ppda');
-    const ppdaHidden = (record?: { availability: string }) => record != null && record.availability !== 'available' && record.availability !== 'experimental';
+    const ppdaUnavailable = (record?: { availability: string } | undefined, value?: number | null) =>
+      value == null || (record != null && record.availability !== 'available' && record.availability !== 'experimental');
     const formationWithheld = formationAvailability != null
       && formationAvailability.availability !== 'available'
       && formationAvailability.availability !== 'experimental';
@@ -150,11 +151,11 @@ export default function StatsPanel({
                         <p className="text-xs text-slate-400">Unavailable</p>
                     ) : (
                     <div className="space-y-1.5">
-                        <StatBar label="My Team" value={stats.myTeamDistance} maxValue={maxDist} color="#3b82f6" />
-                        <StatBar label="Enemy" value={stats.enemyDistance} maxValue={maxDist} color="#ef4444" />
+                        <StatBar label="My Team" value={stats.myTeamDistance ?? 0} maxValue={maxDist} color="#3b82f6" />
+                        <StatBar label="Enemy" value={stats.enemyDistance ?? 0} maxValue={maxDist} color="#ef4444" />
                     </div>
                     )}
-                    {comparisonStats && (
+                    {comparisonStats && !physicalUnavailable && stats.myTeamDistance != null && stats.enemyDistance != null && comparisonStats.myTeamDistance != null && comparisonStats.enemyDistance != null && (
                         <div className="mt-1 flex gap-4 justify-center text-xs">
                             <ComparisonArrow current={stats.myTeamDistance} previous={comparisonStats.myTeamDistance} />
                             <ComparisonArrow current={stats.enemyDistance} previous={comparisonStats.enemyDistance} />
@@ -309,7 +310,7 @@ export default function StatsPanel({
                                 <div className="grid grid-cols-3 gap-3 text-xs">
                                     <div>
                                         <p className="text-slate-500">PPDA</p>
-                                        <p className="text-emerald-400 font-mono font-semibold">{ppdaHidden(myPpda) ? 'Unavailable' : stats.myTeamPpda}</p>
+                                        <p className="text-emerald-400 font-mono font-semibold">{ppdaUnavailable(myPpda, stats.myTeamPpda) ? 'Unavailable' : stats.myTeamPpda}</p>
                                     </div>
                                     <div>
                                         <p className="text-slate-500">High Regains</p>
@@ -330,7 +331,7 @@ export default function StatsPanel({
                                 <div className="grid grid-cols-3 gap-3 text-xs">
                                     <div>
                                         <p className="text-slate-500">PPDA</p>
-                                        <p className="text-emerald-400 font-mono font-semibold">{ppdaHidden(enemyPpda) ? 'Unavailable' : stats.enemyPpda}</p>
+                                        <p className="text-emerald-400 font-mono font-semibold">{ppdaUnavailable(enemyPpda, stats.enemyPpda) ? 'Unavailable' : stats.enemyPpda}</p>
                                     </div>
                                     <div>
                                         <p className="text-slate-500">High Regains</p>

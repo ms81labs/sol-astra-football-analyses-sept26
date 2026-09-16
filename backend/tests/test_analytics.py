@@ -564,9 +564,12 @@ def test_summarize_match_withholds_physical_totals_until_identity_continuity() -
         },
     ]
     summary = summarize_match(frames, [])
-    assert summary.myTeamDistance == 0
-    assert summary.enemyDistance == 0
-    assert summary.myTeamTopSpeed == 0.0
+    assert summary.myTeamDistance is None
+    assert summary.enemyDistance is None
+    assert summary.myTeamTopSpeed is None
+    assert summary.enemyTopSpeed is None
+    assert summary.myTeamSprints is None
+    assert summary.enemySprints is None
     physical = {item.metric: item for item in summary.metricAvailability}
     assert physical["my_team_distance_m"].availability == "withheld"
     assert physical["my_team_distance_m"].value is None
@@ -1776,7 +1779,8 @@ def test_summarize_match_marks_ppda_unknown_when_pressing_denominator_is_zero():
     assert "ZERO_DENOMINATOR" in my_ppda.reasonCodes
     assert my_ppda.published_value() is None
     assert enemy_ppda.availability == "unknown"
-    assert summary.myTeamPpda == 0.0
+    assert summary.myTeamPpda is None
+    assert summary.enemyPpda is None
     shot_quality = _metric(summary, "experimental_shot_quality")
     assert shot_quality.availability == "experimental"
     assert shot_quality.publishedLabel == "experimental_shot_quality"
