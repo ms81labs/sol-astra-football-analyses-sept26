@@ -48,13 +48,26 @@ class CorrectionLog:
         self._lock = threading.Lock()
         self._pending: dict[str, Correction] = {}
 
-    def submit(self, correction: Correction, *, crash_before_commit: bool = False) -> Correction:
-        pending = correction.model_copy(update={"saveState": "pending"})
+    def submit(
+        self,
+        correction: Correction,
+        *,
+        crash_before_commit: bool = False,
+        expected_version: int | None = None,
+    ) -> Correction:
         with self._lock:
+            current = 0
+            for item in self._items:
+                if item.matchId == correction.matchId:
+                    current = max(current, item.version)
+            if expected_version is not None and current != expected_version:
+                return correction.model_copy(update={"saveState": "conflicted"})
+            pending = correction.model_copy(update={"saveState": "pending"})
             self._pending[pending.correctionId] = pending
             if crash_before_commit:
                 return pending
-            committed = pending.model_copy(update={"saveState": "saved"})
+            version = current + 1 if expected_version is not None else (correction.version if current == 0 else current + 1)
+            committed = pending.model_copy(update={"saveState": "saved", "version": version})
             self._items.append(committed)
             self._pending.pop(pending.correctionId, None)
             return committed

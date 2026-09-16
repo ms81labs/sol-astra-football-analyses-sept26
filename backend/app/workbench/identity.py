@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from .contracts import StrictModel
 
@@ -31,3 +31,26 @@ def promote_identity(
     if target == "roster_player" and record.kind == "match_identity" and rosterId:
         return record.model_copy(update={"kind": "roster_player", "rosterId": rosterId})
     return record
+
+
+class ClusterMapping(StrictModel):
+    clusterId: int
+    semanticTeam: Literal["my_team", "enemy"] | None = None
+    suggestion: bool = True
+    notes: str = "Numeric cluster IDs are not stable home/away labels."
+
+
+def cluster_mapping(*, cluster_id: int, selected_semantic: str | None) -> ClusterMapping:
+    semantic = selected_semantic if selected_semantic in {"my_team", "enemy"} else None
+    return ClusterMapping(clusterId=cluster_id, semanticTeam=semantic, suggestion=semantic is None)
+
+
+def player_observations(rows: list[dict[str, Any]], *, identity_continuous: bool) -> dict[str, Any]:
+    if identity_continuous:
+        return {"intervalLimited": False, "totalsWithheld": False, "rows": rows, "reasonCodes": []}
+    return {
+        "intervalLimited": True,
+        "totalsWithheld": True,
+        "rows": rows,
+        "reasonCodes": ["IDENTITY_DISCONTINUITY"],
+    }

@@ -1069,3 +1069,111 @@ def test_dpia_blocks_cloud_for_youth_or_missing_permission() -> None:
     assert local.cloudAllowed is False
     assert local.localProcessingRequired is True
 
+
+def test_sample_decode_anchors_cover_beginning_middle_and_end() -> None:
+    from backend.app.workbench.media import sample_decode_anchors
+
+    frames = [
+        DecodedFrame(0, 0, 0.0, 2, 2, "bgr", 0, b"a", "opencv"),
+        DecodedFrame(1, 1, 0.04, 2, 2, "bgr", 0, b"b", "opencv"),
+        DecodedFrame(2, 2, 0.08, 2, 2, "bgr", 0, b"c", "opencv"),
+        DecodedFrame(3, 50, 2.0, 2, 2, "bgr", 0, b"d", "opencv"),
+    ]
+    anchors = sample_decode_anchors(frames)
+    assert anchors["beginning"] == 0.0
+    assert anchors["middle"] == 0.08
+    assert anchors["end"] == 2.0
+    assert anchors["discontinuities"]
+
+
+def test_camera_admission_withholds_physical_metrics_for_handheld() -> None:
+    from backend.app.workbench.admission import admit_camera
+
+    handheld = admit_camera("handheld_low_angle")
+    assert handheld.automation == "manual_tagging"
+    assert "physical_metrics" in handheld.withhold
+    broadcast = admit_camera("broadcast_cuts_zoom")
+    assert "distance_totals" in broadcast.withhold
+    pan = admit_camera("stitched_panoramic_view")
+    assert pan.certified is False
+
+
+def test_stage_timing_does_not_add_overlapped_stages() -> None:
+    from backend.app.workbench.timing import stage_timing
+
+    receipt = stage_timing(
+        decode=10.0,
+        preprocess=4.0,
+        transfer=2.0,
+        inference=20.0,
+        association=3.0,
+        recovery=1.0,
+        serialisation=1.0,
+        wall_time=28.0,
+        overlapped=True,
+    )
+    assert receipt.wallTime == 28.0
+    assert receipt.stageSum == 41.0
+    assert receipt.overlappedStagesAreAdditive is False
+
+
+def test_retention_does_not_delete_frozen_evaluation_or_originals() -> None:
+    from backend.app.workbench.retention import may_delete
+
+    assert may_delete("frozen_evaluation", authorised_policy=False) is False
+    assert may_delete("user_owned_original_media", authorised_policy=False) is False
+    assert may_delete("working_cache", authorised_policy=True) is True
+    assert may_delete("frozen_evaluation", authorised_policy=True) is False
+
+
+def test_cluster_ids_are_suggestions_not_home_away_labels() -> None:
+    from backend.app.workbench.identity import cluster_mapping
+
+    suggestion = cluster_mapping(cluster_id=2, selected_semantic=None)
+    assert suggestion.semanticTeam is None
+    assert suggestion.suggestion is True
+    confirmed = cluster_mapping(cluster_id=2, selected_semantic="my_team")
+    assert confirmed.semanticTeam == "my_team"
+    assert confirmed.suggestion is False
+
+
+def test_formation_is_withheld_for_a_single_frame() -> None:
+    from backend.app.workbench.quantities import formation_availability
+
+    withheld = formation_availability(eligible_windows=1, role_context=False)
+    assert withheld["availability"] == "withheld"
+    assert "SINGLE_FRAME_FORMATION" in withheld["reasonCodes"]
+
+
+def test_stale_correction_version_is_conflicted_not_silently_replaced() -> None:
+    log = CorrectionLog()
+    first = log.submit(new_correction("m1", "team_mapping", {"cluster": 1}))
+    assert first.saveState == "saved"
+    stale = log.submit(new_correction("m1", "team_mapping", {"cluster": 2}), expected_version=0)
+    assert stale.saveState == "conflicted"
+    fresh = log.submit(new_correction("m1", "team_mapping", {"cluster": 2}), expected_version=first.version)
+    assert fresh.saveState == "saved"
+    assert fresh.version == first.version + 1
+
+
+def test_credit_envelope_is_illustrative_and_not_an_authorisation() -> None:
+    from backend.app.workbench.costs import credit_allocation
+
+    envelope = credit_allocation()
+    assert envelope["illustrativeUsd"] == 1200
+    assert envelope["authorised"] is False
+    assert envelope["accountBalance"] is None
+    assert envelope["gpuCreditsDoNotPayForLabels"] is True
+
+
+def test_player_observations_stay_interval_limited_without_identity_continuity() -> None:
+    from backend.app.workbench.identity import player_observations
+
+    rows = player_observations(
+        [{"trackId": "t-4", "t": 1.0}, {"trackId": "t-4", "t": 40.0}],
+        identity_continuous=False,
+    )
+    assert rows["intervalLimited"] is True
+    assert rows["totalsWithheld"] is True
+    assert "IDENTITY_DISCONTINUITY" in rows["reasonCodes"]
+

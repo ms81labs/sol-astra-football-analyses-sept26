@@ -69,3 +69,21 @@ def historical_capacity_seconds() -> dict[str, float | bool]:
         "billableCurrentSource": False,
         "exportFpsEqualsInferenceFps": False,
     }
+
+
+def credit_allocation() -> dict[str, object]:
+    return {
+        "illustrativeUsd": 1200,
+        "authorised": False,
+        "accountBalance": None,
+        "gpuCreditsDoNotPayForLabels": True,
+        "notes": [
+            "Illustrative experiment envelope, not a verified account balance or job authorisation.",
+            "GPU credits do not pay for independent annotators, APIs, licences or cash-only services.",
+        ],
+        "lineItems": [
+            {"name": "GA-15/16 fixtures", "usd": 180, "status": "software_only"},
+            {"name": "GA-17 hardware", "usd": 120, "status": "deferred_no_gpu_proof"},
+            {"name": "GA-18 native", "usd": 0, "status": "inert"},
+        ],
+    }

@@ -167,5 +167,9 @@ def test_workbench_corrections_search_jobs_and_unknown_metrics(tmp_path: Path) -
                 json={"clips": [{"start": 1, "end": 2}], "notes": ["review"], "bookmarks": [1.2]},
             )
             assert incident.json()["decision"] is None
+            credits = await client.get("/api/workbench/credits")
+            assert credits.json()["authorised"] is False
+            admission = await client.get("/api/workbench/admission/handheld_low_angle")
+            assert "physical_metrics" in admission.json()["withhold"]
 
     _run(body)

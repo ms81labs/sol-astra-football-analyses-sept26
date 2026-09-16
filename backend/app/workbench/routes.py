@@ -7,9 +7,10 @@ from pathlib import Path
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from .admission import admit_camera
 from .assistance import AssistancePolicy, AssistanceRouter, execute_typed_query, parse_typed_query
 from .contracts import jsonable
-from .costs import match_cost
+from .costs import credit_allocation, match_cost
 from .dossier import build_baseline_dossier, build_release_dossier
 from .evaluation import current_repository_evaluation_gate
 from .evidence import EvidenceStore, metric_dictionary, summarize_legacy_match
@@ -37,6 +38,7 @@ class CorrectionBody(BaseModel):
     payload: dict = Field(default_factory=dict)
     author: str = "analyst"
     crashBeforeCommit: bool = False
+    expectedVersion: int | None = None
 
 
 class SearchBody(BaseModel):
@@ -124,7 +126,11 @@ def create_workbench_router(storage_root: Path) -> APIRouter:
     @router.post("/matches/{match_id}/corrections")
     def post_correction(match_id: str, body: CorrectionBody) -> dict:
         correction = new_correction(match_id, body.kind, body.payload, author=body.author)  # type: ignore[arg-type]
-        saved = _correction_log.submit(correction, crash_before_commit=body.crashBeforeCommit)
+        saved = _correction_log.submit(
+            correction,
+            crash_before_commit=body.crashBeforeCommit,
+            expected_version=body.expectedVersion,
+        )
         if saved.saveState == "saved":
             store.append_correction(saved)
         return _correction_response(saved)
@@ -350,5 +356,16 @@ def create_workbench_router(storage_root: Path) -> APIRouter:
             notes=list(body.get("notes") or []),
             bookmarks=[float(item) for item in body.get("bookmarks") or []],
         )
+
+    @router.get("/credits")
+    def get_credits() -> dict:
+        return credit_allocation()
+
+    @router.get("/admission/{profile}")
+    def get_admission(profile: str) -> dict:
+        try:
+            return jsonable(admit_camera(profile))  # type: ignore[arg-type]
+        except KeyError as exc:
+            raise HTTPException(status_code=400, detail="Unknown camera profile") from exc
 
     return router

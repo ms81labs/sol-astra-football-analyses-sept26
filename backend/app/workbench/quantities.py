@@ -29,3 +29,13 @@ def attack_direction_for(
     mapping: dict[tuple[str, int], str],
 ) -> str | None:
     return mapping.get((team, period))
+
+
+def formation_availability(*, eligible_windows: int, role_context: bool) -> dict[str, Any]:
+    if eligible_windows < 2 or not role_context:
+        return {
+            "availability": "withheld",
+            "reasonCodes": ["SINGLE_FRAME_FORMATION"],
+            "value": None,
+        }
+    return {"availability": "available", "reasonCodes": [], "value": "computed"}

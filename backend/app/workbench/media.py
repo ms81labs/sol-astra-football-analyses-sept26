@@ -467,6 +467,18 @@ def detect_camera_cuts(presentation_times: list[float], *, jump_seconds: float =
     return cuts
 
 
+def sample_decode_anchors(frames: list[DecodedFrame]) -> dict[str, object]:
+    if not frames:
+        return {"beginning": None, "middle": None, "end": None, "discontinuities": []}
+    times = [frame.presentation_time_seconds for frame in frames]
+    return {
+        "beginning": times[0],
+        "middle": times[len(times) // 2],
+        "end": times[-1],
+        "discontinuities": detect_camera_cuts(times),
+    }
+
+
 def apply_crop_and_rotation(
     width: int,
     height: int,
