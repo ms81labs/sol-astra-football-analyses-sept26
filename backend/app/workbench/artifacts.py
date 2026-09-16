@@ -48,6 +48,30 @@ def object_storage_adapter(*, hosted_approved: bool) -> dict[str, Any]:
     }
 
 
+def cross_tenant_cache_reuse(
+    *,
+    source_tenant: str,
+    requester_tenant: str,
+    explicit_privacy_design: bool,
+) -> dict[str, Any]:
+    same = source_tenant == requester_tenant
+    allowed = same or explicit_privacy_design
+    return {
+        "allowed": allowed,
+        "reasonCodes": [] if allowed else ["CROSS_TENANT_CACHE_BLOCKED"],
+        "sourceTenant": source_tenant,
+        "requesterTenant": requester_tenant,
+    }
+
+
+def columnar_observation_store() -> dict[str, Any]:
+    return {
+        "enabled": False,
+        "mandatoryDuckDb": False,
+        "justifiedByMeasurement": False,
+    }
+
+
 def import_worker_output(item: dict[str, Any], *, quality_accepted: bool = False) -> dict[str, Any]:
     reasons: list[str] = []
     path = str(item.get("path") or "")

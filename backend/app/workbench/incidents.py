@@ -32,17 +32,34 @@ def level1_positional_aid(
     attacker_x: float,
     offside_line_x: float,
     uncertainty_m: float,
+    attacker_x_by_time: tuple[tuple[float, float], ...] | None = None,
 ) -> dict[str, Any]:
-    low = min(attacker_x - uncertainty_m, attacker_x + uncertainty_m)
-    high = max(attacker_x - uncertainty_m, attacker_x + uncertainty_m)
-    crosses = low < offside_line_x < high or abs(attacker_x - offside_line_x) <= uncertainty_m
+    samples_in = attacker_x_by_time or ((touch_interval[0], attacker_x), (touch_interval[1], attacker_x))
+    samples: list[dict[str, Any]] = []
+    any_cross = False
+    for time, x in samples_in:
+        low = x - uncertainty_m
+        high = x + uncertainty_m
+        crosses = low < offside_line_x < high or abs(x - offside_line_x) <= uncertainty_m
+        any_cross = any_cross or crosses
+        samples.append(
+            {
+                "time": time,
+                "attackerX": x,
+                "offsideLineX": offside_line_x,
+                "indeterminate": crosses,
+                "decision": None,
+            }
+        )
     return {
         "level": 1,
         "touchInterval": touch_interval,
         "uncertaintyM": uncertainty_m,
-        "indeterminate": crosses,
+        "indeterminate": any_cross,
         "decision": None,
         "validatedMeasurement": False,
+        "singleExactFrame": False,
+        "samples": samples,
         "reasonCodes": ["GROUND_PLANE_NOT_BODY_PART_BOUNDARY", "IFAB_LAW_11_NOT_APPLIED"],
         "limitations": ["Estimated pitch positions with uncertainty bands. Not an official ruling."],
     }

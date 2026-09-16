@@ -88,3 +88,28 @@ it('scrubs a usable timeline without loading all frame records', () => {
   expect(screen.getByText(/Time: 2.40s|Time: 2.4s/)).toBeTruthy();
   expect(screen.getByText(/Frame 12 \/ 26999/)).toBeTruthy();
 });
+
+it('hides rejected events from accepted views while retaining the candidate', () => {
+  const frames: FrameData[] = Array.from({ length: 20 }, (_, frame) => ({
+    Frame_ID: frame, Timestamp: frame / 5, Ball: null, My_Team: [], Enemies: [],
+  }));
+  const events: EventTag[] = [
+    { frame: 5, timestamp: 1, label: 'Pass', type: 'pass', reviewStatus: 'accepted' },
+    { frame: 8, timestamp: 1.6, label: 'Shot', type: 'shot', reviewStatus: 'rejected', rejectionReason: 'ambiguous deflection' },
+  ];
+  render(
+    <Timeline
+      matchData={frames}
+      currentFrame={0}
+      isPlaying={false}
+      fps={5}
+      events={events}
+      onSeek={() => {}}
+      onTogglePlay={() => {}}
+    />,
+  );
+  expect(screen.getByRole('button', { name: 'Pass at 1 seconds' })).toBeTruthy();
+  expect(screen.queryByRole('button', { name: 'Shot at 1.6 seconds' })).toBeNull();
+  expect(screen.getByText(/retained candidate/i)).toBeTruthy();
+  expect(screen.getByText(/ambiguous deflection/i)).toBeTruthy();
+});

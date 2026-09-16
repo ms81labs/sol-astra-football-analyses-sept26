@@ -50,6 +50,7 @@ export interface EventTag {
     label: string;
     type: EventType;
     reviewStatus?: 'unreviewed' | 'accepted' | 'rejected';
+    rejectionReason?: string;
     heuristicName?: string;
     evidenceVersion?: string;
     intervalStart?: number;

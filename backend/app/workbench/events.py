@@ -123,3 +123,13 @@ def learned_temporal(*, labelled_errors_justify: bool) -> dict[str, bool]:
         "replacesStateMachine": False,
         "automaticPublication": False,
     }
+
+
+def partition_events(events: list[dict[str, Any]]) -> dict[str, Any]:
+    accepted = [item for item in events if item.get("reviewStatus") == "accepted"]
+    retained = [item for item in events if item.get("reviewStatus") == "rejected"]
+    return {
+        "acceptedViews": accepted,
+        "retainedCandidates": retained,
+        "rejectedRemovedFromAcceptedViews": True,
+    }

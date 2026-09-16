@@ -1,8 +1,10 @@
-import { render, screen } from '@testing-library/react';
-import { expect, it } from 'vitest';
+import { cleanup, render, screen } from '@testing-library/react';
+import { afterEach, expect, it } from 'vitest';
 
 import EvidenceInspector from './EvidenceInspector';
 import type { FrameData } from '../types';
+
+afterEach(cleanup);
 
 const frame: FrameData = {
   Frame_ID: 1,
@@ -31,4 +33,21 @@ it('keeps observation source separate from review status', () => {
   expect(screen.getByText(/weights-v1/)).toBeTruthy();
   expect(screen.getByText(/evidence_v1/)).toBeTruthy();
   expect(screen.getByText(/does not convert an inferred location/)).toBeTruthy();
+});
+
+it('keeps detector score, calibrated probability and confidence interval as distinct quantities', () => {
+  render(
+    <EvidenceInspector
+      frame={frame}
+      detectorScore={0.81}
+      calibratedProbability={0.22}
+      confidenceInterval={[0.1, 0.4]}
+    />,
+  );
+  expect(screen.getByText(/detector score/i)).toBeTruthy();
+  expect(screen.getByText('0.81')).toBeTruthy();
+  expect(screen.getByText(/calibrated probability/i)).toBeTruthy();
+  expect(screen.getByText('0.22')).toBeTruthy();
+  expect(screen.getByText(/confidence interval/i)).toBeTruthy();
+  expect(screen.queryByText(/confidence(?! interval)/i)).toBeNull();
 });

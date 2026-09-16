@@ -2202,6 +2202,54 @@ def test_analyst_workflow_measures_stay_unmeasured_until_a_real_reviewed_match()
     assert "ANALYST_ACCEPTANCE_MISSING" in measures["reasonCodes"]
 
 
+def test_rejected_events_leave_accepted_views_but_retain_the_candidate_and_reason() -> None:
+    from backend.app.workbench.events import partition_events
+
+    partitioned = partition_events(
+        [
+            {"id": "e1", "reviewStatus": "accepted", "label": "shot"},
+            {"id": "e2", "reviewStatus": "rejected", "label": "pass", "rejectionReason": "ambiguous deflection"},
+            {"id": "e3", "reviewStatus": "unreviewed", "label": "turnover"},
+        ]
+    )
+    assert [item["id"] for item in partitioned["acceptedViews"]] == ["e1"]
+    assert partitioned["retainedCandidates"][0]["id"] == "e2"
+    assert partitioned["retainedCandidates"][0]["rejectionReason"] == "ambiguous deflection"
+    assert partitioned["rejectedRemovedFromAcceptedViews"] is True
+
+
+def test_level1_touch_interval_samples_change_without_publishing_an_offside_ruling() -> None:
+    from backend.app.workbench.incidents import level1_positional_aid
+
+    aid = level1_positional_aid(
+        touch_interval=(12.04, 12.16),
+        attacker_x=10.0,
+        offside_line_x=10.0,
+        uncertainty_m=0.4,
+        attacker_x_by_time=((12.04, 9.7), (12.10, 10.0), (12.16, 10.3)),
+    )
+    assert aid["touchInterval"] == (12.04, 12.16)
+    assert aid["singleExactFrame"] is False
+    assert len(aid["samples"]) == 3
+    assert all(sample["decision"] is None for sample in aid["samples"])
+    assert aid["indeterminate"] is True
+    assert aid["decision"] is None
+
+
+def test_cross_tenant_cache_and_columnar_store_stay_gated() -> None:
+    from backend.app.workbench.artifacts import columnar_observation_store, cross_tenant_cache_reuse
+
+    blocked = cross_tenant_cache_reuse(source_tenant="club-a", requester_tenant="club-b", explicit_privacy_design=False)
+    assert blocked["allowed"] is False
+    assert "CROSS_TENANT_CACHE_BLOCKED" in blocked["reasonCodes"]
+    permitted = cross_tenant_cache_reuse(source_tenant="club-a", requester_tenant="club-a", explicit_privacy_design=False)
+    assert permitted["allowed"] is True
+    columnar = columnar_observation_store()
+    assert columnar["enabled"] is False
+    assert columnar["mandatoryDuckDb"] is False
+    assert columnar["justifiedByMeasurement"] is False
+
+
 def test_preprocessor_and_detector_adapters_keep_source_coordinates_and_fail_closed() -> None:
     from backend.vision import DetectorAdapter, PreprocessorAdapter
 

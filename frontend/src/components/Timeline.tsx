@@ -93,7 +93,9 @@ export default function Timeline({
     const current = currentRecord ?? matchData[currentFrame];
     const reviewStartFrame = reviewRange?.startFrame ?? currentFrame;
     const reviewEndFrame = reviewRange?.endFrame ?? currentFrame;
-    const activeEventIndex = events.findIndex((event) => event.frame === currentFrame);
+    const acceptedViews = events.filter((event) => event.reviewStatus !== 'rejected');
+    const retainedCandidates = events.filter((event) => event.reviewStatus === 'rejected');
+    const activeEventIndex = acceptedViews.findIndex((event) => event.frame === currentFrame);
     const hasFrames = resolvedCount > 0;
 
     return (
@@ -111,7 +113,7 @@ export default function Timeline({
                 <div className="flex-grow flex flex-col justify-center relative">
                     {/* Event markers */}
                     <div className="relative h-1 mb-1">
-                        {events.map((evt, idx) => {
+                        {acceptedViews.map((evt, idx) => {
                             const pct = maxFrame > 0 ? (evt.frame / maxFrame) * 100 : 0;
                             const provisional = evt.reviewStatus === 'unreviewed';
                             const title = provisional
@@ -161,23 +163,33 @@ export default function Timeline({
                             </div>
                         );
                     })}
-                    {events.length > 0 && (
+                    {acceptedViews.length > 0 && (
                         <select
                             aria-label="Jump to event"
                             value={activeEventIndex < 0 ? '' : String(activeEventIndex)}
                             onChange={(e) => {
-                                const event = events[Number(e.target.value)];
+                                const event = acceptedViews[Number(e.target.value)];
                                 if (event) onSeek(event.frame);
                             }}
                             className="mt-2 w-full bg-slate-800 text-slate-200 text-xs px-2 py-1 rounded border border-slate-700"
                         >
                             <option value="">Jump to event</option>
-                            {events.map((event, index) => (
+                            {acceptedViews.map((event, index) => (
                                 <option key={index} value={index}>
                                     {event.reviewStatus === 'unreviewed' ? `${event.label} @ ${event.timestamp}s (provisional)` : `${event.label} @ ${event.timestamp}s`}
                                 </option>
                             ))}
                         </select>
+                    )}
+                    {retainedCandidates.length > 0 && (
+                        <ul className="mt-2 space-y-1 text-xs text-slate-500">
+                            {retainedCandidates.map((event, index) => (
+                                <li key={`${event.frame}-${index}`}>
+                                    Retained candidate: {event.label}
+                                    {event.rejectionReason ? ` — ${event.rejectionReason}` : ''}
+                                </li>
+                            ))}
+                        </ul>
                     )}
                 </div>
 

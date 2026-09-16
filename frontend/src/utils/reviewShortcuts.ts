@@ -35,6 +35,7 @@ export interface ReviewShortcutEvent {
   label: string;
   type: string;
   reviewStatus?: 'unreviewed' | 'accepted' | 'rejected';
+  rejectionReason?: string;
 }
 
 export interface ReviewShortcutState {
@@ -98,14 +99,18 @@ export function applyReviewShortcut(action: ReviewAction, state: ReviewShortcutS
   if (action === 'accept' || action === 'reject') {
     const index = currentEventIndex({ ...state, events });
     if (index >= 0) {
-      events[index] = { ...events[index], reviewStatus: action === 'accept' ? 'accepted' : 'rejected' };
+      events[index] = {
+        ...events[index],
+        reviewStatus: action === 'accept' ? 'accepted' : 'rejected',
+        rejectionReason: action === 'reject' ? 'analyst_rejected' : undefined,
+      };
     }
     return { ...state, events };
   }
   if (action === 'undo') {
     const index = currentEventIndex({ ...state, events });
     if (index >= 0) {
-      events[index] = { ...events[index], reviewStatus: 'unreviewed' };
+      events[index] = { ...events[index], reviewStatus: 'unreviewed', rejectionReason: undefined };
     }
     return { ...state, events };
   }

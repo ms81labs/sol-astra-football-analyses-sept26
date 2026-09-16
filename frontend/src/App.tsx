@@ -10,6 +10,7 @@ import TacticalPitch from './components/TacticalPitch';
 import CoachInsights from './components/CoachInsights';
 import DashboardPanel from './components/DashboardPanel';
 import EvidenceInspector from './components/EvidenceInspector';
+import IncidentReview from './components/IncidentReview';
 import QualityTimeline from './components/QualityTimeline';
 import WorkbenchPanel from './components/WorkbenchPanel';
 import DemoMatchIssuePanel from './components/DemoMatchIssuePanel';
@@ -199,6 +200,10 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
   const isVideoMatch = activeMatch?.detail.inputMode === 'video';
   const frameTimestamps = useMemo(() => matchData.map((frame) => frame.Timestamp), [matchData]);
   const currentTimestamp = matchData[currentFrame]?.Timestamp ?? 0;
+  const currentEvent = events.find((event) => event.frame === currentFrame) ?? events.find((event) => Math.abs(event.timestamp - currentTimestamp) < 0.2) ?? null;
+  const currentFrameRecord = matchData[currentFrame] ?? null;
+  const incidentTouchStart = currentEvent?.intervalStart ?? currentTimestamp;
+  const incidentTouchEnd = currentEvent?.intervalEnd ?? Number((currentTimestamp + 0.12).toFixed(2));
   const matchVideoUrl = activeMatch ? buildMatchVideoUrl(activeMatch.id) : '';
   const uploadFailureGuidance = getUploadFailureGuidance(loadError);
   const canRetryUpload =
@@ -1015,8 +1020,22 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
 
           <div className="mb-3 shrink-0">
             <EvidenceInspector
-              frame={matchData[currentFrame] || null}
+              frame={currentFrameRecord}
               cameraProfile={activeMatch?.detail.config?.cameraProfile ?? uploadCameraProfile}
+              reviewStatus={currentEvent?.reviewStatus ?? 'unreviewed'}
+              detectorScore={currentFrameRecord?.Ball?.conf ?? null}
+              calibratedProbability={null}
+              confidenceInterval={null}
+            />
+          </div>
+          <div className="mb-3 shrink-0">
+            <IncidentReview
+              touchStart={incidentTouchStart}
+              touchEnd={incidentTouchEnd}
+              samples={[
+                { time: incidentTouchStart, attackerX: 0, offsideLineX: 0, indeterminate: true },
+                { time: incidentTouchEnd, attackerX: 0, offsideLineX: 0, indeterminate: true },
+              ]}
             />
           </div>
           <div className="mb-3 shrink-0">

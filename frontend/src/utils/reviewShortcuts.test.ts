@@ -51,6 +51,7 @@ it('applies play, candidate, frame, mark, accept, reject and undo without loadin
   state = applyReviewShortcut('previous_candidate', state);
   state = applyReviewShortcut('reject', state);
   expect(state.events[0].reviewStatus).toBe('rejected');
+  expect(state.events[0].rejectionReason).toBe('analyst_rejected');
   state = applyReviewShortcut('undo', state);
   expect(state.events[0].reviewStatus).toBe('unreviewed');
 });

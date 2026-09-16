@@ -5,6 +5,7 @@ import ModalDialog from './ModalDialog';
 import OperationsView from './OperationsView';
 import PlaylistBuilder from './PlaylistBuilder';
 import ClockReadout from './ClockReadout';
+import IncidentReview from './IncidentReview';
 import QualityTimeline from './QualityTimeline';
 import SetupWizard from './SetupWizard';
 import TrainingSuggestions from './TrainingSuggestions';
@@ -293,6 +294,14 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
                 landmarkPreview={{ residualP95M: 4.2, accepted: false, committed: false }}
               />
               <ClockReadout presentationTimeSeconds={0} matchClockSeconds={0} />
+              <IncidentReview
+                touchStart={0}
+                touchEnd={0.12}
+                samples={[
+                  { time: 0, attackerX: 0, offsideLineX: 0, indeterminate: true },
+                  { time: 0.12, attackerX: 0, offsideLineX: 0, indeterminate: true },
+                ]}
+              />
               {flags?.experimental_ui ? (
                 <QualityTimeline
                   items={[
