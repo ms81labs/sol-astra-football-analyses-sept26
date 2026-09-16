@@ -149,5 +149,23 @@ def test_workbench_corrections_search_jobs_and_unknown_metrics(tmp_path: Path) -
             assert "nope" not in str(package.json())
             rights = await client.get("/api/workbench/rights")
             assert rights.json()["uncertainCommercialPermissionBlocks"] is True
+            roster = await client.get("/api/workbench/roster")
+            assert roster.status_code == 200
+            assert all(item["promoted"] is False for item in roster.json()["items"])
+            assembled = await client.post(
+                "/api/workbench/matches/m1/reports/assemble",
+                json={"metrics": [{"metric": "possession_pct", "availability": "unknown", "value": None}], "claimedEvidenceIds": ["missing"], "knownEvidenceIds": []},
+            )
+            assert assembled.json()["publication"]["accepted"] is False
+            estimate = await client.post(
+                "/api/workbench/cost/estimate",
+                json={"allocatedCompute": 2.0, "reviewLabour": 10.0, "fixedShare": 5.0, "exportFps": 5.0},
+            )
+            assert estimate.json()["exportFpsEqualsInferenceFps"] is False
+            incident = await client.post(
+                "/api/workbench/matches/m1/incidents/package",
+                json={"clips": [{"start": 1, "end": 2}], "notes": ["review"], "bookmarks": [1.2]},
+            )
+            assert incident.json()["decision"] is None
 
     _run(body)

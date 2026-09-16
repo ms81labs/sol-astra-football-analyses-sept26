@@ -924,3 +924,148 @@ def test_assistance_caps_survive_spend_timeout_and_malformed_output() -> None:
     assert second.route == "template"
     assert "SPEND_CAP" in second.reasonCodes or second.spend >= policy.spendCap
 
+
+def test_extraction_boundaries_exist_and_native_directory_stays_absent() -> None:
+    import backend.evaluation as evaluation_pkg
+    import backend.media as media_pkg
+    import backend.vision as vision_pkg
+    from backend.app.workbench.native import native_gate
+
+    repo = Path(__file__).resolve().parents[2]
+    assert media_pkg.FrameSource is not None
+    assert vision_pkg.TrackerAdapter is not None
+    assert evaluation_pkg.current_repository_evaluation_gate().accepted is False
+    assert not (repo / "native").exists()
+    gate = native_gate(repo_root=repo, approval_env={})
+    assert gate.approved is False
+    assert "NATIVE_GATE_CLOSED" in gate.reasonCodes
+
+
+def test_model_roster_keeps_every_upgrade_unpromoted() -> None:
+    from backend.app.workbench.roster import model_roster, promotion_gate
+
+    roster = model_roster()
+    tasks = {item["task"] for item in roster}
+    assert "geometry_metrics" in tasks
+    assert "shot_probability" in tasks
+    assert all(item["promoted"] is False for item in roster)
+    gate = promotion_gate(task="player_ball", independent_accepted=False, licence_recorded=True)
+    assert gate["promoted"] is False
+    assert "INDEPENDENT_ACCEPTANCE_MISSING" in gate["reasonCodes"]
+
+
+def test_report_assembly_rejects_fabricated_evidence_and_invented_numbers() -> None:
+    from backend.app.workbench.reports import assemble_report
+
+    metrics = [{"metric": "possession_pct", "availability": "unknown", "value": None}]
+    rejected = assemble_report(
+        metrics=metrics,
+        events=[{"eventId": "e1", "evidenceIds": ["ev-1"]}],
+        claimed_evidence_ids=["missing"],
+        known_evidence_ids={"ev-1"},
+    )
+    assert rejected["publication"]["accepted"] is False
+    assert "FABRICATED_EVIDENCE" in rejected["factualCheck"]["reasonCodes"]
+    invented = assemble_report(
+        metrics=metrics,
+        events=[],
+        claimed_evidence_ids=[],
+        known_evidence_ids=set(),
+        narrative={"possession_pct": 61, "text": "possession was 61"},
+    )
+    assert invented["factualCheck"]["accepted"] is False
+    assert "INVENTED_NUMBER" in invented["factualCheck"]["reasonCodes"]
+    ok = assemble_report(
+        metrics=metrics,
+        events=[{"eventId": "e1", "evidenceIds": ["ev-1"]}],
+        claimed_evidence_ids=["ev-1"],
+        known_evidence_ids={"ev-1"},
+    )
+    assert ok["evidenceSelection"]["evidenceIds"] == ["ev-1"]
+    assert ok["factPackage"]["metrics"] == metrics
+    assert ok["narrativeDraft"]["optional"] is True
+
+
+def test_locked_evaluation_labels_cannot_enter_training() -> None:
+    from backend.app.workbench.training import admit_example, data_pools
+
+    assert data_pools() == (
+        "operational_corrections",
+        "training",
+        "development_validation",
+        "locked_evaluation",
+    )
+    blocked = admit_example(
+        {"id": "lab-1", "rights": "granted"},
+        source_pool="locked_evaluation",
+        destination="training",
+    )
+    assert blocked.admitted is False
+    assert "LOCKED_EVALUATION_ISOLATION" in blocked.reasonCodes
+    allowed = admit_example(
+        {"id": "corr-1", "rights": "granted", "quality": "reviewed"},
+        source_pool="operational_corrections",
+        destination="training",
+    )
+    assert allowed.admitted is True
+
+
+def test_match_cost_includes_review_labour_and_does_not_use_export_fps() -> None:
+    from backend.app.workbench.costs import historical_capacity_seconds, match_cost
+
+    cost = match_cost(
+        allocated_compute=2.0,
+        retained_storage=0.2,
+        transfer=0.1,
+        model_api=0.04,
+        retry_overhead=0.0,
+        review_labour=10.0,
+        fixed_share=5.0,
+        export_fps=5.0,
+        inference_fps=None,
+    )
+    assert cost.total == 17.34
+    assert cost.exportFpsEqualsInferenceFps is False
+    assert cost.rateCardDate
+    historical = historical_capacity_seconds()
+    assert historical["seconds"] == 16523.971
+    assert historical["billableCurrentSource"] is False
+
+
+def test_score_quantities_and_pitch_axes_stay_distinct() -> None:
+    from backend.app.workbench.quantities import attack_direction_for, pitch_axes, split_scores
+
+    axes = pitch_axes()
+    assert axes["x"] == "longitudinal"
+    assert axes["y"] == "lateral"
+    scores = split_scores(detector_score=0.81, calibrated_probability=0.22, interval=(0.1, 0.4))
+    assert "confidence" not in scores
+    assert scores["detectorScore"] == 0.81
+    assert scores["calibratedProbability"] == 0.22
+    assert attack_direction_for(team="my_team", period=1, mapping={( "my_team", 1): "left_to_right"}) == "left_to_right"
+
+
+def test_level0_incident_package_has_no_offside_decision() -> None:
+    from backend.app.workbench.incidents import level0_incident_package
+
+    package = level0_incident_package(
+        clips=[{"start": 12.0, "end": 14.0, "source": "asset-A"}],
+        notes=["near-side defender advanced"],
+        bookmarks=[12.4],
+    )
+    assert package["level"] == 0
+    assert package["decision"] is None
+    assert package["validatedMeasurement"] is False
+    assert "IFAB_LAW_11_NOT_APPLIED" in package["reasonCodes"]
+
+
+def test_dpia_blocks_cloud_for_youth_or_missing_permission() -> None:
+    from backend.app.workbench.privacy import dpia_screen
+
+    blocked = dpia_screen(youth_footage=True, identifiable_faces=True, cloud_requested=True, cloud_permitted=False)
+    assert blocked.cloudAllowed is False
+    assert "YOUTH_FOOTAGE" in blocked.reasonCodes
+    local = dpia_screen(youth_footage=False, identifiable_faces=True, cloud_requested=False, cloud_permitted=False)
+    assert local.cloudAllowed is False
+    assert local.localProcessingRequired is True
+

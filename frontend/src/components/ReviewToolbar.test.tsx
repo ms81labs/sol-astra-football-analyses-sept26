@@ -70,4 +70,24 @@ describe('ReviewToolbar', () => {
     await waitFor(() => expect(noteButton.disabled).toBe(false));
     expect(input.value).toBe('Keep rejected note');
   });
+
+  it('dispatches review shortcuts without stealing typed note text', () => {
+    const onShortcut = vi.fn();
+    render(
+      <ReviewToolbar
+        onCreateNote={vi.fn()}
+        onCreateTaggedMoment={vi.fn()}
+        onShortcut={onShortcut}
+      />,
+    );
+    fireEvent.keyDown(window, { key: 'a' });
+    fireEvent.keyDown(window, { key: ' ' });
+    fireEvent.keyDown(window, { key: '[' });
+    expect(onShortcut).toHaveBeenCalledWith('accept');
+    expect(onShortcut).toHaveBeenCalledWith('play_pause');
+    expect(onShortcut).toHaveBeenCalledWith('previous_candidate');
+    const input = screen.getByLabelText(/annotation text/i);
+    fireEvent.keyDown(input, { key: 'a' });
+    expect(onShortcut).toHaveBeenCalledTimes(3);
+  });
 });

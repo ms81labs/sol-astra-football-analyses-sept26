@@ -1,13 +1,15 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import type { TacticalAnnotation } from '../types';
+import { reviewShortcut, type ReviewAction } from '../utils/reviewShortcuts';
 
 interface ReviewToolbarProps {
     onCreateNote: (text: string) => Promise<TacticalAnnotation | null>;
     onCreateTaggedMoment: (text: string) => Promise<TacticalAnnotation | null>;
+    onShortcut?: (action: ReviewAction) => void;
 }
 
-export default function ReviewToolbar({ onCreateNote, onCreateTaggedMoment }: ReviewToolbarProps) {
+export default function ReviewToolbar({ onCreateNote, onCreateTaggedMoment, onShortcut }: ReviewToolbarProps) {
     const inputRef = useRef<HTMLInputElement>(null);
     const [isSaving, setIsSaving] = useState(false);
 
@@ -35,9 +37,25 @@ export default function ReviewToolbar({ onCreateNote, onCreateTaggedMoment }: Re
         }
     };
 
+    useEffect(() => {
+        if (!onShortcut) return undefined;
+        const handler = (event: KeyboardEvent) => {
+            const target = event.target as HTMLElement | null;
+            if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+                return;
+            }
+            const action = reviewShortcut(event.key);
+            if (!action || action === 'save_note') return;
+            event.preventDefault();
+            onShortcut(action);
+        };
+        window.addEventListener('keydown', handler);
+        return () => window.removeEventListener('keydown', handler);
+    }, [onShortcut]);
+
     return (
         <div className="space-y-2">
-            <div className="flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-900 p-3">
+            <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-700 bg-slate-900 p-3">
                 <label className="sr-only" htmlFor="annotation-text">
                     Annotation text
                 </label>

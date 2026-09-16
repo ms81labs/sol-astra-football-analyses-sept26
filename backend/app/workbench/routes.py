@@ -9,17 +9,21 @@ from pydantic import BaseModel, Field
 
 from .assistance import AssistancePolicy, AssistanceRouter, execute_typed_query, parse_typed_query
 from .contracts import jsonable
+from .costs import match_cost
 from .dossier import build_baseline_dossier, build_release_dossier
 from .evaluation import current_repository_evaluation_gate
 from .evidence import EvidenceStore, metric_dictionary, summarize_legacy_match
 from .flags import feature_flags
 from .geometry import review_incident_geometry
+from .incidents import level0_incident_package
 from .jobs import DurableJobLedger, JobRequest
 from .native import native_gate, probe_gpu
 from .ownership import classify_ownership
 from .package import assemble_match_package
+from .reports import assemble_report
 from .review import CorrectionLog, new_correction, playlist_export_interval
 from .rights import rights_register
+from .roster import model_roster
 from .store import WorkbenchStore
 
 _correction_log = CorrectionLog()
@@ -304,5 +308,47 @@ def create_workbench_router(storage_root: Path) -> APIRouter:
     @router.get("/rights")
     def get_rights() -> dict:
         return rights_register()
+
+    @router.get("/roster")
+    def get_roster() -> dict:
+        return {"items": model_roster()}
+
+    @router.post("/matches/{match_id}/reports/assemble")
+    def assemble_match_report(match_id: str, payload: dict | None = None) -> dict:
+        del match_id
+        body = payload or {}
+        return assemble_report(
+            metrics=list(body.get("metrics") or []),
+            events=list(body.get("events") or []),
+            claimed_evidence_ids=list(body.get("claimedEvidenceIds") or []),
+            known_evidence_ids=set(body.get("knownEvidenceIds") or []),
+            narrative=body.get("narrative"),
+        )
+
+    @router.post("/cost/estimate")
+    def estimate_cost(payload: dict | None = None) -> dict:
+        body = payload or {}
+        return jsonable(
+            match_cost(
+                allocated_compute=float(body.get("allocatedCompute") or 0.0),
+                retained_storage=float(body.get("retainedStorage") or 0.0),
+                transfer=float(body.get("transfer") or 0.0),
+                model_api=float(body.get("modelApi") or 0.0),
+                retry_overhead=float(body.get("retryOverhead") or 0.0),
+                review_labour=float(body.get("reviewLabour") or 0.0),
+                fixed_share=float(body.get("fixedShare") or 0.0),
+                export_fps=body.get("exportFps"),
+            )
+        )
+
+    @router.post("/matches/{match_id}/incidents/package")
+    def incident_package(match_id: str, payload: dict | None = None) -> dict:
+        del match_id
+        body = payload or {}
+        return level0_incident_package(
+            clips=list(body.get("clips") or []),
+            notes=list(body.get("notes") or []),
+            bookmarks=[float(item) for item in body.get("bookmarks") or []],
+        )
 
     return router
