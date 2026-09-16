@@ -3,6 +3,7 @@ interface ChangeHistoryItem {
   kind: string;
   saveState: string;
   undoOf?: string | null;
+  author?: string;
 }
 
 interface ChangeHistoryProps {
@@ -24,6 +25,7 @@ export default function ChangeHistory({ items, onUndo }: ChangeHistoryProps) {
               <span className="font-mono">
                 <span>{item.correctionId}</span>
                 {` · ${item.kind} · ${item.saveState}`}
+                {item.author ? ` · ${item.author}` : ''}
                 {item.undoOf ? ` · undo of ${item.undoOf}` : ''}
               </span>
               {!item.undoOf && (

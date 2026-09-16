@@ -51,7 +51,7 @@ import { buildUploadConfig, createEmptyPointInputs } from './utils/uploadConfig'
 import { getUploadFailureGuidance } from './utils/uploadErrors';
 import { findNearestFrameIndex } from './utils/videoSync';
 import { applyReviewShortcut, type ReviewAction } from './utils/reviewShortcuts';
-import { fetchAssistance, fetchHeatmap, fetchIncidentReview, fetchMatchFormation, fetchNative, fetchNativeMemory, fetchPendingCorrections, fetchQualityTimeline, fetchRecovery, fetchSecurity, fetchWorkbenchDossier, promoteMatchIdentity, recoverMatchCorrection, repairMatchIdentity, requestAccessDeletion, submitMatchCorrection, undoMatchCorrection, type FormationAvailability } from './utils/workbench';
+import { fetchAssistance, fetchCorrectionHistory, fetchHeatmap, fetchIncidentReview, fetchMatchFormation, fetchNative, fetchNativeMemory, fetchPendingCorrections, fetchQualityTimeline, fetchRecovery, fetchSecurity, fetchWorkbenchDossier, promoteMatchIdentity, recoverMatchCorrection, repairMatchIdentity, requestAccessDeletion, submitMatchCorrection, undoMatchCorrection, type FormationAvailability } from './utils/workbench';
 import { windowedTimelineProps } from './utils/windowedTimeline';
 import { splitScores } from './utils/quantities';
 
@@ -208,6 +208,8 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
       setPlayerTotalsAvail({ wholeMatch: false, intervalLimited: true, withheld: true });
       setIdentityContinuous(false);
       setPendingCorrection(null);
+      setCorrectionHistory([]);
+      correctionHistoryRef.current = [];
       return;
     }
     let cancelled = false;
@@ -273,6 +275,20 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
       .catch(() => {
         if (!cancelled) setPendingCorrection(null);
       });
+    fetchCorrectionHistory(activeMatch.id)
+      .then((payload) => {
+        if (cancelled || !Array.isArray(payload.items)) return;
+        const items = payload.items.map((item) => ({
+          correctionId: item.correctionId,
+          kind: item.kind,
+          saveState: item.saveState,
+          undoOf: item.undoOf ?? null,
+          author: item.author,
+        }));
+        setCorrectionHistory(items);
+        correctionHistoryRef.current = items;
+      })
+      .catch(() => undefined);
     return () => {
       cancelled = true;
     };
@@ -361,7 +377,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
     [matchData, currentFrame, totalFrameCount],
   );
   const [correctionSaveState, setCorrectionSaveState] = useState<'saved' | 'pending' | 'conflicted' | 'unavailable' | null>(null);
-  const [correctionHistory, setCorrectionHistory] = useState<Array<{ correctionId: string; kind: string; saveState: string; undoOf?: string | null }>>([]);
+  const [correctionHistory, setCorrectionHistory] = useState<Array<{ correctionId: string; kind: string; saveState: string; undoOf?: string | null; author?: string }>>([]);
   const [pendingCorrection, setPendingCorrection] = useState<{ correctionId: string; kind: string; saveState: string } | null>(null);
   const [storedIncident, setStoredIncident] = useState<{
     touchStart: number;

@@ -273,7 +273,7 @@ export async function fetchCorrectionHistory(matchId: string) {
     throw new Error(`Failed to load correction history: ${response.status}`);
   }
   return response.json() as Promise<{
-    items: Array<{ correctionId: string; kind: string; saveState: string; undoOf?: string | null }>;
+    items: Array<{ correctionId: string; kind: string; saveState: string; undoOf?: string | null; author?: string }>;
   }>;
 }
 
