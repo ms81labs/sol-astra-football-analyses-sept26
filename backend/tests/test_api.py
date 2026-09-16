@@ -1161,6 +1161,33 @@ async def _test_match_identity_repair_commits_stored_tracks_and_invalidates_cont
         identity = await client.get(f"/api/matches/{match_id}/identity")
         assert identity.json()["identityContinuous"] is False
         assert identity.json()["silentlyReconnected"] is False
+        new_id = str(saved["correction"]["payload"]["newTrackId"])
+        assert new_id not in {"7", "18", "forged"}
+        players_by_frame: dict[int, set[str]] = {}
+        for row in players.json()["rows"]:
+            players_by_frame.setdefault(int(row["frameId"]), set()).add(str(row["trackId"]))
+        assert "7" in players_by_frame[0]
+        assert new_id not in players_by_frame[0]
+        assert "7" not in players_by_frame[1]
+        assert new_id in players_by_frame[1]
+        assert "7" not in players_by_frame[2]
+        assert new_id in players_by_frame[2]
+        assert saved["correction"]["rebuild"] == ["ownership", "player_events", "metrics", "report"]
+
+        undone = await client.post(
+            f"/api/matches/{match_id}/corrections/{saved['correction']['correctionId']}/undo"
+        )
+        assert undone.status_code == 200
+        assert undone.json()["undoOf"] == saved["correction"]["correctionId"]
+        restored = await client.get(f"/api/matches/{match_id}/players")
+        restored_by_frame: dict[int, set[str]] = {}
+        for row in restored.json()["rows"]:
+            restored_by_frame.setdefault(int(row["frameId"]), set()).add(str(row["trackId"]))
+        assert "7" in restored_by_frame[0]
+        assert "7" in restored_by_frame[1]
+        assert "7" in restored_by_frame[2]
+        assert new_id not in restored_by_frame[1]
+        assert new_id not in restored_by_frame[2]
 
 
 def test_match_jobs_are_idempotent_and_cancel_is_a_request(tmp_path: Path):

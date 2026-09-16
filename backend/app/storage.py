@@ -1025,9 +1025,24 @@ class Storage:
     def undo_correction(self, match_id: str, correction_id: str, *, author: str = "analyst"):
         with self._annotation_issue_lock:
             log = self._load_correction_log(match_id)
+            original = next((item for item in log.history(match_id) if item.correctionId == correction_id), None)
             saved = log.undo(correction_id, author=author)
             self._save_correction_log(match_id, log)
-            return saved
+        if original is not None and original.kind == "track_split":
+            payload = dict(original.payload or {})
+            new_track_id = payload.get("newTrackId")
+            source = payload.get("trackId")
+            if new_track_id is not None and source not in {None, ""}:
+                self._apply_identity_edit(
+                    match_id,
+                    kind="track_split",
+                    payload={
+                        "trackId": str(new_track_id),
+                        "atFrame": int(payload.get("atFrame") or 0),
+                        "newTrackId": int(source),
+                    },
+                )
+        return saved
 
     def list_corrections(self, match_id: str, *, state: str | None = None) -> list[dict]:
         log = self._load_correction_log(match_id)
@@ -1539,7 +1554,11 @@ class Storage:
         return payload
 
     def repair_identity_for_match(self, match_id: str, payload: dict | None = None) -> dict:
-        from .workbench.identity import rows_from_frames
+        from .workbench.identity import (
+            frames_have_identity_overlap,
+            next_available_track_id,
+            rows_from_frames,
+        )
         from .workbench.perception import IdentityRepair, preview_identity_change
         from .workbench.review import correction_api_payload
 
@@ -1563,12 +1582,18 @@ class Storage:
             interval_end=body.get("intervalEnd"),
         )
         known = False
+        reason_codes: list[str] = []
+        new_track_id: int | None = None
         if kind == "track_split":
             known = track_id in stored_ids
+            if known:
+                new_track_id = next_available_track_id(frames)
         elif kind == "track_join":
             known = left_track_id in stored_ids and right_track_id in stored_ids
-        reason_codes: list[str] = []
-        if not known:
+            if known and frames_have_identity_overlap(frames, left_track_id, right_track_id):
+                known = False
+                reason_codes.append("IDENTITY_OVERLAP")
+        if not known and "IDENTITY_OVERLAP" not in reason_codes:
             reason_codes.append("UNKNOWN_TRACK")
         repair = IdentityRepair()
         if kind == "track_join":
@@ -1578,20 +1603,24 @@ class Storage:
         correction = None
         committed = False
         if known and kind in {"track_split", "track_join"}:
+            payload = {
+                "trackId": track_id,
+                "atFrame": at_frame,
+                "leftTrackId": left_track_id,
+                "rightTrackId": right_track_id,
+            }
+            if kind == "track_split" and new_track_id is not None:
+                payload["newTrackId"] = new_track_id
             saved = self.submit_correction(
                 match_id,
                 kind=kind,
-                payload={
-                    "trackId": track_id,
-                    "atFrame": at_frame,
-                    "leftTrackId": left_track_id,
-                    "rightTrackId": right_track_id,
-                },
+                payload=payload,
                 author=str(body.get("author") or "analyst"),
             )
             correction = correction_api_payload(saved)
             committed = saved.saveState == "saved"
             if committed:
+                self._apply_identity_edit(match_id, kind=kind, payload=payload)
                 self._invalidate_stored_identity_continuity(match_id)
         return {
             **preview,
@@ -1604,6 +1633,47 @@ class Storage:
             "correction": correction,
             "storedTrack": known,
         }
+
+    def _apply_identity_edit(self, match_id: str, *, kind: str, payload: dict) -> None:
+        from .workbench.identity import apply_track_join, apply_track_split, remap_track_references
+
+        try:
+            frames = self.load_frames(match_id)
+        except FileNotFoundError:
+            return
+        at_frame = int(payload.get("atFrame") or 0)
+        if kind == "track_split":
+            source = str(payload.get("trackId") or "")
+            dest = int(payload["newTrackId"])
+            frames = apply_track_split(frames, track_id=source, at_frame=at_frame, new_track_id=dest)
+        elif kind == "track_join":
+            source = str(payload.get("rightTrackId") or "")
+            dest = int(payload.get("leftTrackId"))
+            frames = apply_track_join(frames, left_track_id=str(dest), right_track_id=source)
+            at_frame = 0
+        else:
+            return
+        self.save_frames(match_id, frames)
+        try:
+            events = self.load_events(match_id)
+        except FileNotFoundError:
+            events = []
+        if events:
+            self.save_events(
+                match_id,
+                remap_track_references(events, track_id=source, new_track_id=dest, at_frame=at_frame),
+            )
+        try:
+            summary, assignments, timeline, shots = self.load_analytics(match_id)
+        except FileNotFoundError:
+            return
+        self.save_analytics(
+            match_id,
+            summary,
+            remap_track_references(assignments, track_id=source, new_track_id=dest, at_frame=at_frame),
+            timeline,
+            remap_track_references(shots, track_id=source, new_track_id=dest, at_frame=at_frame),
+        )
 
     def _invalidate_stored_identity_continuity(self, match_id: str) -> None:
         try:

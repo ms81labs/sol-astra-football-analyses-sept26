@@ -140,3 +140,115 @@ def face_recognition(*, requested: bool) -> dict[str, Any]:
 def cross_season_identity(*, requested: bool) -> dict[str, Any]:
     del requested
     return {"enabled": False, "reasonCodes": ["CROSS_SEASON_IDENTITY_EXCLUDED"]}
+
+
+def next_available_track_id(frames: list[Any]) -> int:
+    ids = [0]
+    for frame in frames:
+        for players in (
+            getattr(frame, "myTeam", None) or [],
+            getattr(frame, "enemies", None) or [],
+            getattr(frame, "unassignedPlayers", None) or [],
+        ):
+            for player in players:
+                try:
+                    ids.append(int(getattr(player, "id")))
+                except (TypeError, ValueError):
+                    continue
+    return max(ids) + 1
+
+
+def _remap_player_id(player: Any, *, source: str, dest: int) -> Any:
+    if str(getattr(player, "id", "")) != source:
+        return player
+    try:
+        return player.model_copy(update={"id": dest})
+    except AttributeError:
+        from dataclasses import replace
+
+        return replace(player, id=dest)
+
+
+def apply_track_split(
+    frames: list[Any],
+    *,
+    track_id: str,
+    at_frame: int,
+    new_track_id: int,
+) -> list[Any]:
+    """Rename a tracklet from at_frame onward. Does not rerun vision."""
+
+    updated: list[Any] = []
+    for frame in frames:
+        frame_id = int(getattr(frame, "frameId", 0) or 0)
+        if frame_id < at_frame:
+            updated.append(frame)
+            continue
+        updated.append(_remap_frame_track(frame, source=track_id, dest=new_track_id))
+    return updated
+
+
+def apply_track_join(frames: list[Any], *, left_track_id: str, right_track_id: str) -> list[Any]:
+    """Merge right into left when they never occupy the same frame."""
+
+    dest = int(left_track_id)
+    return [_remap_frame_track(frame, source=right_track_id, dest=dest) for frame in frames]
+
+
+def frames_have_identity_overlap(frames: list[Any], left_track_id: str, right_track_id: str) -> bool:
+    for frame in frames:
+        ids = {
+            str(getattr(player, "id", ""))
+            for players in (
+                getattr(frame, "myTeam", None) or [],
+                getattr(frame, "enemies", None) or [],
+                getattr(frame, "unassignedPlayers", None) or [],
+            )
+            for player in players
+        }
+        if left_track_id in ids and right_track_id in ids:
+            return True
+    return False
+
+
+def remap_track_references(
+    items: list[Any],
+    *,
+    track_id: str,
+    new_track_id: int,
+    at_frame: int = 0,
+    frame_attr: str = "frameId",
+    fields: tuple[str, ...] = ("trackId", "fromTrackId", "toTrackId", "playerId", "controllingTrackId"),
+) -> list[Any]:
+    updated: list[Any] = []
+    for item in items:
+        frame_id = int(getattr(item, frame_attr, 0) or 0)
+        if frame_id < at_frame:
+            updated.append(item)
+            continue
+        changes: dict[str, Any] = {}
+        for field in fields:
+            if not hasattr(item, field):
+                continue
+            value = getattr(item, field)
+            if value is not None and str(value) == track_id:
+                changes[field] = new_track_id
+        updated.append(item.model_copy(update=changes) if changes else item)
+    return updated
+
+
+def _remap_frame_track(frame: Any, *, source: str, dest: int) -> Any:
+    possession = getattr(frame, "possession", None)
+    if possession is not None and str(getattr(possession, "trackId", "")) == source:
+        possession = possession.model_copy(update={"trackId": dest})
+    return frame.model_copy(
+        update={
+            "myTeam": [_remap_player_id(player, source=source, dest=dest) for player in (getattr(frame, "myTeam", None) or [])],
+            "enemies": [_remap_player_id(player, source=source, dest=dest) for player in (getattr(frame, "enemies", None) or [])],
+            "unassignedPlayers": [
+                _remap_player_id(player, source=source, dest=dest)
+                for player in (getattr(frame, "unassignedPlayers", None) or [])
+            ],
+            "possession": possession,
+        }
+    )

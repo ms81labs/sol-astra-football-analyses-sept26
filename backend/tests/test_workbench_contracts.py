@@ -722,6 +722,23 @@ def test_tracker_resets_across_cuts_and_identity_repairs_preview_before_commit()
     assert team["newMappingShown"] is True
 
 
+def test_track_split_renames_stored_tracklets_from_the_cut_frame() -> None:
+    from backend.app.schemas import FrameData, PlayerData
+    from backend.app.workbench.identity import apply_track_split, next_available_track_id
+
+    frames = [
+        FrameData(frameId=0, timestamp=0.0, myTeam=[PlayerData(id=7, x=21.0, y=50.0)]),
+        FrameData(frameId=1, timestamp=0.2, myTeam=[PlayerData(id=7, x=23.0, y=50.0)]),
+        FrameData(frameId=2, timestamp=0.4, myTeam=[PlayerData(id=7, x=26.0, y=50.0)]),
+    ]
+    new_id = next_available_track_id(frames)
+    split = apply_track_split(frames, track_id="7", at_frame=1, new_track_id=new_id)
+    assert [player.id for player in split[0].myTeam] == [7]
+    assert [player.id for player in split[1].myTeam] == [new_id]
+    assert [player.id for player in split[2].myTeam] == [new_id]
+    assert frames[1].myTeam[0].id == 7
+
+
 def test_evaluation_measures_require_compatible_labels_and_do_not_treat_health_as_the_label_gate() -> None:
     from backend.app.workbench.evaluation import evaluation_measures
 
