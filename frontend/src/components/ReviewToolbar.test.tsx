@@ -90,4 +90,23 @@ describe('ReviewToolbar', () => {
     fireEvent.keyDown(input, { key: 'a' });
     expect(onShortcut).toHaveBeenCalledTimes(3);
   });
+
+  it('shows pending, conflicted and unavailable correction save states', () => {
+    const { rerender } = render(
+      <ReviewToolbar onCreateNote={vi.fn()} onCreateTaggedMoment={vi.fn()} saveState="pending" />,
+    );
+    expect(screen.getByText(/edit pending/i)).toBeTruthy();
+    rerender(
+      <ReviewToolbar onCreateNote={vi.fn()} onCreateTaggedMoment={vi.fn()} saveState="conflicted" />,
+    );
+    expect(screen.getByText(/stale correction/i)).toBeTruthy();
+    rerender(
+      <ReviewToolbar onCreateNote={vi.fn()} onCreateTaggedMoment={vi.fn()} saveState="unavailable" />,
+    );
+    expect(screen.getByText(/save unavailable/i)).toBeTruthy();
+    rerender(
+      <ReviewToolbar onCreateNote={vi.fn()} onCreateTaggedMoment={vi.fn()} saveState="saved" />,
+    );
+    expect(screen.getByText(/edit saved/i)).toBeTruthy();
+  });
 });

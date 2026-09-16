@@ -145,6 +145,69 @@ def score_detections_by_stratum(
     return StratumBenchmark(byStratum=by_stratum, labelsIndependent=labels_independent)
 
 
+class PreprocessorAdapter:
+    """Colour/crop/resize adapter. Football coordinates stay in source space."""
+
+    name = "bgr_compatible_preprocess"
+
+    def transform(
+        self,
+        *,
+        pixels: bytes,
+        width: int,
+        height: int,
+        colour_order: str,
+        crop: tuple[int, int, int, int] | None = None,
+        resize: tuple[int, int] | None = None,
+    ) -> dict[str, Any]:
+        del width, height
+        order = colour_order.lower()
+        converted = bytearray(pixels)
+        if order == "rgb":
+            for index in range(0, len(converted) - 2, 3):
+                converted[index], converted[index + 2] = converted[index + 2], converted[index]
+            order = "bgr"
+        return {
+            "pixels": bytes(converted),
+            "colourOrder": order,
+            "crop": list(crop) if crop else None,
+            "resize": list(resize) if resize else None,
+            "sourceCoordinatesUnchanged": True,
+            "silentlyChangedColour": False,
+            "footballRulesApplied": False,
+            "requestedColourOrder": colour_order.lower(),
+        }
+
+
+class DetectorAdapter:
+    """Detector runtime adapter. CUDA visibility is not video-engine capability."""
+
+    name = "ultralytics_fail_closed"
+
+    def detect(
+        self,
+        frame: dict[str, Any],
+        *,
+        requested_backend: str = "cpu",
+        video_engine_capability: bool = False,
+    ) -> dict[str, Any]:
+        selected = requested_backend
+        fallback = None
+        if requested_backend == "cuda" and not video_engine_capability:
+            selected = "cpu"
+            fallback = "cpu"
+        return {
+            "requestedBackend": requested_backend,
+            "selectedBackend": selected,
+            "fallback": fallback,
+            "silentlyChangedColour": False,
+            "exportFpsEqualsInferenceFps": False,
+            "colourOrder": frame.get("colourOrder", "bgr"),
+            "counts": {"primary": 0, "recovery": 0},
+            "detections": [],
+        }
+
+
 class TrackerAdapter:
     name = "botsort_baseline"
 

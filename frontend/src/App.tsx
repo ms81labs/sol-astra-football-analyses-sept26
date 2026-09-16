@@ -38,6 +38,8 @@ import { buildUploadConfig, createEmptyPointInputs } from './utils/uploadConfig'
 import { getUploadFailureGuidance } from './utils/uploadErrors';
 import { findNearestFrameIndex } from './utils/videoSync';
 import { applyReviewShortcut, type ReviewAction } from './utils/reviewShortcuts';
+import { submitMatchCorrection } from './utils/workbench';
+import { windowedTimelineProps } from './utils/windowedTimeline';
 
 interface MatchEntry {
   id: string;
@@ -175,6 +177,9 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
     activeMatchIdRef.current = activeMatch?.id ?? null;
   }, [activeMatch?.id]);
   const matchData = useMemo(() => activeMatch?.data || [], [activeMatch]);
+  const timelineWindow = useMemo(() => windowedTimelineProps(matchData, currentFrame), [matchData, currentFrame]);
+  const [correctionSaveState, setCorrectionSaveState] = useState<'saved' | 'pending' | 'conflicted' | 'unavailable' | null>(null);
+  const correctionVersionRef = useRef(0);
   const matchStats = activeMatch?.stats || null;
   const matchBenchmark = activeMatch?.benchmark || null;
   const requiresTeamSelection = activeMatch?.detail.requiresTeamSelection ?? false;
@@ -311,7 +316,26 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
       review.setReviewRange(next.reviewRange);
     }
     setEvents(next.events as EventTag[]);
-  }, [currentFrame, events, handleSeek, isPlaying, matchData.length, review]);
+    if ((action === 'accept' || action === 'reject') && activeMatch?.id) {
+      const kind = action === 'accept' ? 'event_accept' : 'event_reject';
+      const expectedVersion = correctionVersionRef.current;
+      setCorrectionSaveState('pending');
+      void submitMatchCorrection(activeMatch.id, {
+        kind,
+        payload: { frame: next.currentFrame },
+        expectedVersion,
+      })
+        .then((saved) => {
+          setCorrectionSaveState(saved.saveState as 'saved' | 'pending' | 'conflicted' | 'unavailable');
+          if (saved.saveState === 'saved' && typeof saved.version === 'number') {
+            correctionVersionRef.current = saved.version;
+          }
+        })
+        .catch(() => {
+          setCorrectionSaveState('unavailable');
+        });
+    }
+  }, [activeMatch?.id, currentFrame, events, handleSeek, isPlaying, matchData.length, review]);
 
   const handleDrawingAnnotation = useCallback(
     (x: number, y: number, x2?: number, y2?: number) => {
@@ -845,10 +869,10 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           )}
 
           <Timeline
-            matchData={matchData}
-            currentFrame={currentFrame}
-            currentRecord={matchData[currentFrame] || null}
-            frameCount={matchData.length}
+            matchData={timelineWindow.matchData}
+            currentFrame={timelineWindow.currentFrame}
+            currentRecord={timelineWindow.currentRecord}
+            frameCount={timelineWindow.frameCount}
             isPlaying={isPlaying}
             fps={fps}
             events={events}
@@ -977,6 +1001,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
               onCreateNote={review.handleCreateNote}
               onCreateTaggedMoment={review.handleCreateTaggedMoment}
               onShortcut={handleReviewShortcut}
+              saveState={correctionSaveState}
             />
           </div>
           <div className="mb-3 shrink-0">

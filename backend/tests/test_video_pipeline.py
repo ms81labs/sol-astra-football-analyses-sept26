@@ -288,6 +288,30 @@ def test_report_only_reprocess_does_not_invoke_vision():
     assert calls == ["vision"]
 
 
+def test_processor_report_change_does_not_invoke_vision() -> None:
+    from backend.app.processor import reprocess_match_for_change
+
+    calls: list[str] = []
+
+    reused = reprocess_match_for_change(
+        change="report",
+        previous_identity="abc",
+        current_identity="abc",
+        vision=lambda: calls.append("vision") or {"rows": [{"Frame_ID": 1}]},
+    )
+    assert reused["visionInvoked"] is False
+    assert calls == []
+    rebuilt = reprocess_match_for_change(
+        change="calibration",
+        previous_identity=None,
+        current_identity="def",
+        vision=lambda: calls.append("vision") or {"rows": [{"Frame_ID": 1}]},
+    )
+    assert rebuilt["visionInvoked"] is True
+    assert "pitch_positions" in rebuilt["rebuild"]
+    assert calls == ["vision"]
+
+
 def test_detected_rows_project_players_from_ground_contact_not_box_centre() -> None:
     from backend.app.video_pipeline import project_detected_rows
 

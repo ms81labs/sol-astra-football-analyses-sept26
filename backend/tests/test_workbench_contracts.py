@@ -1128,6 +1128,8 @@ def test_extraction_boundaries_exist_and_native_directory_stays_absent() -> None
     repo = Path(__file__).resolve().parents[2]
     assert media_pkg.FrameSource is not None
     assert vision_pkg.TrackerAdapter is not None
+    assert vision_pkg.DetectorAdapter is not None
+    assert vision_pkg.PreprocessorAdapter is not None
     assert vision_pkg.ground_contact_point((10.0, 20.0, 30.0, 80.0))["boxCentreIsFoot"] is False
     assert evaluation_pkg.current_repository_evaluation_gate().accepted is False
     assert not (repo / "native").exists()
@@ -2095,4 +2097,54 @@ def test_rollback_stops_admission_and_does_not_rewrite_past_outcomes() -> None:
     assert rolled["artifactsPreserved"] is True
     assert "run-17-report" in rolled["staleOutputs"]
     assert rolled["rewrotePastTrialOutcomes"] is False
+
+
+def test_preprocessor_and_detector_adapters_keep_source_coordinates_and_fail_closed() -> None:
+    from backend.vision import DetectorAdapter, PreprocessorAdapter
+
+    pre = PreprocessorAdapter()
+    frame = pre.transform(
+        pixels=bytes([10, 200, 30] * 4),
+        width=2,
+        height=2,
+        colour_order="rgb",
+        crop=(0, 0, 2, 2),
+        resize=(2, 2),
+    )
+    assert frame["colourOrder"] == "bgr"
+    assert frame["sourceCoordinatesUnchanged"] is True
+    assert frame["silentlyChangedColour"] is False
+    assert frame["footballRulesApplied"] is False
+
+    detector = DetectorAdapter()
+    receipt = detector.detect(frame, requested_backend="cuda", video_engine_capability=False)
+    assert receipt["selectedBackend"] != "cuda"
+    assert receipt["fallback"] == "cpu"
+    assert receipt["silentlyChangedColour"] is False
+    assert receipt["exportFpsEqualsInferenceFps"] is False
+    assert receipt["counts"]["primary"] >= 0
+
+
+def test_research_lane_keeps_planned_tracks_inert_and_cannot_write_product_paths() -> None:
+    from backend.app.workbench.research import execute_track, may_write_product_paths, research_lane
+
+    lane = research_lane()
+    assert lane["isolated"] is True
+    assert lane["supportedCoverageExecutable"] is True
+    assert lane["autonomousProductionChanges"] is False
+    tracks = {item["id"]: item for item in lane["tracks"]}
+    assert tracks["supported-coverage"]["executable"] is True
+    assert tracks["supported-coverage"]["inert"] is False
+    for name in ("possession/events", "trust-crops", "gpu-bounded-loops", "later-training"):
+        assert tracks[name]["executable"] is False
+        assert tracks[name]["inert"] is True
+    blocked = execute_track("possession/events")
+    assert blocked["executed"] is False
+    assert "PLANNED_TRACK_INERT" in blocked["reasonCodes"]
+    production = execute_track("supported-coverage", in_production=True)
+    assert production["executed"] is False
+    assert production["productionMutation"] is False
+    assert "RESEARCH_ADDON_ONLY" in production["reasonCodes"]
+    assert may_write_product_paths(["backend/app/main.py", "frontend/src/App.tsx"]) is False
+    assert may_write_product_paths(["research-addon/research_addon/cli.py"]) is True
 

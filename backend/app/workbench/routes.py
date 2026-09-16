@@ -28,6 +28,7 @@ from .ownership import classify_ownership
 from .package import assemble_match_package
 from .privacy import residency_claim
 from .reports import assemble_report
+from .research import execute_track, research_lane
 from .review import CorrectionLog, new_correction, playlist_export_interval
 from .rights import rights_register
 from .risks import risk_register
@@ -531,5 +532,15 @@ def create_workbench_router(storage_root: Path) -> APIRouter:
     @router.get("/evaluation/measures")
     def get_evaluation_measures() -> dict:
         return evaluation_measures()
+
+    @router.get("/research/lane")
+    def get_research_lane() -> dict:
+        return research_lane()
+
+    @router.post("/research/tracks/{track_id:path}/execute")
+    def post_research_track(track_id: str) -> dict:
+        if track_id.endswith("/execute"):
+            track_id = track_id[: -len("/execute")]
+        return execute_track(track_id, in_production=True)
 
     return router

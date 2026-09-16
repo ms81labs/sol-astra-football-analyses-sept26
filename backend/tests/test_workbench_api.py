@@ -259,4 +259,28 @@ def test_workbench_concurrent_requests_do_not_change_factual_measurements(tmp_pa
             hostile = await client.get("/api/workbench/dossier", headers={"host": "evil.example"})
             assert hostile.status_code == 400
 
+            first_edit = await client.post(
+                "/api/workbench/matches/m-conc/corrections",
+                json={"kind": "event_accept", "payload": {"eventId": "e1"}},
+            )
+            stale, duplicate = await anyio.gather(
+                client.post(
+                    "/api/workbench/matches/m-conc/corrections",
+                    json={"kind": "event_accept", "payload": {"eventId": "e1"}, "expectedVersion": 0},
+                ),
+                client.post(
+                    "/api/workbench/matches/m-conc/corrections",
+                    json={"kind": "event_accept", "payload": {"eventId": "e1"}, "expectedVersion": 0},
+                ),
+            )
+            assert first_edit.json()["saveState"] == "saved"
+            assert stale.json()["saveState"] == "conflicted"
+            assert duplicate.json()["saveState"] == "conflicted"
+            lane = await client.get("/api/workbench/research/lane")
+            assert lane.status_code == 200
+            assert lane.json()["autonomousProductionChanges"] is False
+            inert = await client.post("/api/workbench/research/tracks/possession%2Fevents/execute")
+            assert inert.status_code == 200
+            assert inert.json()["executed"] is False
+
     _run(body)

@@ -81,6 +81,8 @@ REASON_CODES: dict[str, str] = {
     "AERIAL_NOT_GROUND_PLANE": "An airborne ball is not on the ground plane; its homography is not a measured location.",
     "CAMERA_CUT": "A camera cut resets identity; tracks are not silently reconnected.",
     "CUDA_VISIBILITY_IS_NOT_VIDEO_CAPABILITY": "CUDA visibility is not NVIDIA video-engine capability.",
+    "PLANNED_TRACK_INERT": "A planned research track stays inert until separately enabled.",
+    "RESEARCH_ADDON_ONLY": "Supported-coverage execution stays in the isolated research addon, not the production application.",
 }
 
 CAPABILITY_IDS: tuple[str, ...] = (

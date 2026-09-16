@@ -27,7 +27,7 @@ from .proof_runtime import (
 )
 from .storage import Storage
 from .team_classification import classify_player_row_by_cluster, classify_player_rows_by_cluster, cluster_result_from_summaries, cluster_track_colors
-from .video_pipeline import process_video_input
+from .video_pipeline import process_video_input, reprocess_for_change
 from backend.run_guerilla import _best_ball_rows_by_frame, _summarize_ball_truth_layer, split_ball_rows_into_segments
 
 if TYPE_CHECKING:
@@ -782,6 +782,23 @@ def _prepare_video_outputs(
     classified_rows, requires_team_selection = _classify_video_rows(raw_rows, config, cluster_result.clusters)
     frames = normalize_tracking_rows(classified_rows)
     return frames, cluster_result.clusters, requires_team_selection, raw_rows
+
+
+def reprocess_match_for_change(
+    *,
+    change: str,
+    previous_identity: str | None,
+    current_identity: str,
+    vision,
+) -> dict[str, object]:
+    """Selective recomputation facade. Report-only changes skip vision."""
+
+    return reprocess_for_change(
+        change=change,
+        previous_identity=previous_identity,
+        current_identity=current_identity,
+        vision=vision,
+    )
 
 
 def reprocess_video_match(storage: Storage, match_id: str, *, config: MatchConfig | None = None) -> None:

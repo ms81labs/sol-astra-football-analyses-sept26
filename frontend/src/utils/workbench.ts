@@ -87,6 +87,21 @@ export async function searchWorkbenchEvents(query: string, matchId: string, even
   }>;
 }
 
+export async function submitMatchCorrection(
+  matchId: string,
+  body: { kind: string; payload?: Record<string, unknown>; expectedVersion?: number; author?: string },
+) {
+  const response = await fetch(`/api/workbench/matches/${matchId}/corrections`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to save correction: ${response.status}`);
+  }
+  return response.json() as Promise<{ correctionId: string; saveState: string; version?: number }>;
+}
+
 export async function fetchPendingCorrections(matchId: string) {
   const response = await fetch(`/api/workbench/matches/${matchId}/corrections?state=pending`);
   if (!response.ok) {

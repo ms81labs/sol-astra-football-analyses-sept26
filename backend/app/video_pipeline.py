@@ -7,6 +7,7 @@ from .schemas import MatchConfig
 from .workbench.cache import cache_identity, recompute_plan
 from .workbench.geometry import ground_contact_point, project_to_pitch
 from .workbench.media import FrameSource, OpenCvFrameSource, SamplingAudit, four_rates_receipt, vid_stride_policy
+from .workbench.perception import DetectorAdapter, PreprocessorAdapter
 
 # Exposed at module level so tests can patch this name directly.
 from backend.run_guerilla import TARGET_FPS, process_video as _process_video_impl
@@ -128,6 +129,17 @@ def _sampling_and_cache(source_clock: dict[str, object], adapter: FrameSource) -
             "boxCentreIsFoot": False,
             "aerialBallMeasuredGroundLocation": False,
         },
+        "preprocessor": PreprocessorAdapter().transform(
+            pixels=b"",
+            width=0,
+            height=0,
+            colour_order="bgr",
+        ),
+        "detector": DetectorAdapter().detect(
+            {"colourOrder": "bgr"},
+            requested_backend="cpu",
+            video_engine_capability=False,
+        ),
     }
 
 
