@@ -2384,3 +2384,115 @@ async def _test_workbench_leftovers_ignore_client_injected_rows(tmp_path: Path):
         assert job.json()["namespace"] == "production"
         assert job.json()["authorisedLocation"] == "local"
 
+
+def test_production_calibration_decode_event_score_and_deployment_surfaces(tmp_path: Path):
+    _run(_test_production_calibration_decode_event_score_and_deployment_surfaces, tmp_path)
+
+
+async def _test_production_calibration_decode_event_score_and_deployment_surfaces(tmp_path: Path):
+    async with api_client(tmp_path) as (_, client):
+        legacy = await client.post(
+            "/api/geometry/legacy",
+            json={
+                "points": [{"x": 0, "y": 0}, {"x": 1, "y": 0}, {"x": 1, "y": 1}, {"x": 0, "y": 1}],
+                "accepted": True,
+                "independentHoldout": True,
+            },
+        )
+        assert legacy.status_code == 200
+        assert legacy.json()["compatibleWithFourPointV1"] is True
+        assert legacy.json()["evaluation"]["accepted"] is False
+        assert "CALIBRATION_UNAVAILABLE" in legacy.json()["evaluation"]["reasonCodes"]
+        assert legacy.json()["withheld"]["availability"] == "withheld"
+        assert all(mark["independentHoldout"] is False for mark in legacy.json()["landmarks"])
+
+        landmarks = await client.post(
+            "/api/geometry/landmarks",
+            json={"accepted": True, "holdoutCount": 3, "independentHoldout": True},
+        )
+        assert landmarks.status_code == 200
+        assert landmarks.json()["accepted"] is False
+        assert landmarks.json()["holdoutCount"] == 0
+
+        zoom = await client.post("/api/geometry/zoom-cut", json={"changed": False})
+        assert zoom.status_code == 200
+        assert zoom.json()["changed"] is True
+
+        scored = await client.post(
+            "/api/events/score",
+            json={
+                "predictions": [{"family": "shot", "intervalStart": 8.0, "intervalEnd": 9.2}],
+                "labels": [{"family": "shot", "intervalStart": 8.0, "intervalEnd": 8.4}],
+                "labelsIndependent": True,
+            },
+        )
+        assert scored.status_code == 200
+        assert scored.json()["labelsIndependent"] is False
+        assert scored.json()["byClass"]["shot"]["boundaryErrors"] == 1
+        assert scored.json()["toleranceSeconds"] == 0.5
+
+        recompute = await client.post(
+            "/api/cache/recompute",
+            json={"reuse": True, "previousIdentity": "same", "currentIdentity": "same", "change": "report"},
+        )
+        assert recompute.status_code == 200
+        assert recompute.json()["reuse"] is False
+        assert "observations" in recompute.json()["rebuild"]
+
+        ledger = await client.post("/api/training/ledger", json={"promoted": True, "independentGroundTruth": True})
+        assert ledger.status_code == 200
+        assert ledger.json()["promoted"] is False
+        assert ledger.json()["independentGroundTruth"] is False
+        assert ledger.json()["entries"]
+
+        repair = await client.post(
+            "/api/identity/repair",
+            json={"kind": "track_split", "trackId": "t-1", "atFrame": 4, "committed": True},
+        )
+        assert repair.status_code == 200
+        assert repair.json()["committed"] is False
+        assert repair.json()["preview"] is True
+
+        crop = await client.post("/api/decode/crop", json={"width": 1920, "height": 1080, "rotation": 45, "colourOrder": "rgb"})
+        assert crop.status_code == 200
+        assert crop.json()["rotation"] == 0
+        assert crop.json()["colourOrder"] == "bgr"
+
+        cuts = await client.post("/api/decode/cuts", json={"times": [0.0, 0.04, 0.08, 5.0, 5.04], "cuts": []})
+        assert cuts.status_code == 200
+        assert cuts.json()["cuts"] == [3]
+
+        grid = await client.post("/api/decode/grid", json={"clipStartSourceFrame": 13, "evaluationStep": 5, "onGrid": True})
+        assert grid.status_code == 200
+        assert grid.json()["onGrid"] is False
+        assert grid.json()["policy"] == "source_global_grid"
+
+        pixels = await client.post("/api/decode/pixels", json={"device": "cuda"})
+        assert pixels.status_code == 200
+        assert pixels.json()["shape"] == [1, 1, 3]
+        assert pixels.json()["gpuPromoted"] is False
+
+        deployment = await client.post(
+            "/api/costs/deployment",
+            json={"privacyRequired": False, "irregularUsage": True, "suitableLocalHardware": False, "alwaysOnGpuCommitted": True},
+        )
+        assert deployment.status_code == 200
+        assert deployment.json()["selected"] == "local"
+        assert deployment.json()["alwaysOnGpuCommitted"] is False
+
+        round_trip = await client.get("/api/metrics/round-trip")
+        assert round_trip.status_code == 200
+        assert round_trip.json()["availability"] == "unknown"
+        assert round_trip.json()["publishedValue"] is None
+
+        response = await _upload_tracking_match(client)
+        assert response.status_code == 202
+        match_id = response.json()["matchId"]
+        calibration = await client.post(
+            f"/api/matches/{match_id}/calibration",
+            json={"accepted": True, "independentHoldout": True},
+        )
+        assert calibration.status_code == 200
+        assert calibration.json()["evaluation"]["accepted"] is False
+        assert calibration.json()["fromStoredPoints"] is True
+

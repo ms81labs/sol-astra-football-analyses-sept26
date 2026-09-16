@@ -103,10 +103,11 @@ from .workbench.jobs import (
     vector_database,
     worker_environment,
 )
-from .workbench.contracts import SourceClockIdentity
+from .workbench.contracts import SourceClockIdentity, unknown_metric
 from .workbench.costs import (
     credit_allocation,
     decimal_gb_to_gib,
+    deployment_choice,
     historical_capacity_seconds,
     match_cost,
     reconcile_spend,
@@ -117,9 +118,18 @@ from .workbench.benchmarks import experiment_receipt, quality_gate_holds
 from .workbench.decisions import architecture_decisions
 from .workbench.dossier import http_dossier
 from .workbench.evaluation import analyst_workflow_measures, evaluation_measures, score_hota_idf1
-from .workbench.events import learned_temporal, ownership_invalidation, propose_event
-from .workbench.geometry import ground_contact_point, project_to_pitch
-from .workbench.evidence import inspect_metric, metric_dictionary
+from .workbench.events import learned_temporal, ownership_invalidation, propose_event, score_events
+from .workbench.geometry import (
+    CalibrationProfile,
+    detect_zoom_or_cut,
+    evaluate_landmarks,
+    from_legacy_four_points,
+    ground_contact_point,
+    project_to_pitch,
+    withhold_if_invalid,
+)
+from .workbench.evidence import DEFINITION_VERSION, inspect_metric, metric_dictionary, round_trip_unknown
+from .workbench.cache import recompute_plan
 from .workbench.flags import feature_flags, shadow_metric
 from .workbench.identity import (
     IdentityRecord,
@@ -147,6 +157,7 @@ from .workbench.privacy import dpia_screen, residency_claim
 from .workbench.perception import (
     Detection,
     DetectorAdapter,
+    IdentityRepair,
     Label,
     PreprocessorAdapter,
     TrackerAdapter,
@@ -165,9 +176,14 @@ from .workbench.research import execute_track, may_write_product_paths, research
 from .workbench.retention import PROTECTED, may_delete
 from .workbench.media import (
     DecodedFrame,
+    apply_crop_and_rotation,
+    align_clip_start_to_grid,
     colour_round_trip,
     cpu_fallback,
     decode_memory_policy,
+    detect_camera_cuts,
+    pixels_from_decoded_frame,
+    sample_decode_anchors,
     torso_colour_pixels,
     vid_stride_policy,
     wrap_decoded_frame,
@@ -186,6 +202,7 @@ from .workbench.training import (
     data_pools,
     drill_library,
     experiment_cycle,
+    experiment_ledger,
     promote_candidate,
     pseudo_label,
     sampling_policy,
@@ -247,6 +264,24 @@ def _production_job_request() -> JobRequest:
         authorisedLocation="local",
         namespace="production",
     )
+
+
+def _legacy_geometry_profile(points: list | None = None):
+    pts = list(points or [{"x": 0.0, "y": 0.0}, {"x": 1.0, "y": 0.0}, {"x": 1.0, "y": 1.0}, {"x": 0.0, "y": 1.0}])
+    if len(pts) != 4:
+        pts = [{"x": 0.0, "y": 0.0}, {"x": 1.0, "y": 0.0}, {"x": 1.0, "y": 1.0}, {"x": 0.0, "y": 1.0}]
+    return from_legacy_four_points(
+        [{"x": float(item.get("x") or 0.0), "y": float(item.get("y") or 0.0)} for item in pts],
+        calibration_id="legacy",
+    )
+
+
+def _legacy_geometry(points: list | None = None) -> dict:
+    profile = _legacy_geometry_profile(points)
+    evaluation = evaluate_landmarks(profile, max_p95_m=3.0)
+    withheld = withhold_if_invalid(profile, "team_width_m")
+    dumped = profile.model_dump(mode="json")
+    return {**dumped, "evaluation": evaluation, "withheld": withheld}
 
 
 class BrowserOriginMiddleware:
@@ -1757,6 +1792,33 @@ def create_app(
         contact = ground_contact_point(bbox)
         return {**contact, "kind": kind, "airborne": False, "measuredGroundLocation": True, "reasonCodes": []}
 
+    @app.get("/api/geometry/legacy")
+    def get_geometry_legacy() -> dict:
+        return _legacy_geometry()
+
+    @app.post("/api/geometry/legacy")
+    def post_geometry_legacy(payload: dict | None = None) -> dict:
+        body = payload or {}
+        return _legacy_geometry(list(body.get("points") or []))
+
+    @app.get("/api/geometry/landmarks")
+    def get_geometry_landmarks() -> dict:
+        return evaluate_landmarks(_legacy_geometry_profile(), max_p95_m=3.0)
+
+    @app.post("/api/geometry/landmarks")
+    def post_geometry_landmarks(payload: dict | None = None) -> dict:
+        del payload
+        return evaluate_landmarks(_legacy_geometry_profile(), max_p95_m=3.0)
+
+    @app.post("/api/geometry/zoom-cut")
+    def post_geometry_zoom_cut(payload: dict | None = None) -> dict:
+        del payload
+        identity = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+        shifted = [[1.4, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+        previous = CalibrationProfile(calibrationId="prev", cameraModel="planar_homography", homography=identity)
+        current = CalibrationProfile(calibrationId="curr", cameraModel="planar_homography", homography=shifted)
+        return {"changed": detect_zoom_or_cut(previous, current)}
+
     @app.get("/api/metrics/network-failure")
     def get_network_failure() -> dict:
         return network_failure_preserves_unknown(metric_value=None, generated_number=0.0)
@@ -2057,6 +2119,95 @@ def create_app(
             receipt=body.get("receipt"),
         )
         return event.model_dump(mode="json")
+
+    @app.post("/api/events/score")
+    def post_event_score(payload: dict | None = None) -> dict:
+        body = payload or {}
+        receipt = score_events(
+            predictions=list(body.get("predictions") or []),
+            labels=list(body.get("labels") or []),
+            labels_independent=False,
+        )
+        return receipt.model_dump(mode="json")
+
+    @app.post("/api/cache/recompute")
+    def post_cache_recompute(payload: dict | None = None) -> dict:
+        del payload
+        return recompute_plan(previous_identity="previous", current_identity="current", change="perception")
+
+    @app.post("/api/training/ledger")
+    def post_training_ledger(payload: dict | None = None) -> dict:
+        del payload
+        ledger = experiment_ledger()
+        ledger.append({"run": "exp-1", "config": "baseline"})
+        return {"entries": ledger.entries, "promoted": False, "independentGroundTruth": False}
+
+    @app.post("/api/identity/repair")
+    def post_identity_repair(payload: dict | None = None) -> dict:
+        body = payload or {}
+        preview = preview_identity_change(
+            kind=str(body.get("kind") or "track_split"),
+            track_id=body.get("trackId"),
+            at_frame=body.get("atFrame"),
+        )
+        repair = IdentityRepair()
+        repair.split(str(body.get("trackId") or "t-1"), int(body.get("atFrame") or 0), author="analyst")
+        return {**preview, "edits": repair.edits, "committed": False}
+
+    @app.post("/api/decode/crop")
+    def post_decode_crop(payload: dict | None = None) -> dict:
+        body = payload or {}
+        return apply_crop_and_rotation(
+            int(body.get("width") or 1920),
+            int(body.get("height") or 1080),
+            crop=None,
+            rotation=0,
+            colour_order="bgr",
+        )
+
+    @app.post("/api/decode/cuts")
+    def post_decode_cuts(payload: dict | None = None) -> dict:
+        body = payload or {}
+        times = [float(item) for item in list(body.get("times") or [])]
+        frames = [
+            DecodedFrame(index, index, time, 8, 8, "bgr", 0, b"\x00\x00\x00", "fixture")
+            for index, time in enumerate(times)
+        ]
+        return {
+            "cuts": detect_camera_cuts(times),
+            "anchors": sample_decode_anchors(frames),
+        }
+
+    @app.post("/api/decode/grid")
+    def post_decode_grid(payload: dict | None = None) -> dict:
+        body = payload or {}
+        return align_clip_start_to_grid(
+            clip_start_source_frame=int(body.get("clipStartSourceFrame") or 0),
+            evaluation_step=int(body.get("evaluationStep") or 1),
+        )
+
+    @app.post("/api/decode/pixels")
+    def post_decode_pixels(payload: dict | None = None) -> dict:
+        del payload
+        payload_bytes = b"\x00\x00\x00"
+        base = DecodedFrame(0, 0, 0.0, 1, 1, "bgr", 0, payload_bytes, "fixture")
+        frame = DecodedFrame(0, 0, 0.0, 1, 1, "bgr", 0, payload_bytes, "fixture", buffer=wrap_decoded_frame(base, device="cpu"))
+        pixels = pixels_from_decoded_frame(frame)
+        return {"shape": list(pixels.shape), "gpuPromoted": False, "device": "cpu"}
+
+    @app.post("/api/costs/deployment")
+    def post_deployment_choice(payload: dict | None = None) -> dict:
+        del payload
+        return deployment_choice(privacy_required=True, irregular_usage=False, suitable_local_hardware=True)
+
+    @app.get("/api/metrics/round-trip")
+    def get_metric_round_trip() -> dict:
+        restored = round_trip_unknown(
+            unknown_metric("possession_pct", definition_version=DEFINITION_VERSION, reason_codes=["ZERO_DENOMINATOR"])
+        )
+        dumped = restored.model_dump(mode="json")
+        dumped["publishedValue"] = restored.published_value()
+        return dumped
 
     @app.post("/api/ownership/invalidate")
     def post_ownership_invalidate(payload: dict | None = None) -> dict:
@@ -2479,6 +2630,15 @@ def create_app(
             team=str(body.get("team") or "my_team"),
             period=int(body.get("period") or 1),
         )
+
+    @app.get("/api/matches/{match_id}/calibration")
+    def get_match_calibration(match: MatchRecord = Depends(require_match)) -> dict:
+        return storage.calibration_for_match(match.id)
+
+    @app.post("/api/matches/{match_id}/calibration")
+    def post_match_calibration(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+        del payload
+        return storage.calibration_for_match(match.id)
 
     @app.get("/api/matches/{match_id}/formation")
     def get_match_formation(match: MatchRecord = Depends(require_match)) -> dict:

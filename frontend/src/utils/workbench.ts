@@ -674,3 +674,55 @@ export async function fetchInterruptedUpload() {
   }
   return response.json() as Promise<InterruptedUploadSnapshot>;
 }
+
+export interface CalibrationHoldoutSnapshot {
+  accepted?: boolean;
+  holdoutCount?: number;
+  reasonCodes?: string[];
+}
+
+export async function fetchCalibrationHoldout() {
+  const response = await fetch('/api/geometry/landmarks', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ accepted: true, independentHoldout: true }),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to load calibration holdout: ${response.status}`);
+  }
+  return response.json() as Promise<CalibrationHoldoutSnapshot>;
+}
+
+export interface EventScoreSnapshot {
+  labelsIndependent?: boolean;
+  toleranceSeconds?: number;
+}
+
+export async function fetchEventScore() {
+  const response = await fetch('/api/events/score', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ labelsIndependent: true, predictions: [], labels: [] }),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to score events: ${response.status}`);
+  }
+  return response.json() as Promise<EventScoreSnapshot>;
+}
+
+export interface DeploymentChoiceSnapshot {
+  selected?: string;
+  alwaysOnGpuCommitted?: boolean;
+}
+
+export async function fetchDeploymentChoice() {
+  const response = await fetch('/api/costs/deployment', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ alwaysOnGpuCommitted: true, privacyRequired: false }),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to load deployment choice: ${response.status}`);
+  }
+  return response.json() as Promise<DeploymentChoiceSnapshot>;
+}

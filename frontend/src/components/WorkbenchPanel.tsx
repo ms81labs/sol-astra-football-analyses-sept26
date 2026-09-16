@@ -52,6 +52,9 @@ import {
   fetchPerceptionScore,
   fetchPseudoLabel,
   fetchInterruptedUpload,
+  fetchCalibrationHoldout,
+  fetchEventScore,
+  fetchDeploymentChoice,
   fetchWorkbenchDossier,
   fetchWorkbenchFlags,
   recoverMatchCorrection,
@@ -85,6 +88,9 @@ import {
   type PerceptionScoreSnapshot,
   type PseudoLabelSnapshot,
   type InterruptedUploadSnapshot,
+  type CalibrationHoldoutSnapshot,
+  type EventScoreSnapshot,
+  type DeploymentChoiceSnapshot,
   type WorkbenchDossier,
 } from '../utils/workbench';
 
@@ -167,6 +173,9 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
   const [perceptionScore, setPerceptionScore] = useState<PerceptionScoreSnapshot | null>(null);
   const [pseudoLabel, setPseudoLabel] = useState<PseudoLabelSnapshot | null>(null);
   const [interruptedUpload, setInterruptedUpload] = useState<InterruptedUploadSnapshot | null>(null);
+  const [calibrationHoldout, setCalibrationHoldout] = useState<CalibrationHoldoutSnapshot | null>(null);
+  const [eventScore, setEventScore] = useState<EventScoreSnapshot | null>(null);
+  const [deploymentChoice, setDeploymentChoice] = useState<DeploymentChoiceSnapshot | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -323,6 +332,27 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
       })
       .catch(() => {
         if (!cancelled) setInterruptedUpload(null);
+      });
+    fetchCalibrationHoldout()
+      .then((payload) => {
+        if (!cancelled && payload.accepted === false) setCalibrationHoldout(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setCalibrationHoldout(null);
+      });
+    fetchEventScore()
+      .then((payload) => {
+        if (!cancelled && payload.labelsIndependent === false) setEventScore(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setEventScore(null);
+      });
+    fetchDeploymentChoice()
+      .then((payload) => {
+        if (!cancelled && payload.alwaysOnGpuCommitted === false) setDeploymentChoice(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setDeploymentChoice(null);
       });
     return () => {
       cancelled = true;
@@ -632,6 +662,15 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
               )}
               {interruptedUpload?.accepted === false && (
                 <p className="text-xs text-slate-400">Interrupted uploads are quarantined, not accepted.</p>
+              )}
+              {calibrationHoldout?.accepted === false && (
+                <p className="text-xs text-slate-400">Calibration holdout labels remain unavailable.</p>
+              )}
+              {eventScore?.labelsIndependent === false && (
+                <p className="text-xs text-slate-400">Event scoring does not treat labels as independent.</p>
+              )}
+              {deploymentChoice?.alwaysOnGpuCommitted === false && (
+                <p className="text-xs text-slate-400">Deployment does not commit always-on GPU.</p>
               )}
               <div className="rounded-lg border border-slate-700 p-3">
                 <h4 className="text-xs uppercase tracking-wide text-slate-500 mb-2">Capability matrix</h4>

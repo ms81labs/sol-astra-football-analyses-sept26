@@ -321,6 +321,15 @@ it('loads recovery and landmark preview from production routes and posts deletio
     if (url.endsWith('/api/upload/interrupt')) {
       return new Response(JSON.stringify({ accepted: false, quarantined: true }), { status: 200 });
     }
+    if (url.endsWith('/api/geometry/landmarks')) {
+      return new Response(JSON.stringify({ accepted: false, holdoutCount: 0, reasonCodes: ['CALIBRATION_UNAVAILABLE'] }), { status: 200 });
+    }
+    if (url.endsWith('/api/events/score')) {
+      return new Response(JSON.stringify({ labelsIndependent: false, toleranceSeconds: 0.5 }), { status: 200 });
+    }
+    if (url.endsWith('/api/costs/deployment')) {
+      return new Response(JSON.stringify({ selected: 'local', alwaysOnGpuCommitted: false }), { status: 200 });
+    }
     return new Response(JSON.stringify({ query: { unanswerable: true, reason: 'x', eventFamily: 'pass' }, results: [] }), { status: 200 });
   });
   vi.stubGlobal('fetch', fetchMock);
@@ -348,6 +357,9 @@ it('loads recovery and landmark preview from production routes and posts deletio
   expect(screen.getByText(/independent labels remain incomplete for perception scoring/i)).toBeTruthy();
   expect(screen.getByText(/pseudo-labels are not independent ground truth/i)).toBeTruthy();
   expect(screen.getByText(/interrupted uploads are quarantined/i)).toBeTruthy();
+  expect(await screen.findByText(/calibration holdout labels remain unavailable/i)).toBeTruthy();
+  expect(screen.getByText(/event scoring does not treat labels as independent/i)).toBeTruthy();
+  expect(screen.getByText(/deployment does not commit always-on gpu/i)).toBeTruthy();
   await fireEvent.click(screen.getByRole('button', { name: /request deletion/i }));
   const deletionCall = fetchMock.mock.calls.find(([url, init]) => String(url).endsWith('/api/access/deletion') && init?.method === 'POST');
   expect(deletionCall).toBeTruthy();

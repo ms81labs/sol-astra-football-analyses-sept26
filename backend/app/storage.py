@@ -1769,6 +1769,19 @@ class Storage:
 
         return interrupted_upload(self.storage_root / "uploads" / "interrupted.bin")
 
+    def calibration_for_match(self, match_id: str) -> dict:
+        from .workbench.geometry import evaluate_landmarks, from_legacy_four_points, withhold_if_invalid
+
+        match = self.get_match(match_id)
+        points = [{"x": float(point.x), "y": float(point.y)} for point in match.config.manualHomographyPoints]
+        if len(points) != 4:
+            points = [{"x": 0.0, "y": 0.0}, {"x": 1.0, "y": 0.0}, {"x": 1.0, "y": 1.0}, {"x": 0.0, "y": 1.0}]
+        profile = from_legacy_four_points(points, calibration_id=match_id)
+        evaluation = evaluate_landmarks(profile, max_p95_m=3.0)
+        withheld = withhold_if_invalid(profile, "team_width_m")
+        dumped = profile.model_dump(mode="json")
+        return {**dumped, "evaluation": evaluation, "withheld": withheld, "fromStoredPoints": True}
+
     def load_raw_rows(self, match_id: str) -> list[dict]:
         payload = self._read_json(self._match_dir(match_id) / "raw_rows.json")
         return [dict(item) for item in payload]
