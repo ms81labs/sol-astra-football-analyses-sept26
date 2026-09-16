@@ -3004,6 +3004,15 @@ def create_app(
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail="Analytics not ready") from exc
 
+    @app.get("/api/matches/{match_id}/heatmap")
+    def get_match_heatmap(match: MatchRecord = Depends(require_match)) -> dict:
+        return storage.heatmap_for_match(match.id)
+
+    @app.post("/api/matches/{match_id}/heatmap")
+    def post_match_heatmap(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+        del payload
+        return storage.heatmap_for_match(match.id)
+
     @app.get("/api/matches/{match_id}/players")
     def get_match_players(match: MatchRecord = Depends(require_match)) -> dict:
         try:

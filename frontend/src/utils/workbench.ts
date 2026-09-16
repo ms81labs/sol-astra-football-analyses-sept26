@@ -827,11 +827,11 @@ export interface HeatmapSnapshot {
   reasonCodes?: string[];
 }
 
-export async function fetchHeatmap() {
-  const response = await fetch('/api/heatmap', {
+export async function fetchHeatmap(matchId?: string) {
+  const response = await fetch(matchId ? `/api/matches/${matchId}/heatmap` : '/api/heatmap', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ identityContinuous: true, wholeMatch: true }),
+    body: JSON.stringify({}),
   });
   if (!response.ok) {
     throw new Error(`Failed to load heatmap availability: ${response.status}`);

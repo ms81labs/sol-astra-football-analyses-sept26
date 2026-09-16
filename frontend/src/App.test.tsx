@@ -231,7 +231,7 @@ describe('App match workspace loading', () => {
     const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
       void init;
       const url = String(input);
-      if (url.includes('/api/heatmap')) {
+      if (url.includes('/api/matches/match-a/heatmap')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({
@@ -250,11 +250,11 @@ describe('App match workspace loading', () => {
     render(<App />);
     await screen.findByText('Match A', { selector: 'header span' });
     await waitFor(() => {
-      expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/api/heatmap'))).toBe(true);
+      expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/api/matches/match-a/heatmap'))).toBe(true);
     });
-    const heatmapCall = fetchMock.mock.calls.find(([input]) => String(input).includes('/api/heatmap'));
+    const heatmapCall = fetchMock.mock.calls.find(([input]) => String(input).includes('/api/matches/match-a/heatmap'));
     expect(heatmapCall?.[1]?.method).toBe('POST');
-    expect(heatmapCall?.[1]?.body).toContain('identityContinuous');
+    expect(heatmapCall?.[1]?.body).not.toContain('"identityContinuous":true');
     expect(screen.getByText(/whole-match heatmap withheld until identity continuity/i)).toBeTruthy();
   });
 
@@ -265,7 +265,7 @@ describe('App match workspace loading', () => {
     vi.stubGlobal('fetch', vi.fn((input: RequestInfo, init?: RequestInit) => {
       void init;
       const url = String(input);
-      if (url.includes('/api/heatmap')) {
+      if (url.includes('/api/matches/match-a/heatmap')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({
@@ -314,7 +314,7 @@ describe('App match workspace loading', () => {
     vi.stubGlobal('fetch', vi.fn((input: RequestInfo, init?: RequestInit) => {
       void init;
       const url = String(input);
-      if (url.includes('/api/heatmap')) {
+      if (url.includes('/api/matches/match-a/heatmap')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({

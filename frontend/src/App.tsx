@@ -236,7 +236,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
       .catch(() => {
         if (!cancelled) setFormationAvailability(null);
       });
-    fetchHeatmap()
+    fetchHeatmap(activeMatch.id)
       .then((payload) => {
         if (cancelled) return;
         const identity = payload.identityContinuous === true;

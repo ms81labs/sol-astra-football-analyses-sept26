@@ -990,6 +990,33 @@ async def _test_match_reports_assemble_from_stored_evidence(tmp_path: Path):
         assert evidence_id in grounded.json()["evidenceSelection"]["evidenceIds"]
 
 
+def test_match_heatmap_uses_stored_identity_receipt(tmp_path: Path):
+    _run(_test_match_heatmap_uses_stored_identity_receipt, tmp_path)
+
+
+async def _test_match_heatmap_uses_stored_identity_receipt(tmp_path: Path):
+    async with api_client(tmp_path) as (_, client):
+        response = await _upload_tracking_match(client)
+        assert response.status_code == 202
+        match_id = response.json()["matchId"]
+
+        heatmap = await client.post(
+            f"/api/matches/{match_id}/heatmap",
+            json={"identityContinuous": True, "wholeMatch": True, "withheld": False},
+        )
+        assert heatmap.status_code == 200
+        payload = heatmap.json()
+        assert payload["identityContinuous"] is False
+        assert payload["wholeMatch"] is False
+        assert payload["intervalLimited"] is True
+        assert payload["withheld"] is True
+        assert "IDENTITY_DISCONTINUITY" in payload["reasonCodes"]
+
+        fetched = await client.get(f"/api/matches/{match_id}/heatmap")
+        assert fetched.status_code == 200
+        assert fetched.json()["identityContinuous"] is False
+
+
 def test_match_jobs_are_idempotent_and_cancel_is_a_request(tmp_path: Path):
     _run(_test_match_jobs_are_idempotent_and_cancel_is_a_request, tmp_path)
 

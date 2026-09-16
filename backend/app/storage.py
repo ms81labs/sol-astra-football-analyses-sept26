@@ -1488,6 +1488,25 @@ class Storage:
             )
         return {"items": items, "reviewFirst": True, "accepted": False, "measured": False}
 
+    def heatmap_for_match(self, match_id: str) -> dict:
+        from .workbench.quantities import heatmap_availability
+
+        self.get_match(match_id)
+        try:
+            summary, _, _, _ = self.load_analytics(match_id)
+        except FileNotFoundError:
+            return heatmap_availability(identity_continuous=False)
+        physical = next(
+            (item for item in summary.metricAvailability if item.metric == "my_team_distance_m"),
+            None,
+        )
+        identity_continuous = bool(
+            physical is not None
+            and physical.availability == "available"
+            and "IDENTITY_DISCONTINUITY" not in (physical.reasonCodes or [])
+        )
+        return heatmap_availability(identity_continuous=identity_continuous)
+
     def identity_for_match(self, match_id: str) -> dict:
         from .workbench.identity import (
             appearance_embedding_policy,
