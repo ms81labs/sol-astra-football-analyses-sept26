@@ -49,6 +49,10 @@ import {
   fetchSupportBundle,
   fetchTrainingDrills,
   fetchTrainingPools,
+  fetchWorkerEnvironment,
+  fetchPerceptionScore,
+  fetchPseudoLabel,
+  fetchInterruptedUpload,
   fetchWorkbenchDossier,
   fetchWorkbenchFlags,
   recoverMatchCorrection,
@@ -78,6 +82,10 @@ import {
   type ShadowMetricSnapshot,
   type SupportBundleSnapshot,
   type TrainingPoolsSnapshot,
+  type WorkerEnvironmentSnapshot,
+  type PerceptionScoreSnapshot,
+  type PseudoLabelSnapshot,
+  type InterruptedUploadSnapshot,
   type WorkbenchDossier,
 } from '../utils/workbench';
 
@@ -156,6 +164,10 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
   const [workflow, setWorkflow] = useState<AnalystWorkflowSnapshot | null>(null);
   const [shadowMetric, setShadowMetric] = useState<ShadowMetricSnapshot | null>(null);
   const [trainingPools, setTrainingPools] = useState<TrainingPoolsSnapshot | null>(null);
+  const [workerEnvironment, setWorkerEnvironment] = useState<WorkerEnvironmentSnapshot | null>(null);
+  const [perceptionScore, setPerceptionScore] = useState<PerceptionScoreSnapshot | null>(null);
+  const [pseudoLabel, setPseudoLabel] = useState<PseudoLabelSnapshot | null>(null);
+  const [interruptedUpload, setInterruptedUpload] = useState<InterruptedUploadSnapshot | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -284,6 +296,34 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
       })
       .catch(() => {
         if (!cancelled) setTrainingPools(null);
+      });
+    fetchWorkerEnvironment()
+      .then((payload) => {
+        if (!cancelled && payload.NAMESPACE === 'production') setWorkerEnvironment(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setWorkerEnvironment(null);
+      });
+    fetchPerceptionScore()
+      .then((payload) => {
+        if (!cancelled && payload.labelsIndependent === false) setPerceptionScore(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setPerceptionScore(null);
+      });
+    fetchPseudoLabel()
+      .then((payload) => {
+        if (!cancelled && payload.independentGroundTruth === false) setPseudoLabel(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setPseudoLabel(null);
+      });
+    fetchInterruptedUpload()
+      .then((payload) => {
+        if (!cancelled && payload.accepted === false) setInterruptedUpload(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setInterruptedUpload(null);
       });
     return () => {
       cancelled = true;
@@ -581,6 +621,18 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
               )}
               {trainingPools?.pools?.includes('locked_evaluation') && (
                 <p className="text-xs text-slate-400">Locked evaluation labels cannot enter training.</p>
+              )}
+              {workerEnvironment?.NAMESPACE === 'production' && (
+                <p className="text-xs text-slate-400">Host credentials stay out of the worker environment.</p>
+              )}
+              {perceptionScore?.labelsIndependent === false && (
+                <p className="text-xs text-slate-400">Independent labels remain incomplete for perception scoring.</p>
+              )}
+              {pseudoLabel?.independentGroundTruth === false && (
+                <p className="text-xs text-slate-400">Pseudo-labels are not independent ground truth.</p>
+              )}
+              {interruptedUpload?.accepted === false && (
+                <p className="text-xs text-slate-400">Interrupted uploads are quarantined, not accepted.</p>
               )}
               <div className="rounded-lg border border-slate-700 p-3">
                 <h4 className="text-xs uppercase tracking-wide text-slate-500 mb-2">Capability matrix</h4>

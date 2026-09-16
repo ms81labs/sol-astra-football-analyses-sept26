@@ -2132,3 +2132,203 @@ async def _test_production_workflow_identity_sharing_training_cache_and_detector
         assert cache.json()["namespace"] == "production"
         assert cache.json()["compatibleWithDevelopment"] is False
 
+
+def test_production_colour_perception_worker_training_cycle_and_recovery_surfaces(tmp_path: Path):
+    _run(_test_production_colour_perception_worker_training_cycle_and_recovery_surfaces, tmp_path)
+
+
+async def _test_production_colour_perception_worker_training_cycle_and_recovery_surfaces(tmp_path: Path):
+    async with api_client(tmp_path) as (_, client):
+        colour = await client.post(
+            "/api/media/colour",
+            json={
+                "pixels": [10, 200, 30],
+                "colourOrder": "rgb",
+                "convert": False,
+                "sourceBox": [10, 20, 40, 50],
+                "crop": [10, 20, 40, 50],
+                "rotation": 90,
+            },
+        )
+        assert colour.status_code == 200
+        assert colour.json()["pixels"] == [30, 200, 10]
+        assert colour.json()["sourceBox"] == [10, 20, 40, 50]
+        assert colour.json()["rotationApplied"] is False
+        assert "rgb decoder without conversion" not in str(colour.json())
+
+        wrapped = await client.post("/api/decode/wrap", json={"device": "cuda", "payload": [1, 2, 3]})
+        assert wrapped.status_code == 200
+        assert wrapped.json()["device"] == "cpu"
+        assert wrapped.json()["gpuPromoted"] is False
+        assert wrapped.json()["lifetime"] == "borrowed"
+
+        fallback = await client.post("/api/decode/fallback", json={"selected": "cuda", "available": ["cuda"]})
+        assert fallback.status_code == 200
+        assert fallback.json()["selected"] == "opencv"
+
+        preprocess = await client.post(
+            "/api/perception/preprocess",
+            json={"pixels": [10, 200, 30], "width": 1, "height": 1, "colourOrder": "rgb", "footballRulesApplied": True},
+        )
+        assert preprocess.status_code == 200
+        assert preprocess.json()["colourOrder"] == "bgr"
+        assert preprocess.json()["silentlyChangedColour"] is False
+        assert preprocess.json()["sourceCoordinatesUnchanged"] is True
+        assert preprocess.json()["footballRulesApplied"] is False
+
+        scored = await client.post(
+            "/api/perception/score",
+            json={
+                "detections": [
+                    {"frameId": 0, "bbox": [0, 0, 10, 10], "score": 0.9, "kind": "player", "stratum": "near"},
+                    {"frameId": 0, "bbox": [80, 80, 90, 90], "score": 0.8, "kind": "player", "stratum": "near"},
+                ],
+                "labels": [
+                    {"frameId": 0, "bbox": [0, 0, 10, 10], "kind": "player", "stratum": "near"},
+                    {"frameId": 0, "bbox": [40, 40, 42, 42], "kind": "player", "stratum": "far"},
+                    {"frameId": 0, "bbox": [80, 80, 90, 90], "kind": "negative", "stratum": "negative"},
+                ],
+                "task": "player_coverage",
+                "labelsIndependent": True,
+            },
+        )
+        assert scored.status_code == 200
+        assert scored.json()["labelsIndependent"] is False
+        assert "LABELS_INCOMPLETE" in scored.json()["notes"]
+
+        stratum = await client.post(
+            "/api/perception/stratum",
+            json={"detections": [], "labels": [], "task": "player_coverage", "labelsIndependent": True},
+        )
+        assert stratum.status_code == 200
+        assert stratum.json()["labelsIndependent"] is False
+
+        balls = await client.post(
+            "/api/perception/ball-states",
+            json={"rows": [{"observationSource": "observed"}, {"source": "inferred_ball"}, {"source": "mystery"}]},
+        )
+        assert balls.status_code == 200
+        assert balls.json() == {"visible": 1, "inferred": 1, "unknown": 1}
+
+        preview = await client.post(
+            "/api/identity/preview",
+            json={"kind": "track_split", "trackId": "t-1", "atFrame": 4, "committed": True, "visionRerun": True},
+        )
+        assert preview.status_code == 200
+        assert preview.json()["preview"] is True
+        assert preview.json()["committed"] is False
+        assert preview.json()["visionRerun"] is False
+        assert "player_events" in preview.json()["invalidates"]
+
+        tracker = await client.post(
+            "/api/tracker",
+            json={
+                "detections": [{"frameId": 0, "bbox": [10, 20, 30, 80], "score": 0.9, "kind": "player", "stratum": "near"}],
+                "cutDetected": True,
+                "silentlyReconnected": True,
+            },
+        )
+        assert tracker.status_code == 200
+        assert tracker.json()["tracks"][0]["reset"] is True
+        assert tracker.json()["tracks"][0]["silentlyReconnected"] is False
+
+        withheld = await client.post("/api/events/propose", json={"family": "pass", "release": {"time": 12.0}, "accepted": True})
+        assert withheld.status_code == 200
+        assert withheld.json()["status"] == "withheld"
+        assert withheld.json()["accepted"] is False
+        candidate = await client.post(
+            "/api/events/propose",
+            json={"family": "pass", "release": {"time": 12.0, "playerId": 7}, "receipt": {"time": 13.4}, "accepted": True},
+        )
+        assert candidate.status_code == 200
+        assert candidate.json()["status"] == "candidate"
+        assert candidate.json()["accepted"] is False
+
+        invalidation = await client.post("/api/ownership/invalidate", json={"change": "report", "invalidates": []})
+        assert invalidation.status_code == 200
+        assert "ownership" in invalidation.json()["invalidates"]
+        assert "metrics" in invalidation.json()["invalidates"]
+
+        scores = await client.post(
+            "/api/quantities/scores",
+            json={"detectorScore": 0.81, "calibratedProbability": 0.22, "interval": [0.1, 0.4], "confidence": 0.99},
+        )
+        assert scores.status_code == 200
+        assert "confidence" not in scores.json()
+        assert scores.json()["detectorScore"] == 0.81
+        assert scores.json()["calibratedProbability"] == 0.22
+
+        worker = await client.post(
+            "/api/worker/environment",
+            json={"hostSecret": "DAYTONA_API_KEY=super-secret", "namespace": "development"},
+        )
+        assert worker.status_code == 200
+        assert "super-secret" not in str(worker.json())
+        assert "DAYTONA_API_KEY" not in worker.json()
+        assert worker.json()["NAMESPACE"] == "production"
+
+        cleanup = await client.post("/api/cleanup/complete", json={"cleanupResult": "confirmed", "complete": True})
+        assert cleanup.status_code == 200
+        assert cleanup.json()["complete"] is False
+
+        interrupted = await client.post("/api/upload/interrupt", json={"accepted": True, "path": "/tmp/keep.bin"})
+        assert interrupted.status_code == 200
+        assert interrupted.json()["accepted"] is False
+        assert interrupted.json()["quarantined"] is True
+
+        signed = await client.post(
+            "/api/access/signed",
+            json={"token": "scope/clip-1", "objectId": "clip-1", "tokenObjectId": "clip-1", "admitted": True},
+        )
+        assert signed.status_code == 200
+        assert signed.json()["admitted"] is False
+        unsigned = await client.get("/api/access/signed")
+        assert unsigned.status_code == 200
+        assert unsigned.json()["admitted"] is False
+
+        cycle = await client.post("/api/training/cycle", json={"stage": "diagnose", "measurableFailure": True})
+        assert cycle.status_code == 200
+        assert cycle.json()["proceed"] is False
+
+        promotion = await client.post(
+            "/api/training/promote",
+            json={"independentAccepted": True, "rollbackArtifact": True},
+        )
+        assert promotion.status_code == 200
+        assert promotion.json()["promoted"] is False
+        assert "INDEPENDENT_ACCEPTANCE_MISSING" in promotion.json()["reasonCodes"]
+
+        pseudo = await client.post(
+            "/api/training/pseudo",
+            json={"suggestion": "player", "approved": True, "independentGroundTruth": True},
+        )
+        assert pseudo.status_code == 200
+        assert pseudo.json()["independentGroundTruth"] is False
+        assert pseudo.json()["approved"] is False
+
+        sampling = await client.get("/api/training/sampling")
+        assert sampling.status_code == 200
+        assert sampling.json()["uncertaintyOnly"] is False
+        assert "random_representative" in sampling.json()["mix"]
+
+        response = await _upload_tracking_match(client)
+        assert response.status_code == 202
+        match_id = response.json()["matchId"]
+
+        migrated = await client.post(
+            f"/api/matches/{match_id}/records/migrate",
+            json={"possession": 61, "myTeamDistance": 12000, "controlledFrames": 9000},
+        )
+        assert migrated.status_code == 200
+        assert migrated.json()["migrated"]["possession_pct"]["availability"] == "unknown"
+        assert migrated.json()["rollback"]["possession"] is None
+        assert migrated.json()["rollback"]["myTeamDistance"] is None
+
+        direction = await client.post(
+            f"/api/matches/{match_id}/attack-direction",
+            json={"team": "my_team", "period": 1, "mapping": {"my_team|1": "left_to_right"}},
+        )
+        assert direction.status_code == 200
+        assert direction.json()["direction"] == "right_to_left"
+        assert direction.json()["fromStoredConfig"] is True
+

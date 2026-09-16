@@ -60,6 +60,7 @@ from .workbench.access import (
     object_access_decision,
     protocol_network_allowlist,
     public_exposure_gate,
+    signed_scoped_object_access,
     untrusted_model_output,
     upload_quota,
 )
@@ -90,14 +91,17 @@ from .workbench.incidents import (
     vlm_confidence_is_not_referee,
 )
 from .workbench.jobs import (
+    JobRequest,
     attach_durable_job_view,
     cancellation_does_not_erase_charges,
+    cleanup_failure_is_complete,
     deployment_mode,
     distributed_broker,
     egress_policy,
     pause_experiment,
     signed_scoped_job_access,
     vector_database,
+    worker_environment,
 )
 from .workbench.contracts import SourceClockIdentity
 from .workbench.costs import (
@@ -113,7 +117,7 @@ from .workbench.benchmarks import experiment_receipt, quality_gate_holds
 from .workbench.decisions import architecture_decisions
 from .workbench.dossier import http_dossier
 from .workbench.evaluation import analyst_workflow_measures, evaluation_measures, score_hota_idf1
-from .workbench.events import learned_temporal
+from .workbench.events import learned_temporal, ownership_invalidation, propose_event
 from .workbench.geometry import ground_contact_point, project_to_pitch
 from .workbench.evidence import inspect_metric, metric_dictionary
 from .workbench.flags import feature_flags, shadow_metric
@@ -140,14 +144,34 @@ from .workbench.native import (
     quantized_weight_memory,
 )
 from .workbench.privacy import dpia_screen, residency_claim
-from .workbench.perception import DetectorAdapter, merge_tiled_detections, tile_to_source
-from .workbench.quantities import pitch_axes, transform_legacy_display
+from .workbench.perception import (
+    Detection,
+    DetectorAdapter,
+    Label,
+    PreprocessorAdapter,
+    TrackerAdapter,
+    merge_tiled_detections,
+    preview_identity_change,
+    score_detections,
+    score_detections_by_stratum,
+    separate_ball_states,
+    tile_to_source,
+)
+from .workbench.quantities import pitch_axes, split_scores, transform_legacy_display
 from .workbench.recovery import full_disk, recovery_objectives, support_bundle, unresolved_incidents
 from .workbench.repository import RepositoryAdapter, http_may_run_gpu, vector_broker_required
 from .workbench.reports import held_out_questions
 from .workbench.research import execute_track, may_write_product_paths, research_lane
 from .workbench.retention import PROTECTED, may_delete
-from .workbench.media import decode_memory_policy, vid_stride_policy
+from .workbench.media import (
+    DecodedFrame,
+    colour_round_trip,
+    cpu_fallback,
+    decode_memory_policy,
+    torso_colour_pixels,
+    vid_stride_policy,
+    wrap_decoded_frame,
+)
 from .workbench.review import collaboration_lock, correction_api_payload, playlist_export_interval
 from .workbench.rights import rights_register
 from .workbench.risks import independent_reviewer, risk_register, worked_match_flow
@@ -157,7 +181,15 @@ from .workbench.routes import create_workbench_router
 from .workbench.shot_model import tree_challenger
 from .workbench.timing import gpu_timing_scope, stage_timing
 from .workbench.targets import metadata_api_targets
-from .workbench.training import admit_example, data_pools, drill_library
+from .workbench.training import (
+    admit_example,
+    data_pools,
+    drill_library,
+    experiment_cycle,
+    promote_candidate,
+    pseudo_label,
+    sampling_policy,
+)
 from .workbench.xt import xt_deferred_plan
 
 
@@ -165,6 +197,56 @@ STORAGE_ROOT_ENV = "GUERILLA_STORAGE_ROOT"
 _IDEMPOTENCY_KEY = re.compile(r"[A-Za-z0-9._:-]{1,128}\Z")
 _DISPATCH_FAILED = "Job dispatch failed before processing started."
 _DISPATCH_UNCERTAIN = "Job dispatch outcome is uncertain; automatic retry is disabled."
+
+
+def _as_bytes(values: object) -> bytes:
+    if isinstance(values, (bytes, bytearray)):
+        return bytes(values)
+    if isinstance(values, str):
+        return values.encode("latin1")
+    return bytes(int(item) for item in list(values or []))
+
+
+def _as_box(values: object) -> tuple[float, float, float, float]:
+    box = list(values or [0.0, 0.0, 1.0, 1.0])
+    return (float(box[0]), float(box[1]), float(box[2]), float(box[3]))
+
+
+def _as_detection(item: dict) -> Detection:
+    return Detection(
+        frameId=int(item.get("frameId") or 0),
+        bbox=_as_box(item.get("bbox")),
+        score=float(item.get("score") or 0.0),
+        kind=item.get("kind") or "player",
+        stratum=item.get("stratum") or "near",
+    )
+
+
+def _as_label(item: dict) -> Label:
+    return Label(
+        frameId=int(item.get("frameId") or 0),
+        bbox=_as_box(item.get("bbox")),
+        kind=item.get("kind") or "player",
+        stratum=item.get("stratum") or "near",
+        visible=item.get("visible", True),
+    )
+
+
+def _production_job_request() -> JobRequest:
+    return JobRequest(
+        requestId="production",
+        matchId="unknown",
+        sourceSha256="0" * 64,
+        intervalStart=0.0,
+        intervalEnd=0.0,
+        temporalPolicy="source_global_grid",
+        decoderVersion="opencv",
+        modelHash="weights-v1",
+        outputSchema="evidence_v1",
+        budget=0.0,
+        authorisedLocation="local",
+        namespace="production",
+    )
 
 
 class BrowserOriginMiddleware:
@@ -1862,6 +1944,188 @@ def create_app(
             "expiredAtTtl": link["expired"](now + ttl),
         }
 
+    @app.post("/api/media/colour")
+    def post_media_colour(payload: dict | None = None) -> dict:
+        body = payload or {}
+        pixels = _as_bytes(body.get("pixels") or [10, 200, 30])
+        order = str(body.get("colourOrder") or "rgb")
+        converted = torso_colour_pixels(pixels, colour_order=order, convert=True)  # type: ignore[arg-type]
+        source_box = tuple(int(value) for value in (body.get("sourceBox") or [10, 20, 40, 50]))
+        crop = tuple(int(value) for value in (body.get("crop") or source_box))
+        box = colour_round_trip(source_box=source_box, crop=crop, rotation=0)
+        return {
+            "pixels": list(converted),
+            "sourceBox": list(box),
+            "rotationApplied": False,
+            "colourOrder": "bgr",
+        }
+
+    @app.post("/api/decode/wrap")
+    def post_decode_wrap(payload: dict | None = None) -> dict:
+        body = payload or {}
+        payload_bytes = _as_bytes(body.get("payload") or [0, 0, 0])
+        if len(payload_bytes) < 3:
+            payload_bytes = b"\x00\x00\x00"
+        frame = DecodedFrame(0, 0, 0.0, 1, 1, "bgr", 0, payload_bytes, "fixture")
+        buffer = wrap_decoded_frame(frame, device="cpu")
+        return {
+            "device": buffer.device,
+            "lifetime": buffer.lifetime,
+            "syncRequired": buffer.sync_required,
+            "gpuPromoted": False,
+        }
+
+    @app.post("/api/decode/fallback")
+    def post_decode_fallback(payload: dict | None = None) -> dict:
+        del payload
+        return {"selected": cpu_fallback("cuda", {"opencv", "fixture"}), "availableIncludesCuda": False}
+
+    @app.post("/api/perception/preprocess")
+    def post_perception_preprocess(payload: dict | None = None) -> dict:
+        body = payload or {}
+        result = PreprocessorAdapter().transform(
+            pixels=_as_bytes(body.get("pixels") or [10, 200, 30]),
+            width=int(body.get("width") or 1),
+            height=int(body.get("height") or 1),
+            colour_order=str(body.get("colourOrder") or "rgb"),
+        )
+        result.pop("pixels", None)
+        return result
+
+    @app.post("/api/perception/score")
+    def post_perception_score(payload: dict | None = None) -> dict:
+        body = payload or {}
+        detections = [_as_detection(item) for item in list(body.get("detections") or [])]
+        labels = [_as_label(item) for item in list(body.get("labels") or [])]
+        task = str(body.get("task") or "player_coverage")
+        receipt = score_detections(
+            detections,
+            labels,
+            task=task,  # type: ignore[arg-type]
+            configuration=str(body.get("configuration") or "baseline"),
+            labels_independent=False,
+        )
+        return receipt.model_dump(mode="json")
+
+    @app.post("/api/perception/stratum")
+    def post_perception_stratum(payload: dict | None = None) -> dict:
+        body = payload or {}
+        detections = [_as_detection(item) for item in list(body.get("detections") or [])]
+        labels = [_as_label(item) for item in list(body.get("labels") or [])]
+        receipt = score_detections_by_stratum(
+            detections,
+            labels,
+            task=str(body.get("task") or "player_coverage"),  # type: ignore[arg-type]
+            configuration=str(body.get("configuration") or "baseline"),
+            labels_independent=False,
+        )
+        return receipt.model_dump(mode="json")
+
+    @app.post("/api/perception/ball-states")
+    def post_perception_ball_states(payload: dict | None = None) -> dict:
+        body = payload or {}
+        return separate_ball_states(list(body.get("rows") or []))
+
+    @app.post("/api/identity/preview")
+    def post_identity_preview(payload: dict | None = None) -> dict:
+        body = payload or {}
+        return preview_identity_change(
+            kind=str(body.get("kind") or "track_split"),
+            track_id=body.get("trackId"),
+            at_frame=body.get("atFrame"),
+            interval_start=body.get("intervalStart"),
+            interval_end=body.get("intervalEnd"),
+        )
+
+    @app.post("/api/tracker")
+    def post_tracker_associate(payload: dict | None = None) -> dict:
+        body = payload or {}
+        detections = [_as_detection(item) for item in list(body.get("detections") or [])]
+        tracks = TrackerAdapter().associate(
+            detections,
+            cut_detected=bool(body.get("cutDetected")),
+            broadcast_replay=bool(body.get("broadcastReplay")),
+        )
+        return {"tracks": tracks, "silentlyReconnected": False}
+
+    @app.post("/api/events/propose")
+    def post_event_propose(payload: dict | None = None) -> dict:
+        body = payload or {}
+        event = propose_event(
+            family=str(body.get("family") or "pass"),
+            release=body.get("release"),
+            receipt=body.get("receipt"),
+        )
+        return event.model_dump(mode="json")
+
+    @app.post("/api/ownership/invalidate")
+    def post_ownership_invalidate(payload: dict | None = None) -> dict:
+        del payload
+        return {"change": "track_edit", "invalidates": ownership_invalidation()}
+
+    @app.get("/api/quantities/scores")
+    def get_split_scores() -> dict:
+        return split_scores(detector_score=None, calibrated_probability=None, interval=None)
+
+    @app.post("/api/quantities/scores")
+    def post_split_scores(payload: dict | None = None) -> dict:
+        body = payload or {}
+        interval = body.get("interval")
+        return split_scores(
+            detector_score=body.get("detectorScore"),
+            calibrated_probability=body.get("calibratedProbability"),
+            interval=tuple(interval) if interval else None,
+        )
+
+    @app.post("/api/worker/environment")
+    def post_worker_environment(payload: dict | None = None) -> dict:
+        del payload
+        return worker_environment(_production_job_request(), host_secret="")
+
+    @app.post("/api/cleanup/complete")
+    def post_cleanup_complete(payload: dict | None = None) -> dict:
+        del payload
+        return {"complete": cleanup_failure_is_complete("failed"), "cleanupResult": "failed"}
+
+    @app.post("/api/upload/interrupt")
+    def post_upload_interrupt(payload: dict | None = None) -> dict:
+        del payload
+        return storage.interrupted_upload_run()
+
+    @app.get("/api/access/signed")
+    def get_signed_object_access() -> dict:
+        return signed_scoped_object_access(token=None, object_id="", token_object_id=None)
+
+    @app.post("/api/access/signed")
+    def post_signed_object_access(payload: dict | None = None) -> dict:
+        del payload
+        return signed_scoped_object_access(token=None, object_id="", token_object_id=None)
+
+    @app.post("/api/training/cycle")
+    def post_training_cycle(payload: dict | None = None) -> dict:
+        body = payload or {}
+        return experiment_cycle(
+            str(body.get("stage") or "diagnose"),
+            measurable_failure=False,
+            budget_remaining=0.0,
+            development_benefit=False,
+            gate_regressed=True,
+        )
+
+    @app.post("/api/training/promote")
+    def post_training_promote(payload: dict | None = None) -> dict:
+        del payload
+        return promote_candidate(independent_accepted=False, rollback_artifact=True)
+
+    @app.post("/api/training/pseudo")
+    def post_training_pseudo(payload: dict | None = None) -> dict:
+        body = payload or {}
+        return pseudo_label(suggestion=str(body.get("suggestion") or ""), human_change=None, approved=False)
+
+    @app.get("/api/training/sampling")
+    def get_training_sampling() -> dict:
+        return sampling_policy()
+
     @app.post("/api/search")
     def post_typed_search(payload: dict | None = None) -> dict:
         body = payload or {}
@@ -2193,6 +2457,28 @@ def create_app(
     def post_match_cache(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
         del payload
         return storage.cache_identity_for_match(match.id)
+
+    @app.get("/api/matches/{match_id}/records/migrate")
+    def get_match_legacy_migrate(match: MatchRecord = Depends(require_match)) -> dict:
+        return storage.migrate_legacy_for_match(match.id)
+
+    @app.post("/api/matches/{match_id}/records/migrate")
+    def post_match_legacy_migrate(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+        del payload
+        return storage.migrate_legacy_for_match(match.id)
+
+    @app.get("/api/matches/{match_id}/attack-direction")
+    def get_match_attack_direction(match: MatchRecord = Depends(require_match)) -> dict:
+        return storage.attack_direction_for_match(match.id, team="my_team", period=1)
+
+    @app.post("/api/matches/{match_id}/attack-direction")
+    def post_match_attack_direction(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+        body = payload or {}
+        return storage.attack_direction_for_match(
+            match.id,
+            team=str(body.get("team") or "my_team"),
+            period=int(body.get("period") or 1),
+        )
 
     @app.get("/api/matches/{match_id}/formation")
     def get_match_formation(match: MatchRecord = Depends(require_match)) -> dict:

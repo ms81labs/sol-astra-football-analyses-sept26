@@ -1738,6 +1738,37 @@ class Storage:
             "compatibleWithDevelopment": cache_compatible(production, development),
         }
 
+    def migrate_legacy_for_match(self, match_id: str) -> dict:
+        from .workbench.evidence import migrate_legacy_record, rollback_reader
+
+        summary, *_ = self.load_analytics(match_id)
+        migrated = migrate_legacy_record(
+            {
+                "possession": summary.possession,
+                "myTeamDistance": None,
+                "enemyDistance": None,
+                "controlledFrames": 0,
+            }
+        )
+        return {"migrated": migrated, "rollback": rollback_reader(migrated), "rewrotePastOutcomes": False}
+
+    def attack_direction_for_match(self, match_id: str, *, team: str, period: int) -> dict:
+        from .workbench.quantities import attack_direction_for
+
+        match = self.get_match(match_id)
+        mapping = {("my_team", 1): match.config.attackDirection}
+        return {
+            "direction": attack_direction_for(team=team, period=period, mapping=mapping),
+            "fromStoredConfig": True,
+            "team": team,
+            "period": period,
+        }
+
+    def interrupted_upload_run(self) -> dict:
+        from .workbench.recovery import interrupted_upload
+
+        return interrupted_upload(self.storage_root / "uploads" / "interrupted.bin")
+
     def load_raw_rows(self, match_id: str) -> list[dict]:
         payload = self._read_json(self._match_dir(match_id) / "raw_rows.json")
         return [dict(item) for item in payload]

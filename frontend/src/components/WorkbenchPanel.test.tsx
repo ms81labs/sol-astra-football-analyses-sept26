@@ -309,6 +309,18 @@ it('loads recovery and landmark preview from production routes and posts deletio
     if (url.endsWith('/api/training/pools')) {
       return new Response(JSON.stringify({ pools: ['operational_corrections', 'training', 'development_validation', 'locked_evaluation'] }), { status: 200 });
     }
+    if (url.endsWith('/api/worker/environment')) {
+      return new Response(JSON.stringify({ NAMESPACE: 'production', REQUEST_ID: 'production' }), { status: 200 });
+    }
+    if (url.endsWith('/api/perception/score')) {
+      return new Response(JSON.stringify({ labelsIndependent: false, notes: ['LABELS_INCOMPLETE'] }), { status: 200 });
+    }
+    if (url.endsWith('/api/training/pseudo')) {
+      return new Response(JSON.stringify({ independentGroundTruth: false, approved: false }), { status: 200 });
+    }
+    if (url.endsWith('/api/upload/interrupt')) {
+      return new Response(JSON.stringify({ accepted: false, quarantined: true }), { status: 200 });
+    }
     return new Response(JSON.stringify({ query: { unanswerable: true, reason: 'x', eventFamily: 'pass' }, results: [] }), { status: 200 });
   });
   vi.stubGlobal('fetch', fetchMock);
@@ -332,6 +344,10 @@ it('loads recovery and landmark preview from production routes and posts deletio
   expect(await screen.findByText(/analyst workflow measures remain unmeasured/i)).toBeTruthy();
   expect(screen.getByText(/experimental shot quality stays shadowed/i)).toBeTruthy();
   expect(screen.getByText(/locked evaluation labels cannot enter training/i)).toBeTruthy();
+  expect(await screen.findByText(/host credentials stay out of the worker environment/i)).toBeTruthy();
+  expect(screen.getByText(/independent labels remain incomplete for perception scoring/i)).toBeTruthy();
+  expect(screen.getByText(/pseudo-labels are not independent ground truth/i)).toBeTruthy();
+  expect(screen.getByText(/interrupted uploads are quarantined/i)).toBeTruthy();
   await fireEvent.click(screen.getByRole('button', { name: /request deletion/i }));
   const deletionCall = fetchMock.mock.calls.find(([url, init]) => String(url).endsWith('/api/access/deletion') && init?.method === 'POST');
   expect(deletionCall).toBeTruthy();

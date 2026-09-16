@@ -606,3 +606,71 @@ export async function fetchTrainingPools() {
   }
   return response.json() as Promise<TrainingPoolsSnapshot>;
 }
+
+export interface WorkerEnvironmentSnapshot {
+  NAMESPACE?: string;
+  REQUEST_ID?: string;
+}
+
+export async function fetchWorkerEnvironment() {
+  const response = await fetch('/api/worker/environment', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ hostSecret: 'must-not-leak' }),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to load worker environment: ${response.status}`);
+  }
+  return response.json() as Promise<WorkerEnvironmentSnapshot>;
+}
+
+export interface PerceptionScoreSnapshot {
+  labelsIndependent?: boolean;
+  notes?: string[];
+}
+
+export async function fetchPerceptionScore() {
+  const response = await fetch('/api/perception/score', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ labelsIndependent: true, detections: [], labels: [] }),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to score detections: ${response.status}`);
+  }
+  return response.json() as Promise<PerceptionScoreSnapshot>;
+}
+
+export interface PseudoLabelSnapshot {
+  independentGroundTruth?: boolean;
+  approved?: boolean;
+}
+
+export async function fetchPseudoLabel() {
+  const response = await fetch('/api/training/pseudo', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ suggestion: 'player', approved: true }),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to load pseudo-label policy: ${response.status}`);
+  }
+  return response.json() as Promise<PseudoLabelSnapshot>;
+}
+
+export interface InterruptedUploadSnapshot {
+  accepted?: boolean;
+  quarantined?: boolean;
+}
+
+export async function fetchInterruptedUpload() {
+  const response = await fetch('/api/upload/interrupt', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ accepted: true }),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to load interrupted upload policy: ${response.status}`);
+  }
+  return response.json() as Promise<InterruptedUploadSnapshot>;
+}
