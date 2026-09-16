@@ -1546,17 +1546,28 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
               onUndo={(correctionId) => {
                 if (!activeMatch?.id) return;
                 const matchId = activeMatch.id;
-                const original = correctionHistory.find((item) => item.correctionId === correctionId);
+                const frames = activeMatch.data;
+                const original = correctionHistory.find((item) => item.correctionId === correctionId)
+                  ?? correctionHistoryRef.current.find((item) => item.correctionId === correctionId);
                 void undoMatchCorrection(matchId, correctionId).then(async (saved) => {
-                  setCorrectionHistory((previous) => [
-                    ...previous,
-                    {
-                      correctionId: saved.correctionId,
-                      kind: original?.kind ?? 'undo',
-                      saveState: 'saved',
-                      undoOf: saved.undoOf,
-                    },
-                  ]);
+                  setCorrectionHistory((previous) => {
+                    const next = [
+                      ...previous,
+                      {
+                        correctionId: saved.correctionId,
+                        kind: original?.kind ?? 'undo',
+                        saveState: 'saved',
+                        undoOf: saved.undoOf,
+                        author: original?.author,
+                      },
+                    ];
+                    correctionHistoryRef.current = next;
+                    return next;
+                  });
+                  if (original?.kind === 'event_accept' || original?.kind === 'event_reject') {
+                    await applyStoredMatchEvents(matchId, frames);
+                    return;
+                  }
                   await loadWorkspaceIntoState(matchId, { prepend: true, force: true });
                   const heatmap = await fetchHeatmap(matchId);
                   const identity = heatmap.identityContinuous === true;

@@ -876,6 +876,7 @@ describe('App match workspace loading', () => {
         reviewStatus: 'accepted',
       }],
     });
+    let undone = false;
     const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
       const url = String(input);
       if (url.includes('/api/matches/match-a/heatmap')) {
@@ -897,6 +898,7 @@ describe('App match workspace loading', () => {
         } as Response);
       }
       if (url.includes('/api/matches/match-a/corrections/accept-1/undo') && init?.method === 'POST') {
+        undone = true;
         return Promise.resolve({
           ok: true,
           json: async () => ({ correctionId: 'undo-1', saveState: 'saved', undoOf: 'accept-1' }),
@@ -912,6 +914,23 @@ describe('App match workspace loading', () => {
               saveState: 'saved',
               author: 'analyst',
               undoOf: null,
+            }],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/events') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            events: [{
+              type: 'pass',
+              frameId: 0,
+              timestamp: 0,
+              team: 'my_team',
+              fromTrackId: 7,
+              toTrackId: 8,
+              description: 'Pass by track 7',
+              reviewStatus: undone ? 'unreviewed' : 'accepted',
             }],
           }),
         } as Response);
@@ -933,8 +952,13 @@ describe('App match workspace loading', () => {
       ))).toBe(true);
     });
     await waitFor(() => {
-      expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(2);
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).includes('/api/matches/match-a/events')
+        && (!init?.method || init.method === 'GET')
+      ))).toBe(true);
     });
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText('unreviewed')).toBeTruthy();
   });
 
   it('swaps stored teams on the loaded match without a vision rerun', async () => {
