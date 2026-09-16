@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   computeHeatmap,
+  heatmapAvailability,
   buildPassingNetwork,
   buildPlayerProfiles,
   buildPlayerContributions,
@@ -313,5 +314,15 @@ describe('computeHeatmap boundaries', () => {
       My_Team: [-0.1, 100.1, NaN, Infinity].map((x, id) => ({ id, x, y: x, conf: 1 })),
     }], 'my_team', 2, 2);
     expect(grid).toEqual([[1, 0], [0, 1]]);
+  });
+
+  it('withholds a whole-match heatmap until identity continuity is validated', () => {
+    const withheld = heatmapAvailability(false);
+    expect(withheld.wholeMatch).toBe(false);
+    expect(withheld.intervalLimited).toBe(true);
+    expect(withheld.withheld).toBe(true);
+    const continuous = heatmapAvailability(true);
+    expect(continuous.wholeMatch).toBe(true);
+    expect(continuous.withheld).toBe(false);
   });
 });

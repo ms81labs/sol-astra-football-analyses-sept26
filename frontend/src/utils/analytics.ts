@@ -49,6 +49,14 @@ export function computeHeatmap(
     return grid;
 }
 
+export function heatmapAvailability(identityContinuous: boolean) {
+    return {
+        wholeMatch: identityContinuous,
+        intervalLimited: !identityContinuous,
+        withheld: !identityContinuous,
+    };
+}
+
 /**
  * Compute speed (km/h) for each player between consecutive frames.
  * Returns a Map of trackId → SpeedData[] indexed by frame.

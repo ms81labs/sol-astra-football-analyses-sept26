@@ -2333,3 +2333,24 @@ def test_disabled_providers_leave_review_metrics_and_template_reports_operationa
     assert fallback["output"]["eventCount"] == 1
     assert fallback["concealedPartialProcessing"] is False
 
+
+def test_decode_memory_policy_bounds_queues_and_fails_closed_without_gpu_capability() -> None:
+    from backend.app.workbench.media import decode_memory_policy
+
+    offline = decode_memory_policy(mode="offline", hardware_decode_ok=False, cuda_visible=True)
+    assert offline["retainAllDecodedFrames"] is False
+    assert offline["backpressure"] is True
+    assert offline["reportsMissingSourceEvidence"] is True
+    assert offline["gpuResident"] is False
+    assert offline["mayDrop"] is False
+    assert "CUDA_VISIBILITY_IS_NOT_VIDEO_CAPABILITY" in offline["reasonCodes"]
+    live = decode_memory_policy(mode="live", hardware_decode_ok=False, cuda_visible=False, drop_policy="declared")
+    assert live["mayDrop"] is True
+    assert live["dropPolicy"] == "declared"
+    assert live["gpuResident"] is False
+    undeclared = decode_memory_policy(mode="live", hardware_decode_ok=False, cuda_visible=False, drop_policy=None)
+    assert undeclared["mayDrop"] is False
+    gpu_ok = decode_memory_policy(mode="offline", hardware_decode_ok=True, cuda_visible=True, video_engine_capability=True)
+    assert gpu_ok["gpuResident"] is False
+    assert gpu_ok["canPromoteDefault"] is False
+

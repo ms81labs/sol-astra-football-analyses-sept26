@@ -26,7 +26,7 @@ import UploadCalibrationPanel from './components/UploadCalibrationPanel';
 import { useCoachAnalysis } from './hooks/useCoachAnalysis';
 import { useReviewSurface } from './features/review/useReviewSurface';
 import type { BackendEvent, CameraProfile, EventTag, FormationSegment, FrameData, MatchBenchmarkSummary, MatchRecord, MatchStats, ProcessingJob, RuntimeCapabilities, ShotMarker } from './types';
-import { buildPassingNetwork, buildPlayerProfiles, computeHeatmap, computeSpeedsForFrame, summarizeShots } from './utils/analytics';
+import { buildPassingNetwork, buildPlayerProfiles, computeHeatmap, heatmapAvailability, computeSpeedsForFrame, summarizeShots } from './utils/analytics';
 import {
   buildMatchVideoUrl,
   createMatchUpload,
@@ -269,10 +269,11 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
     return () => window.removeEventListener('add-event', handler);
   }, [handleAddEvent]);
 
+  const heatmapAvail = heatmapAvailability(false);
   const heatmapData = useMemo(() => {
-    if (matchData.length === 0) return null;
+    if (matchData.length === 0 || heatmapAvail.withheld) return null;
     return computeHeatmap(matchData, 'my_team');
-  }, [matchData]);
+  }, [heatmapAvail.withheld, matchData]);
 
   const passingNetwork = useMemo(() => {
     if (!activeMatch) return [];
@@ -871,6 +872,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
               <PlayerDetailPanel
                 player={selectedPlayer}
                 events={activeMatch?.backendEvents ?? []}
+                identityContinuous={false}
               />
               <button
                 type="button"
@@ -935,6 +937,9 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
                     {button.label}
                   </button>
                 ))}
+                {heatmapAvail.withheld && (
+                  <span className="text-[11px] text-amber-200">Whole-match heatmap withheld until identity continuity.</span>
+                )}
                 <button
                   type="button"
                   onClick={() => setShowDashboard(true)}

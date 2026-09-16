@@ -515,6 +515,35 @@ def cpu_fallback(selected: str, available: set[str]) -> str:
     raise RuntimeError("no CPU decode fallback is available")
 
 
+def decode_memory_policy(
+    *,
+    mode: str,
+    hardware_decode_ok: bool,
+    cuda_visible: bool,
+    drop_policy: str | None = None,
+    video_engine_capability: bool = False,
+) -> dict[str, object]:
+    """4.5B: bound queues, backpressure, and fail-closed GPU residency."""
+    del hardware_decode_ok
+    gpu_capable = bool(video_engine_capability and cuda_visible)
+    reasons: list[str] = []
+    if cuda_visible and not video_engine_capability:
+        reasons.append("CUDA_VISIBILITY_IS_NOT_VIDEO_CAPABILITY")
+    live = mode == "live"
+    declared_drop = live and drop_policy == "declared"
+    return {
+        "retainAllDecodedFrames": False,
+        "backpressure": mode == "offline",
+        "reportsMissingSourceEvidence": mode == "offline",
+        "gpuResident": False,
+        "canPromoteDefault": False,
+        "mayDrop": declared_drop,
+        "dropPolicy": drop_policy if declared_drop else None,
+        "reasonCodes": reasons,
+        "videoEngineCapability": gpu_capable,
+    }
+
+
 class PyAvFrameSource(FrameSource):
     """4.5A CPU decoder challenger. Never the production default."""
 

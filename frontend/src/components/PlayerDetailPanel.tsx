@@ -3,6 +3,7 @@ import type { BackendEvent, PlayerProfile } from '../types';
 interface PlayerDetailPanelProps {
     player: Partial<PlayerProfile>;
     events: BackendEvent[];
+    identityContinuous?: boolean;
 }
 
 type PlayerDetailSelection = PlayerDetailPanelProps['player'];
@@ -21,7 +22,7 @@ function isPlayerEvent(event: BackendEvent, player: PlayerDetailSelection) {
     return event.fromTrackId === player.playerId || event.toTrackId === player.playerId;
 }
 
-export default function PlayerDetailPanel({ player, events }: PlayerDetailPanelProps) {
+export default function PlayerDetailPanel({ player, events, identityContinuous = false }: PlayerDetailPanelProps) {
     const recentEvents = events
         .filter((event) => isPlayerEvent(event, player))
         .sort((left, right) => {
@@ -29,6 +30,7 @@ export default function PlayerDetailPanel({ player, events }: PlayerDetailPanelP
             return right.timestamp - left.timestamp;
         })
         .slice(0, 4);
+    const metric = (value: number | undefined) => (identityContinuous ? formatMetric(value) : '—');
 
     return (
         <aside className="w-full max-w-sm rounded-2xl border border-slate-700 bg-slate-900/90 p-4 shadow-lg shadow-slate-950/40">
@@ -46,33 +48,40 @@ export default function PlayerDetailPanel({ player, events }: PlayerDetailPanelP
                 </div>
                 <p className="text-sm font-medium text-emerald-300">{player.profileLabel?.trim() || 'Selected player'}</p>
                 <p className="text-sm text-slate-300">{player.summaryLine?.trim() || 'No profile summary available.'}</p>
+                {!identityContinuous && (
+                    <p className="text-xs text-amber-200">Interval-limited observations. Totals withheld until identity continuity is validated.</p>
+                )}
             </div>
 
             <div className="grid grid-cols-2 gap-2 py-3 text-xs">
                 <div className="rounded-lg bg-slate-800/80 px-3 py-2">
                     <div className="text-slate-500">Passes</div>
-                    <div className="font-mono text-slate-100">{formatMetric(player.passes)}</div>
+                    <div className="font-mono text-slate-100">{metric(player.passes)}</div>
                 </div>
                 <div className="rounded-lg bg-slate-800/80 px-3 py-2">
                     <div className="text-slate-500">Crosses</div>
-                    <div className="font-mono text-slate-100">{formatMetric(player.crosses)}</div>
+                    <div className="font-mono text-slate-100">{metric(player.crosses)}</div>
                 </div>
                 <div className="rounded-lg bg-slate-800/80 px-3 py-2">
                     <div className="text-slate-500">Through Balls</div>
-                    <div className="font-mono text-slate-100">{formatMetric(player.throughBalls)}</div>
+                    <div className="font-mono text-slate-100">{metric(player.throughBalls)}</div>
                 </div>
                 <div className="rounded-lg bg-slate-800/80 px-3 py-2">
                     <div className="text-slate-500">Shots</div>
-                    <div className="font-mono text-slate-100">{formatMetric(player.shots)}</div>
+                    <div className="font-mono text-slate-100">{metric(player.shots)}</div>
                 </div>
                 <div className="rounded-lg bg-slate-800/80 px-3 py-2">
                     <div className="text-slate-500">Ball Wins</div>
-                    <div className="font-mono text-slate-100">{formatMetric(player.ballWins)}</div>
+                    <div className="font-mono text-slate-100">{metric(player.ballWins)}</div>
                 </div>
                 <div className="rounded-lg bg-slate-800/80 px-3 py-2">
                     <div className="text-slate-500">Impact</div>
                     <div className="font-mono text-slate-100">
-                        {player.impactScore ?? '—'}{player.impactScore !== undefined ? ' pts' : ''}
+                        {identityContinuous ? (
+                            <>
+                                {player.impactScore ?? '—'}{player.impactScore !== undefined ? ' pts' : ''}
+                            </>
+                        ) : '—'}
                     </div>
                 </div>
             </div>
