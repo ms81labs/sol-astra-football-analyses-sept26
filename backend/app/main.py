@@ -60,7 +60,7 @@ from .workbench.dossier import http_dossier
 from .workbench.evaluation import evaluation_measures
 from .workbench.evidence import inspect_metric, metric_dictionary
 from .workbench.flags import feature_flags
-from .workbench.jobs import attach_durable_job_view
+from .workbench.jobs import attach_durable_job_view, deployment_mode, distributed_broker, vector_database
 from .workbench.milestones import milestone_plan, owners, progress_signal
 from .workbench.privacy import residency_claim
 from .workbench.research import execute_track, research_lane
@@ -1037,6 +1037,64 @@ def create_app(
         runner.ledger.request_cancel(job_id)
         return attach_durable_job_view(job.model_dump(mode="json"), runner.ledger)
 
+    @app.post("/api/jobs/{job_id}/timeout")
+    def timeout_job(
+        job_id: str,
+        authorization: str | None = Header(default=None),
+        x_object_scope: str | None = Header(default=None),
+        x_deployment_boundary: str | None = Header(default=None),
+        x_tenant_id: str | None = Header(default=None),
+    ) -> dict:
+        try:
+            job = storage.get_job(job_id)
+            match = storage.get_match(job.matchId)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Job not found") from exc
+        decision = object_access_decision(
+            object_id=match.id,
+            object_tenant=match.config.rights.audience,
+            authorization=authorization,
+            object_scope=x_object_scope,
+            deployment_boundary=x_deployment_boundary,
+            client_tenant=x_tenant_id,
+        )
+        if not decision["allowed"]:
+            raise HTTPException(status_code=403, detail=decision)
+        try:
+            runner.ledger.timeout_before_response(job_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Job not found") from exc
+        return attach_durable_job_view(job.model_dump(mode="json"), runner.ledger)
+
+    @app.post("/api/jobs/{job_id}/lost-connection")
+    def lost_connection_job(
+        job_id: str,
+        authorization: str | None = Header(default=None),
+        x_object_scope: str | None = Header(default=None),
+        x_deployment_boundary: str | None = Header(default=None),
+        x_tenant_id: str | None = Header(default=None),
+    ) -> dict:
+        try:
+            job = storage.get_job(job_id)
+            match = storage.get_match(job.matchId)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Job not found") from exc
+        decision = object_access_decision(
+            object_id=match.id,
+            object_tenant=match.config.rights.audience,
+            authorization=authorization,
+            object_scope=x_object_scope,
+            deployment_boundary=x_deployment_boundary,
+            client_tenant=x_tenant_id,
+        )
+        if not decision["allowed"]:
+            raise HTTPException(status_code=403, detail=decision)
+        try:
+            runner.ledger.lost_connection(job_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Job not found") from exc
+        return attach_durable_job_view(job.model_dump(mode="json"), runner.ledger)
+
     @app.get("/api/jobs/{job_id}/rates")
     def get_job_rates(
         job_id: str,
@@ -1197,6 +1255,34 @@ def create_app(
     @app.get("/api/residency")
     def get_residency() -> dict:
         return residency_claim(requested_region="eu", provider="daytona")
+
+    @app.get("/api/broker")
+    def get_broker() -> dict:
+        return distributed_broker(measured_workload_needs=False)
+
+    @app.get("/api/vector")
+    def get_vector() -> dict:
+        return vector_database(measured_recall_benefit=False)
+
+    @app.get("/api/deployment/{mode}")
+    def get_deployment_mode(mode: str) -> dict:
+        try:
+            return deployment_mode(mode)
+        except KeyError as exc:
+            raise HTTPException(status_code=400, detail="Unknown deployment mode") from exc
+
+    @app.post("/api/search")
+    def post_typed_search(payload: dict | None = None) -> dict:
+        body = payload or {}
+        match_id = str(body.get("matchId") or "")
+        if not match_id:
+            raise HTTPException(status_code=400, detail="matchId is required")
+        try:
+            match = storage.get_match(match_id)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Match not found") from exc
+        del match
+        return storage.query_match_events(match_id, str(body.get("query") or ""))
 
     @app.post("/api/playlists/export-interval")
     def export_playlist_interval(payload: dict | None = None) -> dict:
@@ -1451,6 +1537,38 @@ def create_app(
     def post_match_incident_package(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
         del payload
         return get_match_incident_package(match)
+
+    @app.get("/api/matches/{match_id}/clock")
+    def get_match_clock(match: MatchRecord = Depends(require_match)) -> dict:
+        try:
+            return storage.clock_for_match(match.id)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="Frames not ready") from exc
+
+    @app.get("/api/matches/{match_id}/incidents/review")
+    def get_match_incident_review(match: MatchRecord = Depends(require_match)) -> dict:
+        try:
+            return storage.incident_review_for_match(match.id)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="Frames not ready") from exc
+
+    @app.post("/api/matches/{match_id}/incidents/review")
+    def post_match_incident_review(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+        del payload
+        return get_match_incident_review(match)
+
+    @app.post("/api/matches/{match_id}/assistance/report")
+    def post_match_assistance_report(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+        body = payload or {}
+        claimed = body.get("claimedEvidenceIds")
+        try:
+            return storage.assemble_match_report(
+                match.id,
+                claimed_evidence_ids=list(claimed) if claimed is not None else None,
+                narrative=body.get("narrative"),
+            )
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="Analytics not ready") from exc
 
     @app.get("/api/matches/{match_id}/events")
     def get_events(match: MatchRecord = Depends(require_match)) -> dict:

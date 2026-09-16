@@ -1329,3 +1329,89 @@ async def _test_production_evaluation_operator_and_stored_metric_surfaces(tmp_pa
         assert rates.status_code == 200
         assert rates.json()["exportFpsEqualsInferenceFps"] is False
         assert rates.json()["decodeFpsEqualsExportFps"] is False
+
+
+def test_production_timeout_search_clock_and_incident_review_use_stored_data(tmp_path: Path):
+    _run(_test_production_timeout_search_clock_and_incident_review_use_stored_data, tmp_path)
+
+
+async def _test_production_timeout_search_clock_and_incident_review_use_stored_data(tmp_path: Path):
+    async with api_client(tmp_path) as (_, client):
+        broker = await client.get("/api/broker")
+        assert broker.status_code == 200
+        assert broker.json()["admitted"] is False
+        assert broker.json()["renamesCurrentQueue"] is False
+        vectors = await client.get("/api/vector")
+        assert vectors.status_code == 200
+        assert vectors.json()["admitted"] is False
+        hosted = await client.get("/api/deployment/hosted_collaboration")
+        assert hosted.status_code == 200
+        assert hosted.json()["admitted"] is False
+        assert hosted.json()["requiresGNetwork"] is True
+        local = await client.get("/api/deployment/local_only")
+        assert local.status_code == 200
+        assert local.json()["admitted"] is True
+        assert local.json()["silentCloudFallback"] is False
+
+        response = await _upload_tracking_match(client)
+        assert response.status_code == 202
+        match_id = response.json()["matchId"]
+
+        created = await client.post(
+            f"/api/matches/{match_id}/jobs",
+            json={"requestId": "timeout-scope-1", "budget": 0.5},
+        )
+        assert created.status_code == 202
+        timed_out = await client.post("/api/jobs/timeout-scope-1/timeout")
+        assert timed_out.status_code == 200
+        assert timed_out.json()["durablePhase"] == "outcome_unknown"
+        assert timed_out.json()["status"] != "cancelled"
+        assert timed_out.json()["cleanupResult"] == "unknown"
+
+        lost = await client.post(
+            f"/api/matches/{match_id}/jobs",
+            json={"requestId": "lost-scope-1", "budget": 0.25},
+        )
+        assert lost.status_code == 202
+        disconnected = await client.post("/api/jobs/lost-scope-1/lost-connection")
+        assert disconnected.status_code == 200
+        assert disconnected.json()["durablePhase"] == "outcome_unknown"
+
+        injected = await client.post(
+            "/api/search",
+            json={
+                "query": "shots",
+                "matchId": match_id,
+                "events": [{"type": "shot", "timestamp": 0.1, "team": "my_team", "id": "forged"}],
+            },
+        )
+        assert injected.status_code == 200
+        assert injected.json()["results"] == []
+        turnovers = await client.post("/api/search", json={"query": "turnovers", "matchId": match_id})
+        assert turnovers.status_code == 200
+        assert turnovers.json()["results"]
+        assert turnovers.json()["results"][0]["matchId"] == match_id
+
+        clock = await client.get(f"/api/matches/{match_id}/clock")
+        assert clock.status_code == 200
+        assert clock.json()["presentationTimeSeconds"] == 0.0
+        assert clock.json()["frameAccurateOverlay"] is False
+
+        review = await client.post(
+            f"/api/matches/{match_id}/incidents/review",
+            json={"attackerX": 999, "offsideLineX": 1, "decision": "offside"},
+        )
+        assert review.status_code == 200
+        assert review.json()["decision"] is None
+        assert review.json()["validatedMeasurement"] is False
+        assert review.json()["level"] == 1
+        assert review.json()["samples"][0]["attackerX"] == 21.0
+        assert "offside" not in json.dumps(review.json()).lower().split("offside")[0] or review.json()["decision"] is None
+
+        assistance = await client.post(
+            f"/api/matches/{match_id}/assistance/report",
+            json={"claimedEvidenceIds": ["forged-evidence"], "metrics": [{"metric": "possession_pct", "value": 100}]},
+        )
+        assert assistance.status_code == 200
+        assert assistance.json()["factualCheck"]["accepted"] is False
+        assert "FABRICATED_EVIDENCE" in assistance.json()["factualCheck"]["reasonCodes"]

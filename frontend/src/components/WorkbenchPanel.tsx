@@ -18,8 +18,11 @@ import SetupWizard from './SetupWizard';
 import TrainingSuggestions from './TrainingSuggestions';
 import {
   exportPlaylistInterval,
+  fetchCorrectionHistory,
+  fetchIncidentReview,
   fetchJobCost,
   fetchJobView,
+  fetchMatchClock,
   fetchMatchSetup,
   fetchMetricInspect,
   fetchPendingCorrections,
@@ -30,6 +33,7 @@ import {
   recoverMatchCorrection,
   searchMatchLibrary,
   searchWorkbenchEvents,
+  undoMatchCorrection,
   type MatchSetup,
   type MetricInspect,
   type WorkbenchDossier,
@@ -82,6 +86,13 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
     cleanupResult?: string;
     cancelRequested?: boolean;
   } | null>(null);
+  const [clock, setClock] = useState<{ presentationTimeSeconds: number; matchClockSeconds: number } | null>(null);
+  const [incident, setIncident] = useState<{
+    touchStart: number;
+    touchEnd: number;
+    samples: Array<{ time: number; attackerX: number; offsideLineX: number; indeterminate: boolean }>;
+  } | null>(null);
+  const [history, setHistory] = useState<Array<{ correctionId: string; kind: string; saveState: string; undoOf?: string | null }>>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -106,6 +117,13 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
       })
       .catch(() => {
         if (!cancelled) setPendingCorrection(null);
+      });
+    fetchCorrectionHistory(matchId)
+      .then((payload) => {
+        if (!cancelled && Array.isArray(payload.items)) setHistory(payload.items);
+      })
+      .catch(() => {
+        if (!cancelled) setHistory([]);
       });
     return () => {
       cancelled = true;
@@ -178,6 +196,27 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
       .catch(() => {
         if (!cancelled) setMetricInspect(null);
       });
+    fetchMatchClock(matchId)
+      .then((payload) => {
+        if (!cancelled && typeof payload.presentationTimeSeconds === 'number') setClock(payload);
+      })
+      .catch(() => {
+        if (!cancelled) setClock(null);
+      });
+    fetchIncidentReview(matchId)
+      .then((payload) => {
+        if (!cancelled && payload.decision == null && Array.isArray(payload.samples)) {
+          const interval = payload.touchInterval;
+          setIncident({
+            touchStart: interval?.[0] ?? payload.samples[0]?.time ?? 0,
+            touchEnd: interval?.[1] ?? payload.samples[payload.samples.length - 1]?.time ?? 0.12,
+            samples: payload.samples,
+          });
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setIncident(null);
+      });
     return () => {
       cancelled = true;
     };
@@ -220,6 +259,12 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
     const saved = await recoverMatchCorrection(matchId, pendingCorrection.correctionId);
     setPendingCorrection(null);
     setRecoveryMessage(saved.saveState);
+    try {
+      const historyPayload = await fetchCorrectionHistory(matchId);
+      if (Array.isArray(historyPayload.items)) setHistory(historyPayload.items);
+    } catch {
+      /* fail-closed: keep local history */
+    }
   }
 
   async function exportPlaylist() {
@@ -363,22 +408,37 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
                 cannotMeasure={setup?.cannotMeasure ?? ['physical_metrics']}
                 landmarkPreview={{ residualP95M: 4.2, accepted: false, committed: false }}
               />
-              <ClockReadout presentationTimeSeconds={0} matchClockSeconds={0} />
+              <ClockReadout
+                presentationTimeSeconds={clock?.presentationTimeSeconds ?? 0}
+                matchClockSeconds={clock?.matchClockSeconds ?? 0}
+              />
               <AiUnavailableBanner providersEnabled={false} />
               <ChangeHistory
-                items={
-                  pendingCorrection
-                    ? [{ correctionId: pendingCorrection.correctionId, kind: pendingCorrection.kind, saveState: pendingCorrection.saveState }]
-                    : []
-                }
+                items={history}
+                onUndo={(correctionId) => {
+                  if (!matchId) return;
+                  void undoMatchCorrection(matchId, correctionId).then((saved) => {
+                    setHistory((previous) => [
+                      ...previous,
+                      {
+                        correctionId: saved.correctionId,
+                        kind: 'undo',
+                        saveState: 'saved',
+                        undoOf: saved.undoOf,
+                      },
+                    ]);
+                  });
+                }}
               />
               <IncidentReview
-                touchStart={0}
-                touchEnd={0.12}
-                samples={[
-                  { time: 0, attackerX: 0, offsideLineX: 0, indeterminate: true },
-                  { time: 0.12, attackerX: 0, offsideLineX: 0, indeterminate: true },
-                ]}
+                touchStart={incident?.touchStart ?? 0}
+                touchEnd={incident?.touchEnd ?? 0.12}
+                samples={
+                  incident?.samples ?? [
+                    { time: 0, attackerX: 0, offsideLineX: 0, indeterminate: true },
+                    { time: 0.12, attackerX: 0, offsideLineX: 0, indeterminate: true },
+                  ]
+                }
               />
               {flags?.experimental_ui ? (
                 <QualityTimeline

@@ -240,3 +240,39 @@ export async function fetchJobView(jobId: string) {
     cancelRequested?: boolean;
   }>;
 }
+
+export async function fetchMatchClock(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/clock`);
+  if (!response.ok) {
+    throw new Error(`Failed to load match clock: ${response.status}`);
+  }
+  return response.json() as Promise<{
+    presentationTimeSeconds: number;
+    matchClockSeconds: number;
+    frameAccurateOverlay: boolean;
+  }>;
+}
+
+export async function fetchIncidentReview(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/incidents/review`);
+  if (!response.ok) {
+    throw new Error(`Failed to load incident review: ${response.status}`);
+  }
+  return response.json() as Promise<{
+    level: number;
+    decision: string | null;
+    validatedMeasurement: boolean;
+    touchInterval?: [number, number];
+    samples: Array<{ time: number; attackerX: number; offsideLineX: number; indeterminate: boolean }>;
+  }>;
+}
+
+export async function fetchCorrectionHistory(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/corrections`);
+  if (!response.ok) {
+    throw new Error(`Failed to load correction history: ${response.status}`);
+  }
+  return response.json() as Promise<{
+    items: Array<{ correctionId: string; kind: string; saveState: string; undoOf?: string | null }>;
+  }>;
+}

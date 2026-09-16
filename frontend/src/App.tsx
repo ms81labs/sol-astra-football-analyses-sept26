@@ -47,7 +47,7 @@ import { buildUploadConfig, createEmptyPointInputs } from './utils/uploadConfig'
 import { getUploadFailureGuidance } from './utils/uploadErrors';
 import { findNearestFrameIndex } from './utils/videoSync';
 import { applyReviewShortcut, type ReviewAction } from './utils/reviewShortcuts';
-import { submitMatchCorrection, undoMatchCorrection } from './utils/workbench';
+import { fetchIncidentReview, submitMatchCorrection, undoMatchCorrection } from './utils/workbench';
 import { windowedTimelineProps } from './utils/windowedTimeline';
 import { splitScores } from './utils/quantities';
 
@@ -190,6 +190,29 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
   useLayoutEffect(() => {
     activeMatchIdRef.current = activeMatch?.id ?? null;
   }, [activeMatch?.id]);
+  useEffect(() => {
+    if (!activeMatch?.id) {
+      setStoredIncident(null);
+      return;
+    }
+    let cancelled = false;
+    fetchIncidentReview(activeMatch.id)
+      .then((payload) => {
+        if (cancelled || payload.decision != null || !Array.isArray(payload.samples)) return;
+        const interval = payload.touchInterval;
+        setStoredIncident({
+          touchStart: interval?.[0] ?? payload.samples[0]?.time ?? 0,
+          touchEnd: interval?.[1] ?? payload.samples[payload.samples.length - 1]?.time ?? 0.12,
+          samples: payload.samples,
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setStoredIncident(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeMatch?.id]);
   const matchData = useMemo(() => activeMatch?.data || [], [activeMatch]);
   const totalFrameCount = activeMatch?.frameCount ?? matchData.length;
   const timelineWindow = useMemo(
@@ -198,6 +221,11 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
   );
   const [correctionSaveState, setCorrectionSaveState] = useState<'saved' | 'pending' | 'conflicted' | 'unavailable' | null>(null);
   const [correctionHistory, setCorrectionHistory] = useState<Array<{ correctionId: string; kind: string; saveState: string; undoOf?: string | null }>>([]);
+  const [storedIncident, setStoredIncident] = useState<{
+    touchStart: number;
+    touchEnd: number;
+    samples: Array<{ time: number; attackerX: number; offsideLineX: number; indeterminate: boolean }>;
+  } | null>(null);
   const correctionVersionRef = useRef(0);
   const matchStats = activeMatch?.stats || null;
   const matchBenchmark = activeMatch?.benchmark || null;
@@ -220,8 +248,12 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
   const currentFrameRecord = matchData.find((frame) => frame.Frame_ID === currentFrame) ?? matchData[currentFrame] ?? null;
   const currentTimestamp = currentFrameRecord?.Timestamp ?? 0;
   const currentEvent = events.find((event) => event.frame === currentFrame) ?? events.find((event) => Math.abs(event.timestamp - currentTimestamp) < 0.2) ?? null;
-  const incidentTouchStart = currentEvent?.intervalStart ?? currentTimestamp;
-  const incidentTouchEnd = currentEvent?.intervalEnd ?? Number((currentTimestamp + 0.12).toFixed(2));
+  const incidentTouchStart = storedIncident?.touchStart ?? currentEvent?.intervalStart ?? currentTimestamp;
+  const incidentTouchEnd = storedIncident?.touchEnd ?? currentEvent?.intervalEnd ?? Number((currentTimestamp + 0.12).toFixed(2));
+  const incidentSamples = storedIncident?.samples ?? [
+    { time: incidentTouchStart, attackerX: 0, offsideLineX: 0, indeterminate: true },
+    { time: incidentTouchEnd, attackerX: 0, offsideLineX: 0, indeterminate: true },
+  ];
   const matchVideoUrl = activeMatch ? buildMatchVideoUrl(activeMatch.id) : '';
   const uploadFailureGuidance = getUploadFailureGuidance(loadError);
   const canRetryUpload =
@@ -1130,10 +1162,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
             <IncidentReview
               touchStart={incidentTouchStart}
               touchEnd={incidentTouchEnd}
-              samples={[
-                { time: incidentTouchStart, attackerX: 0, offsideLineX: 0, indeterminate: true },
-                { time: incidentTouchEnd, attackerX: 0, offsideLineX: 0, indeterminate: true },
-              ]}
+              samples={incidentSamples}
             />
           </div>
           <div className="mb-3 shrink-0">

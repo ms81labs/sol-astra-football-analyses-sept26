@@ -1283,6 +1283,60 @@ class Storage:
         ]
         return level0_incident_package(clips=clips, notes=[], bookmarks=[])
 
+    def clock_for_match(self, match_id: str) -> dict:
+        self.get_match(match_id)
+        try:
+            source_clock = self.load_analysis_artifact(match_id, "source_clock")
+        except FileNotFoundError:
+            source_clock = None
+        try:
+            frames = self.load_frames(match_id)
+        except FileNotFoundError:
+            frames = []
+        presentation = float(frames[0].timestamp) if frames else 0.0
+        offset = 0.0
+        if isinstance(source_clock, dict):
+            offset = float(source_clock.get("matchClockOffsetSeconds") or 0.0)
+        return {
+            "presentationTimeSeconds": presentation,
+            "matchClockSeconds": presentation + offset,
+            "explicitMapping": bool(source_clock),
+            "frameAccurateOverlay": False,
+            "sourceClockRecorded": bool(source_clock),
+        }
+
+    def incident_review_for_match(self, match_id: str) -> dict:
+        from .workbench.incidents import level1_positional_aid
+
+        match = self.get_match(match_id)
+        frames = self.load_frames(match_id)
+        if not frames:
+            raise FileNotFoundError(match_id)
+        geometry = self.incident_geometry_for_match(match_id)
+        start = float(frames[0].timestamp)
+        end = float(frames[1].timestamp) if len(frames) > 1 else start + 0.12
+        attacker = geometry.get("mostAdvancedTeammateX")
+        line = geometry.get("secondLastOpponentX")
+        attacker_x = float(attacker) if attacker is not None else 0.0
+        line_x = float(line) if line is not None else 0.0
+        samples: list[tuple[float, float]] = []
+        attacking_right_to_left = match.config.attackDirection == "right_to_left"
+        for frame in frames[:2]:
+            xs = [float(player.x) for player in frame.myTeam]
+            if xs:
+                samples.append((float(frame.timestamp), min(xs) if attacking_right_to_left else max(xs)))
+            else:
+                samples.append((float(frame.timestamp), attacker_x))
+        if not samples:
+            samples = [(start, attacker_x), (end, attacker_x)]
+        return level1_positional_aid(
+            touch_interval=(start, end),
+            attacker_x=attacker_x,
+            offside_line_x=line_x,
+            uncertainty_m=3.0,
+            attacker_x_by_time=tuple(samples),
+        )
+
     def load_raw_rows(self, match_id: str) -> list[dict]:
         payload = self._read_json(self._match_dir(match_id) / "raw_rows.json")
         return [dict(item) for item in payload]
