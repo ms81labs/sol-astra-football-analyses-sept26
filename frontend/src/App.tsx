@@ -991,6 +991,42 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
     [activeMatch, beginLoadingOperation, finishLoadingOperation, loadWorkspaceIntoState],
   );
 
+  const handleClipSaved = useCallback((clip: { start: number; end: number; notes: string; sourceEndFrameExclusive: number }) => {
+    if (!activeMatch?.id) return Promise.resolve();
+    const matchId = activeMatch.id;
+    const expectedVersion = correctionVersionRef.current;
+    setCorrectionSaveState('pending');
+    return submitMatchCorrection(matchId, {
+      kind: 'playlist_item',
+      payload: {
+        timestampStart: clip.start,
+        timestampEnd: clip.end,
+        sourceEndFrameExclusive: clip.sourceEndFrameExclusive,
+        notes: clip.notes,
+      },
+      expectedVersion,
+    })
+      .then((saved) => {
+        setCorrectionSaveState(saved.saveState as 'saved' | 'pending' | 'conflicted' | 'unavailable');
+        if (saved.saveState === 'saved' && typeof saved.version === 'number') {
+          correctionVersionRef.current = saved.version;
+        }
+        if (saved.correctionId) {
+          setCorrectionHistory((previous) => {
+            const next = [
+              ...previous,
+              { correctionId: saved.correctionId, kind: 'playlist_item', saveState: saved.saveState, undoOf: null },
+            ];
+            correctionHistoryRef.current = next;
+            return next;
+          });
+        }
+      })
+      .catch(() => {
+        setCorrectionSaveState('unavailable');
+      });
+  }, [activeMatch?.id]);
+
   const handleSwapTeams = useCallback(() => {
     if (!activeMatch?.id || requiresTeamSelection) return;
     const matchId = activeMatch.id;
@@ -1659,6 +1695,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
               reviewRange={review.reviewRange}
               frames={matchData}
               sourceFps={fps}
+              onClipSaved={handleClipSaved}
             />
           </div>
           <div className="mb-3 shrink-0">

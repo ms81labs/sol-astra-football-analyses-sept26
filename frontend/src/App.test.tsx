@@ -989,6 +989,12 @@ describe('App match workspace loading', () => {
           }),
         } as Response);
       }
+      if (url.includes('/api/matches/match-a/corrections') && init?.method === 'POST' && !String(url).includes('/undo') && !String(url).includes('/recover')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ correctionId: 'clip-1', saveState: 'saved', kind: 'playlist_item' }),
+        } as Response);
+      }
       return Promise.reject(new Error(`unexpected ${url}`));
     });
     vi.stubGlobal('fetch', fetchMock);
@@ -1014,6 +1020,24 @@ describe('App match workspace loading', () => {
     expect(await screen.findByText(/0s to 0.2s/)).toBeTruthy();
     expect(screen.getByText(/frame 1 exclusive/i)).toBeTruthy();
     expect(screen.getByText(/do not establish a whole-match frequency/i)).toBeTruthy();
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).includes('/api/matches/match-a/corrections')
+        && init?.method === 'POST'
+        && !String(url).includes('/undo')
+      ))).toBe(true);
+    });
+    const clipCall = fetchMock.mock.calls.find(([url, init]) => (
+      String(url).includes('/api/matches/match-a/corrections')
+      && init?.method === 'POST'
+      && !String(url).includes('/undo')
+    ));
+    expect(clipCall?.[1]?.body).toContain('"kind":"playlist_item"');
+    expect(clipCall?.[1]?.body).toContain('"timestampStart":0');
+    expect(clipCall?.[1]?.body).toContain('"timestampEnd":0.2');
+    expect(clipCall?.[1]?.body).not.toContain('"events"');
+    expect(clipCall?.[1]?.body).not.toContain('"eventId"');
+    expect(await screen.findByRole('button', { name: 'Undo clip-1' })).toBeTruthy();
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 

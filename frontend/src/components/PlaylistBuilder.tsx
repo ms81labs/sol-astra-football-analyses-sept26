@@ -2,7 +2,7 @@ import { useState } from 'react';
 
 import { assembleMatchReport, exportPlaylistInterval } from '../utils/workbench';
 
-interface PlaylistClip {
+export interface PlaylistClip {
   start: number;
   end: number;
   notes: string;
@@ -14,6 +14,7 @@ interface PlaylistBuilderProps {
   reviewRange?: { startFrame: number; endFrame: number } | null;
   frames?: Array<{ Frame_ID: number; Timestamp: number }>;
   sourceFps?: number;
+  onClipSaved?: (clip: PlaylistClip) => void | Promise<void>;
 }
 
 function markedIntervalSeconds(
@@ -37,6 +38,7 @@ export default function PlaylistBuilder({
   reviewRange = null,
   frames = [],
   sourceFps = 25,
+  onClipSaved,
 }: PlaylistBuilderProps) {
   const rangeKey = reviewRange ? `${reviewRange.startFrame}:${reviewRange.endFrame}:${sourceFps}` : '';
   const marked = reviewRange ? markedIntervalSeconds(reviewRange, frames, sourceFps) : null;
@@ -56,12 +58,14 @@ export default function PlaylistBuilder({
     try {
       const interval = await exportPlaylistInterval(from, to, sourceFps);
       setExportError(null);
-      setClips((current) => [...current, {
+      const clip: PlaylistClip = {
         start: interval.sourceStartSeconds,
         end: interval.sourceEndSeconds,
         notes,
         sourceEndFrameExclusive: interval.sourceEndFrameExclusive,
-      }]);
+      };
+      setClips((current) => [...current, clip]);
+      await onClipSaved?.(clip);
     } catch (error) {
       setExportError(error instanceof Error ? error.message : 'Failed to export playlist interval');
     }
