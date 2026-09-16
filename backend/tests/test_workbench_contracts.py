@@ -2428,3 +2428,40 @@ def test_access_deletion_stale_permissions_and_unresolved_incidents_stay_honest(
     assert objectives["enterpriseUptimePromised"] is False
     assert "RECOVERY_OBJECTIVES_UNMEASURED" in objectives["reasonCodes"]
 
+
+def test_untrusted_outputs_secrets_and_unsigned_jobs_stay_fail_closed() -> None:
+    from backend.app.workbench.access import deployment_encryption, untrusted_model_output
+    from backend.app.workbench.artifacts import secrets_in_artifacts
+    from backend.app.workbench.jobs import signed_scoped_job_access
+
+    blocked = untrusted_model_output(
+        claimed_actions=["execute_sql"],
+        allowed_actions=frozenset({"open_interval", "draft_report"}),
+        evidence_ids=["e-missing"],
+        known_ids={"e1"},
+    )
+    assert blocked["trusted"] is False
+    assert blocked["admitted"] is False
+    assert "ACTION_NOT_ALLOWLISTED" in blocked["reasonCodes"]
+    assert "UNKNOWN_EVIDENCE_REFERENCE" in blocked["reasonCodes"]
+    ok = untrusted_model_output(
+        claimed_actions=["open_interval"],
+        allowed_actions=frozenset({"open_interval", "draft_report"}),
+        evidence_ids=["e1"],
+        known_ids={"e1"},
+    )
+    assert ok["admitted"] is True
+    assert ok["trusted"] is False
+    leak = secrets_in_artifacts("DAYTONA_API_KEY=super-secret")
+    assert leak["containsSecrets"] is True
+    assert leak["admitted"] is False
+    clean = secrets_in_artifacts("cleanupResult=unknown")
+    assert clean["admitted"] is True
+    hosted = deployment_encryption(boundary="hosted")
+    assert hosted["hostedEncryptionProven"] is False
+    unsigned = signed_scoped_job_access(token=None, job_id="job-1", token_job_id=None)
+    assert unsigned["admitted"] is False
+    assert "UNSIGNED_OR_UNSCOPED_JOB_ACCESS" in unsigned["reasonCodes"]
+    scoped = signed_scoped_job_access(token="t", job_id="job-1", token_job_id="job-2")
+    assert scoped["admitted"] is False
+

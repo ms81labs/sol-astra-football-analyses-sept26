@@ -108,3 +108,13 @@ def write_alongside(
         "mutatedHistorical": False,
         "namespace": namespace,
     }
+
+
+def secrets_in_artifacts(payload: str) -> dict[str, Any]:
+    markers = ("DAYTONA_API_KEY", "sk-", "BEGIN PRIVATE KEY", "AWS_SECRET")
+    found = any(marker in payload for marker in markers)
+    return {
+        "containsSecrets": found,
+        "admitted": not found,
+        "reasonCodes": ["SECRET_IN_ARTIFACT"] if found else [],
+    }

@@ -252,3 +252,12 @@ def vector_database(*, measured_recall_benefit: bool = False) -> dict[str, objec
         "admitted": False,
         "embeddingsProveTacticalWeakness": False,
     }
+
+
+def signed_scoped_job_access(*, token: str | None, job_id: str, token_job_id: str | None) -> dict[str, object]:
+    admitted = bool(token) and token_job_id == job_id
+    return {
+        "admitted": admitted,
+        "scoped": True,
+        "reasonCodes": [] if admitted else ["UNSIGNED_OR_UNSCOPED_JOB_ACCESS"],
+    }

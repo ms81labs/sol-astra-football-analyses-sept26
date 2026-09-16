@@ -61,3 +61,35 @@ def stale_permissions(*, permission_expires_at: float, now: float) -> dict[str, 
         "admitted": not stale,
         "reasonCodes": ["STALE_PERMISSION"] if stale else [],
     }
+
+
+def untrusted_model_output(
+    *,
+    claimed_actions: list[str],
+    allowed_actions: frozenset[str],
+    evidence_ids: list[str],
+    known_ids: set[str],
+) -> dict[str, Any]:
+    reasons = ["UNTRUSTED_MODEL_OUTPUT"]
+    illegal = [action for action in claimed_actions if action not in allowed_actions]
+    unknown_refs = [item for item in evidence_ids if item not in known_ids]
+    if illegal:
+        reasons.append("ACTION_NOT_ALLOWLISTED")
+    if unknown_refs:
+        reasons.append("UNKNOWN_EVIDENCE_REFERENCE")
+    return {
+        "trusted": False,
+        "admitted": not illegal and not unknown_refs,
+        "reasonCodes": reasons,
+    }
+
+
+def deployment_encryption(*, boundary: str) -> dict[str, Any]:
+    hosted = boundary != "loopback"
+    return {
+        "boundary": boundary,
+        "atRestRequiredForHosted": True,
+        "loopbackLocalFilesystem": not hosted,
+        "hostedEncryptionProven": False,
+        "reasonCodes": ["HOSTED_ENCRYPTION_UNPROVEN"] if hosted else [],
+    }
