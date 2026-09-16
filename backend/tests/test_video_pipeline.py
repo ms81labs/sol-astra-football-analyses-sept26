@@ -254,6 +254,8 @@ def test_process_video_input_attaches_four_rates_and_cache_identity(tmp_path):
     assert result["fourRates"]["exportFpsEqualsInferenceFps"] is False
     assert result["cacheIdentity"]
     assert result["sampling"]["selectedBackend"] == "fixture+ultralytics_track"
+    assert result["vidStridePolicy"]["addsVidStrideAlone"] is False
+    assert result["vidStridePolicy"]["targetFpsEqualsInferenceFps"] is False
 
 
 def test_report_only_reprocess_does_not_invoke_vision():

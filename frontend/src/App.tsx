@@ -37,6 +37,7 @@ import {
 import { buildUploadConfig, createEmptyPointInputs } from './utils/uploadConfig';
 import { getUploadFailureGuidance } from './utils/uploadErrors';
 import { findNearestFrameIndex } from './utils/videoSync';
+import { applyReviewShortcut, type ReviewAction } from './utils/reviewShortcuts';
 
 interface MatchEntry {
   id: string;
@@ -288,6 +289,29 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
     setSeekVersion(version => version + 1);
     coach.clearResponse();
   }, [coach, matchData.length]);
+
+  const handleReviewShortcut = useCallback((action: ReviewAction) => {
+    const next = applyReviewShortcut(action, {
+      isPlaying,
+      currentFrame,
+      frameCount: Math.max(matchData.length, 1),
+      events,
+      reviewRange: review.reviewRange,
+    });
+    if (next.isPlaying !== isPlaying) {
+      setIsPlaying(next.isPlaying);
+    }
+    if (next.currentFrame !== currentFrame) {
+      handleSeek(next.currentFrame);
+    }
+    const rangeChanged =
+      next.reviewRange?.startFrame !== review.reviewRange?.startFrame ||
+      next.reviewRange?.endFrame !== review.reviewRange?.endFrame;
+    if (rangeChanged) {
+      review.setReviewRange(next.reviewRange);
+    }
+    setEvents(next.events as EventTag[]);
+  }, [currentFrame, events, handleSeek, isPlaying, matchData.length, review]);
 
   const handleDrawingAnnotation = useCallback(
     (x: number, y: number, x2?: number, y2?: number) => {
@@ -823,6 +847,8 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           <Timeline
             matchData={matchData}
             currentFrame={currentFrame}
+            currentRecord={matchData[currentFrame] || null}
+            frameCount={matchData.length}
             isPlaying={isPlaying}
             fps={fps}
             events={events}
@@ -950,6 +976,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
             <ReviewToolbar
               onCreateNote={review.handleCreateNote}
               onCreateTaggedMoment={review.handleCreateTaggedMoment}
+              onShortcut={handleReviewShortcut}
             />
           </div>
           <div className="mb-3 shrink-0">
