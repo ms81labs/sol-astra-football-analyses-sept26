@@ -633,6 +633,34 @@ def test_network_failure_preserves_unknown_metrics_and_budget_variance_alerts() 
     assert display["transformedExplicitly"] is True
 
 
+def test_tracker_resets_across_cuts_and_identity_repairs_preview_before_commit() -> None:
+    from backend.app.workbench.perception import Detection, IdentityRepair, TrackerAdapter, preview_identity_change
+
+    detections = [
+        Detection(frameId=0, bbox=(10.0, 20.0, 30.0, 80.0), score=0.9, kind="player", stratum="near"),
+        Detection(frameId=1, bbox=(12.0, 20.0, 32.0, 80.0), score=0.9, kind="player", stratum="near"),
+    ]
+    adapter = TrackerAdapter()
+    continuous = adapter.associate(detections, cut_detected=False)
+    assert all(track["silentlyReconnected"] is False for track in continuous)
+    cut = adapter.associate(detections, cut_detected=True, previous_tracks=continuous)
+    assert all(track["reset"] is True for track in cut)
+    assert all(track["silentlyReconnected"] is False for track in cut)
+    replay = adapter.associate(detections, broadcast_replay=True, previous_tracks=continuous)
+    assert all(track["reset"] is True for track in replay)
+    preview = preview_identity_change(kind="track_split", track_id="t-1", at_frame=4)
+    assert preview["preview"] is True
+    assert preview["committed"] is False
+    assert preview["affectedIntervals"]
+    assert "player_events" in preview["invalidates"]
+    repair = IdentityRepair()
+    split = repair.split("t-1", 4, author="analyst")
+    assert split["kind"] == "track_split"
+    team = preview_identity_change(kind="team_mapping", interval_start=12.0, interval_end=40.0)
+    assert team["visionRerun"] is False
+    assert team["newMappingShown"] is True
+
+
 def test_evaluation_measures_require_compatible_labels_and_do_not_treat_health_as_the_label_gate() -> None:
     from backend.app.workbench.evaluation import evaluation_measures
 
@@ -1100,6 +1128,7 @@ def test_extraction_boundaries_exist_and_native_directory_stays_absent() -> None
     repo = Path(__file__).resolve().parents[2]
     assert media_pkg.FrameSource is not None
     assert vision_pkg.TrackerAdapter is not None
+    assert vision_pkg.ground_contact_point((10.0, 20.0, 30.0, 80.0))["boxCentreIsFoot"] is False
     assert evaluation_pkg.current_repository_evaluation_gate().accepted is False
     assert not (repo / "native").exists()
     gate = native_gate(repo_root=repo, approval_env={})
@@ -1150,6 +1179,8 @@ def test_report_assembly_rejects_fabricated_evidence_and_invented_numbers() -> N
     assert ok["evidenceSelection"]["evidenceIds"] == ["ev-1"]
     assert ok["factPackage"]["metrics"] == metrics
     assert ok["narrativeDraft"]["optional"] is True
+    assert ok["publication"]["wholeMatchFrequency"] is False
+    assert ok["publication"]["frequencyRequiresDenominator"] is True
 
 
 def test_locked_evaluation_labels_cannot_enter_training() -> None:

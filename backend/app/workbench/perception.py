@@ -7,6 +7,7 @@ from typing import Any, Literal
 from pydantic import Field
 
 from .contracts import ObservationSource, StrictModel
+from .identity import reconnect_across_cut, tracker_chunk
 
 Stratum = Literal["near", "middle", "far", "small", "negative"]
 
@@ -147,16 +148,29 @@ def score_detections_by_stratum(
 class TrackerAdapter:
     name = "botsort_baseline"
 
-    def associate(self, detections: list[Detection]) -> list[dict[str, Any]]:
+    def associate(
+        self,
+        detections: list[Detection],
+        *,
+        cut_detected: bool = False,
+        broadcast_replay: bool = False,
+        previous_tracks: list[dict[str, Any]] | None = None,
+    ) -> list[dict[str, Any]]:
+        del previous_tracks
+        chunk = tracker_chunk(scene_discontinuity=cut_detected, broadcast_replay=broadcast_replay)
+        policy = reconnect_across_cut(cut_detected=cut_detected or broadcast_replay)
         tracks = []
         for detection in detections:
+            prefix = f"{self.name}:reset" if chunk["reset"] else self.name
             tracks.append(
                 {
                     "frameId": detection.frameId,
-                    "trackId": f"{self.name}:{detection.frameId}:{detection.bbox}",
+                    "trackId": f"{prefix}:{detection.frameId}:{detection.bbox}",
                     "bbox": detection.bbox,
                     "kind": detection.kind,
                     "observationSource": detection.observationSource,
+                    "reset": chunk["reset"] or policy["reset"],
+                    "silentlyReconnected": False,
                 }
             )
         return tracks
@@ -193,3 +207,28 @@ def separate_ball_states(rows: list[dict[str, Any]]) -> dict[str, int]:
         else:
             counts["unknown"] += 1
     return counts
+
+
+def preview_identity_change(
+    *,
+    kind: str,
+    track_id: str | None = None,
+    at_frame: int | None = None,
+    interval_start: float | None = None,
+    interval_end: float | None = None,
+) -> dict[str, Any]:
+    start = float(at_frame if at_frame is not None else interval_start or 0.0)
+    end = float(interval_end if interval_end is not None else start)
+    invalidates = ["ownership", "player_events", "metrics", "report"]
+    if kind == "team_mapping":
+        invalidates = ["team_state", "events", "metrics", "report"]
+    return {
+        "preview": True,
+        "committed": False,
+        "kind": kind,
+        "trackId": track_id,
+        "newMappingShown": kind == "team_mapping",
+        "affectedIntervals": [{"start": start, "end": end}],
+        "invalidates": invalidates,
+        "visionRerun": False,
+    }

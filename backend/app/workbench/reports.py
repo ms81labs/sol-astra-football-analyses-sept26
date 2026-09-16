@@ -48,7 +48,7 @@ def assemble_report(
         "factPackage": fact_package,
         "narrativeDraft": {"optional": True, "payload": narrative or {}, "separatedFromFacts": True},
         "factualCheck": {"accepted": accepted, "reasonCodes": factual_reasons},
-        "publication": {"accepted": accepted, "requiresAnalyst": True},
+        "publication": {"accepted": accepted, "requiresAnalyst": True, "wholeMatchFrequency": False, "frequencyRequiresDenominator": True},
     }
 
 

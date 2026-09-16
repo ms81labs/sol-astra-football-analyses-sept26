@@ -256,6 +256,8 @@ def test_process_video_input_attaches_four_rates_and_cache_identity(tmp_path):
     assert result["sampling"]["selectedBackend"] == "fixture+ultralytics_track"
     assert result["vidStridePolicy"]["addsVidStrideAlone"] is False
     assert result["vidStridePolicy"]["targetFpsEqualsInferenceFps"] is False
+    assert result["projectionPolicy"]["boxCentreIsFoot"] is False
+    assert result["projectionPolicy"]["aerialBallMeasuredGroundLocation"] is False
 
 
 def test_report_only_reprocess_does_not_invoke_vision():
@@ -284,3 +286,15 @@ def test_report_only_reprocess_does_not_invoke_vision():
     assert rebuilt["visionInvoked"] is True
     assert "pitch_positions" in rebuilt["rebuild"]
     assert calls == ["vision"]
+
+
+def test_detected_rows_project_players_from_ground_contact_not_box_centre() -> None:
+    from backend.app.video_pipeline import project_detected_rows
+
+    player = project_detected_rows([{"kind": "player", "bbox": (10.0, 20.0, 30.0, 80.0)}])[0]
+    assert player["imageX"] == 20.0
+    assert player["imageY"] == 80.0
+    assert player["boxCentreIsFoot"] is False
+    aerial = project_detected_rows([{"kind": "ball", "airborne": True, "bbox": (10.0, 20.0, 30.0, 80.0)}])[0]
+    assert aerial["measuredGroundLocation"] is False
+    assert "AERIAL_NOT_GROUND_PLANE" in aerial["reasonCodes"]

@@ -5,6 +5,7 @@ from pathlib import Path
 
 from .schemas import MatchConfig
 from .workbench.cache import cache_identity, recompute_plan
+from .workbench.geometry import ground_contact_point, project_to_pitch
 from .workbench.media import FrameSource, OpenCvFrameSource, SamplingAudit, four_rates_receipt, vid_stride_policy
 
 # Exposed at module level so tests can patch this name directly.
@@ -82,6 +83,9 @@ def process_video_input(
     source_clock = _probe_source_clock(Path(video_path), adapter)
     payload["sourceClock"] = source_clock
     payload.update(_sampling_and_cache(source_clock, adapter))
+    rows = payload.get("rows")
+    if isinstance(rows, list):
+        payload["rows"] = project_detected_rows(rows)
     return payload
 
 
@@ -119,7 +123,31 @@ def _sampling_and_cache(source_clock: dict[str, object], adapter: FrameSource) -
         "cacheIdentity": identity,
         "exportFpsEqualsInferenceFps": False,
         "vidStridePolicy": vid_stride_policy(),
+        "projectionPolicy": {
+            "playerAnchor": "ground_contact",
+            "boxCentreIsFoot": False,
+            "aerialBallMeasuredGroundLocation": False,
+        },
     }
+
+
+def project_detected_rows(rows: list[dict]) -> list[dict]:
+    projected: list[dict] = []
+    for row in rows:
+        item = dict(row)
+        kind = str(item.get("kind") or item.get("Entity_Type") or "").lower()
+        bbox = item.get("bbox")
+        airborne = bool(item.get("airborne"))
+        if isinstance(bbox, (list, tuple)) and len(bbox) == 4:
+            box = (float(bbox[0]), float(bbox[1]), float(bbox[2]), float(bbox[3]))
+            if kind == "ball" and airborne:
+                item.update(project_to_pitch(kind="ball", airborne=True, bbox=box))
+            elif kind in {"player", "person"}:
+                contact = ground_contact_point(box)
+                item.update(contact)
+                item["kind"] = "player"
+        projected.append(item)
+    return projected
 
 
 def reprocess_for_change(
