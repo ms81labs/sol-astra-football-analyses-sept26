@@ -917,6 +917,47 @@ export async function fetchJobBudget(jobId: string) {
   return response.json() as Promise<JobBudgetSnapshot>;
 }
 
+export interface JobChargesSnapshot {
+  cancelled?: boolean;
+  incurred?: number;
+  chargesErased?: boolean;
+  reasonCodes?: string[];
+}
+
+export async function fetchJobCharges(jobId: string) {
+  const response = await fetch(`/api/jobs/${jobId}/charges`);
+  if (!response.ok) {
+    throw new Error(`Failed to load job charges: ${response.status}`);
+  }
+  return response.json() as Promise<JobChargesSnapshot>;
+}
+
+export interface StageTimingSnapshot {
+  overlappedStagesAreAdditive?: boolean;
+  wallTime?: number;
+}
+
+export async function fetchStageTiming() {
+  const response = await fetch('/api/timing/stages');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored stage timing: ${response.status}`);
+  }
+  return response.json() as Promise<StageTimingSnapshot>;
+}
+
+export interface GpuProbeSnapshot {
+  canPromoteDefault?: boolean;
+  videoEngine?: { videoEngineCapability?: boolean; reasonCodes?: string[] };
+}
+
+export async function fetchGpuProbe() {
+  const response = await fetch('/api/gpu');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored GPU probe: ${response.status}`);
+  }
+  return response.json() as Promise<GpuProbeSnapshot>;
+}
+
 export interface PreemptibleSnapshot {
   allowed?: boolean;
 }

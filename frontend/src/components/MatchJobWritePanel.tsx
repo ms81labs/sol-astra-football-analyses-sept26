@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { fetchJobBudget, fetchJobCost, postMatchJob } from '../utils/workbench';
+import { fetchJobBudget, fetchJobCharges, fetchJobCost, postMatchJob } from '../utils/workbench';
 
 interface MatchJobWritePanelProps {
   matchId?: string;
@@ -35,6 +35,14 @@ export default function MatchJobWritePanel({ matchId }: MatchJobWritePanelProps)
             }
           } catch {
             // Keep the posted-job note if the budget reserve is unavailable.
+          }
+          try {
+            const charges = await fetchJobCharges(payload.jobId);
+            if (charges.chargesErased === false) {
+              next += ' Stored job charges stay unerased. Cancellation does not erase incurred charges.';
+            }
+          } catch {
+            // Keep the posted-job note if the charge ledger is unavailable.
           }
         }
         setNote(next);
