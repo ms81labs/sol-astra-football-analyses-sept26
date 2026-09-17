@@ -322,6 +322,20 @@ export async function fetchMatchAttackDirection(matchId: string) {
   return response.json() as Promise<MatchAttackDirection>;
 }
 
+export interface MatchLegacyMigrate {
+  migrated?: { possession_pct?: { availability?: string } };
+  rollback?: { possession?: number | null; myTeamDistance?: number | null };
+  rewrotePastOutcomes: boolean;
+}
+
+export async function fetchMatchLegacyMigrate(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/records/migrate`);
+  if (!response.ok) {
+    throw new Error(`Failed to load match legacy records: ${response.status}`);
+  }
+  return response.json() as Promise<MatchLegacyMigrate>;
+}
+
 export async function fetchCorrectionHistory(matchId: string) {
   const response = await fetch(`/api/matches/${matchId}/corrections`);
   if (!response.ok) {
