@@ -11783,6 +11783,116 @@ describe('App match workspace loading', () => {
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('loads stored feature flags, capability roster, and decode challengers without leftover POST admission or published defaults', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if ((url === '/api/flags' || url.endsWith('/api/flags')) && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            experimental_shot_quality: false,
+            gpu_default: false,
+            native_code: false,
+            experimental_ui: false,
+            embeddings_search: false,
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/capabilities') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            capabilities: [
+              { id: 'manual_review', status: 'usable' },
+              { id: 'player_attribution', status: 'unproven' },
+              { id: 'physical_metrics', status: 'unavailable' },
+            ],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/decode/challengers') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            pyav: { name: 'pyav', default: false, enabled: false, role: 'challenger' },
+            torchcodec: { name: 'torchcodec', default: false, enabled: false, role: 'challenger' },
+            ffmpeg: { name: 'ffmpeg', default: false, enabled: false, role: 'challenger' },
+            selected: 'opencv',
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        (String(url) === '/api/flags' || String(url).endsWith('/api/flags'))
+        && (!init?.method || init.method === 'GET')
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/capabilities')
+      && (!init?.method || init.method === 'GET')
+    ))).toBe(true);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/decode/challengers')
+      && (!init?.method || init.method === 'GET')
+    ))).toBe(true);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/decode/challengers') && init?.method === 'POST'
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/flags/gpu_default/enabled') && init?.method === 'POST'
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/capacity'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/privacy/dpia'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/research/tracks/'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/roster/labels'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/incidents/ladder'))).toBe(false);
+    expect(screen.queryByText(/experimental shot quality: shadowed/i)).toBeNull();
+    expect(screen.queryByText(/gpu default flag stays off/i)).toBeNull();
+    expect(screen.queryByText(/production decode stays on the fixture FrameSource/i)).toBeNull();
+    expect(screen.queryByText(/pyav and torchcodec stay challengers/i)).toBeNull();
+    expect(screen.queryByText(/kloppy, roboflow, and mcbyte stay unadmitted challengers/i)).toBeNull();
+    const flags = within(await screen.findByRole('region', { name: /stored feature flags/i }));
+    expect(flags.getByText(/keep gpu_default false/i)).toBeTruthy();
+    expect(flags.getByText(/native_code stays false/i)).toBeTruthy();
+    expect(flags.getByText(/experimental_shot_quality is not a published default/i)).toBeTruthy();
+    const capabilities = within(await screen.findByRole('region', { name: /stored capability roster/i }));
+    expect(capabilities.getByText(/keeps player_attribution unproven/i)).toBeTruthy();
+    expect(capabilities.getByText(/physical_metrics stay unavailable/i)).toBeTruthy();
+    expect(capabilities.getByText(/listing a capability is not independent accuracy/i)).toBeTruthy();
+    const decodeChallengers = within(await screen.findByRole('region', { name: /stored decode challengers/i }));
+    expect(decodeChallengers.getByText(/keep pyav.default false/i)).toBeTruthy();
+    expect(decodeChallengers.getByText(/torchcodec stays a challenger/i)).toBeTruthy();
+    expect(decodeChallengers.getByText(/production selected decode is not PyAV/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('loads stored independent reviewer, worked match flow, and decode memory without inventing acceptance or GPU residency', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);

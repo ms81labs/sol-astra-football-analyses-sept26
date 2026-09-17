@@ -97,6 +97,9 @@ import ReleaseDossierPanel from './components/ReleaseDossierPanel';
 import TrainingSamplingPanel from './components/TrainingSamplingPanel';
 import DependencyRegisterPanel from './components/DependencyRegisterPanel';
 import ChallengerAdaptersPanel from './components/ChallengerAdaptersPanel';
+import FeatureFlagsPanel from './components/FeatureFlagsPanel';
+import CapabilityRosterPanel from './components/CapabilityRosterPanel';
+import DecodeChallengersPanel from './components/DecodeChallengersPanel';
 import MatchProvenancePanel from './components/MatchProvenancePanel';
 import MatchShotQualityPanel from './components/MatchShotQualityPanel';
 import MatchShotFeaturesPanel from './components/MatchShotFeaturesPanel';
@@ -2078,6 +2081,15 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           </div>
           <div className="mb-3 shrink-0">
             <ChallengerAdaptersPanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <FeatureFlagsPanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <CapabilityRosterPanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <DecodeChallengersPanel />
           </div>
           <div className="mb-3 shrink-0">
             <MatchProvenancePanel matchId={activeMatch?.id} />

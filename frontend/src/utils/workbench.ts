@@ -996,6 +996,32 @@ export async function fetchChallengerAdapters() {
   return response.json() as Promise<ChallengerAdapterGetSnapshot>;
 }
 
+export interface CapabilityRosterSnapshot {
+  capabilities?: Array<{ id?: string; status?: string }>;
+}
+
+export async function fetchCapabilityRoster() {
+  const response = await fetch('/api/capabilities');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored capability roster: ${response.status}`);
+  }
+  return response.json() as Promise<CapabilityRosterSnapshot>;
+}
+
+export interface DecodeChallengerSnapshot {
+  pyav?: { name?: string; default?: boolean; enabled?: boolean; role?: string };
+  torchcodec?: { name?: string; default?: boolean; enabled?: boolean; role?: string };
+  selected?: string;
+}
+
+export async function fetchDecodeChallengers() {
+  const response = await fetch('/api/decode/challengers');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored decode challengers: ${response.status}`);
+  }
+  return response.json() as Promise<DecodeChallengerSnapshot>;
+}
+
 export interface StageTimingSnapshot {
   overlappedStagesAreAdditive?: boolean;
   wallTime?: number;
