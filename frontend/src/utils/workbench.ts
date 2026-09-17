@@ -1934,6 +1934,61 @@ export async function postMetricsLegacyZero() {
   return response.json() as Promise<MetricsLegacyZeroWriteSnapshot>;
 }
 
+export interface MetricsPossessionStatesWriteSnapshot {
+  availability?: string;
+  publishedValue?: number | null;
+  unknownSeconds?: number;
+  value?: number | null;
+  reasonCodes?: string[];
+}
+
+export async function postMetricsPossessionStates() {
+  const response = await fetch('/api/metrics/possession-states', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post metrics possession-states: ${response.status}`);
+  }
+  return response.json() as Promise<MetricsPossessionStatesWriteSnapshot>;
+}
+
+export interface ReportsTemplateWriteSnapshot {
+  kind?: string;
+  availableMetrics?: unknown[];
+  eventCount?: number;
+}
+
+export async function postReportsTemplate() {
+  const response = await fetch('/api/reports/template', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post reports template: ${response.status}`);
+  }
+  return response.json() as Promise<ReportsTemplateWriteSnapshot>;
+}
+
+export interface OwnershipInvalidateWriteSnapshot {
+  change?: string;
+  invalidates?: string[];
+}
+
+export async function postOwnershipInvalidate() {
+  const response = await fetch('/api/ownership/invalidate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post ownership invalidate: ${response.status}`);
+  }
+  return response.json() as Promise<OwnershipInvalidateWriteSnapshot>;
+}
+
 export interface StageTimingSnapshot {
   overlappedStagesAreAdditive?: boolean;
   wallTime?: number;

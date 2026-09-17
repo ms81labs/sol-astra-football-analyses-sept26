@@ -13979,6 +13979,136 @@ describe('App match workspace loading', () => {
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('posts possession-states, reports template, and ownership invalidate without leftover invented possession, client metrics, or report change', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/metrics/possession-states') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            availability: 'insufficient_coverage',
+            publishedValue: null,
+            unknownSeconds: 0,
+            value: null,
+            reasonCodes: [],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/reports/template') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            kind: 'deterministic_template',
+            availableMetrics: [],
+            eventCount: 0,
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/ownership/invalidate') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            change: 'track_edit',
+            invalidates: ['ownership', 'player_events', 'metrics', 'report'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => expect(screen.getByRole('button', { name: /request metrics possession-states/i })).toBeTruthy());
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/metrics/possession-states'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/reports/template'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/ownership/invalidate'))).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: /request metrics possession-states/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/metrics/possession-states')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /request reports template/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/reports/template')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /request ownership invalidate/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/ownership/invalidate')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/metrics/possession-states')
+      && Boolean(init?.body && (String(init.body).includes('states') || String(init.body).includes('requestedSeconds')))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/reports/template')
+      && Boolean(init?.body && (String(init.body).includes('metrics') || String(init.body).includes('events')))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/ownership/invalidate')
+      && Boolean(init?.body && (String(init.body).includes('change') || String(init.body).includes('invalidates')))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/quota'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/training/admit'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/receipts/promotion'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/capacity'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/privacy/dpia'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/research/tracks/'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/roster/labels'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/incidents/ladder'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/decode/proxy-pts'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/access/object'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/ownership/hysteresis'))).toBe(false);
+    expect(screen.queryByText(/empty claimed ids stay grounded/i)).toBeNull();
+    expect(screen.queryByText(/empty claimed ids stay selected/i)).toBeNull();
+    expect(screen.queryByText(/legacy zero stays unmeasured/i)).toBeNull();
+    const possessionStates = within(screen.getByRole('region', { name: /unforced metrics possession-states/i }));
+    expect(possessionStates.getByText(/keeps publishedValue null/i)).toBeTruthy();
+    expect(possessionStates.getByText(/client states are not sent/i)).toBeTruthy();
+    expect(possessionStates.getByText(/empty states stay insufficient_coverage/i)).toBeTruthy();
+    const template = within(screen.getByRole('region', { name: /unforced reports template/i }));
+    expect(template.getByText(/keeps kind deterministic_template/i)).toBeTruthy();
+    expect(template.getByText(/client metrics are not sent/i)).toBeTruthy();
+    expect(template.getByText(/empty template stays eventCount 0/i)).toBeTruthy();
+    const invalidate = within(screen.getByRole('region', { name: /unforced ownership invalidate/i }));
+    expect(invalidate.getByText(/keeps change track_edit/i)).toBeTruthy();
+    expect(invalidate.getByText(/client report change is not sent/i)).toBeTruthy();
+    expect(invalidate.getByText(/track edit still rebuilds ownership/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('loads stored independent reviewer, worked match flow, and decode memory without inventing acceptance or GPU residency', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
