@@ -3241,6 +3241,435 @@ describe('App match workspace loading', () => {
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('posts player observations without injecting client rows or identityContinuous', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/players') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            intervalLimited: true,
+            totalsWithheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+            rows: [{ trackId: '7' }, { trackId: '18' }],
+          }),
+        } as Response);
+      }
+      if (
+        url.includes('/api/matches/match-a/identity')
+        && !url.includes('/repair')
+        && !url.includes('/promote')
+        && init?.method === 'POST'
+      ) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            silentlyReconnected: false,
+            cutCount: 0,
+            reset: false,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/formation') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            availability: 'withheld',
+            value: null,
+            reasonCodes: ['SINGLE_FRAME_FORMATION'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/metrics') && !url.includes('/inspect') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            metrics: [{
+              metric: 'my_team_distance_m',
+              availability: 'unknown',
+              value: null,
+              reasonCodes: ['IDENTITY_DISCONTINUITY'],
+              unit: 'metres',
+              denominator: 'identity_continuous_eligible_seconds',
+              definitionVersion: '1',
+            }],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/package') && !url.includes('/incidents/') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            analyst: { events: [], limitations: ['Independent labels 0/18 complete.'] },
+            operator: { manifest: { schema: 'match_package_v1' }, secretsAdmitted: true },
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/ownership') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            mode: 'unknown',
+            reasonCodes: ['NEAREST_PLAYER_INSUFFICIENT'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/cache') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            namespace: 'production',
+            compatibleWithDevelopment: false,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/incidents/review') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            level: 1,
+            decision: null,
+            validatedMeasurement: false,
+            samples: [{ time: 0, attackerX: 21, offsideLineX: 1, indeterminate: true }],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/shots/features') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            recorded: true,
+            missing: ['x'],
+            imputedAsCalibrated: false,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/tracklets') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            assignment: { kind: 'tracklet', forced: false, rosterId: null },
+            chunk: { silentlyReconnected: false },
+            silentlyReconnected: false,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/assistance/report') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            factualCheck: { accepted: false, reasonCodes: ['FABRICATED_EVIDENCE'] },
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/recovery/import') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            accepted: false,
+            reasonCodes: ['CORRUPTED_ARTIFACT'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/recompute') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            visionInvoked: false,
+            reused: true,
+            admitted: true,
+            imageSpaceDetectionsReused: true,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/artifacts/alongside') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            digest: 'sha-new',
+            previousDigest: 'sha-old',
+            mutatedHistorical: false,
+            namespace: 'match:match-a',
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && url.includes('state=pending') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).includes('/api/matches/match-a/players')
+        && init?.method === 'POST'
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([, init]) => (
+      Boolean(init?.body && String(init.body).includes('"rows"'))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([, init]) => (
+      Boolean(init?.body && String(init.body).includes('identityContinuous'))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([, init]) => (
+      Boolean(init?.body && String(init.body).includes('forged'))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/library/search'))).toBe(false);
+    const posted = within(await screen.findByRole('region', { name: /uninjected observation write/i }));
+    expect(posted.getByText(/ignore client rows and identityContinuous/i)).toBeTruthy();
+    expect(posted.getByText(/totals stay withheld/i)).toBeTruthy();
+    expect(posted.getByText(/forged trackId is not sent/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
+  it('posts incident geometry without client myTeam or attackDirection', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/incidents/geometry') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            decision: null,
+            validatedMeasurement: false,
+            attackDirection: 'right_to_left',
+            mostAdvancedTeammateX: 21.0,
+            reasonCodes: ['IFAB_LAW_11_NOT_APPLIED'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/players') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            intervalLimited: true,
+            totalsWithheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+            rows: [{ trackId: '7' }, { trackId: '18' }],
+          }),
+        } as Response);
+      }
+      if (
+        url.includes('/api/matches/match-a/identity')
+        && !url.includes('/repair')
+        && !url.includes('/promote')
+        && init?.method === 'POST'
+      ) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            silentlyReconnected: false,
+            cutCount: 0,
+            reset: false,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/formation') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            availability: 'withheld',
+            value: null,
+            reasonCodes: ['SINGLE_FRAME_FORMATION'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/metrics') && !url.includes('/inspect') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            metrics: [{
+              metric: 'my_team_distance_m',
+              availability: 'unknown',
+              value: null,
+              reasonCodes: ['IDENTITY_DISCONTINUITY'],
+              unit: 'metres',
+              denominator: 'identity_continuous_eligible_seconds',
+              definitionVersion: '1',
+            }],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/package') && !url.includes('/incidents/') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            analyst: { events: [], limitations: ['Independent labels 0/18 complete.'] },
+            operator: { manifest: { schema: 'match_package_v1' }, secretsAdmitted: true },
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/ownership') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            mode: 'unknown',
+            reasonCodes: ['NEAREST_PLAYER_INSUFFICIENT'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/cache') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            namespace: 'production',
+            compatibleWithDevelopment: false,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/incidents/review') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            level: 1,
+            decision: null,
+            validatedMeasurement: false,
+            samples: [{ time: 0, attackerX: 21, offsideLineX: 1, indeterminate: true }],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/shots/features') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            recorded: true,
+            missing: ['x'],
+            imputedAsCalibrated: false,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/tracklets') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            assignment: { kind: 'tracklet', forced: false, rosterId: null },
+            chunk: { silentlyReconnected: false },
+            silentlyReconnected: false,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/assistance/report') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            factualCheck: { accepted: false, reasonCodes: ['FABRICATED_EVIDENCE'] },
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/recovery/import') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            accepted: false,
+            reasonCodes: ['CORRUPTED_ARTIFACT'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/recompute') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            visionInvoked: false,
+            reused: true,
+            admitted: true,
+            imageSpaceDetectionsReused: true,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/artifacts/alongside') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            digest: 'sha-new',
+            previousDigest: 'sha-old',
+            mutatedHistorical: false,
+            namespace: 'match:match-a',
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && url.includes('state=pending') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).includes('/api/matches/match-a/incidents/geometry')
+        && init?.method === 'POST'
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([, init]) => (
+      Boolean(init?.body && String(init.body).includes('myTeam'))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([, init]) => (
+      Boolean(init?.body && String(init.body).includes('attackDirection'))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/incidents/ladder'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/workbench/'))).toBe(false);
+    const posted = within(await screen.findByRole('region', { name: /uninjected origin write/i }));
+    expect(posted.getByText(/ignores client myTeam and attackDirection/i)).toBeTruthy();
+    expect(posted.getByText(/validatedMeasurement stays false/i)).toBeTruthy();
+    expect(posted.getByText(/IFAB_LAW_11_NOT_APPLIED remains/)).toBeTruthy();
+    expect(screen.queryAllByText(/attackerX=0/)).toHaveLength(0);
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('loads derived proxy assets on the review App without replacing the original source', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
@@ -5761,10 +6190,6 @@ describe('App match workspace loading', () => {
         && (!init?.method || init.method === 'GET')
       ))).toBe(true);
     });
-    expect(fetchMock.mock.calls.some(([url, init]) => (
-      String(url).includes('/api/matches/match-a/incidents/geometry')
-      && init?.method === 'POST'
-    ))).toBe(false);
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/workbench/'))).toBe(false);
     expect(fetchMock.mock.calls.some(([, init]) => (
       Boolean(init?.body && String(init.body).includes('myTeam'))
@@ -6800,10 +7225,6 @@ describe('App match workspace loading', () => {
         && (!init?.method || init.method === 'GET')
       ))).toBe(true);
     });
-    expect(fetchMock.mock.calls.some(([url, init]) => (
-      String(url).includes('/api/matches/match-a/players')
-      && init?.method === 'POST'
-    ))).toBe(false);
     expect(fetchMock.mock.calls.some(([, init]) => (
       Boolean(init?.body && String(init.body).includes('"identityContinuous":true'))
     ))).toBe(false);

@@ -178,7 +178,19 @@ export async function fetchPlayerObservations(matchId: string) {
   if (!response.ok) {
     throw new Error(`Failed to load player observations: ${response.status}`);
   }
-  return response.json() as Promise<{ intervalLimited: boolean; totalsWithheld: boolean; reasonCodes: string[] }>;
+  return response.json() as Promise<{ intervalLimited: boolean; totalsWithheld: boolean; reasonCodes: string[]; rows?: Array<{ trackId?: string }> }>;
+}
+
+export async function postPlayerObservations(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/players`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post player observations: ${response.status}`);
+  }
+  return response.json() as Promise<{ intervalLimited: boolean; totalsWithheld: boolean; reasonCodes: string[]; rows?: Array<{ trackId?: string }> }>;
 }
 
 export interface MatchSetup {
@@ -1097,6 +1109,18 @@ export async function fetchMatchIncidentGeometry(matchId: string) {
   const response = await fetch(`/api/matches/${matchId}/incidents/geometry`);
   if (!response.ok) {
     throw new Error(`Failed to load match incident geometry: ${response.status}`);
+  }
+  return response.json() as Promise<MatchIncidentGeometry>;
+}
+
+export async function postMatchIncidentGeometry(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/incidents/geometry`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post match incident geometry: ${response.status}`);
   }
   return response.json() as Promise<MatchIncidentGeometry>;
 }
