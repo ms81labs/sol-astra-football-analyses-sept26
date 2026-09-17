@@ -13234,6 +13234,130 @@ describe('App match workspace loading', () => {
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('posts decode wrap, decode fallback, and decode sample without leftover cuda wrap, selected cuda, or exported true', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/decode/wrap') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            device: 'cpu',
+            lifetime: 'borrowed',
+            syncRequired: false,
+            gpuPromoted: false,
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/decode/fallback') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ selected: 'opencv', availableIncludesCuda: false }),
+        } as Response);
+      }
+      if (url.endsWith('/api/decode/sample') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            exported: true,
+            frameInterval: 5,
+            targetFpsEqualsInferenceFps: false,
+            sample: { sourceFrameIndex: 0 },
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => expect(screen.getByRole('button', { name: /request decode wrap/i })).toBeTruthy());
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/decode/wrap'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/decode/fallback'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/decode/sample'))).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: /request decode wrap/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/decode/wrap')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /request decode fallback/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/decode/fallback')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /request decode sample/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/decode/sample')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/decode/wrap')
+      && Boolean(init?.body && (String(init.body).includes('cuda') || String(init.body).includes('payload')))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/decode/fallback')
+      && Boolean(init?.body && (String(init.body).includes('cuda') || String(init.body).includes('selected')))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/decode/sample')
+      && Boolean(init?.body && (String(init.body).includes('exported') || String(init.body).includes('sourceFrameIndex')))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/quota'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/training/admit'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/receipts/promotion'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/capacity'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/privacy/dpia'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/research/tracks/'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/roster/labels'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/incidents/ladder'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/decode/proxy-pts'))).toBe(false);
+    expect(screen.queryByText(/live pixel wrap stays on cpu/i)).toBeNull();
+    expect(screen.queryByText(/detector cuda request stays on cpu/i)).toBeNull();
+    const decodeWrap = within(screen.getByRole('region', { name: /unforced decode wrap/i }));
+    expect(decodeWrap.getByText(/keeps lifetime borrowed/i)).toBeTruthy();
+    expect(decodeWrap.getByText(/client payload cuda is not sent/i)).toBeTruthy();
+    expect(decodeWrap.getByText(/borrowed wrap stays unpromoted/i)).toBeTruthy();
+    const decodeFallback = within(screen.getByRole('region', { name: /unforced decode fallback/i }));
+    expect(decodeFallback.getByText(/keeps selected opencv/i)).toBeTruthy();
+    expect(decodeFallback.getByText(/client selected cuda is not sent/i)).toBeTruthy();
+    expect(decodeFallback.getByText(/CUDA stays unavailable/i)).toBeTruthy();
+    const decodeSample = within(screen.getByRole('region', { name: /unforced decode sample/i }));
+    expect(decodeSample.getByText(/keeps targetFpsEqualsInferenceFps false/i)).toBeTruthy();
+    expect(decodeSample.getByText(/client exported true is not sent/i)).toBeTruthy();
+    expect(decodeSample.getByText(/sample mapping does not prove inference fps/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('loads stored independent reviewer, worked match flow, and decode memory without inventing acceptance or GPU residency', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);

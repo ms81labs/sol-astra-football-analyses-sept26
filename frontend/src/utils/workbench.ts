@@ -1609,6 +1609,61 @@ export async function postDecodeGrid() {
   return response.json() as Promise<DecodeGridWriteSnapshot>;
 }
 
+export interface DecodeWrapWriteSnapshot {
+  device?: string;
+  lifetime?: string;
+  syncRequired?: boolean;
+  gpuPromoted?: boolean;
+}
+
+export async function postDecodeWrap() {
+  const response = await fetch('/api/decode/wrap', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post decode wrap: ${response.status}`);
+  }
+  return response.json() as Promise<DecodeWrapWriteSnapshot>;
+}
+
+export interface DecodeFallbackWriteSnapshot {
+  selected?: string;
+  availableIncludesCuda?: boolean;
+}
+
+export async function postDecodeFallback() {
+  const response = await fetch('/api/decode/fallback', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post decode fallback: ${response.status}`);
+  }
+  return response.json() as Promise<DecodeFallbackWriteSnapshot>;
+}
+
+export interface DecodeSampleWriteSnapshot {
+  exported?: boolean;
+  frameInterval?: number;
+  targetFpsEqualsInferenceFps?: boolean;
+  sample?: { sourceFrameIndex?: number } | null;
+}
+
+export async function postDecodeSample() {
+  const response = await fetch('/api/decode/sample', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post decode sample: ${response.status}`);
+  }
+  return response.json() as Promise<DecodeSampleWriteSnapshot>;
+}
+
 export interface StageTimingSnapshot {
   overlappedStagesAreAdditive?: boolean;
   wallTime?: number;

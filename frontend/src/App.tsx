@@ -95,6 +95,9 @@ import DecodePixelsWritePanel from './components/DecodePixelsWritePanel';
 import DecodeCropWritePanel from './components/DecodeCropWritePanel';
 import DecodeCutsWritePanel from './components/DecodeCutsWritePanel';
 import DecodeGridWritePanel from './components/DecodeGridWritePanel';
+import DecodeWrapWritePanel from './components/DecodeWrapWritePanel';
+import DecodeFallbackWritePanel from './components/DecodeFallbackWritePanel';
+import DecodeSampleWritePanel from './components/DecodeSampleWritePanel';
 import StageTimingPanel from './components/StageTimingPanel';
 import GpuProbePanel from './components/GpuProbePanel';
 import IndependentReviewerPanel from './components/IndependentReviewerPanel';
@@ -2111,6 +2114,15 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           </div>
           <div className="mb-3 shrink-0">
             <DecodeGridWritePanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <DecodeWrapWritePanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <DecodeFallbackWritePanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <DecodeSampleWritePanel />
           </div>
           <div className="mb-3 shrink-0">
             <StageTimingPanel />
