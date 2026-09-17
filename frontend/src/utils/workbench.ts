@@ -2251,6 +2251,58 @@ export async function postProviderRoster() {
   return response.json() as Promise<ProviderRosterWriteSnapshot>;
 }
 
+export interface DependencyRegisterWriteSnapshot {
+  ultralytics?: { fashionableOnly?: boolean; rollbackPath?: string };
+  opencv?: { fashionableOnly?: boolean; rollbackPath?: string };
+}
+
+export async function postDependencyRegister() {
+  const response = await fetch('/api/dependencies', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post dependency register: ${response.status}`);
+  }
+  return response.json() as Promise<DependencyRegisterWriteSnapshot>;
+}
+
+export interface GroundContactWriteSnapshot {
+  boxCentreIsFoot?: boolean;
+  airborne?: boolean;
+  measuredGroundLocation?: boolean;
+}
+
+export async function postGroundContact() {
+  const response = await fetch('/api/geometry/contact', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post ground contact: ${response.status}`);
+  }
+  return response.json() as Promise<GroundContactWriteSnapshot>;
+}
+
+export interface ReleaseDossierWriteSnapshot {
+  deploymentBoundary?: string;
+  nativeCode?: string;
+}
+
+export async function postReleaseDossier() {
+  const response = await fetch('/api/dossier/release', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post release dossier: ${response.status}`);
+  }
+  return response.json() as Promise<ReleaseDossierWriteSnapshot>;
+}
+
 export interface StageTimingSnapshot {
   overlappedStagesAreAdditive?: boolean;
   wallTime?: number;
