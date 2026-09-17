@@ -59,6 +59,9 @@ import RollbackWritePanel from './components/RollbackWritePanel';
 import TrainingDrillsPanel from './components/TrainingDrillsPanel';
 import RepositoryPolicyPanel from './components/RepositoryPolicyPanel';
 import SupportBundlePanel from './components/SupportBundlePanel';
+import ObjectStoragePanel from './components/ObjectStoragePanel';
+import PreemptiblePolicyPanel from './components/PreemptiblePolicyPanel';
+import PitchAxesPanel from './components/PitchAxesPanel';
 import MatchProvenancePanel from './components/MatchProvenancePanel';
 import MatchShotQualityPanel from './components/MatchShotQualityPanel';
 import MatchShotFeaturesPanel from './components/MatchShotFeaturesPanel';
@@ -1926,6 +1929,15 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           </div>
           <div className="mb-3 shrink-0">
             <SupportBundlePanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <ObjectStoragePanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <PreemptiblePolicyPanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <PitchAxesPanel />
           </div>
           <div className="mb-3 shrink-0">
             <MatchProvenancePanel matchId={activeMatch?.id} />
