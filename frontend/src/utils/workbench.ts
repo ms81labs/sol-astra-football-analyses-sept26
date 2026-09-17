@@ -277,6 +277,22 @@ export async function fetchIncidentReview(matchId: string) {
   }>;
 }
 
+export async function postIncidentReview(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/incidents/review`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post incident review: ${response.status}`);
+  }
+  return response.json() as Promise<{
+    level: number;
+    decision: string | null;
+    validatedMeasurement: boolean;
+  }>;
+}
+
 export interface MatchEventPartition {
   acceptedViews?: Array<Record<string, unknown>>;
   retainedCandidates?: Array<Record<string, unknown>>;
