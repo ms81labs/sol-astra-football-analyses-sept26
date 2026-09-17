@@ -709,6 +709,20 @@ export async function fetchMatchCache(matchId: string) {
   return response.json() as Promise<MatchCacheIdentity>;
 }
 
+export interface MatchPromotionReceipt {
+  completeMatchAccepted: boolean;
+  stageBenchmarkIsCompleteMatchAcceptance?: boolean;
+  outputQuality: string;
+}
+
+export async function fetchMatchPromotion(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/promotion`);
+  if (!response.ok) {
+    throw new Error(`Failed to load match promotion receipt: ${response.status}`);
+  }
+  return response.json() as Promise<MatchPromotionReceipt>;
+}
+
 export interface AnalystWorkflowSnapshot {
   measured?: boolean;
   analystCompletedReviewedMatch?: boolean;
