@@ -1025,6 +1025,18 @@ export async function fetchMatchOwnership(matchId: string) {
   return response.json() as Promise<MatchOwnership>;
 }
 
+export async function postMatchOwnership(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/ownership`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post match ownership: ${response.status}`);
+  }
+  return response.json() as Promise<MatchOwnership>;
+}
+
 export interface MatchIncidentGeometry {
   decision: string | null;
   validatedMeasurement: boolean;
