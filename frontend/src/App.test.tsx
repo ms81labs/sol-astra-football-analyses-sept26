@@ -12066,6 +12066,108 @@ describe('App match workspace loading', () => {
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('loads stored release dossier, training sampling, and dependencies without leftover POST native approval', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/dossier/release') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            deploymentBoundary: 'loopback',
+            gNetworkRequiredForNonLocal: true,
+            nativeCode: 'gated_inert',
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/training/sampling') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            uncertaintyOnly: false,
+            mix: ['difficult', 'random_representative'],
+            trackPolicy: true,
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/dependencies') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            ultralytics: { fashionableOnly: false, rollbackPath: 'pinned_previous_detector_adapter' },
+            opencv: { fashionableOnly: false, rollbackPath: 'fixture_frame_source' },
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/dossier/release')
+        && (!init?.method || init.method === 'GET')
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/training/sampling')
+      && (!init?.method || init.method === 'GET')
+    ))).toBe(true);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/dependencies')
+      && (!init?.method || init.method === 'GET')
+    ))).toBe(true);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/dossier/release') && init?.method === 'POST'
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/dependencies') && init?.method === 'POST'
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/training/admit'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/capacity'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/privacy/dpia'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/research/tracks/'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/roster/labels'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/incidents/ladder'))).toBe(false);
+    expect(screen.queryByText(/release dossier keeps native code gated and loopback-only/i)).toBeNull();
+    expect(screen.queryByText(/locked evaluation labels cannot enter training/i)).toBeNull();
+    const dossier = within(await screen.findByRole('region', { name: /stored release dossier/i }));
+    expect(dossier.getByText(/keeps nativeCode gated_inert/i)).toBeTruthy();
+    expect(dossier.getByText(/deploymentBoundary stays loopback/i)).toBeTruthy();
+    expect(dossier.getByText(/client nativeCode approved is not sent/i)).toBeTruthy();
+    const sampling = within(screen.getByRole('region', { name: /stored training sampling/i }));
+    expect(sampling.getByText(/keeps uncertaintyOnly false/i)).toBeTruthy();
+    expect(sampling.getByText(/mix includes random_representative/i)).toBeTruthy();
+    expect(sampling.getByText(/uncertainty sampling is not the only training source/i)).toBeTruthy();
+    const dependencies = within(screen.getByRole('region', { name: /stored dependency register/i }));
+    expect(dependencies.getByText(/keeps fashionableOnly false/i)).toBeTruthy();
+    expect(dependencies.getByText(/client fashionableOnly true is not sent/i)).toBeTruthy();
+    expect(dependencies.getByText(/OpenCV rollbackPath stays fixture_frame_source/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('loads derived proxy assets on the review App without replacing the original source', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);

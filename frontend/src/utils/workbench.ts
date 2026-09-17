@@ -1167,6 +1167,47 @@ export async function fetchSplitScores() {
   return response.json() as Promise<SplitScoresSnapshot>;
 }
 
+export interface StoredReleaseDossierSnapshot {
+  deploymentBoundary?: string;
+  nativeCode?: string;
+  gNetworkRequiredForNonLocal?: boolean;
+}
+
+export async function fetchStoredReleaseDossier() {
+  const response = await fetch('/api/dossier/release');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored release dossier: ${response.status}`);
+  }
+  return response.json() as Promise<StoredReleaseDossierSnapshot>;
+}
+
+export interface TrainingSamplingSnapshot {
+  uncertaintyOnly?: boolean;
+  mix?: string[];
+  trackPolicy?: boolean;
+}
+
+export async function fetchTrainingSampling() {
+  const response = await fetch('/api/training/sampling');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored training sampling: ${response.status}`);
+  }
+  return response.json() as Promise<TrainingSamplingSnapshot>;
+}
+
+export interface DependencyRegisterSnapshot {
+  ultralytics?: { fashionableOnly?: boolean; rollbackPath?: string };
+  opencv?: { fashionableOnly?: boolean; rollbackPath?: string };
+}
+
+export async function fetchDependencyRegister() {
+  const response = await fetch('/api/dependencies');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored dependency register: ${response.status}`);
+  }
+  return response.json() as Promise<DependencyRegisterSnapshot>;
+}
+
 export interface PreemptibleSnapshot {
   allowed?: boolean;
 }
