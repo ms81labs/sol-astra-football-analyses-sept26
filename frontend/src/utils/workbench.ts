@@ -355,6 +355,20 @@ export async function fetchMatchExport(matchId: string) {
   return response.json() as Promise<MatchExportBundle>;
 }
 
+export interface MatchThemes {
+  matchId?: string;
+  detectedThemes: string[];
+  themeDetails?: Record<string, number>;
+}
+
+export async function fetchMatchThemes(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/themes`);
+  if (!response.ok) {
+    throw new Error(`Failed to load match themes: ${response.status}`);
+  }
+  return response.json() as Promise<MatchThemes>;
+}
+
 export async function fetchCorrectionHistory(matchId: string) {
   const response = await fetch(`/api/matches/${matchId}/corrections`);
   if (!response.ok) {
