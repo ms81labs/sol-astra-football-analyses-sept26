@@ -551,6 +551,18 @@ export async function fetchLabelProducts() {
 export interface ProxyAssetsSnapshot {
   replacesOriginal?: boolean;
   originalRetained?: boolean;
+  assets?: {
+    proxy?: { kind?: string; height?: number; streamCopy?: boolean };
+    thumbnails?: { kind?: string; count?: number };
+    waveform?: { kind?: string };
+  };
+  ptsMap?: Array<{
+    originalPts?: number;
+    proxyPts?: number;
+    originalSeconds?: number;
+    proxySeconds?: number;
+  }>;
+  frameExactExport?: { validatedDecodeReencode?: boolean; keyframeSeekIsExact?: boolean };
 }
 
 export async function fetchMatchProxy(matchId: string) {
