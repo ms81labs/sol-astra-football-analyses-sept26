@@ -958,6 +958,49 @@ export async function fetchGpuProbe() {
   return response.json() as Promise<GpuProbeSnapshot>;
 }
 
+export interface IndependentReviewerSnapshot {
+  accepted?: boolean;
+  reasonCodes?: string[];
+}
+
+export async function fetchIndependentReviewer() {
+  const response = await fetch('/api/reviewer');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored independent reviewer: ${response.status}`);
+  }
+  return response.json() as Promise<IndependentReviewerSnapshot>;
+}
+
+export interface WorkedMatchFlowSnapshot {
+  illustrative?: boolean;
+  jobId?: string;
+  correctionInvalidatesReportWithoutRerun?: boolean;
+}
+
+export async function fetchWorkedMatchFlow() {
+  const response = await fetch('/api/flow');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored worked match flow: ${response.status}`);
+  }
+  return response.json() as Promise<WorkedMatchFlowSnapshot>;
+}
+
+export interface DecodeMemorySnapshot {
+  gpuResident?: boolean;
+  retainAllDecodedFrames?: boolean;
+  canPromoteDefault?: boolean;
+  videoEngineCapability?: boolean;
+  reasonCodes?: string[];
+}
+
+export async function fetchDecodeMemory() {
+  const response = await fetch('/api/decode/memory');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored decode memory: ${response.status}`);
+  }
+  return response.json() as Promise<DecodeMemorySnapshot>;
+}
+
 export interface PreemptibleSnapshot {
   allowed?: boolean;
 }

@@ -11479,6 +11479,97 @@ describe('App match workspace loading', () => {
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('loads stored independent reviewer, worked match flow, and decode memory without inventing acceptance or GPU residency', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/reviewer') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ accepted: false, reasonCodes: ['REVIEWER_NOT_INDEPENDENT'] }),
+        } as Response);
+      }
+      if (url.endsWith('/api/flow') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            illustrative: true,
+            jobId: 'run-17',
+            correctionInvalidatesReportWithoutRerun: true,
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/decode/memory') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            gpuResident: false,
+            retainAllDecodedFrames: false,
+            canPromoteDefault: false,
+            videoEngineCapability: false,
+            reasonCodes: [],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/reviewer')
+        && (!init?.method || init.method === 'GET')
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/flow')
+      && (!init?.method || init.method === 'GET')
+    ))).toBe(true);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/decode/memory')
+      && (!init?.method || init.method === 'GET')
+    ))).toBe(true);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/roster/labels'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/capacity'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/privacy/dpia'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/research/tracks/'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/incidents/ladder'))).toBe(false);
+    const reviewer = within(await screen.findByRole('region', { name: /stored independent reviewer/i }));
+    expect(reviewer.getByText(/stays unaccepted/i)).toBeTruthy();
+    expect(reviewer.getByText(/REVIEWER_NOT_INDEPENDENT stays blocking/i)).toBeTruthy();
+    expect(reviewer.getByText(/held-out predictions stay uninspected/i)).toBeTruthy();
+    const flow = within(screen.getByRole('region', { name: /stored worked match flow/i }));
+    expect(flow.getByText(/stays illustrative/i)).toBeTruthy();
+    expect(flow.getByText(/correction invalidates the report without a rerun/i)).toBeTruthy();
+    const memory = within(screen.getByRole('region', { name: /stored decode memory/i }));
+    expect(memory.getByText(/stays non-resident on GPU/i)).toBeTruthy();
+    expect(memory.getByText(/decoded frames are not retained/i)).toBeTruthy();
+    expect(memory.getByText(/hardware decode does not promote a GPU default/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('loads derived proxy assets on the review App without replacing the original source', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
