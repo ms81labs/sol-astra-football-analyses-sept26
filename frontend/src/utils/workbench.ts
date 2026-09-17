@@ -1001,6 +1001,22 @@ export async function fetchDecodeMemory() {
   return response.json() as Promise<DecodeMemorySnapshot>;
 }
 
+export interface IdentityPolicySnapshot {
+  silentlyReconnected?: boolean;
+  faceRecognition?: { enabled?: boolean };
+  crossSeasonIdentity?: { enabled?: boolean };
+  appearance?: { everyDetection?: boolean; cameraCutDefeatsAppearance?: boolean };
+  candidateRejoin?: { autoAccepted?: boolean };
+}
+
+export async function fetchIdentityPolicy() {
+  const response = await fetch('/api/identity');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored identity policy: ${response.status}`);
+  }
+  return response.json() as Promise<IdentityPolicySnapshot>;
+}
+
 export interface PreemptibleSnapshot {
   allowed?: boolean;
 }

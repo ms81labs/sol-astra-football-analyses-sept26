@@ -11570,6 +11570,95 @@ describe('App match workspace loading', () => {
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('loads stored identity policy, training pools, and shadow flag without inventing face recognition or published shot quality', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if ((url === '/api/identity' || url.endsWith('/api/identity')) && !url.includes('/matches/') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            silentlyReconnected: false,
+            faceRecognition: { enabled: false },
+            crossSeasonIdentity: { enabled: false },
+            appearance: { everyDetection: false, cameraCutDefeatsAppearance: true },
+            candidateRejoin: { autoAccepted: false },
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/training/pools') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ pools: ['operational_corrections', 'training', 'locked_evaluation'] }),
+        } as Response);
+      }
+      if (url.endsWith('/api/flags/shadow/experimental_shot_quality') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ default: false, shadowed: true, published: false }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        (String(url) === '/api/identity' || String(url).endsWith('/api/identity'))
+        && !String(url).includes('/matches/')
+        && (!init?.method || init.method === 'GET')
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/training/pools')
+      && (!init?.method || init.method === 'GET')
+    ))).toBe(true);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/flags/shadow/experimental_shot_quality')
+      && (!init?.method || init.method === 'GET')
+    ))).toBe(true);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/incidents/ladder'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/training/admit'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/roster/labels'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/capacity'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/privacy/dpia'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/research/tracks/'))).toBe(false);
+    const identity = within(await screen.findByRole('region', { name: /stored identity policy/i }));
+    expect(identity.getByText(/keeps face recognition off/i)).toBeTruthy();
+    expect(identity.getByText(/cross-season identity stays off/i)).toBeTruthy();
+    expect(identity.getByText(/appearance embeddings stay off every detection/i)).toBeTruthy();
+    const pools = within(screen.getByRole('region', { name: /stored training pools/i }));
+    expect(pools.getByText(/keep locked_evaluation isolated/i)).toBeTruthy();
+    expect(pools.getByText(/locked evaluation is not a training source/i)).toBeTruthy();
+    const shadow = within(screen.getByRole('region', { name: /stored shadow flag/i }));
+    expect(shadow.getByText(/keeps experimental_shot_quality unpublished/i)).toBeTruthy();
+    expect(shadow.getByText(/published stays false/i)).toBeTruthy();
+    expect(shadow.getByText(/the default stays off/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('loads derived proxy assets on the review App without replacing the original source', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);

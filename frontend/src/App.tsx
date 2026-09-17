@@ -78,6 +78,9 @@ import GpuProbePanel from './components/GpuProbePanel';
 import IndependentReviewerPanel from './components/IndependentReviewerPanel';
 import WorkedMatchFlowPanel from './components/WorkedMatchFlowPanel';
 import DecodeMemoryPanel from './components/DecodeMemoryPanel';
+import IdentityPolicyPanel from './components/IdentityPolicyPanel';
+import TrainingPoolsPanel from './components/TrainingPoolsPanel';
+import ShadowMetricPanel from './components/ShadowMetricPanel';
 import MatchProvenancePanel from './components/MatchProvenancePanel';
 import MatchShotQualityPanel from './components/MatchShotQualityPanel';
 import MatchShotFeaturesPanel from './components/MatchShotFeaturesPanel';
@@ -2002,6 +2005,15 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           </div>
           <div className="mb-3 shrink-0">
             <DecodeMemoryPanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <IdentityPolicyPanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <TrainingPoolsPanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <ShadowMetricPanel />
           </div>
           <div className="mb-3 shrink-0">
             <MatchProvenancePanel matchId={activeMatch?.id} />
