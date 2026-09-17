@@ -1444,6 +1444,61 @@ export async function postDecodeFirst() {
   return response.json() as Promise<DecodeFirstWriteSnapshot>;
 }
 
+export interface DetectorWriteSnapshot {
+  requestedBackend?: string;
+  selectedBackend?: string;
+  fallback?: string;
+  exportFpsEqualsInferenceFps?: boolean;
+}
+
+export async function postDetector() {
+  const response = await fetch('/api/detector', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post detector: ${response.status}`);
+  }
+  return response.json() as Promise<DetectorWriteSnapshot>;
+}
+
+export interface TrackerWriteSnapshot {
+  tracks?: Array<Record<string, unknown>>;
+  silentlyReconnected?: boolean;
+}
+
+export async function postTracker() {
+  const response = await fetch('/api/tracker', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post tracker: ${response.status}`);
+  }
+  return response.json() as Promise<TrackerWriteSnapshot>;
+}
+
+export interface EventProposeWriteSnapshot {
+  family?: string;
+  status?: string;
+  accepted?: boolean;
+  reasonCodes?: string[];
+}
+
+export async function postEventPropose() {
+  const response = await fetch('/api/events/propose', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post event propose: ${response.status}`);
+  }
+  return response.json() as Promise<EventProposeWriteSnapshot>;
+}
+
 export interface StageTimingSnapshot {
   overlappedStagesAreAdditive?: boolean;
   wallTime?: number;
