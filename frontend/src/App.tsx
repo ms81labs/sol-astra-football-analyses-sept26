@@ -38,6 +38,9 @@ import MediaStridePanel from './components/MediaStridePanel';
 import CreditAllocationPanel from './components/CreditAllocationPanel';
 import HeldOutQuestionsPanel from './components/HeldOutQuestionsPanel';
 import GroundContactPanel from './components/GroundContactPanel';
+import XtPlanPanel from './components/XtPlanPanel';
+import RightsRegisterPanel from './components/RightsRegisterPanel';
+import ModelRosterPanel from './components/ModelRosterPanel';
 import MatchProvenancePanel from './components/MatchProvenancePanel';
 import MatchShotQualityPanel from './components/MatchShotQualityPanel';
 import MatchShotFeaturesPanel from './components/MatchShotFeaturesPanel';
@@ -1842,6 +1845,15 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           </div>
           <div className="mb-3 shrink-0">
             <GroundContactPanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <XtPlanPanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <RightsRegisterPanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <ModelRosterPanel />
           </div>
           <div className="mb-3 shrink-0">
             <MatchProvenancePanel matchId={activeMatch?.id} />

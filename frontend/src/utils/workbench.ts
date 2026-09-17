@@ -1382,6 +1382,46 @@ export async function fetchGroundContact() {
   return response.json() as Promise<GroundContactSnapshot>;
 }
 
+export interface XtPlanSnapshot {
+  enabled?: boolean;
+  imported?: boolean;
+  socceractionImportDoesNotValidateExtraction?: boolean;
+  vaepEnabled?: boolean;
+}
+
+export async function fetchXtPlan() {
+  const response = await fetch('/api/xt');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored xT plan: ${response.status}`);
+  }
+  return response.json() as Promise<XtPlanSnapshot>;
+}
+
+export interface RightsRegisterSnapshot {
+  uncertainCommercialPermissionBlocks?: boolean;
+  openSourceDoesNotMeanUnrestricted?: boolean;
+}
+
+export async function fetchRightsRegister() {
+  const response = await fetch('/api/rights');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored rights register: ${response.status}`);
+  }
+  return response.json() as Promise<RightsRegisterSnapshot>;
+}
+
+export interface ModelRosterSnapshot {
+  items?: Array<{ task?: string; promoted?: boolean }>;
+}
+
+export async function fetchModelRoster() {
+  const response = await fetch('/api/roster');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored model roster: ${response.status}`);
+  }
+  return response.json() as Promise<ModelRosterSnapshot>;
+}
+
 export interface ShadowMetricSnapshot {
   default?: boolean;
   shadowed?: boolean;
