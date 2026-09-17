@@ -1422,6 +1422,49 @@ export async function fetchModelRoster() {
   return response.json() as Promise<ModelRosterSnapshot>;
 }
 
+export interface RiskRegisterSnapshot {
+  items?: Array<{ id?: string; signal?: string; owner?: string }>;
+}
+
+export async function fetchRiskRegister() {
+  const response = await fetch('/api/risks');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored risk register: ${response.status}`);
+  }
+  return response.json() as Promise<RiskRegisterSnapshot>;
+}
+
+export interface MilestoneProgressSnapshot {
+  progress?: {
+    complete?: boolean;
+    completedAnalystTasks?: number;
+    validatedCapabilityGates?: number;
+    usesMergedFilesAsSuccess?: boolean;
+  };
+}
+
+export async function fetchMilestoneProgress() {
+  const response = await fetch('/api/milestones');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored milestone progress: ${response.status}`);
+  }
+  return response.json() as Promise<MilestoneProgressSnapshot>;
+}
+
+export interface NetworkFailureSnapshot {
+  availability?: string;
+  value?: number | null;
+  replacedWithGenerated?: boolean;
+}
+
+export async function fetchNetworkFailureMetric() {
+  const response = await fetch('/api/metrics/network-failure');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored network-failure metric: ${response.status}`);
+  }
+  return response.json() as Promise<NetworkFailureSnapshot>;
+}
+
 export interface ShadowMetricSnapshot {
   default?: boolean;
   shadowed?: boolean;
