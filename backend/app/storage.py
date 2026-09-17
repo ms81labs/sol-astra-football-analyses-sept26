@@ -235,6 +235,11 @@ class Storage:
         self.job_ledger = DurableJobLedger(db_path=self.db_path)
 
     def close(self) -> None:
+        try:
+            with self._connect() as connection:
+                connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        except Exception:
+            pass
         ledger = getattr(self, "job_ledger", None)
         if ledger is not None and hasattr(ledger, "close"):
             ledger.close()

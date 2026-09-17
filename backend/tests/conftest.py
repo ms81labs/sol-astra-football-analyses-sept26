@@ -36,6 +36,14 @@ def _cleanup_pytest_storage_root() -> None:
 atexit.register(_cleanup_pytest_storage_root)
 
 
+@pytest.fixture(autouse=True)
+def _reclaim_sqlite_file_descriptors() -> None:
+    yield
+    import gc
+
+    gc.collect()
+
+
 def pytest_unconfigure() -> None:
     _cleanup_pytest_storage_root()
     atexit.unregister(_cleanup_pytest_storage_root)

@@ -5,6 +5,7 @@ import json
 import os
 import re
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
 
@@ -663,7 +664,12 @@ def create_app(
     storage = Storage(_resolve_storage_root(storage_root))
     runner = JobRunner(storage.storage_root, run_jobs_inline=run_jobs_inline, settings=settings, ledger=storage.job_ledger)
 
-    app = FastAPI(title="Guerilla Analytics API", version="0.1.0")
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        yield
+        storage.close()
+
+    app = FastAPI(title="Guerilla Analytics API", version="0.1.0", lifespan=lifespan)
     app.state.storage = storage
     app.state.runner = runner
     app.include_router(create_workbench_router(storage.storage_root))

@@ -97,7 +97,13 @@ class DurableJobLedger:
         return connection
 
     def close(self) -> None:
-        return None
+        if self.db_path is None:
+            return
+        try:
+            with self._connect() as connection:
+                connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        except Exception:
+            return
 
     def _ensure_schema(self) -> None:
         with self._connect() as connection:
