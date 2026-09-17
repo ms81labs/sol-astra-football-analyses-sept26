@@ -560,6 +560,19 @@ export async function fetchRecoveryDisk() {
   return response.json() as Promise<RecoveryDiskSnapshot>;
 }
 
+export interface RecoveryRestoreSnapshot {
+  tested?: boolean;
+  digest?: string;
+}
+
+export async function fetchRecoveryRestore() {
+  const response = await fetch('/api/recovery/restore');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored restore exercise: ${response.status}`);
+  }
+  return response.json() as Promise<RecoveryRestoreSnapshot>;
+}
+
 export async function requestAccessDeletion() {
   const response = await fetch('/api/access/deletion', {
     method: 'POST',
@@ -790,6 +803,20 @@ export async function fetchExperiment(experiment: string) {
     throw new Error(`Failed to load experiment receipt: ${response.status}`);
   }
   return response.json() as Promise<ExperimentReceiptSnapshot>;
+}
+
+export interface VideoRosterSnapshot {
+  qwen3_5_4b?: { promoted?: boolean; role?: string };
+  mvitv2?: { promoted?: boolean; role?: string };
+  videomae_v2?: { promoted?: boolean; role?: string };
+}
+
+export async function fetchVideoRoster() {
+  const response = await fetch('/api/roster/video');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored video roster: ${response.status}`);
+  }
+  return response.json() as Promise<VideoRosterSnapshot>;
 }
 
 export interface PreemptibleSnapshot {

@@ -65,6 +65,9 @@ import PitchAxesPanel from './components/PitchAxesPanel';
 import GpuTimingPanel from './components/GpuTimingPanel';
 import ExperimentReceiptPanel from './components/ExperimentReceiptPanel';
 import RecoveryDiskPanel from './components/RecoveryDiskPanel';
+import ExperimentB5Panel from './components/ExperimentB5Panel';
+import RecoveryRestorePanel from './components/RecoveryRestorePanel';
+import VideoRosterPanel from './components/VideoRosterPanel';
 import MatchProvenancePanel from './components/MatchProvenancePanel';
 import MatchShotQualityPanel from './components/MatchShotQualityPanel';
 import MatchShotFeaturesPanel from './components/MatchShotFeaturesPanel';
@@ -1950,6 +1953,15 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           </div>
           <div className="mb-3 shrink-0">
             <RecoveryDiskPanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <ExperimentB5Panel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <RecoveryRestorePanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <VideoRosterPanel />
           </div>
           <div className="mb-3 shrink-0">
             <MatchProvenancePanel matchId={activeMatch?.id} />
