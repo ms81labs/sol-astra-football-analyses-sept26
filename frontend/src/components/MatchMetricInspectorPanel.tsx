@@ -25,7 +25,7 @@ export default function MatchMetricInspectorPanel({ matchId }: MatchMetricInspec
     };
   }, [matchId]);
 
-  if (!inspect) return null;
+  if (!inspect?.metric) return null;
   return (
     <MetricInspector
       metric={inspect.metric}

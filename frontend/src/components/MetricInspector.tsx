@@ -4,7 +4,7 @@ interface MetricInspectorProps {
   denominator: string;
   definitionVersion: string;
   eligibleDuration: number;
-  exclusions: string[];
+  exclusions?: string[];
   value: number | null;
   availability: string;
 }
@@ -15,7 +15,7 @@ export default function MetricInspector({
   denominator,
   definitionVersion,
   eligibleDuration,
-  exclusions,
+  exclusions = [],
   value,
   availability,
 }: MetricInspectorProps) {

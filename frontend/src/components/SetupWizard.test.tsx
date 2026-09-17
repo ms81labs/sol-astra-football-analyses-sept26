@@ -39,9 +39,6 @@ it('previews landmark fit without committing calibration or implying whole-pitch
   expect(screen.getByText(/does not rerun image-space detection/i)).toBeTruthy();
 });
 
-  expect(screen.getByText(/does not rerun image-space detection/i)).toBeTruthy();
-});
-
 it('persists periods, pitch, camera, teams and rights through onSave', async () => {
   const onSave = vi.fn().mockResolvedValue(undefined);
   render(
