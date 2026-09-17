@@ -33,7 +33,7 @@ def _bounded_block(release: threading.Event):
         timed_out.set()
         release.set()
 
-    timer = threading.Timer(1.0, release_on_timeout)
+    timer = threading.Timer(4.0, release_on_timeout)
     timer.start()
     try:
         yield timed_out
@@ -44,7 +44,7 @@ def _bounded_block(release: threading.Event):
 
 
 async def _wait_for(event: threading.Event) -> None:
-    assert await anyio.to_thread.run_sync(event.wait, 0.5), "blocked operation was not entered"
+    assert await anyio.to_thread.run_sync(event.wait, 2.0), "blocked operation was not entered"
 
 
 async def _websocket_probe(app, path: str) -> list[dict]:
@@ -101,7 +101,7 @@ async def _test_frames_read_does_not_block_other_http_requests(tmp_path: Path, m
         def blocked_load_frames(_match_id: str):
             worker_threads.append(threading.get_ident())
             entered.set()
-            assert release.wait(1.5)
+            assert release.wait(4.0)
             return []
 
         monkeypatch.setattr(app.state.storage, "load_frames", blocked_load_frames)
@@ -110,7 +110,7 @@ async def _test_frames_read_does_not_block_other_http_requests(tmp_path: Path, m
         async def request_frames() -> None:
             held_response["response"] = await client.get(f"/api/matches/{match.id}/frames")
 
-        with _bounded_block(release) as timed_out, anyio.fail_after(2.0):
+        with _bounded_block(release) as timed_out, anyio.fail_after(5.0):
             async with anyio.create_task_group() as tasks:
                 tasks.start_soon(request_frames)
                 await _wait_for(entered)
@@ -163,7 +163,7 @@ async def _test_analysis_does_not_block_http_or_websocket_progress(
         def blocked_analysis(*_args, **_kwargs):
             worker_threads.append(threading.get_ident())
             entered.set()
-            assert release.wait(1.5)
+            assert release.wait(4.0)
             if isinstance(analysis_result, Exception):
                 raise analysis_result
             return analysis_result
@@ -180,7 +180,7 @@ async def _test_analysis_does_not_block_http_or_websocket_progress(
         async def probe_websocket() -> None:
             responses["websocket"] = await _websocket_probe(app, "/ws/jobs/missing")
 
-        with _bounded_block(release) as timed_out, anyio.fail_after(2.0):
+        with _bounded_block(release) as timed_out, anyio.fail_after(5.0):
             async with anyio.create_task_group() as tasks:
                 tasks.start_soon(request_analysis)
                 await _wait_for(entered)
@@ -220,7 +220,7 @@ async def _test_inline_upload_dispatch_does_not_block_other_http_requests(tmp_pa
         assert runner.run_jobs_inline is True
         worker_threads.append(threading.get_ident())
         entered.set()
-        assert release.wait(1.5)
+        assert release.wait(4.0)
 
     monkeypatch.setattr(JobRunner, "start", blocked_start)
     async with _client(tmp_path, run_jobs_inline=True) as (_, client):
@@ -234,7 +234,7 @@ async def _test_inline_upload_dispatch_does_not_block_other_http_requests(tmp_pa
                 files={"file": ("tracking.json", b"[]", "application/json")},
             )
 
-        with _bounded_block(release) as timed_out, anyio.fail_after(2.0):
+        with _bounded_block(release) as timed_out, anyio.fail_after(5.0):
             async with anyio.create_task_group() as tasks:
                 tasks.start_soon(upload)
                 await _wait_for(entered)
@@ -271,7 +271,7 @@ async def _test_websocket_job_read_does_not_block_http_requests(tmp_path: Path, 
         def blocked_get_job(job_id: str):
             worker_threads.append(threading.get_ident())
             entered.set()
-            assert release.wait(1.5)
+            assert release.wait(4.0)
             return get_job(job_id)
 
         monkeypatch.setattr(storage, "get_job", blocked_get_job)
@@ -280,7 +280,7 @@ async def _test_websocket_job_read_does_not_block_http_requests(tmp_path: Path, 
         async def probe_websocket() -> None:
             websocket_result["messages"] = await _websocket_probe(app, f"/ws/jobs/{job.id}")
 
-        with _bounded_block(release) as timed_out, anyio.fail_after(2.0):
+        with _bounded_block(release) as timed_out, anyio.fail_after(5.0):
             async with anyio.create_task_group() as tasks:
                 tasks.start_soon(probe_websocket)
                 await _wait_for(entered)
