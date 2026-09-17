@@ -69,7 +69,7 @@ import { getUploadFailureGuidance } from './utils/uploadErrors';
 import { findNearestFrameIndex } from './utils/videoSync';
 import { playlistClipsFromCorrections } from './utils/playlist';
 import { applyReviewShortcut, type ReviewAction } from './utils/reviewShortcuts';
-import { fetchAssistance, fetchCorrectionHistory, fetchHeatmap, fetchIncidentReview, fetchMatchFormation, fetchNative, fetchNativeMemory, fetchPendingCorrections, fetchQualityTimeline, fetchRecovery, fetchSecurity, fetchWorkbenchDossier, promoteMatchIdentity, recoverMatchCorrection, repairMatchIdentity, requestAccessDeletion, submitMatchCorrection, undoMatchCorrection, type FormationAvailability } from './utils/workbench';
+import { fetchAssistance, fetchCorrectionHistory, fetchHeatmap, fetchIncidentReview, fetchMatchFormation, fetchMatchMetrics, fetchNative, fetchNativeMemory, fetchPendingCorrections, fetchQualityTimeline, fetchRecovery, fetchSecurity, fetchWorkbenchDossier, promoteMatchIdentity, recoverMatchCorrection, repairMatchIdentity, requestAccessDeletion, submitMatchCorrection, undoMatchCorrection, type FormationAvailability, type MetricAvailability } from './utils/workbench';
 import { windowedTimelineProps } from './utils/windowedTimeline';
 import { splitScores } from './utils/quantities';
 
@@ -228,6 +228,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
       setPendingCorrection(null);
       setCorrectionHistory([]);
       correctionHistoryRef.current = [];
+      setStoredMetrics([]);
       return;
     }
     let cancelled = false;
@@ -308,6 +309,14 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
         correctionHistoryRef.current = items;
       })
       .catch(() => undefined);
+    fetchMatchMetrics(activeMatch.id)
+      .then((payload) => {
+        if (cancelled || !Array.isArray(payload.metrics)) return;
+        setStoredMetrics(payload.metrics);
+      })
+      .catch(() => {
+        if (!cancelled) setStoredMetrics([]);
+      });
     return () => {
       cancelled = true;
     };
@@ -403,6 +412,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
     touchEnd: number;
     samples: Array<{ time: number; attackerX: number; offsideLineX: number; indeterminate: boolean }>;
   } | null>(null);
+  const [storedMetrics, setStoredMetrics] = useState<MetricAvailability[]>([]);
   const [recovery, setRecovery] = useState<{
     controllerRecorded: boolean;
     unresolvedIncidents: Array<{ id: string; title: string }>;
@@ -1564,11 +1574,13 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
               comparisonStats={comparisonStats}
               comparisonName={comparisonName ?? undefined}
               metricAvailability={
-                (matchStats as MatchStats | null)?.metricAvailability?.length
-                  ? matchStats?.metricAvailability
-                  : activeMatch?.detail.requiresTeamSelection || matchBenchmark?.fiveMinuteTruthReady === false
-                    ? physicalMetricAvailability(identityContinuous)
-                    : []
+                storedMetrics.length
+                  ? storedMetrics
+                  : (matchStats as MatchStats | null)?.metricAvailability?.length
+                    ? matchStats?.metricAvailability
+                    : activeMatch?.detail.requiresTeamSelection || matchBenchmark?.fiveMinuteTruthReady === false
+                      ? physicalMetricAvailability(identityContinuous)
+                      : []
               }
             />
           )}

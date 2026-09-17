@@ -177,6 +177,11 @@ export default function StatsPanel({
                             />
                         </div>
                     )}
+                    {physicalUnavailable && physical && physical.value == null && physical.reasonCodes.includes('IDENTITY_DISCONTINUITY') && (
+                        <section aria-label="Stored match metrics" className="mt-3 rounded-lg border border-slate-700 p-3">
+                            <p className="text-xs text-slate-400">Stored match metrics withhold physical totals. IDENTITY_DISCONTINUITY. Published value is not an invented 0.</p>
+                        </section>
+                    )}
                 </div>
 
                 <div className="bg-slate-800 p-4 rounded-xl border border-slate-700 shadow-sm">

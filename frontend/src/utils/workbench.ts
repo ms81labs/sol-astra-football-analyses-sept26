@@ -218,6 +218,14 @@ export async function fetchMetricInspect(metric: string, matchId?: string) {
   return response.json() as Promise<MetricInspect>;
 }
 
+export async function fetchMatchMetrics(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/metrics`);
+  if (!response.ok) {
+    throw new Error(`Failed to load match metrics: ${response.status}`);
+  }
+  return response.json() as Promise<{ metrics: MetricAvailability[] }>;
+}
+
 export async function fetchTrainingDrills() {
   const response = await fetch('/api/training/drills');
   if (!response.ok) {
