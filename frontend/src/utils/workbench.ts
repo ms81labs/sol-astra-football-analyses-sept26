@@ -1017,6 +1017,45 @@ export async function fetchIdentityPolicy() {
   return response.json() as Promise<IdentityPolicySnapshot>;
 }
 
+export interface LegacyDisplaySnapshot {
+  xAxis?: string;
+  yAxis?: string;
+  transformedExplicitly?: boolean;
+  legacyDisplay?: string;
+}
+
+export async function fetchLegacyDisplay() {
+  const response = await fetch('/api/quantities/display');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored legacy display: ${response.status}`);
+  }
+  return response.json() as Promise<LegacyDisplaySnapshot>;
+}
+
+export interface MetricDictionarySnapshot {
+  metrics?: Record<string, { publishedLabel?: string }>;
+}
+
+export async function fetchMetricDictionary() {
+  const response = await fetch('/api/metrics/dictionary');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored metric dictionary: ${response.status}`);
+  }
+  return response.json() as Promise<MetricDictionarySnapshot>;
+}
+
+export interface LicenceRegisterSnapshot {
+  ultralytics?: { generalisedToEveryYoloNamedModel?: boolean; reviewExactAssets?: boolean };
+}
+
+export async function fetchLicenceRegister() {
+  const response = await fetch('/api/rights/licences');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored licence register: ${response.status}`);
+  }
+  return response.json() as Promise<LicenceRegisterSnapshot>;
+}
+
 export interface PreemptibleSnapshot {
   allowed?: boolean;
 }

@@ -11659,6 +11659,97 @@ describe('App match workspace loading', () => {
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('loads stored legacy display, metric dictionary, and licence register without inventing calibrated measurements', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/quantities/display') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            xAxis: 'longitudinal',
+            yAxis: 'lateral',
+            transformedExplicitly: true,
+            legacyDisplay: 'transform_explicitly',
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/metrics/dictionary') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            metrics: {
+              possession_pct: { publishedLabel: 'possession' },
+              experimental_shot_quality: { publishedLabel: 'experimental_shot_quality' },
+            },
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/rights/licences') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            ultralytics: { generalisedToEveryYoloNamedModel: false, reviewExactAssets: true },
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/quantities/display')
+        && (!init?.method || init.method === 'GET')
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/metrics/dictionary')
+      && (!init?.method || init.method === 'GET')
+    ))).toBe(true);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/rights/licences')
+      && (!init?.method || init.method === 'GET')
+    ))).toBe(true);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/rights/evaluate'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/roster/labels'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/capacity'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/privacy/dpia'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/research/tracks/'))).toBe(false);
+    const display = within(await screen.findByRole('region', { name: /stored legacy display/i }));
+    expect(display.getByText(/transform stays explicit/i)).toBeTruthy();
+    expect(display.getByText(/display coordinates are not pitch metres until transformed/i)).toBeTruthy();
+    const dictionary = within(screen.getByRole('region', { name: /stored metric dictionary/i }));
+    expect(dictionary.getByText(/lists experimental_shot_quality/i)).toBeTruthy();
+    expect(dictionary.getByText(/listing a published label is not a calibrated measurement/i)).toBeTruthy();
+    const licences = within(screen.getByRole('region', { name: /stored licence register/i }));
+    expect(licences.getByText(/does not generalise Ultralytics to every YOLO-named model/i)).toBeTruthy();
+    expect(licences.getByText(/generalisedToEveryYoloNamedModel stays false/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('loads derived proxy assets on the review App without replacing the original source', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);

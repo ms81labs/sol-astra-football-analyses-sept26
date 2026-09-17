@@ -81,6 +81,9 @@ import DecodeMemoryPanel from './components/DecodeMemoryPanel';
 import IdentityPolicyPanel from './components/IdentityPolicyPanel';
 import TrainingPoolsPanel from './components/TrainingPoolsPanel';
 import ShadowMetricPanel from './components/ShadowMetricPanel';
+import LegacyDisplayPanel from './components/LegacyDisplayPanel';
+import MetricDictionaryPanel from './components/MetricDictionaryPanel';
+import LicenceRegisterPanel from './components/LicenceRegisterPanel';
 import MatchProvenancePanel from './components/MatchProvenancePanel';
 import MatchShotQualityPanel from './components/MatchShotQualityPanel';
 import MatchShotFeaturesPanel from './components/MatchShotFeaturesPanel';
@@ -2014,6 +2017,15 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           </div>
           <div className="mb-3 shrink-0">
             <ShadowMetricPanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <LegacyDisplayPanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <MetricDictionaryPanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <LicenceRegisterPanel />
           </div>
           <div className="mb-3 shrink-0">
             <MatchProvenancePanel matchId={activeMatch?.id} />
