@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { fetchJobCost, postMatchJob } from '../utils/workbench';
+import { fetchJobBudget, fetchJobCost, postMatchJob } from '../utils/workbench';
 
 interface MatchJobWritePanelProps {
   matchId?: string;
@@ -27,6 +27,14 @@ export default function MatchJobWritePanel({ matchId }: MatchJobWritePanelProps)
             }
           } catch {
             // Keep the posted-job note if the cost ledger is unavailable.
+          }
+          try {
+            const budget = await fetchJobBudget(payload.jobId);
+            if (budget.reserve?.authorised === false) {
+              next += ' Stored job budget reserve stays unauthorised. Authorised spend is not invented.';
+            }
+          } catch {
+            // Keep the posted-job note if the budget reserve is unavailable.
           }
         }
         setNote(next);

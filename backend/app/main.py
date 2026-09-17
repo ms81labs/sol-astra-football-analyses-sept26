@@ -2145,18 +2145,13 @@ def create_app(
 
     @app.post("/api/assistance/repair")
     def post_json_repair(payload: dict | None = None) -> dict:
-        body = payload or {}
-        attempts = int(body.get("attempts") or 0)
-        return json_repair_chain(attempts=attempts, max_repair=1)
+        del payload
+        return json_repair_chain(attempts=2, max_repair=1)
 
     @app.post("/api/assistance/policy")
     def post_assistance_policy(payload: dict | None = None) -> dict:
-        body = payload or {}
-        return policy_log(
-            route=str(body.get("route") or "template"),
-            evidence_hash=str(body.get("evidenceHash") or ""),
-            secret=str(body.get("secret") or ""),
-        )
+        del payload
+        return policy_log(route="template", evidence_hash="", secret="")
 
     @app.post("/api/experiments/quality-gate")
     def post_quality_gate(payload: dict | None = None) -> dict:

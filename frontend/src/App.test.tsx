@@ -10679,6 +10679,418 @@ describe('App match workspace loading', () => {
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('loads posted JSON repair, assistance policy, and job budget without inventing spend or secrets', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/assistance/repair') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            admitted: false,
+            attempts: 2,
+            maxRepair: 1,
+            reasonCodes: ['UNBOUNDED_JSON_REPAIR'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/assistance/policy') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            route: 'template',
+            evidenceHash: '',
+            policyVersion: '1',
+            secretsExcluded: true,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/jobs') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            jobId: 'job-scope-1',
+            status: 'queued',
+            reused: false,
+            costReserved: 0,
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/jobs/job-scope-1/cost') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ reservedTotal: 0, actualTotal: 0, p50Reserved: 0, requestId: 'job-scope-1' }),
+        } as Response);
+      }
+      if (url.endsWith('/api/jobs/job-scope-1/budget') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            reserve: { authorised: false, reserved: 0, estimate: 0, currency: 'USD' },
+            reconcile: { reserved: 0, actual: 0, variance: 0, exceeded: false, alert: false },
+            cost: { reservedTotal: 0, actualTotal: 0 },
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/roster/frontier') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ promoted: false, hardCodedModelName: false, role: 'frontier' }),
+        } as Response);
+      }
+      if (url.endsWith('/api/roster/promotion/player_ball') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            promoted: false,
+            task: 'player_ball',
+            reasonCodes: ['INDEPENDENT_ACCEPTANCE_MISSING', 'LICENCE_UNREVIEWED'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/experiments/quality-gate') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            promoted: false,
+            threshold: 0.8,
+            reasonCodes: ['QUALITY_GATE_FAILED'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/experiments/B5') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ promoted: false, reasonCodes: ['NATIVE_GATE_CLOSED'] }),
+        } as Response);
+      }
+      if (url.endsWith('/api/recovery/restore') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ tested: true, digest: 'restore-digest' }),
+        } as Response);
+      }
+      if (url.endsWith('/api/roster/video') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ qwen3_5_4b: { promoted: false, role: 'compact_local_language_candidate' } }),
+        } as Response);
+      }
+      if (url.endsWith('/api/timing/gpu') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            admitted: false,
+            usesSubmissionAsCompletedWork: false,
+            completedMs: null,
+            reasonCodes: ['GPU_TIMING_SUBMISSION_IS_NOT_COMPLETED_WORK'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/experiments/B2') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            promoted: false,
+            hardwareVerified: false,
+            reasonCodes: ['HARDWARE_UNAVAILABLE'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/recovery/disk') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ acceptedPartial: false, error: 'disk_exhaustion', status: 'failed' }),
+        } as Response);
+      }
+      if (url.endsWith('/api/storage/object') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ enabled: false, mandatoryDuckDb: false, role: 'local_content_addressed' }),
+        } as Response);
+      }
+      if (url.endsWith('/api/preemptible') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ allowed: false }) } as Response);
+      }
+      if (url.endsWith('/api/quantities/axes') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            x: 'longitudinal',
+            y: 'lateral',
+            origin: 'declared_calibration',
+            legacyDisplay: 'transform_explicitly',
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/training/drills') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            items: [{ name: 'near-side recovery 2v2', coachReviewed: true }],
+            prescribesMedicalLoad: false,
+            diagnosesFatigueOrInjury: false,
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/repository') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ httpMayRunGpu: false, vectorBrokerRequired: false, replacesStorageModule: false }),
+        } as Response);
+      }
+      if (url.endsWith('/api/support/bundle') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ released: false, reasonCodes: ['CONSENT_REQUIRED'] }),
+        } as Response);
+      }
+      if (url.includes('/api/scale/10') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            matchesPerMonth: 10,
+            measuredApplicationPerformance: false,
+            gbEqualsGiB: false,
+            decimalGb: 5.4,
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/research/lane') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ isolated: true, autonomousProductionChanges: false, tracks: [{ id: 'possession/events', inert: true }] }),
+        } as Response);
+      }
+      if (url.includes('/api/admission/handheld_low_angle') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ certified: false, withhold: ['physical_metrics'] }),
+        } as Response);
+      }
+      if (url.includes('/api/deployment/hosted_collaboration') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ admitted: false, silentCloudFallback: false, requiresGNetwork: true }),
+        } as Response);
+      }
+      if (url.endsWith('/api/vector') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ enabled: false, admitted: false, embeddingsProveTacticalWeakness: false }),
+        } as Response);
+      }
+      if (url.endsWith('/api/broker') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ enabled: false, admitted: false, renamesCurrentQueue: false }),
+        } as Response);
+      }
+      if (url.endsWith('/api/residency') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ euProcessingProven: false, reasonCodes: ['REQUESTED_REGION_IS_NOT_PROOF'] }),
+        } as Response);
+      }
+      if (url.endsWith('/api/decisions') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            items: [{ id: 'capability_release', decision: 'independent_gates_not_merged_files', reversible: true }],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/targets') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ measured: false, doesNotPromiseVideoDecodeLatency: true }),
+        } as Response);
+      }
+      if (url.includes('/api/metrics/network-failure') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ availability: 'unknown', value: null, replacedWithGenerated: false }),
+        } as Response);
+      }
+      if (url.endsWith('/api/milestones') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            progress: { complete: false, completedAnalystTasks: 0, usesMergedFilesAsSuccess: false },
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/risks') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [{ id: 'labels_incomplete', owner: 'reviewer_owner' }] }) } as Response);
+      }
+      if (url.endsWith('/api/roster') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ items: [{ task: 'player_ball', promoted: false }] }),
+        } as Response);
+      }
+      if (url.endsWith('/api/rights') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ uncertainCommercialPermissionBlocks: true }) } as Response);
+      }
+      if (url.endsWith('/api/xt') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ enabled: false, socceractionImportDoesNotValidateExtraction: true }),
+        } as Response);
+      }
+      if (url.includes('/api/geometry/contact') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ boxCentreIsFoot: false }) } as Response);
+      }
+      if (url.includes('/api/reports/held-out') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ questions: [{ text: 'how tired was player 7 in the 89th minute', unanswerable: true }] }),
+        } as Response);
+      }
+      if (url.includes('/api/credits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ authorised: false, gpuCreditsDoNotPayForLabels: true }) } as Response);
+      }
+      if (url.includes('/api/collaboration') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ hosted: { admitted: false, silentlyReplaced: false } }) } as Response);
+      }
+      if (url.includes('/api/media/stride') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ addsVidStrideAlone: false, targetFpsEqualsInferenceFps: false }) } as Response);
+      }
+      if (url.includes('/api/evaluation/hota') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            scored: false,
+            hota: null,
+            idf1: null,
+            reasonCodes: ['INCOMPATIBLE_HOTA_LABEL_SPACE', 'NATIVE_PREDICTIONS_REQUIRED'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/evaluation/measures') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ trackevalIsGroundTruth: false, annotationServiceHealthSatisfiesLabelGate: false }),
+        } as Response);
+      }
+      if (url.includes('/api/evaluation/prerequisites')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ accepted: false, completeTasks: 0, lockedLabelsPresent: false, nativePredictionsPresent: false }),
+        } as Response);
+      }
+      if (url.includes('/api/evaluation/protocol') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            accepted: false,
+            completeTasks: 0,
+            protocolVersion: 'football_analysis_pilot_labels_v3',
+            reasonCodes: ['LABELS_INCOMPLETE'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/evaluation/workflow') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            measured: false,
+            analystCompletedReviewedMatch: false,
+            reasonCodes: ['ANALYST_ACCEPTANCE_MISSING'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => expect(screen.getByRole('button', { name: /request json repair/i })).toBeTruthy());
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/assistance/repair'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/assistance/policy'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/jobs/job-scope-1/budget'))).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: /request json repair/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/assistance/repair')
+        && init?.method === 'POST'
+        && String(init?.body) === '{}'
+      ))).toBe(true);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /request assistance policy/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/assistance/policy')
+        && init?.method === 'POST'
+        && String(init?.body) === '{}'
+      ))).toBe(true);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /request durable job/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/jobs/job-scope-1/budget')
+        && (!init?.method || init.method === 'GET')
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/assistance/repair')
+      && Boolean(init?.body && (String(init.body).includes('sk-live-secret') || String(init.body).includes('attempts')))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/assistance/policy')
+      && Boolean(init?.body && String(init.body).includes('sk-live-secret'))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/support/bundle')
+      && init?.method === 'POST'
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/roster/promotion')
+      && init?.method === 'POST'
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/experiments/B2')
+      && init?.method === 'POST'
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/roster/labels'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/capacity'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/privacy/dpia'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/research/tracks/'))).toBe(false);
+    const repair = within(await screen.findByRole('region', { name: /unforced json repair/i }));
+    expect(repair.getByText(/stays refused/i)).toBeTruthy();
+    expect(repair.getByText(/client secret and attempts are not sent/i)).toBeTruthy();
+    expect(repair.getByText(/UNBOUNDED_JSON_REPAIR stays blocking/i)).toBeTruthy();
+    const policy = within(screen.getByRole('region', { name: /unforced assistance policy/i }));
+    expect(policy.getByText(/excludes secrets/i)).toBeTruthy();
+    expect(policy.getByText(/client secret is not sent/i)).toBeTruthy();
+    expect(policy.getByText(/secretsExcluded stays true/i)).toBeTruthy();
+    const posted = within(screen.getByRole('region', { name: /unforced job write/i }));
+    expect(posted.getByText(/job budget reserve stays unauthorised/i)).toBeTruthy();
+    expect(posted.getByText(/authorised spend is not invented/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('loads derived proxy assets on the review App without replacing the original source', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);

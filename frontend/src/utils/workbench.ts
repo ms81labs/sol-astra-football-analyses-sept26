@@ -865,6 +865,58 @@ export async function postQualityGate() {
   return response.json() as Promise<QualityGateSnapshot>;
 }
 
+export interface JsonRepairSnapshot {
+  admitted?: boolean;
+  attempts?: number;
+  maxRepair?: number;
+  reasonCodes?: string[];
+}
+
+export async function postJsonRepair() {
+  const response = await fetch('/api/assistance/repair', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post JSON repair: ${response.status}`);
+  }
+  return response.json() as Promise<JsonRepairSnapshot>;
+}
+
+export interface AssistancePolicySnapshot {
+  secretsExcluded?: boolean;
+  route?: string;
+  evidenceHash?: string;
+  policyVersion?: string;
+}
+
+export async function postAssistancePolicy() {
+  const response = await fetch('/api/assistance/policy', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post assistance policy: ${response.status}`);
+  }
+  return response.json() as Promise<AssistancePolicySnapshot>;
+}
+
+export interface JobBudgetSnapshot {
+  reserve?: { authorised?: boolean; reserved?: number; estimate?: number; currency?: string };
+  reconcile?: { reserved?: number; actual?: number; variance?: number; exceeded?: boolean; alert?: boolean };
+  cost?: { reservedTotal?: number; actualTotal?: number };
+}
+
+export async function fetchJobBudget(jobId: string) {
+  const response = await fetch(`/api/jobs/${jobId}/budget`);
+  if (!response.ok) {
+    throw new Error(`Failed to load job budget: ${response.status}`);
+  }
+  return response.json() as Promise<JobBudgetSnapshot>;
+}
+
 export interface PreemptibleSnapshot {
   allowed?: boolean;
 }

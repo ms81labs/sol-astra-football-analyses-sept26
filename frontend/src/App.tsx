@@ -71,6 +71,8 @@ import VideoRosterPanel from './components/VideoRosterPanel';
 import FrontierRosterPanel from './components/FrontierRosterPanel';
 import PromotionGatePanel from './components/PromotionGatePanel';
 import QualityGateWritePanel from './components/QualityGateWritePanel';
+import JsonRepairWritePanel from './components/JsonRepairWritePanel';
+import AssistancePolicyWritePanel from './components/AssistancePolicyWritePanel';
 import MatchProvenancePanel from './components/MatchProvenancePanel';
 import MatchShotQualityPanel from './components/MatchShotQualityPanel';
 import MatchShotFeaturesPanel from './components/MatchShotFeaturesPanel';
@@ -1974,6 +1976,12 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           </div>
           <div className="mb-3 shrink-0">
             <QualityGateWritePanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <JsonRepairWritePanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <AssistancePolicyWritePanel />
           </div>
           <div className="mb-3 shrink-0">
             <MatchProvenancePanel matchId={activeMatch?.id} />
