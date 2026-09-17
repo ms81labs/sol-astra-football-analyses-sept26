@@ -1446,24 +1446,21 @@ class Storage:
         end = float(frames[1].timestamp) if len(frames) > 1 else start + 0.12
         attacker = geometry.get("mostAdvancedTeammateX")
         line = geometry.get("secondLastOpponentX")
-        attacker_x = float(attacker) if attacker is not None else 0.0
-        line_x = float(line) if line is not None else 0.0
+        attacker_x = None if attacker is None else float(attacker)
+        line_x = None if line is None else float(line)
         samples: list[tuple[float, float]] = []
         attacking_right_to_left = match.config.attackDirection == "right_to_left"
-        for frame in frames[:2]:
-            xs = [float(player.x) for player in frame.myTeam]
-            if xs:
-                samples.append((float(frame.timestamp), min(xs) if attacking_right_to_left else max(xs)))
-            else:
-                samples.append((float(frame.timestamp), attacker_x))
-        if not samples:
-            samples = [(start, attacker_x), (end, attacker_x)]
+        if attacker_x is not None and line_x is not None:
+            for frame in frames[:2]:
+                xs = [float(player.x) for player in frame.myTeam]
+                if xs:
+                    samples.append((float(frame.timestamp), min(xs) if attacking_right_to_left else max(xs)))
         return level1_positional_aid(
             touch_interval=(start, end),
             attacker_x=attacker_x,
             offside_line_x=line_x,
             uncertainty_m=3.0,
-            attacker_x_by_time=tuple(samples),
+            attacker_x_by_time=tuple(samples) if samples else None,
         )
 
     def dpia_for_match(self, match_id: str) -> dict:

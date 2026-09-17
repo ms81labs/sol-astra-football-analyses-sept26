@@ -752,6 +752,23 @@ export async function fetchMatchIncidentGeometry(matchId: string) {
   return response.json() as Promise<MatchIncidentGeometry>;
 }
 
+export interface MatchIncidentPackage {
+  level: number;
+  clips?: Array<Record<string, unknown>>;
+  notes?: string[];
+  decision: string | null;
+  validatedMeasurement: boolean;
+  reasonCodes?: string[];
+}
+
+export async function fetchMatchIncidentPackage(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/incidents/package`);
+  if (!response.ok) {
+    throw new Error(`Failed to load match incident package: ${response.status}`);
+  }
+  return response.json() as Promise<MatchIncidentPackage>;
+}
+
 export interface AnalystWorkflowSnapshot {
   measured?: boolean;
   analystCompletedReviewedMatch?: boolean;

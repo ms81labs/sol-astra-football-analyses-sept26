@@ -2081,6 +2081,34 @@ def test_incident_ladder_keeps_geometry_indeterminate_and_3d_schematic() -> None
     assert "NEW_DATASET_REQUIRED" in blocked["reasonCodes"]
 
 
+def test_incident_review_does_not_invent_origin_geometry_when_players_are_missing(tmp_path: Path) -> None:
+    from backend.app.schemas import FrameData
+    from backend.app.storage import Storage
+
+    storage = Storage(tmp_path)
+    source = tmp_path / "empty.json"
+    source.write_text("[]")
+    match = storage.create_match(
+        "empty geometry",
+        "tracking_json",
+        "empty.json",
+        source,
+        MatchConfig(),
+    )
+    storage.save_frames(
+        match.id,
+        [FrameData(frameId=0, timestamp=3.5, myTeam=[], enemies=[], unassignedPlayers=[])],
+    )
+    review = storage.incident_review_for_match(match.id)
+    assert review["decision"] is None
+    assert review["validatedMeasurement"] is False
+    assert review["samples"] == []
+    assert "IFAB_LAW_11_NOT_APPLIED" in review["reasonCodes"]
+    blob = json.dumps(review)
+    assert "attackerX=0" not in blob
+    assert all(sample.get("attackerX") not in (0, 0.0) for sample in review["samples"])
+
+
 def test_recovery_corrupted_full_disk_interrupted_upload_and_restore(tmp_path: Path) -> None:
     from backend.app.workbench.recovery import (
         corrupted_import,

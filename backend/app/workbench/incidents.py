@@ -29,15 +29,23 @@ def level0_incident_package(
 def level1_positional_aid(
     *,
     touch_interval: tuple[float, float],
-    attacker_x: float,
-    offside_line_x: float,
+    attacker_x: float | None,
+    offside_line_x: float | None,
     uncertainty_m: float,
     attacker_x_by_time: tuple[tuple[float, float], ...] | None = None,
 ) -> dict[str, Any]:
-    samples_in = attacker_x_by_time or ((touch_interval[0], attacker_x), (touch_interval[1], attacker_x))
+    if attacker_x is None or offside_line_x is None:
+        samples_in: tuple[tuple[float, float], ...] = ()
+    else:
+        samples_in = attacker_x_by_time if attacker_x_by_time is not None else (
+            (touch_interval[0], attacker_x),
+            (touch_interval[1], attacker_x),
+        )
     samples: list[dict[str, Any]] = []
     any_cross = False
     for time, x in samples_in:
+        if offside_line_x is None:
+            break
         low = x - uncertainty_m
         high = x + uncertainty_m
         crosses = low < offside_line_x < high or abs(x - offside_line_x) <= uncertainty_m
@@ -55,7 +63,7 @@ def level1_positional_aid(
         "level": 1,
         "touchInterval": touch_interval,
         "uncertaintyM": uncertainty_m,
-        "indeterminate": any_cross,
+        "indeterminate": any_cross or not samples,
         "decision": None,
         "validatedMeasurement": False,
         "singleExactFrame": False,
