@@ -723,6 +723,19 @@ export async function fetchMatchPromotion(matchId: string) {
   return response.json() as Promise<MatchPromotionReceipt>;
 }
 
+export interface MatchOwnership {
+  mode: string;
+  reasonCodes?: string[];
+}
+
+export async function fetchMatchOwnership(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/ownership`);
+  if (!response.ok) {
+    throw new Error(`Failed to load match ownership: ${response.status}`);
+  }
+  return response.json() as Promise<MatchOwnership>;
+}
+
 export interface AnalystWorkflowSnapshot {
   measured?: boolean;
   analystCompletedReviewedMatch?: boolean;
