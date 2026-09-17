@@ -50,6 +50,9 @@ import ResidencyClaimPanel from './components/ResidencyClaimPanel';
 import DistributedBrokerPanel from './components/DistributedBrokerPanel';
 import VectorDatabasePanel from './components/VectorDatabasePanel';
 import HostedDeploymentPanel from './components/HostedDeploymentPanel';
+import HandheldAdmissionPanel from './components/HandheldAdmissionPanel';
+import ResearchLanePanel from './components/ResearchLanePanel';
+import ScaleScenarioPanel from './components/ScaleScenarioPanel';
 import MatchProvenancePanel from './components/MatchProvenancePanel';
 import MatchShotQualityPanel from './components/MatchShotQualityPanel';
 import MatchShotFeaturesPanel from './components/MatchShotFeaturesPanel';
@@ -1890,6 +1893,15 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           </div>
           <div className="mb-3 shrink-0">
             <HostedDeploymentPanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <HandheldAdmissionPanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <ResearchLanePanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <ScaleScenarioPanel />
           </div>
           <div className="mb-3 shrink-0">
             <MatchProvenancePanel matchId={activeMatch?.id} />

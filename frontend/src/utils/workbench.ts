@@ -1547,6 +1547,46 @@ export async function fetchHostedDeployment() {
   return response.json() as Promise<HostedDeploymentSnapshot>;
 }
 
+export interface HandheldAdmissionSnapshot {
+  certified?: boolean;
+  withhold?: string[];
+}
+
+export async function fetchHandheldAdmission() {
+  const response = await fetch('/api/admission/handheld_low_angle');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored handheld admission: ${response.status}`);
+  }
+  return response.json() as Promise<HandheldAdmissionSnapshot>;
+}
+
+export interface ResearchLaneSnapshot {
+  autonomousProductionChanges?: boolean;
+  tracks?: Array<{ id?: string; executable?: boolean; inert?: boolean }>;
+}
+
+export async function fetchResearchLane() {
+  const response = await fetch('/api/research/lane');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored research lane: ${response.status}`);
+  }
+  return response.json() as Promise<ResearchLaneSnapshot>;
+}
+
+export interface ScaleScenarioSnapshot {
+  measuredApplicationPerformance?: boolean;
+  gbEqualsGiB?: boolean;
+  matchesPerMonth?: number;
+}
+
+export async function fetchScaleScenario() {
+  const response = await fetch('/api/scale/10');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored scale scenario: ${response.status}`);
+  }
+  return response.json() as Promise<ScaleScenarioSnapshot>;
+}
+
 export interface ShadowMetricSnapshot {
   default?: boolean;
   shadowed?: boolean;
