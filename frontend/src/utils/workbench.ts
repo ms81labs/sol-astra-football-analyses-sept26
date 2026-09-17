@@ -696,6 +696,19 @@ export async function fetchMatchTracklets(matchId: string) {
   return response.json() as Promise<MatchTracklets>;
 }
 
+export interface MatchCacheIdentity {
+  namespace: string;
+  compatibleWithDevelopment: boolean;
+}
+
+export async function fetchMatchCache(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/cache`);
+  if (!response.ok) {
+    throw new Error(`Failed to load match cache identity: ${response.status}`);
+  }
+  return response.json() as Promise<MatchCacheIdentity>;
+}
+
 export interface AnalystWorkflowSnapshot {
   measured?: boolean;
   analystCompletedReviewedMatch?: boolean;

@@ -34,6 +34,7 @@ import MatchShotQualityPanel from './components/MatchShotQualityPanel';
 import MatchAuditTrailPanel from './components/MatchAuditTrailPanel';
 import MatchPrivacyPanel from './components/MatchPrivacyPanel';
 import MatchTrackletsPanel from './components/MatchTrackletsPanel';
+import MatchCachePanel from './components/MatchCachePanel';
 import ProxyAssetsPanel from './components/ProxyAssetsPanel';
 import HoldoutCalibrationPanel from './components/HoldoutCalibrationPanel';
 import TypedSearchPanel from './components/TypedSearchPanel';
@@ -1770,6 +1771,9 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           </div>
           <div className="mb-3 shrink-0">
             <MatchTrackletsPanel matchId={activeMatch?.id} />
+          </div>
+          <div className="mb-3 shrink-0">
+            <MatchCachePanel matchId={activeMatch?.id} />
           </div>
           <div className="mb-3 shrink-0">
             <ProxyAssetsPanel matchId={activeMatch?.id} />
