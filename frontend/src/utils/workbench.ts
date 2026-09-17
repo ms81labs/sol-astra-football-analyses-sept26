@@ -250,6 +250,8 @@ export async function fetchMatchClock(matchId: string) {
     presentationTimeSeconds: number;
     matchClockSeconds: number;
     frameAccurateOverlay: boolean;
+    explicitMapping?: boolean;
+    sourceClockRecorded?: boolean;
   }>;
 }
 

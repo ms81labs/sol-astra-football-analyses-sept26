@@ -1688,6 +1688,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
 
           <div className="mb-3 shrink-0">
             <EvidenceInspector
+              matchId={activeMatch?.id}
               frame={currentFrameRecord}
               cameraProfile={activeMatch?.detail.config?.cameraProfile ?? uploadCameraProfile}
               reviewStatus={currentEvent?.reviewStatus ?? 'unreviewed'}

@@ -1,7 +1,11 @@
+import { useEffect, useState } from 'react';
+
 import type { FrameData } from '../types';
+import { fetchMatchClock } from '../utils/workbench';
 import ClockReadout from './ClockReadout';
 
 interface EvidenceInspectorProps {
+  matchId?: string;
   frame: FrameData | null;
   cameraProfile?: string;
   reviewStatus?: 'unreviewed' | 'accepted' | 'rejected' | 'corrected';
@@ -23,6 +27,7 @@ function sourceLabel(frame: FrameData | null): string {
 }
 
 export default function EvidenceInspector({
+  matchId,
   frame,
   cameraProfile,
   reviewStatus = 'unreviewed',
@@ -35,6 +40,27 @@ export default function EvidenceInspector({
   calibratedProbability,
   confidenceInterval,
 }: EvidenceInspectorProps) {
+  const [matchClockOffsetSeconds, setMatchClockOffsetSeconds] = useState(0);
+  const presentationTimeSeconds = frame?.Timestamp ?? 0;
+
+  useEffect(() => {
+    if (!matchId) return;
+    let cancelled = false;
+    fetchMatchClock(matchId)
+      .then((payload) => {
+        if (cancelled) return;
+        if (typeof payload.presentationTimeSeconds === 'number' && typeof payload.matchClockSeconds === 'number') {
+          setMatchClockOffsetSeconds(payload.matchClockSeconds - payload.presentationTimeSeconds);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setMatchClockOffsetSeconds(0);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [matchId]);
+
   return (
     <section aria-label="Evidence inspector" className="rounded-lg border border-slate-700 bg-slate-900 p-3 text-xs text-slate-300 space-y-1">
       <h3 className="text-[11px] uppercase tracking-wide text-slate-500">Evidence inspector</h3>
@@ -65,8 +91,8 @@ export default function EvidenceInspector({
         </p>
       )}
       <ClockReadout
-        presentationTimeSeconds={frame?.Timestamp ?? 0}
-        matchClockSeconds={frame?.Timestamp ?? 0}
+        presentationTimeSeconds={presentationTimeSeconds}
+        matchClockSeconds={presentationTimeSeconds + matchClockOffsetSeconds}
       />
       <p className="text-slate-500">Reviewed does not convert an inferred location into a directly observed one.</p>
     </section>
