@@ -10,6 +10,7 @@ interface PlaylistBuilderProps {
   sourceFps?: number;
   storedClips?: PlaylistClip[];
   onClipSaved?: (clip: PlaylistClip) => void | Promise<void>;
+  onOpenInterval?: (sourceStartSeconds: number) => void;
 }
 
 function markedIntervalSeconds(
@@ -35,6 +36,7 @@ export default function PlaylistBuilder({
   sourceFps = 25,
   storedClips = [],
   onClipSaved,
+  onOpenInterval,
 }: PlaylistBuilderProps) {
   const rangeKey = reviewRange ? `${reviewRange.startFrame}:${reviewRange.endFrame}:${sourceFps}` : '';
   const marked = reviewRange ? markedIntervalSeconds(reviewRange, frames, sourceFps) : null;
@@ -65,6 +67,7 @@ export default function PlaylistBuilder({
       } else {
         setClips((current) => [...current, clip]);
       }
+      onOpenInterval?.(clip.start);
     } catch (error) {
       setExportError(error instanceof Error ? error.message : 'Failed to export playlist interval');
     }

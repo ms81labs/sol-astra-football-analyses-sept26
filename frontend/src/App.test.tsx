@@ -1041,6 +1041,74 @@ describe('App match workspace loading', () => {
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('opens the exported playlist source interval on the review timeline', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue({
+      ...loadedWorkspace('match-a', 'Match A'),
+      frames: [0, 1, 2].map((Frame_ID) => ({
+        Frame_ID,
+        Timestamp: Frame_ID * 0.2,
+        Ball: null,
+        My_Team: [],
+        Enemies: [],
+      })),
+      frameCount: 3,
+    });
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/playlists/export-interval') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            sourceStartSeconds: 0,
+            sourceEndSeconds: 0.2,
+            sourceEndFrameExclusive: 1,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && init?.method === 'POST' && !String(url).includes('/undo') && !String(url).includes('/recover')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ correctionId: 'clip-1', saveState: 'saved', kind: 'playlist_item' }),
+        } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    fireEvent.keyDown(window, { key: 'i' });
+    fireEvent.keyDown(window, { key: 'o' });
+    await waitFor(() => {
+      expect((screen.getByLabelText(/clip start/i) as HTMLInputElement).value).toBe('0');
+      expect((screen.getByLabelText(/clip end/i) as HTMLInputElement).value).toBe('0.2');
+    });
+    fireEvent.change(screen.getByLabelText('Timeline scrubber'), { target: { value: '2' } });
+    expect((screen.getByLabelText('Timeline scrubber') as HTMLInputElement).value).toBe('2');
+    fireEvent.click(screen.getByRole('button', { name: /add clip/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/playlists/export-interval'))).toBe(true);
+    });
+    await waitFor(() => {
+      expect((screen.getByLabelText('Timeline scrubber') as HTMLInputElement).value).toBe('0');
+    });
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('recovers a pending playlist clip on the loaded match without rewriting the playhead', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);

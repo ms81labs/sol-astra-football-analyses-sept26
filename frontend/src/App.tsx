@@ -1718,6 +1718,11 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
               sourceFps={fps}
               storedClips={playlistClipsFromCorrections(correctionHistory)}
               onClipSaved={handleClipSaved}
+              onOpenInterval={(timestamp) => {
+                setIsPlaying(false);
+                const index = findNearestFrameIndex(matchData.map((frame) => frame.Timestamp), timestamp);
+                if (index >= 0) handleSeek(matchData[index]?.Frame_ID ?? index);
+              }}
             />
           </div>
           <div className="mb-3 shrink-0">
