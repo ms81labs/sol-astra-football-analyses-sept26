@@ -15298,6 +15298,122 @@ describe('App match workspace loading', () => {
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('loads leftover cache tenancy, leftover capacity, and leftover DPIA without leftover cross-tenant reuse, billable current source, or cloudAllowed true', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/cache/tenancy') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            crossTenant: { allowed: false, reasonCodes: ['CROSS_TENANT_CACHE_BLOCKED'] },
+            columnar: { enabled: false, mandatoryDuckDb: false },
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/capacity') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            seconds: 16523.971,
+            billableCurrentSource: false,
+            exportFpsEqualsInferenceFps: false,
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/privacy/dpia') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            cloudAllowed: false,
+            localProcessingRequired: true,
+            faceRecognition: false,
+            crossSeasonIdentity: false,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => expect(screen.getByRole('button', { name: /request leftover cache tenancy/i })).toBeTruthy());
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/api/cache/tenancy'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/api/capacity'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/api/privacy/dpia'))).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: /request leftover cache tenancy/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/cache/tenancy')
+        && (!init?.method || init.method === 'GET')
+      ))).toBe(true);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /request leftover capacity/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/capacity')
+        && (!init?.method || init.method === 'GET')
+      ))).toBe(true);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /request leftover DPIA/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/privacy/dpia')
+        && (!init?.method || init.method === 'GET')
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith('/api/cache/tenancy') && init?.method === 'POST')).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith('/api/capacity') && init?.method === 'POST')).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith('/api/privacy/dpia') && init?.method === 'POST')).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/quota'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/receipts/promotion'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/research/tracks/'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/roster/labels'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/incidents/ladder'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/access/object'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/geometry/landmarks'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/geometry/preview'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/reports/assemble'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/setup/preview'))).toBe(false);
+    expect(screen.queryByText(/Historical two-half duration is not current billable capacity/i)).toBeNull();
+    expect(screen.queryByText(/Requested leftover shot tree keeps enabled false/i)).toBeNull();
+    expect(screen.queryByText(/Posted leftover training admit keeps admitted false/i)).toBeNull();
+    const tenancy = within(screen.getByRole('region', { name: /unforced leftover cache tenancy/i }));
+    expect(tenancy.getByText(/Requested leftover cache tenancy keeps crossTenant allowed false/i)).toBeTruthy();
+    expect(tenancy.getByText(/CROSS_TENANT_CACHE_BLOCKED stays blocking/i)).toBeTruthy();
+    expect(tenancy.getByText(/Leftover DuckDB stays unadmitted/i)).toBeTruthy();
+    const capacity = within(screen.getByRole('region', { name: /unforced leftover capacity/i }));
+    expect(capacity.getByText(/Requested leftover capacity keeps billableCurrentSource false/i)).toBeTruthy();
+    expect(capacity.getByText(/client exportFps as inference is not sent/i)).toBeTruthy();
+    expect(capacity.getByText(/Leftover historical two-half seconds stay unbillable/i)).toBeTruthy();
+    const dpia = within(screen.getByRole('region', { name: /unforced leftover DPIA/i }));
+    expect(dpia.getByText(/Requested leftover DPIA keeps cloudAllowed false/i)).toBeTruthy();
+    expect(dpia.getByText(/client faceRecognition true is not sent/i)).toBeTruthy();
+    expect(dpia.getByText(/Leftover DPIA is not match-scoped privacy/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('loads stored independent reviewer, worked match flow, and decode memory without inventing acceptance or GPU residency', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
@@ -17465,6 +17581,7 @@ describe('App match workspace loading', () => {
       ))).toBe(true);
     });
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/privacy/dpia'))).toBe(false);
+    expect(screen.queryByText(/Requested leftover DPIA keeps cloudAllowed false/i)).toBeNull();
     const privacy = within(await screen.findByRole('region', { name: /match privacy/i }));
     expect(privacy.getByText(/local processing required/i)).toBeTruthy();
     expect(privacy.getByText(/cloud is not allowed/i)).toBeTruthy();
@@ -17850,7 +17967,7 @@ describe('App match workspace loading', () => {
       ))).toBe(true);
     });
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/cache/tenancy'))).toBe(false);
-    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/cache/tenancy'))).toBe(false);
+    expect(screen.queryByText(/Requested leftover cache tenancy keeps crossTenant allowed false/i)).toBeNull();
     const cache = within(await screen.findByRole('region', { name: /cache identity/i }));
     expect(cache.getByText(/production cache identity/i)).toBeTruthy();
     expect(cache.getByText(/not compatible with development/i)).toBeTruthy();

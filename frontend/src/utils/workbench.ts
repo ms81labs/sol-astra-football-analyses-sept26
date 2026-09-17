@@ -2461,6 +2461,48 @@ export async function fetchLeftoverShotTree() {
   return response.json() as Promise<LeftoverShotTreeSnapshot>;
 }
 
+export interface LeftoverCacheTenancySnapshot {
+  crossTenant?: { allowed?: boolean; reasonCodes?: string[] };
+  columnar?: { enabled?: boolean; mandatoryDuckDb?: boolean };
+}
+
+export async function fetchLeftoverCacheTenancy() {
+  const response = await fetch('/api/cache/tenancy');
+  if (!response.ok) {
+    throw new Error(`Failed to load leftover cache tenancy: ${response.status}`);
+  }
+  return response.json() as Promise<LeftoverCacheTenancySnapshot>;
+}
+
+export interface LeftoverCapacitySnapshot {
+  seconds?: number;
+  billableCurrentSource?: boolean;
+  exportFpsEqualsInferenceFps?: boolean;
+}
+
+export async function fetchLeftoverCapacity() {
+  const response = await fetch('/api/capacity');
+  if (!response.ok) {
+    throw new Error(`Failed to load leftover capacity: ${response.status}`);
+  }
+  return response.json() as Promise<LeftoverCapacitySnapshot>;
+}
+
+export interface LeftoverDpiaSnapshot {
+  cloudAllowed?: boolean;
+  localProcessingRequired?: boolean;
+  faceRecognition?: boolean;
+  crossSeasonIdentity?: boolean;
+}
+
+export async function fetchLeftoverDpia() {
+  const response = await fetch('/api/privacy/dpia');
+  if (!response.ok) {
+    throw new Error(`Failed to load leftover DPIA: ${response.status}`);
+  }
+  return response.json() as Promise<LeftoverDpiaSnapshot>;
+}
+
 export interface StageTimingSnapshot {
   overlappedStagesAreAdditive?: boolean;
   wallTime?: number;
