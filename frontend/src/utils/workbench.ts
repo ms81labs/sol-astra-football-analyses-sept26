@@ -1825,6 +1825,60 @@ export async function postMediaColour() {
   return response.json() as Promise<MediaColourWriteSnapshot>;
 }
 
+export interface GeometryZoomCutWriteSnapshot {
+  changed?: boolean;
+}
+
+export async function postGeometryZoomCut() {
+  const response = await fetch('/api/geometry/zoom-cut', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post geometry zoom-cut: ${response.status}`);
+  }
+  return response.json() as Promise<GeometryZoomCutWriteSnapshot>;
+}
+
+export interface MetricsSpecWriteSnapshot {
+  metric?: string;
+  availability?: string;
+  value?: number | null;
+  reasonCodes?: string[];
+}
+
+export async function postMetricsSpec() {
+  const response = await fetch('/api/metrics/spec', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post metrics spec: ${response.status}`);
+  }
+  return response.json() as Promise<MetricsSpecWriteSnapshot>;
+}
+
+export interface WorkerImportWriteSnapshot {
+  imported?: boolean;
+  productQualityPass?: boolean;
+  jobSucceeded?: boolean;
+  reasonCodes?: string[];
+}
+
+export async function postWorkerImport() {
+  const response = await fetch('/api/worker/import', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post worker import: ${response.status}`);
+  }
+  return response.json() as Promise<WorkerImportWriteSnapshot>;
+}
+
 export interface StageTimingSnapshot {
   overlappedStagesAreAdditive?: boolean;
   wallTime?: number;

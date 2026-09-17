@@ -13725,6 +13725,131 @@ describe('App match workspace loading', () => {
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('posts geometry zoom-cut, metrics spec, and worker import without leftover changed false, identityContinuous, or qualityAccepted', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/geometry/zoom-cut') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ changed: true }),
+        } as Response);
+      }
+      if (url.endsWith('/api/metrics/spec') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            metric: 'my_team_distance_m',
+            availability: 'withheld',
+            value: null,
+            reasonCodes: ['IDENTITY_DISCONTINUITY', 'CALIBRATION_UNAVAILABLE'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/worker/import') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            imported: false,
+            productQualityPass: false,
+            jobSucceeded: false,
+            reasonCodes: ['UNRECOGNISED_WORKER_OUTPUT'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => expect(screen.getByRole('button', { name: /request geometry zoom-cut/i })).toBeTruthy());
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/geometry/zoom-cut'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/metrics/spec'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/worker/import'))).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: /request geometry zoom-cut/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/geometry/zoom-cut')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /request metrics spec/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/metrics/spec')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /request worker import/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/worker/import')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/geometry/zoom-cut')
+      && Boolean(init?.body && String(init.body).includes('changed'))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/metrics/spec')
+      && Boolean(init?.body && (String(init.body).includes('identityContinuous') || String(init.body).includes('calibrationAccepted')))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/worker/import')
+      && Boolean(init?.body && (String(init.body).includes('qualityAccepted') || String(init.body).includes('jobSucceeded')))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/quota'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/training/admit'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/receipts/promotion'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/capacity'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/privacy/dpia'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/research/tracks/'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/roster/labels'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/incidents/ladder'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/decode/proxy-pts'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/access/object'))).toBe(false);
+    expect(screen.queryByText(/colour round-trip stays bgr/i)).toBeNull();
+    expect(screen.queryByText(/empty tiles stay unmerged/i)).toBeNull();
+    const zoomCut = within(screen.getByRole('region', { name: /unforced geometry zoom-cut/i }));
+    expect(zoomCut.getByText(/keeps changed true/i)).toBeTruthy();
+    expect(zoomCut.getByText(/client changed false is not sent/i)).toBeTruthy();
+    expect(zoomCut.getByText(/homography shift stays a cut/i)).toBeTruthy();
+    const spec = within(screen.getByRole('region', { name: /unforced metrics spec/i }));
+    expect(spec.getByText(/keeps availability withheld/i)).toBeTruthy();
+    expect(spec.getByText(/client identityContinuous true is not sent/i)).toBeTruthy();
+    expect(spec.getByText(/spec value stays None/i)).toBeTruthy();
+    const workerImport = within(screen.getByRole('region', { name: /unforced worker import/i }));
+    expect(workerImport.getByText(/keeps imported false/i)).toBeTruthy();
+    expect(workerImport.getByText(/client jobSucceeded true is not sent/i)).toBeTruthy();
+    expect(workerImport.getByText(/empty kind stays unrecognised/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('loads stored independent reviewer, worked match flow, and decode memory without inventing acceptance or GPU residency', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
