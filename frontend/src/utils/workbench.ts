@@ -741,6 +741,25 @@ export async function renderMatchEdit(matchId: string, start: number, end: numbe
   return response.json() as Promise<MatchEditRender>;
 }
 
+export interface MatchWriteAlongside {
+  digest: string;
+  previousDigest: string;
+  mutatedHistorical: boolean;
+  namespace?: string;
+}
+
+export async function writeMatchAlongside(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/artifacts/alongside`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to write alongside artifacts: ${response.status}`);
+  }
+  return response.json() as Promise<MatchWriteAlongside>;
+}
+
 export interface MatchPackageSnapshot {
   analyst?: {
     playlist?: unknown[];
