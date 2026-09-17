@@ -779,6 +779,23 @@ export async function recomputeMatchReport(matchId: string) {
   return response.json() as Promise<MatchReportRecompute>;
 }
 
+export interface MatchRecoveryImport {
+  accepted: boolean;
+  reasonCodes?: string[];
+}
+
+export async function importMatchRecovery(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/recovery/import`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to import match recovery artifact: ${response.status}`);
+  }
+  return response.json() as Promise<MatchRecoveryImport>;
+}
+
 export interface MatchPackageSnapshot {
   analyst?: {
     playlist?: unknown[];

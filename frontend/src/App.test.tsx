@@ -1713,6 +1713,92 @@ describe('App match workspace loading', () => {
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('rejects SHA-mismatch recovery import without letting client hashes force admission', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/recovery/import') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            accepted: false,
+            reasonCodes: ['CORRUPTED_ARTIFACT'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/recompute') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            visionInvoked: false,
+            reused: true,
+            admitted: true,
+            imageSpaceDetectionsReused: true,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/artifacts/alongside') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            digest: 'sha-new',
+            previousDigest: 'sha-old',
+            mutatedHistorical: false,
+            namespace: 'match:match-a',
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && url.includes('state=pending') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).includes('/api/matches/match-a/recovery/import')
+        && init?.method === 'POST'
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([, init]) => (
+      Boolean(init?.body && String(init.body).includes('expectedSha256'))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([, init]) => (
+      Boolean(init?.body && String(init.body).includes('"accepted":true'))
+    ))).toBe(false);
+    const recoveryImport = within(await screen.findByRole('region', { name: /corrupted recovery import/i }));
+    expect(recoveryImport.getByText(/SHA-mismatch recovery import is not accepted/i)).toBeTruthy();
+    expect(recoveryImport.getByText(/CORRUPTED_ARTIFACT/)).toBeTruthy();
+    expect(recoveryImport.getByText(/expectedSha256 cannot force admission/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('loads derived proxy assets on the review App without replacing the original source', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
