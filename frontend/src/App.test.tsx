@@ -1788,6 +1788,110 @@ describe('App match workspace loading', () => {
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('loads stored match setup without certifying automation', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/setup') && !url.includes('/preview') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            cameraProfile: 'stitched_panoramic_view',
+            automationAdmitted: false,
+            manualTaggingPermitted: true,
+            certified: false,
+            cannotMeasure: ['physical_metrics'],
+            pitchLengthM: null,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/rates') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            exportFpsEqualsInferenceFps: false,
+            notes: ['EXPORT_FPS_IS_NOT_INFERENCE_FPS'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/package') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            analyst: { limitations: ['Independent labels 0/18 complete.'] },
+            operator: { manifest: { schema: 'match_package_v1' }, secretsAdmitted: true },
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/clock') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ presentationTimeSeconds: 0, matchClockSeconds: 0, frameAccurateOverlay: false }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/media/proxy') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            replacesOriginal: false,
+            originalRetained: true,
+            assets: { proxy: { kind: 'browsing_proxy' }, thumbnails: { kind: 'thumbnails' }, waveform: { kind: 'waveform' } },
+            ptsMap: [],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && url.includes('state=pending') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ items: [] }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ items: [] }),
+        } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).includes('/api/matches/match-a/setup')
+        && !String(url).includes('/preview')
+        && (!init?.method || init.method === 'GET')
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/setup/preview'))).toBe(false);
+    expect(await screen.findByText(/setup wizard/i)).toBeTruthy();
+    expect(screen.getByText(/manual tagging permitted/i)).toBeTruthy();
+    expect(screen.getAllByText(/not a certification/i).length).toBeGreaterThanOrEqual(1);
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('swaps stored teams on the loaded match without a vision rerun', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
