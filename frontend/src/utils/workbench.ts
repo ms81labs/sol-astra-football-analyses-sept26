@@ -974,6 +974,18 @@ export async function fetchMatchProvenance(matchId: string) {
   return response.json() as Promise<MatchReportProvenance>;
 }
 
+export async function postMatchProvenance(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/reports/provenance`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post match provenance: ${response.status}`);
+  }
+  return response.json() as Promise<MatchReportProvenance>;
+}
+
 export interface MatchShotQuality {
   publishedLabel: string;
   calibratedXg: boolean;
@@ -984,6 +996,18 @@ export async function fetchMatchShotQuality(matchId: string) {
   const response = await fetch(`/api/matches/${matchId}/shots/quality`);
   if (!response.ok) {
     throw new Error(`Failed to load match shot quality: ${response.status}`);
+  }
+  return response.json() as Promise<MatchShotQuality>;
+}
+
+export async function postMatchShotQuality(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/shots/quality`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post match shot quality: ${response.status}`);
   }
   return response.json() as Promise<MatchShotQuality>;
 }

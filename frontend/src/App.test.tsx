@@ -4583,6 +4583,478 @@ describe('App match workspace loading', () => {
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('posts report provenance without client fabricated-evidence or knownEvidenceIds', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/reports/provenance') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            accepted: true,
+            reasonCodes: [],
+            missingEvidenceIds: [],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/attack-direction') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ direction: 'right_to_left', fromStoredConfig: true }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/records/migrate') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            migrated: { possession_pct: { availability: 'unknown' } },
+            rollback: { possession: null, myTeamDistance: null },
+            rewrotePastOutcomes: false,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/events/partition') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ rejectedRemovedFromAcceptedViews: true, acceptedViews: [], retainedCandidates: [] }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/incidents/package') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            level: 0,
+            clips: [],
+            notes: [],
+            decision: null,
+            validatedMeasurement: false,
+            reasonCodes: ['IFAB_LAW_11_NOT_APPLIED', 'MANUAL_INCIDENT_PACKAGE'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/incidents/geometry') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            decision: null,
+            validatedMeasurement: false,
+            attackDirection: 'right_to_left',
+            mostAdvancedTeammateX: 21.0,
+            reasonCodes: ['IFAB_LAW_11_NOT_APPLIED'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/players') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            intervalLimited: true,
+            totalsWithheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+            rows: [{ trackId: '7' }, { trackId: '18' }],
+          }),
+        } as Response);
+      }
+      if (
+        url.includes('/api/matches/match-a/identity')
+        && !url.includes('/repair')
+        && !url.includes('/promote')
+        && init?.method === 'POST'
+      ) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            silentlyReconnected: false,
+            cutCount: 0,
+            reset: false,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/formation') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ availability: 'withheld', value: null, reasonCodes: ['SINGLE_FRAME_FORMATION'] }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/metrics') && !url.includes('/inspect') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            metrics: [{
+              metric: 'my_team_distance_m',
+              availability: 'unknown',
+              value: null,
+              reasonCodes: ['IDENTITY_DISCONTINUITY'],
+            }],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/package') && !url.includes('/incidents/') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            analyst: { events: [], limitations: ['Independent labels 0/18 complete.'] },
+            operator: { manifest: { schema: 'match_package_v1' }, secretsAdmitted: true },
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/ownership') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ mode: 'unknown', reasonCodes: ['NEAREST_PLAYER_INSUFFICIENT'] }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/cache') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ namespace: 'production', compatibleWithDevelopment: false }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/incidents/review') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            level: 1,
+            decision: null,
+            validatedMeasurement: false,
+            samples: [{ time: 0, attackerX: 21, offsideLineX: 1, indeterminate: true }],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/shots/features') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ recorded: true, missing: ['x'], imputedAsCalibrated: false }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/tracklets') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            assignment: { kind: 'tracklet', forced: false, rosterId: null },
+            chunk: { silentlyReconnected: false },
+            silentlyReconnected: false,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/assistance/report') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ factualCheck: { accepted: false, reasonCodes: ['FABRICATED_EVIDENCE'] } }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/recovery/import') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ accepted: false, reasonCodes: ['CORRUPTED_ARTIFACT'] }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/recompute') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ visionInvoked: false, reused: true, admitted: true, imageSpaceDetectionsReused: true }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/artifacts/alongside') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            digest: 'sha-new',
+            previousDigest: 'sha-old',
+            mutatedHistorical: false,
+            namespace: 'match:match-a',
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && url.includes('state=pending') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).includes('/api/matches/match-a/reports/provenance')
+        && init?.method === 'POST'
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([, init]) => (
+      Boolean(init?.body && String(init.body).includes('fabricated-evidence'))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([, init]) => (
+      Boolean(init?.body && String(init.body).includes('knownEvidenceIds'))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/reports/assemble'))).toBe(false);
+    const posted = within(await screen.findByRole('region', { name: /unclaimed evidence write/i }));
+    expect(posted.getByText(/ignores client fabricated-evidence/i)).toBeTruthy();
+    expect(posted.getByText(/client knownEvidenceIds are not sent/i)).toBeTruthy();
+    expect(posted.getByText(/leftover \/api\/reports\/assemble stays unused/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
+  it('posts shot quality without imputing client goal rows as calibrated xG', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/shots/quality') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            publishedLabel: 'experimental_shot_quality',
+            calibratedXg: false,
+            items: [{ publishedLabel: 'experimental_shot_quality', availability: 'experimental', reasonCodes: ['EXPERIMENTAL_NOT_CALIBRATED_XG'] }],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/reports/provenance') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ accepted: true, reasonCodes: [], missingEvidenceIds: [] }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/attack-direction') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ direction: 'right_to_left', fromStoredConfig: true }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/records/migrate') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            migrated: { possession_pct: { availability: 'unknown' } },
+            rollback: { possession: null, myTeamDistance: null },
+            rewrotePastOutcomes: false,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/events/partition') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ rejectedRemovedFromAcceptedViews: true, acceptedViews: [], retainedCandidates: [] }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/incidents/package') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            level: 0,
+            clips: [],
+            notes: [],
+            decision: null,
+            validatedMeasurement: false,
+            reasonCodes: ['IFAB_LAW_11_NOT_APPLIED', 'MANUAL_INCIDENT_PACKAGE'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/incidents/geometry') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            decision: null,
+            validatedMeasurement: false,
+            attackDirection: 'right_to_left',
+            mostAdvancedTeammateX: 21.0,
+            reasonCodes: ['IFAB_LAW_11_NOT_APPLIED'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/players') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            intervalLimited: true,
+            totalsWithheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+            rows: [{ trackId: '7' }, { trackId: '18' }],
+          }),
+        } as Response);
+      }
+      if (
+        url.includes('/api/matches/match-a/identity')
+        && !url.includes('/repair')
+        && !url.includes('/promote')
+        && init?.method === 'POST'
+      ) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            silentlyReconnected: false,
+            cutCount: 0,
+            reset: false,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/formation') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ availability: 'withheld', value: null, reasonCodes: ['SINGLE_FRAME_FORMATION'] }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/metrics') && !url.includes('/inspect') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            metrics: [{
+              metric: 'my_team_distance_m',
+              availability: 'unknown',
+              value: null,
+              reasonCodes: ['IDENTITY_DISCONTINUITY'],
+            }],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/package') && !url.includes('/incidents/') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            analyst: { events: [], limitations: ['Independent labels 0/18 complete.'] },
+            operator: { manifest: { schema: 'match_package_v1' }, secretsAdmitted: true },
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/ownership') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ mode: 'unknown', reasonCodes: ['NEAREST_PLAYER_INSUFFICIENT'] }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/cache') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ namespace: 'production', compatibleWithDevelopment: false }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/incidents/review') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            level: 1,
+            decision: null,
+            validatedMeasurement: false,
+            samples: [{ time: 0, attackerX: 21, offsideLineX: 1, indeterminate: true }],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/shots/features') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ recorded: true, missing: ['x'], imputedAsCalibrated: false }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/tracklets') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            assignment: { kind: 'tracklet', forced: false, rosterId: null },
+            chunk: { silentlyReconnected: false },
+            silentlyReconnected: false,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/assistance/report') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ factualCheck: { accepted: false, reasonCodes: ['FABRICATED_EVIDENCE'] } }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/recovery/import') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ accepted: false, reasonCodes: ['CORRUPTED_ARTIFACT'] }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/recompute') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ visionInvoked: false, reused: true, admitted: true, imageSpaceDetectionsReused: true }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/artifacts/alongside') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            digest: 'sha-new',
+            previousDigest: 'sha-old',
+            mutatedHistorical: false,
+            namespace: 'match:match-a',
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && url.includes('state=pending') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).includes('/api/matches/match-a/shots/quality')
+        && init?.method === 'POST'
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([, init]) => (
+      Boolean(init?.body && String(init.body).includes('"goal":true'))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([, init]) => (
+      Boolean(init?.body && String(init.body).includes('"shots"'))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/shots/tree'))).toBe(false);
+    const posted = within(await screen.findByRole('region', { name: /unpublished xg write/i }));
+    expect(posted.getByText(/ignores client shots and goal/i)).toBeTruthy();
+    expect(posted.getByText(/client calibratedXg is not sent/i)).toBeTruthy();
+    expect(posted.getByText(/publishedLabel stays experimental_shot_quality/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('loads derived proxy assets on the review App without replacing the original source', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
@@ -5436,7 +5908,7 @@ describe('App match workspace loading', () => {
           }),
         } as Response);
       }
-      if (url.includes('/api/matches/match-a/reports/provenance') && (!init?.method || init.method === 'GET')) {
+      if (url.includes('/api/matches/match-a/reports/provenance')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({
@@ -5559,10 +6031,6 @@ describe('App match workspace loading', () => {
       ))).toBe(true);
     });
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/reports/assemble'))).toBe(false);
-    expect(fetchMock.mock.calls.some(([url, init]) => (
-      String(url).includes('/api/matches/match-a/reports/provenance')
-      && init?.method === 'POST'
-    ))).toBe(false);
     expect(await screen.findByText(/lead back to stored evidence/i)).toBeTruthy();
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
@@ -5585,7 +6053,7 @@ describe('App match workspace loading', () => {
           }),
         } as Response);
       }
-      if (url.includes('/api/matches/match-a/shots/quality') && (!init?.method || init.method === 'GET')) {
+      if (url.includes('/api/matches/match-a/shots/quality')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({
@@ -5595,7 +6063,7 @@ describe('App match workspace loading', () => {
           }),
         } as Response);
       }
-      if (url.includes('/api/matches/match-a/reports/provenance') && (!init?.method || init.method === 'GET')) {
+      if (url.includes('/api/matches/match-a/reports/provenance')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({
@@ -5717,10 +6185,6 @@ describe('App match workspace loading', () => {
         && (!init?.method || init.method === 'GET')
       ))).toBe(true);
     });
-    expect(fetchMock.mock.calls.some(([url, init]) => (
-      String(url).includes('/api/matches/match-a/shots/quality')
-      && init?.method === 'POST'
-    ))).toBe(false);
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/shots/tree'))).toBe(false);
     const quality = within(await screen.findByRole('region', { name: /shot quality/i }));
     expect(quality.getByText(/experimental_shot_quality/)).toBeTruthy();
@@ -5757,7 +6221,7 @@ describe('App match workspace loading', () => {
           }),
         } as Response);
       }
-      if (url.includes('/api/matches/match-a/shots/quality') && (!init?.method || init.method === 'GET')) {
+      if (url.includes('/api/matches/match-a/shots/quality')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({
@@ -5767,7 +6231,7 @@ describe('App match workspace loading', () => {
           }),
         } as Response);
       }
-      if (url.includes('/api/matches/match-a/reports/provenance') && (!init?.method || init.method === 'GET')) {
+      if (url.includes('/api/matches/match-a/reports/provenance')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({
@@ -5934,7 +6398,7 @@ describe('App match workspace loading', () => {
           }),
         } as Response);
       }
-      if (url.includes('/api/matches/match-a/shots/quality') && (!init?.method || init.method === 'GET')) {
+      if (url.includes('/api/matches/match-a/shots/quality')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({
@@ -5944,7 +6408,7 @@ describe('App match workspace loading', () => {
           }),
         } as Response);
       }
-      if (url.includes('/api/matches/match-a/reports/provenance') && (!init?.method || init.method === 'GET')) {
+      if (url.includes('/api/matches/match-a/reports/provenance')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({
@@ -6123,7 +6587,7 @@ describe('App match workspace loading', () => {
           }),
         } as Response);
       }
-      if (url.includes('/api/matches/match-a/shots/quality') && (!init?.method || init.method === 'GET')) {
+      if (url.includes('/api/matches/match-a/shots/quality')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({
@@ -6133,7 +6597,7 @@ describe('App match workspace loading', () => {
           }),
         } as Response);
       }
-      if (url.includes('/api/matches/match-a/reports/provenance') && (!init?.method || init.method === 'GET')) {
+      if (url.includes('/api/matches/match-a/reports/provenance')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({
@@ -6319,7 +6783,7 @@ describe('App match workspace loading', () => {
           }),
         } as Response);
       }
-      if (url.includes('/api/matches/match-a/shots/quality') && (!init?.method || init.method === 'GET')) {
+      if (url.includes('/api/matches/match-a/shots/quality')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({
@@ -6329,7 +6793,7 @@ describe('App match workspace loading', () => {
           }),
         } as Response);
       }
-      if (url.includes('/api/matches/match-a/reports/provenance') && (!init?.method || init.method === 'GET')) {
+      if (url.includes('/api/matches/match-a/reports/provenance')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({
@@ -6527,7 +6991,7 @@ describe('App match workspace loading', () => {
           }),
         } as Response);
       }
-      if (url.includes('/api/matches/match-a/shots/quality') && (!init?.method || init.method === 'GET')) {
+      if (url.includes('/api/matches/match-a/shots/quality')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({
@@ -6537,7 +7001,7 @@ describe('App match workspace loading', () => {
           }),
         } as Response);
       }
-      if (url.includes('/api/matches/match-a/reports/provenance') && (!init?.method || init.method === 'GET')) {
+      if (url.includes('/api/matches/match-a/reports/provenance')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({
@@ -6743,7 +7207,7 @@ describe('App match workspace loading', () => {
           }),
         } as Response);
       }
-      if (url.includes('/api/matches/match-a/shots/quality') && (!init?.method || init.method === 'GET')) {
+      if (url.includes('/api/matches/match-a/shots/quality')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({
@@ -6753,7 +7217,7 @@ describe('App match workspace loading', () => {
           }),
         } as Response);
       }
-      if (url.includes('/api/matches/match-a/reports/provenance') && (!init?.method || init.method === 'GET')) {
+      if (url.includes('/api/matches/match-a/reports/provenance')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({
@@ -6971,7 +7435,7 @@ describe('App match workspace loading', () => {
           }),
         } as Response);
       }
-      if (url.includes('/api/matches/match-a/shots/quality') && (!init?.method || init.method === 'GET')) {
+      if (url.includes('/api/matches/match-a/shots/quality')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({
@@ -6981,7 +7445,7 @@ describe('App match workspace loading', () => {
           }),
         } as Response);
       }
-      if (url.includes('/api/matches/match-a/reports/provenance') && (!init?.method || init.method === 'GET')) {
+      if (url.includes('/api/matches/match-a/reports/provenance')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({
@@ -7217,7 +7681,7 @@ describe('App match workspace loading', () => {
           }),
         } as Response);
       }
-      if (url.includes('/api/matches/match-a/shots/quality') && (!init?.method || init.method === 'GET')) {
+      if (url.includes('/api/matches/match-a/shots/quality')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({
@@ -7227,7 +7691,7 @@ describe('App match workspace loading', () => {
           }),
         } as Response);
       }
-      if (url.includes('/api/matches/match-a/reports/provenance') && (!init?.method || init.method === 'GET')) {
+      if (url.includes('/api/matches/match-a/reports/provenance')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({
@@ -7494,7 +7958,7 @@ describe('App match workspace loading', () => {
           }),
         } as Response);
       }
-      if (url.includes('/api/matches/match-a/shots/quality') && (!init?.method || init.method === 'GET')) {
+      if (url.includes('/api/matches/match-a/shots/quality')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({
@@ -7504,7 +7968,7 @@ describe('App match workspace loading', () => {
           }),
         } as Response);
       }
-      if (url.includes('/api/matches/match-a/reports/provenance') && (!init?.method || init.method === 'GET')) {
+      if (url.includes('/api/matches/match-a/reports/provenance')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({
@@ -7651,7 +8115,7 @@ describe('App match workspace loading', () => {
           }),
         } as Response);
       }
-      if (url.includes('/api/matches/match-a/shots/quality') && (!init?.method || init.method === 'GET')) {
+      if (url.includes('/api/matches/match-a/shots/quality')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({
@@ -7775,7 +8239,7 @@ describe('App match workspace loading', () => {
           }),
         } as Response);
       }
-      if (url.includes('/api/matches/match-a/reports/provenance') && (!init?.method || init.method === 'GET')) {
+      if (url.includes('/api/matches/match-a/reports/provenance')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({
@@ -7926,7 +8390,7 @@ describe('App match workspace loading', () => {
           json: async () => ({ recorded: true, missing: ['x', 'y'], imputedAsCalibrated: false }),
         } as Response);
       }
-      if (url.includes('/api/matches/match-a/shots/quality') && (!init?.method || init.method === 'GET')) {
+      if (url.includes('/api/matches/match-a/shots/quality')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({
@@ -8040,7 +8504,7 @@ describe('App match workspace loading', () => {
           json: async () => ({ undoable: true, rewrotePastOutcomes: false, items: [] }),
         } as Response);
       }
-      if (url.includes('/api/matches/match-a/reports/provenance') && (!init?.method || init.method === 'GET')) {
+      if (url.includes('/api/matches/match-a/reports/provenance')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({ accepted: true, reasonCodes: [], missingEvidenceIds: [] }),
@@ -8188,7 +8652,7 @@ describe('App match workspace loading', () => {
           json: async () => ({ recorded: true, missing: ['x', 'y'], imputedAsCalibrated: false }),
         } as Response);
       }
-      if (url.includes('/api/matches/match-a/shots/quality') && (!init?.method || init.method === 'GET')) {
+      if (url.includes('/api/matches/match-a/shots/quality')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({
@@ -8302,7 +8766,7 @@ describe('App match workspace loading', () => {
           json: async () => ({ undoable: true, rewrotePastOutcomes: false, items: [] }),
         } as Response);
       }
-      if (url.includes('/api/matches/match-a/reports/provenance') && (!init?.method || init.method === 'GET')) {
+      if (url.includes('/api/matches/match-a/reports/provenance')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({ accepted: true, reasonCodes: [], missingEvidenceIds: [] }),
@@ -8466,7 +8930,7 @@ describe('App match workspace loading', () => {
           json: async () => ({ recorded: true, missing: ['x', 'y'], imputedAsCalibrated: false }),
         } as Response);
       }
-      if (url.includes('/api/matches/match-a/shots/quality') && (!init?.method || init.method === 'GET')) {
+      if (url.includes('/api/matches/match-a/shots/quality')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({
@@ -8580,7 +9044,7 @@ describe('App match workspace loading', () => {
           json: async () => ({ undoable: true, rewrotePastOutcomes: false, items: [] }),
         } as Response);
       }
-      if (url.includes('/api/matches/match-a/reports/provenance') && (!init?.method || init.method === 'GET')) {
+      if (url.includes('/api/matches/match-a/reports/provenance')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({ accepted: true, reasonCodes: [], missingEvidenceIds: [] }),
@@ -8758,7 +9222,7 @@ describe('App match workspace loading', () => {
           json: async () => ({ recorded: true, missing: ['x', 'y'], imputedAsCalibrated: false }),
         } as Response);
       }
-      if (url.includes('/api/matches/match-a/shots/quality') && (!init?.method || init.method === 'GET')) {
+      if (url.includes('/api/matches/match-a/shots/quality')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({
@@ -8872,7 +9336,7 @@ describe('App match workspace loading', () => {
           json: async () => ({ undoable: true, rewrotePastOutcomes: false, items: [] }),
         } as Response);
       }
-      if (url.includes('/api/matches/match-a/reports/provenance') && (!init?.method || init.method === 'GET')) {
+      if (url.includes('/api/matches/match-a/reports/provenance')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({ accepted: true, reasonCodes: [], missingEvidenceIds: [] }),
@@ -9058,7 +9522,7 @@ describe('App match workspace loading', () => {
           json: async () => ({ recorded: true, missing: ['x', 'y'], imputedAsCalibrated: false }),
         } as Response);
       }
-      if (url.includes('/api/matches/match-a/shots/quality') && (!init?.method || init.method === 'GET')) {
+      if (url.includes('/api/matches/match-a/shots/quality')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({
@@ -9172,7 +9636,7 @@ describe('App match workspace loading', () => {
           json: async () => ({ undoable: true, rewrotePastOutcomes: false, items: [] }),
         } as Response);
       }
-      if (url.includes('/api/matches/match-a/reports/provenance') && (!init?.method || init.method === 'GET')) {
+      if (url.includes('/api/matches/match-a/reports/provenance')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({ accepted: true, reasonCodes: [], missingEvidenceIds: [] }),
@@ -9351,7 +9815,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/shots/features') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({ ok: true, json: async () => ({ recorded: true, missing: ['x'], imputedAsCalibrated: false }) } as Response);
       }
-      if (url.includes('/api/matches/match-a/shots/quality') && (!init?.method || init.method === 'GET')) {
+      if (url.includes('/api/matches/match-a/shots/quality')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({ publishedLabel: 'experimental_shot_quality', calibratedXg: false, items: [] }),
@@ -9417,7 +9881,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/history') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({ ok: true, json: async () => ({ undoable: true, rewrotePastOutcomes: false, items: [] }) } as Response);
       }
-      if (url.includes('/api/matches/match-a/reports/provenance') && (!init?.method || init.method === 'GET')) {
+      if (url.includes('/api/matches/match-a/reports/provenance')) {
         return Promise.resolve({ ok: true, json: async () => ({ accepted: true, reasonCodes: [], missingEvidenceIds: [] }) } as Response);
       }
       if (url.includes('/api/evaluation/workflow') && (!init?.method || init.method === 'GET')) {
@@ -9589,7 +10053,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/shots/features') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({ ok: true, json: async () => ({ recorded: true, missing: ['x'], imputedAsCalibrated: false }) } as Response);
       }
-      if (url.includes('/api/matches/match-a/shots/quality') && (!init?.method || init.method === 'GET')) {
+      if (url.includes('/api/matches/match-a/shots/quality')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({ publishedLabel: 'experimental_shot_quality', calibratedXg: false, items: [] }),
@@ -9655,7 +10119,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/history') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({ ok: true, json: async () => ({ undoable: true, rewrotePastOutcomes: false, items: [] }) } as Response);
       }
-      if (url.includes('/api/matches/match-a/reports/provenance') && (!init?.method || init.method === 'GET')) {
+      if (url.includes('/api/matches/match-a/reports/provenance')) {
         return Promise.resolve({ ok: true, json: async () => ({ accepted: true, reasonCodes: [], missingEvidenceIds: [] }) } as Response);
       }
       if (url.includes('/api/evaluation/workflow') && (!init?.method || init.method === 'GET')) {
@@ -9821,7 +10285,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/shots/features') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({ ok: true, json: async () => ({ recorded: true, missing: ['x'], imputedAsCalibrated: false }) } as Response);
       }
-      if (url.includes('/api/matches/match-a/shots/quality') && (!init?.method || init.method === 'GET')) {
+      if (url.includes('/api/matches/match-a/shots/quality')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({ publishedLabel: 'experimental_shot_quality', calibratedXg: false, items: [] }),
@@ -9887,7 +10351,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/history') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({ ok: true, json: async () => ({ undoable: true, rewrotePastOutcomes: false, items: [] }) } as Response);
       }
-      if (url.includes('/api/matches/match-a/reports/provenance') && (!init?.method || init.method === 'GET')) {
+      if (url.includes('/api/matches/match-a/reports/provenance')) {
         return Promise.resolve({ ok: true, json: async () => ({ accepted: true, reasonCodes: [], missingEvidenceIds: [] }) } as Response);
       }
       if (url.includes('/api/evaluation/workflow') && (!init?.method || init.method === 'GET')) {
@@ -10067,7 +10531,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/shots/features') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({ ok: true, json: async () => ({ recorded: true, missing: ['x'], imputedAsCalibrated: false }) } as Response);
       }
-      if (url.includes('/api/matches/match-a/shots/quality') && (!init?.method || init.method === 'GET')) {
+      if (url.includes('/api/matches/match-a/shots/quality')) {
         return Promise.resolve({
           ok: true,
           json: async () => ({ publishedLabel: 'experimental_shot_quality', calibratedXg: false, items: [] }),
@@ -10133,7 +10597,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/history') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({ ok: true, json: async () => ({ undoable: true, rewrotePastOutcomes: false, items: [] }) } as Response);
       }
-      if (url.includes('/api/matches/match-a/reports/provenance') && (!init?.method || init.method === 'GET')) {
+      if (url.includes('/api/matches/match-a/reports/provenance')) {
         return Promise.resolve({ ok: true, json: async () => ({ accepted: true, reasonCodes: [], missingEvidenceIds: [] }) } as Response);
       }
       if (url.includes('/api/evaluation/workflow') && (!init?.method || init.method === 'GET')) {

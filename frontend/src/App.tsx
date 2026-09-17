@@ -60,6 +60,8 @@ import MatchIncidentPackageWritePanel from './components/MatchIncidentPackageWri
 import MatchEventPartitionWritePanel from './components/MatchEventPartitionWritePanel';
 import MatchLegacyRecordsWritePanel from './components/MatchLegacyRecordsWritePanel';
 import MatchAttackDirectionWritePanel from './components/MatchAttackDirectionWritePanel';
+import MatchProvenanceWritePanel from './components/MatchProvenanceWritePanel';
+import MatchShotQualityWritePanel from './components/MatchShotQualityWritePanel';
 import MatchAuditTrailPanel from './components/MatchAuditTrailPanel';
 import MatchPrivacyPanel from './components/MatchPrivacyPanel';
 import MatchTrackletsPanel from './components/MatchTrackletsPanel';
@@ -1894,6 +1896,12 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           </div>
           <div className="mb-3 shrink-0">
             <MatchAttackDirectionWritePanel matchId={activeMatch?.id} />
+          </div>
+          <div className="mb-3 shrink-0">
+            <MatchProvenanceWritePanel matchId={activeMatch?.id} />
+          </div>
+          <div className="mb-3 shrink-0">
+            <MatchShotQualityWritePanel matchId={activeMatch?.id} />
           </div>
           <div className="mb-3 shrink-0">
             <MatchAuditTrailPanel matchId={activeMatch?.id} />
