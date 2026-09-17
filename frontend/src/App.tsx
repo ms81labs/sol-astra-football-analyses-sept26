@@ -24,6 +24,7 @@ import DemoMatchIssuePanel from './components/DemoMatchIssuePanel';
 import MatchVideoPanel from './components/MatchVideoPanel';
 import PlaylistBuilder from './components/PlaylistBuilder';
 import MatchPackagePanel from './components/MatchPackagePanel';
+import FourRatesPanel from './components/FourRatesPanel';
 import ProxyAssetsPanel from './components/ProxyAssetsPanel';
 import HoldoutCalibrationPanel from './components/HoldoutCalibrationPanel';
 import TypedSearchPanel from './components/TypedSearchPanel';
@@ -1730,6 +1731,9 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           </div>
           <div className="mb-3 shrink-0">
             <MatchPackagePanel matchId={activeMatch?.id} />
+          </div>
+          <div className="mb-3 shrink-0">
+            <FourRatesPanel matchId={activeMatch?.id} />
           </div>
           <div className="mb-3 shrink-0">
             <ProxyAssetsPanel matchId={activeMatch?.id} />

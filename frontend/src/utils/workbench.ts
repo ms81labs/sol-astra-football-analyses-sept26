@@ -825,6 +825,25 @@ export async function fetchFourRates() {
   return response.json() as Promise<FourRatesSnapshot>;
 }
 
+export interface MatchRatesSnapshot {
+  decodeCount?: number;
+  detectorPrimaryCount?: number;
+  detectorRecoveryCount?: number;
+  trackerUpdateCount?: number;
+  exportCount?: number;
+  exportFpsEqualsInferenceFps?: boolean;
+  decodeFpsEqualsExportFps?: boolean;
+  notes?: string[];
+}
+
+export async function fetchMatchRates(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/rates`);
+  if (!response.ok) {
+    throw new Error(`Failed to load match rates: ${response.status}`);
+  }
+  return response.json() as Promise<MatchRatesSnapshot>;
+}
+
 export interface DecodeFramesSnapshot {
   backend?: string;
   defaultBackend?: string;

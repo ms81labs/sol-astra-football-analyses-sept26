@@ -1692,6 +1692,102 @@ describe('App match workspace loading', () => {
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('loads stored four rates without treating export fps as inference fps', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/rates') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            decodeCount: 3,
+            detectorPrimaryCount: 3,
+            detectorRecoveryCount: 0,
+            trackerUpdateCount: 3,
+            exportCount: 5,
+            exportFpsEqualsInferenceFps: false,
+            decodeFpsEqualsExportFps: false,
+            notes: ['EXPORT_FPS_IS_NOT_INFERENCE_FPS', 'FOUR_RATES_UNRECORDED'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/package') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            analyst: { limitations: ['Independent labels 0/18 complete.'] },
+            operator: { manifest: { schema: 'match_package_v1' }, secretsAdmitted: true },
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/clock') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ presentationTimeSeconds: 0, matchClockSeconds: 0, frameAccurateOverlay: false }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/media/proxy') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            replacesOriginal: false,
+            originalRetained: true,
+            assets: { proxy: { kind: 'browsing_proxy' }, thumbnails: { kind: 'thumbnails' }, waveform: { kind: 'waveform' } },
+            ptsMap: [],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && url.includes('state=pending') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ items: [] }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ items: [] }),
+        } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).includes('/api/matches/match-a/rates')
+        && (!init?.method || init.method === 'GET')
+        && !String(url).includes('/api/rates/four')
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/rates/four'))).toBe(false);
+    expect(await screen.findByText(/decode, detector, tracker and export/i)).toBeTruthy();
+    expect(screen.getByText(/export fps is not inference fps/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('swaps stored teams on the loaded match without a vision rerun', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
