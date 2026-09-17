@@ -986,6 +986,18 @@ export async function fetchMatchCache(matchId: string) {
   return response.json() as Promise<MatchCacheIdentity>;
 }
 
+export async function postMatchCache(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/cache`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post match cache identity: ${response.status}`);
+  }
+  return response.json() as Promise<MatchCacheIdentity>;
+}
+
 export interface MatchPromotionReceipt {
   completeMatchAccepted: boolean;
   stageBenchmarkIsCompleteMatchAcceptance?: boolean;

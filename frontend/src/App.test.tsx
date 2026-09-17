@@ -2245,6 +2245,141 @@ describe('App match workspace loading', () => {
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('posts cache identity without mixing a client development namespace', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/cache') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            namespace: 'production',
+            compatibleWithDevelopment: false,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/incidents/review') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            level: 1,
+            decision: null,
+            validatedMeasurement: false,
+            samples: [{ time: 0, attackerX: 21, offsideLineX: 1, indeterminate: true }],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/shots/features') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            recorded: true,
+            missing: ['x'],
+            imputedAsCalibrated: false,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/tracklets') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            assignment: { kind: 'tracklet', forced: false, rosterId: null },
+            chunk: { silentlyReconnected: false },
+            silentlyReconnected: false,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/assistance/report') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            factualCheck: { accepted: false, reasonCodes: ['FABRICATED_EVIDENCE'] },
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/recovery/import') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            accepted: false,
+            reasonCodes: ['CORRUPTED_ARTIFACT'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/recompute') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            visionInvoked: false,
+            reused: true,
+            admitted: true,
+            imageSpaceDetectionsReused: true,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/artifacts/alongside') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            digest: 'sha-new',
+            previousDigest: 'sha-old',
+            mutatedHistorical: false,
+            namespace: 'match:match-a',
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && url.includes('state=pending') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).includes('/api/matches/match-a/cache')
+        && init?.method === 'POST'
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([, init]) => (
+      Boolean(init?.body && String(init.body).includes('development'))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([, init]) => (
+      Boolean(init?.body && String(init.body).includes('"namespace"'))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/cache/tenancy'))).toBe(false);
+    const posted = within(await screen.findByRole('region', { name: /posted namespace write/i }));
+    expect(posted.getByText(/ignores client namespace development/i)).toBeTruthy();
+    expect(posted.getByText(/namespace stays production/i)).toBeTruthy();
+    expect(posted.getByText(/compatibleWithDevelopment stays false/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('loads derived proxy assets on the review App without replacing the original source', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
@@ -4113,10 +4248,7 @@ describe('App match workspace loading', () => {
         && (!init?.method || init.method === 'GET')
       ))).toBe(true);
     });
-    expect(fetchMock.mock.calls.some(([url, init]) => (
-      String(url).includes('/api/matches/match-a/cache')
-      && init?.method === 'POST'
-    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/cache/tenancy'))).toBe(false);
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/cache/tenancy'))).toBe(false);
     const cache = within(await screen.findByRole('region', { name: /cache identity/i }));
     expect(cache.getByText(/production cache identity/i)).toBeTruthy();
