@@ -589,6 +589,29 @@ export async function fetchMatchEdits(matchId: string) {
   return response.json() as Promise<EditListSnapshot>;
 }
 
+export interface MatchPackageSnapshot {
+  analyst?: {
+    playlist?: unknown[];
+    events?: unknown[];
+    metrics?: unknown[];
+    coverage?: { unknownMetrics?: unknown[] };
+    limitations?: string[];
+  };
+  operator?: {
+    manifest?: { schema?: string; sourceSnapshot?: string };
+    secretsAdmitted?: boolean;
+    cleanupStatus?: string;
+  };
+}
+
+export async function fetchMatchPackage(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/package`);
+  if (!response.ok) {
+    throw new Error(`Failed to load match package: ${response.status}`);
+  }
+  return response.json() as Promise<MatchPackageSnapshot>;
+}
+
 export interface AnalystWorkflowSnapshot {
   measured?: boolean;
   analystCompletedReviewedMatch?: boolean;
