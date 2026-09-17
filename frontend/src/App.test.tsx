@@ -11852,6 +11852,111 @@ describe('App match workspace loading', () => {
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('loads stored incident response, provider roster, and stale permissions without leftover POST admission', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/rights/incident') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            path: 'record, contain, notify, restore, review',
+            faceRecognition: false,
+            crossSeasonIdentity: false,
+            supportBundles: 'scoped_consented_time_limited',
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/providers') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            roster: { default: 'disabled', adapters: { local: 'template_fallback', cloud: 'gated' } },
+            local: { route: 'disabled' },
+            cloud: { route: 'disabled' },
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/permissions/stale') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            stale: true,
+            admitted: false,
+            reasonCodes: ['STALE_PERMISSION'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/rights/incident')
+        && (!init?.method || init.method === 'GET')
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/providers')
+      && (!init?.method || init.method === 'GET')
+    ))).toBe(true);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/permissions/stale')
+      && (!init?.method || init.method === 'GET')
+    ))).toBe(true);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/providers') && init?.method === 'POST'
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/permissions/stale') && init?.method === 'POST'
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/rights/evaluate'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/incidents/ladder'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/capacity'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/privacy/dpia'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/research/tracks/'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/roster/labels'))).toBe(false);
+    expect(screen.queryByText(/language providers stay disabled by default/i)).toBeNull();
+    expect(screen.queryByText(/stale permissions are not admitted/i)).toBeNull();
+    expect(screen.queryByText(/face recognition is not enabled/i)).toBeNull();
+    const incident = within(await screen.findByRole('region', { name: /stored incident response/i }));
+    expect(incident.getByText(/keeps faceRecognition false/i)).toBeTruthy();
+    expect(incident.getByText(/crossSeasonIdentity stays false/i)).toBeTruthy();
+    expect(incident.getByText(/incident restore does not enable face recognition/i)).toBeTruthy();
+    const providers = within(screen.getByRole('region', { name: /stored provider roster/i }));
+    expect(providers.getByText(/keeps the default disabled/i)).toBeTruthy();
+    expect(providers.getByText(/client enabled cloud is not sent/i)).toBeTruthy();
+    expect(providers.getByText(/local and cloud routes stay disabled/i)).toBeTruthy();
+    const stale = within(screen.getByRole('region', { name: /stored stale permissions/i }));
+    expect(stale.getByText(/keep admitted false/i)).toBeTruthy();
+    expect(stale.getByText(/client admitted true is not sent/i)).toBeTruthy();
+    expect(stale.getByText(/STALE_PERMISSION stays blocking/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('loads derived proxy assets on the review App without replacing the original source', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);

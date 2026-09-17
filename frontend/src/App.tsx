@@ -87,6 +87,9 @@ import LicenceRegisterPanel from './components/LicenceRegisterPanel';
 import TelestrationPanel from './components/TelestrationPanel';
 import DatasetRightsPanel from './components/DatasetRightsPanel';
 import MetricRoundTripPanel from './components/MetricRoundTripPanel';
+import IncidentResponsePanel from './components/IncidentResponsePanel';
+import ProviderRosterPanel from './components/ProviderRosterPanel';
+import StalePermissionGatePanel from './components/StalePermissionGatePanel';
 import MatchProvenancePanel from './components/MatchProvenancePanel';
 import MatchShotQualityPanel from './components/MatchShotQualityPanel';
 import MatchShotFeaturesPanel from './components/MatchShotFeaturesPanel';
@@ -2038,6 +2041,15 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           </div>
           <div className="mb-3 shrink-0">
             <MetricRoundTripPanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <IncidentResponsePanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <ProviderRosterPanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <StalePermissionGatePanel />
           </div>
           <div className="mb-3 shrink-0">
             <MatchProvenancePanel matchId={activeMatch?.id} />

@@ -1082,6 +1082,49 @@ export async function fetchMetricRoundTrip() {
   return response.json() as Promise<MetricRoundTripSnapshot>;
 }
 
+export interface IncidentResponseSnapshot {
+  path?: string;
+  faceRecognition?: boolean;
+  crossSeasonIdentity?: boolean;
+  supportBundles?: string;
+}
+
+export async function fetchIncidentResponse() {
+  const response = await fetch('/api/rights/incident');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored incident response: ${response.status}`);
+  }
+  return response.json() as Promise<IncidentResponseSnapshot>;
+}
+
+export interface ProviderRosterGetSnapshot {
+  roster?: { default?: string };
+  local?: { route?: string };
+  cloud?: { route?: string };
+}
+
+export async function fetchProviderRoster() {
+  const response = await fetch('/api/providers');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored provider roster: ${response.status}`);
+  }
+  return response.json() as Promise<ProviderRosterGetSnapshot>;
+}
+
+export interface StalePermissionGateSnapshot {
+  stale?: boolean;
+  admitted?: boolean;
+  reasonCodes?: string[];
+}
+
+export async function fetchStalePermissionGate() {
+  const response = await fetch('/api/permissions/stale');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored stale permissions: ${response.status}`);
+  }
+  return response.json() as Promise<StalePermissionGateSnapshot>;
+}
+
 export interface PreemptibleSnapshot {
   allowed?: boolean;
 }
