@@ -13358,6 +13358,126 @@ describe('App match workspace loading', () => {
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('posts decode pts, decode interval, and perception preprocess without leftover seconds, proxy mapping, or football rules', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/decode/pts') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ seconds: 0 }),
+        } as Response);
+      }
+      if (url.endsWith('/api/decode/interval') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ interval: [0, 0] }),
+        } as Response);
+      }
+      if (url.endsWith('/api/perception/preprocess') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            colourOrder: 'bgr',
+            sourceCoordinatesUnchanged: true,
+            silentlyChangedColour: false,
+            footballRulesApplied: false,
+            requestedColourOrder: 'rgb',
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => expect(screen.getByRole('button', { name: /request decode pts/i })).toBeTruthy());
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/decode/pts'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/decode/interval'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/perception/preprocess'))).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: /request decode pts/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/decode/pts')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /request decode interval/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/decode/interval')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /request perception preprocess/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/perception/preprocess')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/decode/pts')
+      && Boolean(init?.body && (String(init.body).includes('pts') || String(init.body).includes('seconds')))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/decode/interval')
+      && Boolean(init?.body && (String(init.body).includes('proxy') || String(init.body).includes('mapping')))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/perception/preprocess')
+      && Boolean(init?.body && String(init.body).includes('footballRulesApplied'))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/quota'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/training/admit'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/receipts/promotion'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/capacity'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/privacy/dpia'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/research/tracks/'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/roster/labels'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/incidents/ladder'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/decode/proxy-pts'))).toBe(false);
+    expect(screen.queryByText(/sample mapping does not prove inference fps/i)).toBeNull();
+    expect(screen.queryByText(/LABELS_INCOMPLETE stays blocking/i)).toBeNull();
+    const decodePts = within(screen.getByRole('region', { name: /unforced decode pts/i }));
+    expect(decodePts.getByText(/keeps seconds 0/i)).toBeTruthy();
+    expect(decodePts.getByText(/client pts 90000 is not sent/i)).toBeTruthy();
+    expect(decodePts.getByText(/client seconds override is not sent/i)).toBeTruthy();
+    const decodeInterval = within(screen.getByRole('region', { name: /unforced decode interval/i }));
+    expect(decodeInterval.getByText(/keeps interval 0 to 0/i)).toBeTruthy();
+    expect(decodeInterval.getByText(/client proxy mapping is not sent/i)).toBeTruthy();
+    expect(decodeInterval.getByText(/proxy kind does not remap the interval/i)).toBeTruthy();
+    const preprocess = within(screen.getByRole('region', { name: /unforced perception preprocess/i }));
+    expect(preprocess.getByText(/keeps footballRulesApplied false/i)).toBeTruthy();
+    expect(preprocess.getByText(/client footballRulesApplied true is not sent/i)).toBeTruthy();
+    expect(preprocess.getByText(/source coordinates stay unchanged/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('loads stored independent reviewer, worked match flow, and decode memory without inventing acceptance or GPU residency', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);

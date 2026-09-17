@@ -1664,6 +1664,57 @@ export async function postDecodeSample() {
   return response.json() as Promise<DecodeSampleWriteSnapshot>;
 }
 
+export interface DecodePtsWriteSnapshot {
+  seconds?: number;
+}
+
+export async function postDecodePts() {
+  const response = await fetch('/api/decode/pts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post decode pts: ${response.status}`);
+  }
+  return response.json() as Promise<DecodePtsWriteSnapshot>;
+}
+
+export interface DecodeIntervalWriteSnapshot {
+  interval?: number[];
+}
+
+export async function postDecodeInterval() {
+  const response = await fetch('/api/decode/interval', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post decode interval: ${response.status}`);
+  }
+  return response.json() as Promise<DecodeIntervalWriteSnapshot>;
+}
+
+export interface PerceptionPreprocessWriteSnapshot {
+  colourOrder?: string;
+  sourceCoordinatesUnchanged?: boolean;
+  silentlyChangedColour?: boolean;
+  footballRulesApplied?: boolean;
+}
+
+export async function postPerceptionPreprocess() {
+  const response = await fetch('/api/perception/preprocess', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post perception preprocess: ${response.status}`);
+  }
+  return response.json() as Promise<PerceptionPreprocessWriteSnapshot>;
+}
+
 export interface StageTimingSnapshot {
   overlappedStagesAreAdditive?: boolean;
   wallTime?: number;
