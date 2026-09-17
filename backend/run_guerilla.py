@@ -3563,15 +3563,34 @@ def collect_primary_player_windows(
     player_classes = detector_player_class_ids(detector_profile)
     if not player_classes:
         return frame_player_windows
-    from backend.app.workbench.media import iter_bgr_frames, pixels_from_decoded_frame
+    from backend.app.workbench.media import (
+        iter_bgr_frames,
+        pixels_from_decoded_frame,
+        presentation_seconds_or_none,
+        should_sample_on_source_grid,
+    )
 
+    fps = None
+    if frame_source is not None:
+        try:
+            fps = getattr(frame_source.probe(Path(video_path)), "nominalFps", None)
+        except Exception:
+            fps = None
     frame_count = 0
+    last_sample_presentation_time = None
     for decoded in iter_bgr_frames(Path(video_path), frame_source, cv2_module=cv2):
         frame = pixels_from_decoded_frame(decoded)
         if frame is None:
             frame_count += 1
             continue
-        if frame_count % frame_interval == 0:
+        if should_sample_on_source_grid(
+            decoded,
+            frame_count=frame_count,
+            frame_interval=frame_interval,
+            last_sample_presentation_time=last_sample_presentation_time,
+            fps=fps,
+        ):
+            last_sample_presentation_time = presentation_seconds_or_none(decoded)
             result = model.predict(
                 frame,
                 imgsz=imgsz,
@@ -4948,6 +4967,7 @@ def recover_ball_rows(
 
     recovered_rows = []
     frame_count = 0
+    last_sample_presentation_time = None
     direct_seed_retry_frames = set()
     direct_seed_retry_detected_frames = set()
     direct_seed_multi_scale_retry_frames = set()
@@ -5078,13 +5098,28 @@ def recover_ball_rows(
         except Exception:
             return
 
+    from backend.app.workbench.media import presentation_seconds_or_none, should_sample_on_source_grid
+
+    sample_fps = float(fps or identity.nominalFps or 0.0) or None
     for decoded in iter_bgr_frames(Path(str(video_path)), decode_adapter, cv2_module=cv2):
         frame = pixels_from_decoded_frame(decoded)
         if frame is None:
             frame_count += 1
             continue
-        if frame_count % frame_interval == 0:
-            timestamp = round(decoded.presentation_time_seconds, 2)
+        if should_sample_on_source_grid(
+            decoded,
+            frame_count=frame_count,
+            frame_interval=frame_interval,
+            last_sample_presentation_time=last_sample_presentation_time,
+            fps=sample_fps,
+        ):
+            last_sample_presentation_time = presentation_seconds_or_none(decoded)
+            timestamp = round(
+                last_sample_presentation_time
+                if last_sample_presentation_time is not None
+                else decoded.presentation_time_seconds,
+                2,
+            )
             if calibrations:
                 while calibration_index + 1 < len(calibrations) and calibrations[calibration_index + 1][0] <= frame_count:
                     calibration_index += 1

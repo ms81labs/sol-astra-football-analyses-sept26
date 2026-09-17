@@ -516,6 +516,37 @@ def should_export_on_source_grid(
     return float(presentation_time_seconds) + 1e-9 >= float(last_export_presentation_time) + step
 
 
+def presentation_seconds_or_none(decoded: object) -> float | None:
+    if getattr(decoded, "presentation_clock", "decoder_pts") == "missing":
+        return None
+    value = getattr(decoded, "presentation_time_seconds", None)
+    if value is None:
+        return None
+    return float(value)
+
+
+def should_sample_on_source_grid(
+    decoded: object,
+    *,
+    frame_count: int,
+    frame_interval: int,
+    last_sample_presentation_time: float | None,
+    fps: float | None,
+) -> bool:
+    """Sample recovery/player windows on the PTS grid when a decoder clock exists."""
+
+    presentation = presentation_seconds_or_none(decoded)
+    if presentation is None or fps is None or float(fps) <= 0:
+        return frame_count % max(int(frame_interval), 1) == 0
+    return should_export_on_source_grid(
+        presentation,
+        frame_count=frame_count,
+        frame_interval=frame_interval,
+        last_export_presentation_time=last_sample_presentation_time,
+        grid_step_seconds=float(frame_interval) / float(fps),
+    )
+
+
 def run_proxy_ffmpeg_job(
     original: Path,
     destination: Path,

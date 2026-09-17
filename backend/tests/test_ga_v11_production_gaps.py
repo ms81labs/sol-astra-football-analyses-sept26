@@ -747,3 +747,96 @@ def test_tracker_associate_reuses_previous_track_id_by_iou_without_silent_cut_re
     assert cut[0]["trackId"] != "botsort_baseline:stable-7"
     assert cut[0]["reset"] is True
     assert cut[0]["silentlyReconnected"] is False
+
+
+
+def test_should_sample_on_source_grid_prefers_pts_over_index_modulo() -> None:
+    from backend.app.workbench.media import DecodedFrame, should_sample_on_source_grid
+
+    def frame(index: int, seconds: float) -> DecodedFrame:
+        return DecodedFrame(
+            source_frame_index=index,
+            pts=int(seconds * 1000),
+            presentation_time_seconds=seconds,
+            width=2,
+            height=2,
+            colour_order="bgr",
+            rotation=0,
+            payload=b"\x00" * 12,
+            backend="fixture",
+        )
+
+    last = None
+    sampled = []
+    times = [0.0, 0.03, 0.06, 0.40]
+    for index, seconds in enumerate(times):
+        decoded = frame(index, seconds)
+        if should_sample_on_source_grid(
+            decoded,
+            frame_count=index,
+            frame_interval=2,
+            last_sample_presentation_time=last,
+            fps=30.0,
+        ):
+            sampled.append(index)
+            last = seconds
+    assert sampled == [0, 3]
+
+
+def test_collect_primary_player_windows_samples_pts_grid_not_index_modulo(tmp_path: Path) -> None:
+    import numpy as np
+
+    from backend.app.workbench.media import DecodedFrame, FixtureFrameSource
+    from backend import run_guerilla as pipeline
+
+    times = [0.0, 0.03, 0.06, 0.40]
+    frames = []
+    for index, seconds in enumerate(times):
+        image = np.zeros((16, 16, 3), np.uint8)
+        frames.append(
+            DecodedFrame(
+                source_frame_index=index,
+                pts=int(seconds * 1000),
+                presentation_time_seconds=seconds,
+                width=16,
+                height=16,
+                colour_order="bgr",
+                rotation=0,
+                payload=image.tobytes(),
+                backend="fixture",
+                image=image,
+            )
+        )
+    identity = SourceClockIdentity(
+        sourceSha256="a" * 64,
+        byteSize=16,
+        codec="h264",
+        width=16,
+        height=16,
+        nominalFps=30.0,
+        variableFrameRate=True,
+    )
+    source = FixtureFrameSource(frames, identity)
+    sampled: list[int] = []
+
+    class Model:
+        def predict(self, frame, **kwargs):
+            del kwargs
+            sampled.append(len(sampled))
+            box = SimpleNamespace(cls=[0], xyxy=[[0, 0, 4, 4]])
+            return [SimpleNamespace(boxes=[box])]
+
+    path = tmp_path / "vfr.mp4"
+    path.write_bytes(b"fixture-media")
+    windows = pipeline.collect_primary_player_windows(
+        path,
+        Model(),
+        frame_interval=2,
+        imgsz=32,
+        conf=0.1,
+        tracker=None,
+        frame_source=source,
+    )
+    # Index modulo 2 would sample frames 0 and 2. PTS grid 2/30s samples 0 and 3.
+    assert sorted(windows) == [0, 3]
+    assert len(sampled) == 2

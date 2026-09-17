@@ -1358,7 +1358,38 @@ def test_v2_loader_rejects_file_mutation_before_eof(tmp_path, mutation):
             elif mutation == "truncate":
                 path.write_bytes(V2_HEADER)
             else:
+                # Same-size in-place overwrite can keep inode/size and, on coarse
+                # timestamps, mtime. Preserve mtime so the loader cannot hide behind st_mtime_ns.
+                before = path.stat()
                 path.write_bytes(V2_HEADER + V2_ROWS.replace(b'2', b'3'))
+                os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns))
+            list(rows)
+
+
+
+def test_v2_loader_rejects_overwrite_when_open_fd_metadata_does_not_change(tmp_path, monkeypatch):
+    """Buffered readers plus unchanged fstat metadata must not accept a same-size overwrite."""
+    result = _v2_result(tmp_path)
+    original_fstat = os.fstat
+    original_stat = os.stat
+    snapshots: dict[tuple[int, int], os.stat_result] = {}
+
+    def _freeze(st: os.stat_result) -> os.stat_result:
+        key = (st.st_dev, st.st_ino)
+        return snapshots.setdefault(key, st)
+
+    monkeypatch.setattr(os, "fstat", lambda fd: _freeze(original_fstat(fd)))
+    monkeypatch.setattr(
+        os,
+        "stat",
+        lambda path, *args, **kwargs: _freeze(original_stat(path, *args, **kwargs)),
+    )
+
+    with pytest.raises(RuntimeError, match="processor result is invalid"):
+        with _v2_source(result) as source:
+            rows = iter(source.rows)
+            assert next(rows) == {"Frame_ID": 1}
+            result.processor_path.write_bytes(V2_HEADER + V2_ROWS.replace(b"2", b"3"))
             list(rows)
 
 

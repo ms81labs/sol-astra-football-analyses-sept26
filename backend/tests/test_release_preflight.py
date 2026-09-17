@@ -1545,6 +1545,8 @@ def test_tar_context_rejects_noncanonical_raw_layout(
     )
     content = bytearray(original.read_bytes())
     file_padding, end_markers, record_padding = _raw_tar_offsets(content)
+    if mutation in {"record-padding", "truncated-record-padding"} and record_padding >= len(content):
+        pytest.skip("canonical tar is already RECORDSIZE-aligned; no record padding to mutate")
     if mutation == "file-padding":
         content[file_padding] = 1
     elif mutation == "second-end-marker":

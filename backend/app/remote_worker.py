@@ -480,7 +480,7 @@ def _load_processor_result_source(
         before = os.fstat(descriptor)
         if not stat.S_ISREG(before.st_mode) or before.st_size != entry.size_bytes:
             raise ValueError
-        handle = os.fdopen(descriptor, "rb")
+        handle = os.fdopen(descriptor, "rb", buffering=0)
         descriptor = -1  # The handle now owns this descriptor.
         raw, header = _canonical_processor_line(handle, MAX_PROCESSOR_METADATA_LINE_BYTES)
         row_count = result.result.processor_row_count
@@ -521,16 +521,30 @@ def _load_processor_result_source(
                 raise ValueError
             after = os.fstat(handle.fileno())
             named = os.stat(path, follow_symlinks=False)
+            verify_fd = _open_preflight_regular_file(path)
+            try:
+                on_disk = hashlib.sha256()
+                while True:
+                    chunk = os.read(verify_fd, READ_CHUNK_BYTES)
+                    if not chunk:
+                        break
+                    on_disk.update(chunk)
+                on_disk_stat = os.fstat(verify_fd)
+            finally:
+                os.close(verify_fd)
             if (
                 not stat.S_ISREG(named.st_mode)
                 or (after.st_dev, after.st_ino, after.st_size)
                 != (before.st_dev, before.st_ino, before.st_size)
                 or (named.st_dev, named.st_ino, named.st_size)
                 != (before.st_dev, before.st_ino, before.st_size)
+                or (on_disk_stat.st_dev, on_disk_stat.st_ino, on_disk_stat.st_size)
+                != (before.st_dev, before.st_ino, before.st_size)
                 or (after.st_mtime_ns, after.st_ctime_ns)
                 != (before.st_mtime_ns, before.st_ctime_ns)
                 or size != entry.size_bytes
                 or digest.hexdigest() != entry.sha256
+                or on_disk.hexdigest() != entry.sha256
             ):
                 raise ValueError
 
