@@ -223,6 +223,7 @@ class JobPhase(StrictModel):
     costActual: float | None = None
     cleanupResult: Literal["confirmed", "failed", "not_required", "unknown"] = "not_required"
     cacheIdentity: str | None = None
+    error: str | None = None
 
 
 def utc_now() -> datetime:

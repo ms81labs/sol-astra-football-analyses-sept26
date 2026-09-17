@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import sqlite3
 import uuid
+from contextlib import contextmanager
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any, Literal
 
@@ -88,20 +90,38 @@ class DurableJobLedger:
             self._load()
             self.reconcile_after_restart()
 
-    def _connect(self) -> sqlite3.Connection:
+    def _open_connection(self) -> sqlite3.Connection:
         assert self.db_path is not None
         connection = sqlite3.connect(str(self.db_path), check_same_thread=False, timeout=30.0)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA journal_mode=WAL")
-        connection.execute("PRAGMA busy_timeout=30000")
+        connection.execute("PRAGMA busy_timeout=5000")
         return connection
+
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
+        connection = self._open_connection()
+        try:
+            yield connection
+            connection.commit()
+        except BaseException:
+            try:
+                connection.rollback()
+            except Exception:
+                pass
+            raise
+        finally:
+            connection.close()
 
     def close(self) -> None:
         if self.db_path is None:
             return
         try:
-            with self._connect() as connection:
-                connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            connection = self._open_connection()
+            try:
+                connection.execute("PRAGMA wal_checkpoint(PASSIVE)")
+            finally:
+                connection.close()
         except Exception:
             return
 
@@ -280,6 +300,7 @@ class DurableJobLedger:
                 output_schema=request.outputSchema,
                 namespace=request.namespace,
             ),
+            error=attempt.error,
         )
 
     def cancel_requested(self, request_id: str) -> bool:
@@ -387,20 +408,22 @@ def vector_database(*, measured_recall_benefit: bool = False) -> dict[str, objec
 def attach_durable_job_view(payload: dict[str, Any], ledger: DurableJobLedger) -> dict[str, Any]:
     job_id = str(payload.get("id") or payload.get("jobId") or "")
     view = dict(payload)
-    storage_terminal = view.get("status") in {"completed", "failed", "cancelled"}
+    storage_terminal = view.get("status") in {"completed", "complete", "failed", "cancelled"}
     view["cancelRequested"] = ledger.cancel_requested(job_id)
     if job_id in ledger.attempts:
         receipt = ledger.receipt(job_id)
         view["durablePhase"] = receipt.status
+        view["ledgerStatus"] = receipt.status
         view["attemptId"] = receipt.attemptId
         view["costReserved"] = receipt.costReserved
         view["costActual"] = receipt.costActual
         view["cleanupResult"] = receipt.cleanupResult
         view["temporalPolicy"] = receipt.temporalPolicy
         view["cacheIdentity"] = receipt.cacheIdentity
-        view["terminated"] = storage_terminal or ledger.terminated(job_id)
+        view["terminated"] = storage_terminal or ledger.terminated(job_id) or receipt.status in {"complete", "failed"}
     else:
         view["durablePhase"] = None
+        view["ledgerStatus"] = None
         view["cleanupResult"] = "unknown"
         view["terminated"] = storage_terminal
         view["costReserved"] = view.get("costReserved", 0.0)

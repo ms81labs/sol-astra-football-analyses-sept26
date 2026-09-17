@@ -606,6 +606,21 @@ export async function fetchLandmarkPreview(matchId: string) {
   return response.json() as Promise<LandmarkPreview>;
 }
 
+export async function commitMatchCalibration(
+  matchId: string,
+  payload: Record<string, unknown>,
+) {
+  const response = await fetch(`/api/matches/${matchId}/calibration/commit`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to commit calibration: ${response.status}`);
+  }
+  return response.json() as Promise<{ committed: boolean; certified: boolean }>;
+}
+
 export interface QualityTimelinePayload {
   reviewFirst: boolean;
   accepted: boolean;

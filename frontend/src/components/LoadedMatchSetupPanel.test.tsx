@@ -15,6 +15,7 @@ vi.mock('../utils/api', async (importOriginal) => {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 it('persists periods, pitch, camera, teams and rights through updateMatchConfig', async () => {
@@ -46,4 +47,46 @@ it('persists periods, pitch, camera, teams and rights through updateMatchConfig'
     awayTeam: 'Away FC',
     rights: expect.objectContaining({ cloudPermission: true }),
   }));
+});
+
+it('commits live calibration over HTTP without certifying whole-pitch coverage', async () => {
+  const fetchMock = vi.fn(async (input: RequestInfo, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith('/setup/preview')) {
+      return new Response(JSON.stringify({
+        residualP95M: 1.2,
+        accepted: true,
+        committed: false,
+        measured: true,
+        certified: false,
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    }
+    if (url.endsWith('/calibration/commit') && init?.method === 'POST') {
+      return new Response(JSON.stringify({ committed: true, certified: false }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    return new Response(JSON.stringify({
+      cameraProfile: 'stable_elevated_wide',
+      automationAdmitted: true,
+      manualTaggingPermitted: true,
+      cannotMeasure: [],
+      certified: false,
+      pitchLengthM: 105,
+      homeTeam: 'Home FC',
+      awayTeam: 'Away FC',
+      calibrationCommitted: false,
+    }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+  });
+  vi.stubGlobal('fetch', fetchMock);
+
+  render(<LoadedMatchSetupPanel matchId="match-a" />);
+  fireEvent.click(await screen.findByRole('button', { name: /commit calibration/i }));
+  await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+    '/api/matches/match-a/calibration/commit',
+    expect.objectContaining({ method: 'POST' }),
+  ));
+  expect(await screen.findByText(/committed/i)).toBeTruthy();
+  expect(screen.queryByText(/certification of whole-pitch/i)).toBeTruthy();
 });

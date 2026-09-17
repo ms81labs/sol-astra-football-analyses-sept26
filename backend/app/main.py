@@ -672,7 +672,7 @@ def create_app(
     app = FastAPI(title="Guerilla Analytics API", version="0.1.0", lifespan=lifespan)
     app.state.storage = storage
     app.state.runner = runner
-    app.include_router(create_workbench_router(storage.storage_root))
+    app.include_router(create_workbench_router(storage.storage_root, ledger=storage.job_ledger))
     from .workbench.leftover_http import LeftoverHttpGate
 
     app.add_middleware(LeftoverHttpGate)
@@ -3128,6 +3128,10 @@ def create_app(
     def get_match_setup_preview(match: MatchRecord = Depends(require_match)) -> dict:
         return storage.preview_landmark_for_match(match.id)
 
+    @app.post("/api/matches/{match_id}/calibration/commit")
+    def commit_match_calibration(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+        return storage.commit_calibration_for_match(match.id, payload or {})
+
     @app.post("/api/matches/{match_id}/recompute")
     def post_match_recompute(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
         body = payload or {}
@@ -3512,6 +3516,7 @@ def create_app(
             while True:
                 try:
                     payload = (await run_in_threadpool(storage.get_job, job_id)).model_dump(mode="json")
+                    payload = attach_durable_job_view(payload, storage.job_ledger)
                 except KeyError:
                     await websocket.send_json({"error": "Job not found"})
                     await websocket.close()
@@ -3519,7 +3524,7 @@ def create_app(
                 if payload != last_payload:
                     await websocket.send_json(payload)
                     last_payload = payload
-                if payload["status"] in {"completed", "failed"}:
+                if payload["status"] in {"completed", "complete", "failed"} or payload.get("ledgerStatus") in {"complete", "failed"}:
                     await websocket.close()
                     return
                 try:

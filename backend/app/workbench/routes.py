@@ -40,7 +40,6 @@ from .training import drill_library
 from .xt import xt_deferred_plan
 
 _correction_log = CorrectionLog()
-_job_ledger = DurableJobLedger()
 _router_assistance = AssistanceRouter(providers_enabled=False)
 _evidence_store = EvidenceStore()
 
@@ -130,8 +129,9 @@ class PlayerBody(BaseModel):
     identityContinuous: bool = False
 
 
-def create_workbench_router(storage_root: Path) -> APIRouter:
+def create_workbench_router(storage_root: Path, ledger: DurableJobLedger | None = None) -> APIRouter:
     store = WorkbenchStore(storage_root)
+    job_ledger = ledger or DurableJobLedger(db_path=Path(storage_root) / "guerilla.sqlite3")
     router = APIRouter(prefix="/api/workbench", tags=["workbench"])
 
     @router.get("/dossier")
@@ -234,8 +234,8 @@ def create_workbench_router(storage_root: Path) -> APIRouter:
             authorisedLocation="local",
             namespace="production",
         )
-        attempt = _job_ledger.submit(request)
-        return jsonable(_job_ledger.receipt(body.requestId)) | {
+        attempt = job_ledger.submit(request)
+        return jsonable(job_ledger.receipt(body.requestId)) | {
             "attemptId": attempt.attemptId,
             "namespace": "production",
             "authorisedLocation": "local",
@@ -249,13 +249,18 @@ def create_workbench_router(storage_root: Path) -> APIRouter:
 
     @router.post("/jobs/{request_id}/timeout")
     def job_timeout(request_id: str) -> dict:
-        _job_ledger.timeout_before_response(request_id)
-        return jsonable(_job_ledger.receipt(request_id))
+        job_ledger.timeout_before_response(request_id)
+        return jsonable(job_ledger.receipt(request_id))
+
+    @router.post("/jobs/{request_id}/lost-connection")
+    def job_lost_connection(request_id: str) -> dict:
+        job_ledger.lost_connection(request_id)
+        return jsonable(job_ledger.receipt(request_id))
 
     @router.post("/jobs/{request_id}/cancel")
     def job_cancel(request_id: str) -> dict:
-        _job_ledger.cancel(request_id)
-        return jsonable(_job_ledger.receipt(request_id))
+        job_ledger.cancel(request_id)
+        return jsonable(job_ledger.receipt(request_id))
 
     @router.post("/matches/{match_id}/metrics")
     def match_metrics(match_id: str, payload: dict | None = None) -> dict:
@@ -313,11 +318,11 @@ def create_workbench_router(storage_root: Path) -> APIRouter:
             deployment_boundary=x_deployment_boundary,
         )
         try:
-            receipt = jsonable(_job_ledger.receipt(request_id))
+            receipt = jsonable(job_ledger.receipt(request_id))
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Job not found") from exc
-        receipt["cancelRequested"] = _job_ledger.cancel_requested(request_id)
-        receipt["terminated"] = _job_ledger.terminated(request_id)
+        receipt["cancelRequested"] = job_ledger.cancel_requested(request_id)
+        receipt["terminated"] = job_ledger.terminated(request_id)
         return receipt
 
     @router.get("/jobs/{request_id}/cost")
@@ -334,7 +339,7 @@ def create_workbench_router(storage_root: Path) -> APIRouter:
             deployment_boundary=x_deployment_boundary,
         )
         del request_id
-        return _job_ledger.cost_summary()
+        return job_ledger.cost_summary()
 
     @router.get("/flags")
     def get_flags() -> dict:
@@ -469,7 +474,7 @@ def create_workbench_router(storage_root: Path) -> APIRouter:
             deployment_boundary=x_deployment_boundary,
         )
         try:
-            _job_ledger.receipt(request_id)
+            job_ledger.receipt(request_id)
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Job not found") from exc
         rates = FourRatesReceipt(

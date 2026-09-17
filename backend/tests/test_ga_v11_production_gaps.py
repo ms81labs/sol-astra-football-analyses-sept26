@@ -485,6 +485,21 @@ def test_proxy_assets_attempt_constrained_ffmpeg_job(tmp_path: Path, monkeypatch
     storage.close()
 
 
+def _sqlite_fd_count(db_path: Path) -> int:
+    import os
+
+    target = str(db_path)
+    count = 0
+    for descriptor in os.listdir("/proc/self/fd"):
+        try:
+            linked = os.readlink(f"/proc/self/fd/{descriptor}")
+        except OSError:
+            continue
+        if linked == target or linked.startswith(f"{target}-"):
+            count += 1
+    return count
+
+
 def test_storage_close_releases_sqlite_so_exclusive_lock_succeeds(tmp_path: Path) -> None:
     from backend.app.schemas import MatchConfig
     from backend.app.storage import Storage
@@ -505,3 +520,136 @@ def test_storage_close_releases_sqlite_so_exclusive_lock_succeeds(tmp_path: Path
         connection.commit()
     finally:
         connection.close()
+
+
+def test_storage_methods_close_sqlite_connections_without_waiting_for_gc(tmp_path: Path) -> None:
+    from backend.app.schemas import MatchConfig
+    from backend.app.storage import Storage
+
+    storage = Storage(tmp_path)
+    match = storage.create_match(
+        name="fd-loop",
+        input_mode="tracking_json",
+        original_filename="rows.json",
+        input_path=tmp_path / "rows.json",
+        config=MatchConfig(),
+    )
+    storage.ensure_job(match.id, "job-loop")
+    for _ in range(40):
+        storage.list_matches()
+        storage.get_match(match.id)
+        storage.get_job("job-loop")
+        storage.job_ledger.receipt("job-loop")
+    assert _sqlite_fd_count(storage.db_path) <= 6
+    storage.close()
+    assert _sqlite_fd_count(storage.db_path) <= 3
+
+
+def test_workbench_timeout_and_lost_connection_use_storage_sqlite_ledger(tmp_path: Path) -> None:
+    from fastapi.testclient import TestClient
+
+    from backend.app.main import create_app
+    from backend.app.workbench.jobs import DurableJobLedger
+
+    app = create_app(storage_root=tmp_path, run_jobs_inline=True)
+    with TestClient(app, base_url="http://127.0.0.1") as client:
+        created = client.post(
+            "/api/workbench/jobs",
+            json={"requestId": "shared-timeout", "matchId": "match-a", "sourceSha256": "c" * 64, "budget": 1.0},
+        )
+        assert created.status_code == 200
+        assert created.json()["status"] == "submitted"
+        assert "shared-timeout" in app.state.storage.job_ledger.requests
+        timed_out = client.post("/api/workbench/jobs/shared-timeout/timeout")
+        assert timed_out.json()["status"] == "outcome_unknown"
+        lost = client.post("/api/workbench/jobs/shared-timeout/lost-connection")
+        assert lost.status_code == 200
+        assert lost.json()["status"] == "outcome_unknown"
+        assert lost.json()["error"] == "lost_connection"
+        restarted = DurableJobLedger(db_path=app.state.storage.db_path)
+        assert restarted.receipt("shared-timeout").status == "outcome_unknown"
+        assert restarted.receipt("shared-timeout").error == "lost_connection"
+
+
+def test_storage_completed_job_marks_ledger_complete_and_websocket_closes(tmp_path: Path) -> None:
+    from fastapi.testclient import TestClient
+
+    from backend.app.main import create_app
+    from backend.app.schemas import MatchConfig
+    from backend.app.storage import Storage
+
+    app = create_app(storage_root=tmp_path, run_jobs_inline=True)
+    storage: Storage = app.state.storage
+    match = storage.create_match(
+        name="ws",
+        input_mode="tracking_json",
+        original_filename="rows.json",
+        input_path=tmp_path / "rows.json",
+        config=MatchConfig(),
+    )
+    storage.ensure_job(match.id, "ws-complete")
+    storage.update_job("ws-complete", status="completed", progress=1.0, message="Processing complete")
+    assert storage.job_ledger.receipt("ws-complete").status == "complete"
+    with TestClient(app, base_url="http://127.0.0.1") as client:
+        with client.websocket_connect("ws://127.0.0.1/ws/jobs/ws-complete") as websocket:
+            payload = websocket.receive_json()
+            assert payload["status"] in {"completed", "complete"}
+            assert payload["ledgerStatus"] == "complete"
+
+
+def test_match_calibration_commit_persists_uncertified_profile(tmp_path: Path) -> None:
+    from fastapi.testclient import TestClient
+
+    from backend.app.main import create_app
+    from backend.app.schemas import MatchConfig
+    from backend.app.storage import Storage
+
+    app = create_app(storage_root=tmp_path, run_jobs_inline=True)
+    storage: Storage = app.state.storage
+    match = storage.create_match(
+        name="cal",
+        input_mode="tracking_json",
+        original_filename="rows.json",
+        input_path=tmp_path / "rows.json",
+        config=MatchConfig(),
+    )
+    with TestClient(app, base_url="http://127.0.0.1") as client:
+        refused = client.post(
+            f"/api/matches/{match.id}/calibration/commit",
+            json={
+                "calibrationId": "cal-1",
+                "cameraModel": "planar_homography",
+                "landmarks": [
+                    {"name": "corner", "imageX": 0, "imageY": 0, "pitchX": 0, "pitchY": 0, "independentHoldout": False}
+                ],
+            },
+        )
+        assert refused.status_code == 200
+        assert refused.json()["committed"] is False
+        assert refused.json()["certified"] is False
+        accepted = client.post(
+            f"/api/matches/{match.id}/calibration/commit",
+            json={
+                "calibrationId": "cal-2",
+                "cameraModel": "planar_homography",
+                "homography": [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+                "residualP95M": 0.4,
+                "landmarks": [
+                    {
+                        "name": "holdout",
+                        "imageX": 10,
+                        "imageY": 10,
+                        "pitchX": 10,
+                        "pitchY": 10,
+                        "independentHoldout": True,
+                    }
+                ],
+            },
+        )
+        assert accepted.json()["committed"] is True
+        assert accepted.json()["certified"] is False
+        setup = client.get(f"/api/matches/{match.id}/setup")
+        assert setup.json()["calibrationCommitted"] is True
+        preview = client.get(f"/api/matches/{match.id}/setup/preview")
+        assert preview.json()["committed"] is True
+        assert preview.json()["certified"] is False

@@ -218,6 +218,45 @@ def _utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
+class _ClosingConnection:
+    """sqlite3 connections do not close on context exit; this wrapper does."""
+
+    def __init__(self, connection: sqlite3.Connection):
+        self._connection = connection
+        self._closed = False
+
+    def __getattr__(self, name: str):
+        return getattr(self._connection, name)
+
+    def __enter__(self) -> "_ClosingConnection":
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> bool:  # noqa: ANN001
+        try:
+            if exc_type is None:
+                self._connection.commit()
+            else:
+                try:
+                    self._connection.rollback()
+                except Exception:
+                    pass
+        finally:
+            self.close()
+        return False
+
+    def commit(self) -> None:
+        self._connection.commit()
+
+    def rollback(self) -> None:
+        self._connection.rollback()
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        self._connection.close()
+
+
 class Storage:
     def __init__(self, storage_root: Path):
         self.storage_root = Path(storage_root)
@@ -236,20 +275,26 @@ class Storage:
 
     def close(self) -> None:
         try:
-            with self._connect() as connection:
-                connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            connection = self._open_connection()
+            try:
+                connection.execute("PRAGMA wal_checkpoint(PASSIVE)")
+            finally:
+                connection.close()
         except Exception:
             pass
         ledger = getattr(self, "job_ledger", None)
         if ledger is not None and hasattr(ledger, "close"):
             ledger.close()
 
-    def _connect(self) -> sqlite3.Connection:
+    def _open_connection(self) -> sqlite3.Connection:
         connection = sqlite3.connect(str(self.db_path), check_same_thread=False, timeout=30.0)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA journal_mode=WAL")
-        connection.execute("PRAGMA busy_timeout=30000")
+        connection.execute("PRAGMA busy_timeout=5000")
         return connection
+
+    def _connect(self) -> _ClosingConnection:
+        return _ClosingConnection(self._open_connection())
 
     def _initialize(self) -> None:
         with self._connect() as connection:
@@ -810,7 +855,15 @@ class Storage:
                 """,
                 (status, progress, message, error, persisted_remote_run_id, started_at, completed_at, now, job_id),
             )
-        return self.get_job(job_id)
+        record = self.get_job(job_id)
+        ledger = getattr(self, "job_ledger", None)
+        mapped = {"completed": "complete", "complete": "complete", "failed": "failed"}.get(status)
+        if ledger is not None and mapped and job_id in getattr(ledger, "requests", {}):
+            try:
+                ledger.transition(job_id, mapped)
+            except Exception:
+                pass
+        return record
 
     def update_match_status(
         self,
@@ -1577,14 +1630,47 @@ class Storage:
         from .workbench.cache import REBUILD_FOR
         from .workbench.geometry import preview_landmark_fit
 
-        self.get_match(match_id)
+        match = self.get_match(match_id)
+        try:
+            stored = self.load_analysis_artifact(match_id, "calibration_profile")
+        except FileNotFoundError:
+            stored = None
+        if stored and stored.get("committed"):
+            evaluation = dict(stored.get("evaluation") or {})
+            return {
+                "preview": False,
+                "committed": True,
+                "certified": False,
+                "accepted": bool(evaluation.get("accepted", True)),
+                "measured": True,
+                "visionRerun": False,
+                "residualP95M": evaluation.get("p95M", stored.get("profile", {}).get("residualP95M") if isinstance(stored.get("profile"), dict) else None),
+                "rebuild": list(REBUILD_FOR["calibration"]),
+                "reasonCodes": [],
+            }
         preview = preview_landmark_fit(residual_p95_m=float("inf"), max_p95_m=3.0)
         preview["residualP95M"] = None
         preview["measured"] = False
         preview["accepted"] = False
+        preview["certified"] = False
         preview["rebuild"] = list(REBUILD_FOR["calibration"])
         preview["reasonCodes"] = ["LANDMARK_RESIDUAL_UNMEASURED"]
+        preview["committed"] = bool(match.config.calibrationCommitted)
         return preview
+
+    def commit_calibration_for_match(self, match_id: str, payload: dict) -> dict:
+        from .workbench.geometry import CalibrationProfile, commit_calibration
+
+        match = self.get_match(match_id)
+        profile = CalibrationProfile.model_validate(payload)
+        result = commit_calibration(profile)
+        if result.get("committed"):
+            self.save_analysis_artifact(match_id, "calibration_profile", result)
+            self.update_match_config(
+                match_id,
+                match.config.model_copy(update={"calibrationCommitted": True}),
+            )
+        return result
 
     def recompute_for_match(self, match_id: str, change: str) -> dict:
         from .video_pipeline import IMAGE_SPACE_SAFE_CHANGES, reprocess_for_change
