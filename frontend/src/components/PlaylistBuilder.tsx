@@ -125,9 +125,15 @@ export default function PlaylistBuilder({
       {exportError && <p className="text-xs text-amber-200">{exportError}</p>}
       {reportError && <p className="text-xs text-amber-200">{reportError}</p>}
       {[...storedClips, ...clips].filter((clip, index, all) => all.findIndex((other) => clipKey(other) === clipKey(clip)) === index).map((clip) => (
-        <p key={clipKey(clip)} className="text-xs text-slate-300">
+        <button
+          key={clipKey(clip)}
+          type="button"
+          aria-label={`Open ${clip.start}s to ${clip.end}s`}
+          onClick={() => onOpenInterval?.(clip.start)}
+          className="block text-left text-xs text-slate-300 hover:text-emerald-300"
+        >
           {clip.start}s to {clip.end}s (frame {clip.sourceEndFrameExclusive} exclusive){clip.notes ? ` · ${clip.notes}` : ''}
-        </p>
+        </button>
       ))}
       {reportNote && <p className="text-xs text-slate-300">{reportNote}</p>}
       <p className="text-xs text-slate-500">Reviewed passages do not establish a whole-match frequency.</p>

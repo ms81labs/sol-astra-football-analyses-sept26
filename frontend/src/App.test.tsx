@@ -1314,6 +1314,72 @@ describe('App match workspace loading', () => {
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('opens a stored playlist clip on the review source interval', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue({
+      ...loadedWorkspace('match-a', 'Match A'),
+      frames: [0, 1, 2].map((Frame_ID) => ({
+        Frame_ID,
+        Timestamp: Frame_ID * 0.2,
+        Ball: null,
+        My_Team: [],
+        Enemies: [],
+      })),
+      frameCount: 3,
+    });
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && url.includes('state=pending') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ items: [] }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            items: [{
+              correctionId: 'clip-1',
+              kind: 'playlist_item',
+              saveState: 'saved',
+              undoOf: null,
+              author: 'analyst',
+              payload: {
+                timestampStart: 0.2,
+                timestampEnd: 0.4,
+                sourceEndFrameExclusive: 2,
+                notes: 'second passage',
+              },
+            }],
+          }),
+        } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    expect((screen.getByLabelText('Timeline scrubber') as HTMLInputElement).value).toBe('0');
+    fireEvent.click(await screen.findByRole('button', { name: /open 0\.2s to 0\.4s/i }));
+    expect((screen.getByLabelText('Timeline scrubber') as HTMLInputElement).value).toBe('1');
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('swaps stored teams on the loaded match without a vision rerun', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
