@@ -546,6 +546,20 @@ export async function fetchRecovery() {
   return response.json() as Promise<RecoverySnapshot>;
 }
 
+export interface RecoveryDiskSnapshot {
+  acceptedPartial?: boolean;
+  error?: string;
+  status?: string;
+}
+
+export async function fetchRecoveryDisk() {
+  const response = await fetch('/api/recovery/disk');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored disk recovery: ${response.status}`);
+  }
+  return response.json() as Promise<RecoveryDiskSnapshot>;
+}
+
 export async function requestAccessDeletion() {
   const response = await fetch('/api/access/deletion', {
     method: 'POST',
