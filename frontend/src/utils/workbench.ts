@@ -386,6 +386,18 @@ export async function fetchMatchAttackDirection(matchId: string) {
   return response.json() as Promise<MatchAttackDirection>;
 }
 
+export async function postMatchAttackDirection(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/attack-direction`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post match attack direction: ${response.status}`);
+  }
+  return response.json() as Promise<MatchAttackDirection>;
+}
+
 export interface MatchLegacyMigrate {
   migrated?: { possession_pct?: { availability?: string } };
   rollback?: { possession?: number | null; myTeamDistance?: number | null };
@@ -396,6 +408,18 @@ export async function fetchMatchLegacyMigrate(matchId: string) {
   const response = await fetch(`/api/matches/${matchId}/records/migrate`);
   if (!response.ok) {
     throw new Error(`Failed to load match legacy records: ${response.status}`);
+  }
+  return response.json() as Promise<MatchLegacyMigrate>;
+}
+
+export async function postMatchLegacyMigrate(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/records/migrate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post match legacy records: ${response.status}`);
   }
   return response.json() as Promise<MatchLegacyMigrate>;
 }
