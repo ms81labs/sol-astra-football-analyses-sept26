@@ -1344,6 +1344,44 @@ export async function fetchMediaStride() {
   return response.json() as Promise<MediaStrideSnapshot>;
 }
 
+export interface CreditAllocationSnapshot {
+  authorised?: boolean;
+  gpuCreditsDoNotPayForLabels?: boolean;
+  accountBalance?: number | null;
+}
+
+export async function fetchCreditAllocation() {
+  const response = await fetch('/api/credits');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored credit allocation: ${response.status}`);
+  }
+  return response.json() as Promise<CreditAllocationSnapshot>;
+}
+
+export interface HeldOutQuestionsSnapshot {
+  questions?: Array<{ text?: string; unanswerable?: boolean }>;
+}
+
+export async function fetchHeldOutQuestions() {
+  const response = await fetch('/api/reports/held-out');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored held-out questions: ${response.status}`);
+  }
+  return response.json() as Promise<HeldOutQuestionsSnapshot>;
+}
+
+export interface GroundContactSnapshot {
+  boxCentreIsFoot?: boolean;
+}
+
+export async function fetchGroundContact() {
+  const response = await fetch('/api/geometry/contact');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored ground contact: ${response.status}`);
+  }
+  return response.json() as Promise<GroundContactSnapshot>;
+}
+
 export interface ShadowMetricSnapshot {
   default?: boolean;
   shadowed?: boolean;
