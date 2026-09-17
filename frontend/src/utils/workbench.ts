@@ -1228,6 +1228,37 @@ export async function fetchAnalystWorkflow() {
   return response.json() as Promise<AnalystWorkflowSnapshot>;
 }
 
+export async function postAnalystWorkflow() {
+  const response = await fetch('/api/evaluation/workflow', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post analyst workflow measures: ${response.status}`);
+  }
+  return response.json() as Promise<AnalystWorkflowSnapshot>;
+}
+
+export interface EvaluationPrerequisitesSnapshot {
+  accepted?: boolean;
+  completeTasks?: number;
+  lockedLabelsPresent?: boolean;
+  reasonCodes?: string[];
+}
+
+export async function postEvaluationPrerequisites() {
+  const response = await fetch('/api/evaluation/prerequisites', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post evaluation prerequisites: ${response.status}`);
+  }
+  return response.json() as Promise<EvaluationPrerequisitesSnapshot>;
+}
+
 export interface ShadowMetricSnapshot {
   default?: boolean;
   shadowed?: boolean;
