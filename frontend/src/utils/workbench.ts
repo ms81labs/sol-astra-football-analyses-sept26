@@ -2196,6 +2196,61 @@ export async function postLeftoverGeometry() {
   return response.json() as Promise<LeftoverGeometryWriteSnapshot>;
 }
 
+export interface SplitScoresWriteSnapshot {
+  detectorScore?: number | null;
+  calibratedProbability?: number | null;
+  confidenceInterval?: [number, number] | null;
+}
+
+export async function postSplitScores() {
+  const response = await fetch('/api/quantities/scores', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post split scores: ${response.status}`);
+  }
+  return response.json() as Promise<SplitScoresWriteSnapshot>;
+}
+
+export interface DecodeFramesWriteSnapshot {
+  backend?: string;
+  gpuPromoted?: boolean;
+  pyavDefault?: boolean;
+  device?: string;
+}
+
+export async function postDecodeFrames() {
+  const response = await fetch('/api/decode/frames', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post decode frames: ${response.status}`);
+  }
+  return response.json() as Promise<DecodeFramesWriteSnapshot>;
+}
+
+export interface ProviderRosterWriteSnapshot {
+  roster?: { default?: string };
+  local?: { route?: string };
+  cloud?: { route?: string };
+}
+
+export async function postProviderRoster() {
+  const response = await fetch('/api/providers', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post provider roster: ${response.status}`);
+  }
+  return response.json() as Promise<ProviderRosterWriteSnapshot>;
+}
+
 export interface StageTimingSnapshot {
   overlappedStagesAreAdditive?: boolean;
   wallTime?: number;
