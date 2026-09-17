@@ -140,6 +140,9 @@ import LeftoverSignedAccessWritePanel from './components/LeftoverSignedAccessWri
 import LeftoverProxyPtsWritePanel from './components/LeftoverProxyPtsWritePanel';
 import LeftoverOwnershipHysteresisWritePanel from './components/LeftoverOwnershipHysteresisWritePanel';
 import LeftoverFourRatesWritePanel from './components/LeftoverFourRatesWritePanel';
+import LeftoverTrainingAdmitWritePanel from './components/LeftoverTrainingAdmitWritePanel';
+import LeftoverMatchLibraryWritePanel from './components/LeftoverMatchLibraryWritePanel';
+import LeftoverShotTreePanel from './components/LeftoverShotTreePanel';
 import StageTimingPanel from './components/StageTimingPanel';
 import GpuProbePanel from './components/GpuProbePanel';
 import IndependentReviewerPanel from './components/IndependentReviewerPanel';
@@ -2291,6 +2294,15 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           </div>
           <div className="mb-3 shrink-0">
             <LeftoverFourRatesWritePanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <LeftoverTrainingAdmitWritePanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <LeftoverMatchLibraryWritePanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <LeftoverShotTreePanel />
           </div>
           <div className="mb-3 shrink-0">
             <StageTimingPanel />

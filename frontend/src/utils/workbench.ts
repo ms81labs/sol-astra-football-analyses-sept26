@@ -2413,6 +2413,54 @@ export async function postLeftoverFourRates() {
   return response.json() as Promise<LeftoverFourRatesWriteSnapshot>;
 }
 
+export interface LeftoverTrainingAdmitWriteSnapshot {
+  admitted?: boolean;
+  sourcePool?: string;
+  destination?: string;
+  reasonCodes?: string[];
+}
+
+export async function postLeftoverTrainingAdmit() {
+  const response = await fetch('/api/training/admit', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post leftover training admit: ${response.status}`);
+  }
+  return response.json() as Promise<LeftoverTrainingAdmitWriteSnapshot>;
+}
+
+export interface LeftoverMatchLibraryWriteSnapshot {
+  results?: Array<{ id?: string; title?: string }>;
+}
+
+export async function postLeftoverMatchLibrary() {
+  const response = await fetch('/api/library/search', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post leftover match library: ${response.status}`);
+  }
+  return response.json() as Promise<LeftoverMatchLibraryWriteSnapshot>;
+}
+
+export interface LeftoverShotTreeSnapshot {
+  tree?: { enabled?: boolean; calibratedXg?: boolean };
+  temporal?: { enabled?: boolean; replacesStateMachine?: boolean };
+}
+
+export async function fetchLeftoverShotTree() {
+  const response = await fetch('/api/shots/tree');
+  if (!response.ok) {
+    throw new Error(`Failed to load leftover shot tree: ${response.status}`);
+  }
+  return response.json() as Promise<LeftoverShotTreeSnapshot>;
+}
+
 export interface StageTimingSnapshot {
   overlappedStagesAreAdditive?: boolean;
   wallTime?: number;

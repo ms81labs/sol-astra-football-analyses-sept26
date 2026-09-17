@@ -15173,6 +15173,131 @@ describe('App match workspace loading', () => {
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('posts leftover training admit, leftover match library, and leftover shot tree without leftover rights granted, forged matches, or calibratedXg true', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/training/admit') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            admitted: false,
+            sourcePool: 'locked_evaluation',
+            destination: 'training',
+            reasonCodes: ['LOCKED_EVALUATION_ISOLATION', 'RIGHTS_UNCLEAR'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/library/search') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ results: [] }),
+        } as Response);
+      }
+      if (url.endsWith('/api/shots/tree') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            tree: { enabled: false, comparedAfterLogisticBaseline: true, calibratedXg: false },
+            temporal: { enabled: false, replacesStateMachine: false },
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => expect(screen.getByRole('button', { name: /request leftover training admit/i })).toBeTruthy());
+    expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith('/api/training/admit') && init?.method === 'POST')).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith('/api/library/search') && init?.method === 'POST')).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/api/shots/tree'))).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: /request leftover training admit/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/training/admit')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /request leftover match library/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/library/search')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /request leftover shot tree/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/shots/tree')
+        && (!init?.method || init.method === 'GET')
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/training/admit')
+      && Boolean(init?.body && (String(init.body).includes('rights') || String(init.body).includes('granted')))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/library/search')
+      && Boolean(init?.body && (String(init.body).includes('matches') || String(init.body).includes('forged')))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/shots/tree') && init?.method === 'POST'
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/quota'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/receipts/promotion'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/capacity'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/privacy/dpia'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/research/tracks/'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/roster/labels'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/incidents/ladder'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/access/object'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/geometry/landmarks'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/geometry/preview'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/reports/assemble'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/cache/tenancy'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/setup/preview'))).toBe(false);
+    expect(screen.queryByText(/locked evaluation labels cannot enter training/i)).toBeNull();
+    expect(screen.queryByText(/Posted leftover search without matchId stays rejected/i)).toBeNull();
+    expect(screen.queryByText(/Posted leftover four rates keeps exportFpsEqualsInferenceFps false/i)).toBeNull();
+    const admit = within(screen.getByRole('region', { name: /unforced leftover training admit/i }));
+    expect(admit.getByText(/Posted leftover training admit keeps admitted false/i)).toBeTruthy();
+    expect(admit.getByText(/client POST rights granted is not sent/i)).toBeTruthy();
+    expect(admit.getByText(/Posted leftover admit stays LOCKED_EVALUATION_ISOLATION/i)).toBeTruthy();
+    const library = within(screen.getByRole('region', { name: /unforced leftover match library/i }));
+    expect(library.getByText(/Posted leftover match library keeps results empty/i)).toBeTruthy();
+    expect(library.getByText(/client POST forged matches are not sent/i)).toBeTruthy();
+    expect(library.getByText(/Posted leftover match library is not match-scoped queries/i)).toBeTruthy();
+    const shotTree = within(screen.getByRole('region', { name: /unforced leftover shot tree/i }));
+    expect(shotTree.getByText(/Requested leftover shot tree keeps enabled false/i)).toBeTruthy();
+    expect(shotTree.getByText(/client calibratedXg true is not sent/i)).toBeTruthy();
+    expect(shotTree.getByText(/Leftover shot tree stays a challenger, not production xG/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('loads stored independent reviewer, worked match flow, and decode memory without inventing acceptance or GPU residency', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
@@ -15339,6 +15464,7 @@ describe('App match workspace loading', () => {
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/capacity'))).toBe(false);
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/privacy/dpia'))).toBe(false);
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/research/tracks/'))).toBe(false);
+    expect(screen.queryByText(/Posted leftover training admit keeps admitted false/i)).toBeNull();
     const identity = within(await screen.findByRole('region', { name: /stored identity policy/i }));
     expect(identity.getByText(/keeps face recognition off/i)).toBeTruthy();
     expect(identity.getByText(/cross-season identity stays off/i)).toBeTruthy();
