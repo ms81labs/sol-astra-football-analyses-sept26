@@ -1465,6 +1465,46 @@ export async function fetchNetworkFailureMetric() {
   return response.json() as Promise<NetworkFailureSnapshot>;
 }
 
+export interface MetadataTargetsSnapshot {
+  measured?: boolean;
+  planningTargetNotMeasurement?: boolean;
+  doesNotPromiseVideoDecodeLatency?: boolean;
+}
+
+export async function fetchMetadataTargets() {
+  const response = await fetch('/api/targets');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored metadata targets: ${response.status}`);
+  }
+  return response.json() as Promise<MetadataTargetsSnapshot>;
+}
+
+export interface ArchitectureDecisionsSnapshot {
+  items?: Array<{ id?: string; decision?: string; reversible?: boolean }>;
+}
+
+export async function fetchArchitectureDecisions() {
+  const response = await fetch('/api/decisions');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored architecture decisions: ${response.status}`);
+  }
+  return response.json() as Promise<ArchitectureDecisionsSnapshot>;
+}
+
+export interface ResidencyClaimSnapshot {
+  euProcessingProven?: boolean;
+  requestedRegion?: string;
+  reasonCodes?: string[];
+}
+
+export async function fetchResidencyClaim() {
+  const response = await fetch('/api/residency');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored residency claim: ${response.status}`);
+  }
+  return response.json() as Promise<ResidencyClaimSnapshot>;
+}
+
 export interface ShadowMetricSnapshot {
   default?: boolean;
   shadowed?: boolean;
