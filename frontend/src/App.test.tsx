@@ -13597,6 +13597,134 @@ describe('App match workspace loading', () => {
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('posts perception tiles, sharing, and media colour without leftover productQualityPass, expired false, or convert false', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/perception/tiles') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            merged: [],
+            sourceCoordinates: true,
+            productQualityPass: false,
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/sharing') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            objectId: '',
+            expiresAt: 0,
+            expiredAtNow: true,
+            expiredAtTtl: true,
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/media/colour') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            pixels: [30, 200, 10],
+            sourceBox: [10, 20, 40, 50],
+            rotationApplied: false,
+            colourOrder: 'bgr',
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => expect(screen.getByRole('button', { name: /request perception tiles/i })).toBeTruthy());
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/perception/tiles'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/sharing'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/media/colour'))).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: /request perception tiles/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/perception/tiles')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /request sharing/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/sharing')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /request media colour/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/media/colour')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/perception/tiles')
+      && Boolean(init?.body && (String(init.body).includes('detections') || String(init.body).includes('origin')))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/sharing')
+      && Boolean(init?.body && (String(init.body).includes('expired') || String(init.body).includes('objectId')))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/media/colour')
+      && Boolean(init?.body && (String(init.body).includes('convert') || String(init.body).includes('rotation')))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/quota'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/training/admit'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/receipts/promotion'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/capacity'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/privacy/dpia'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/research/tracks/'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/roster/labels'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/incidents/ladder'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/decode/proxy-pts'))).toBe(false);
+    expect(screen.queryByText(/source coordinates stay unchanged/i)).toBeNull();
+    expect(screen.queryByText(/empty stratum stays unlabeled/i)).toBeNull();
+    const tiles = within(screen.getByRole('region', { name: /unforced perception tiles/i }));
+    expect(tiles.getByText(/keep productQualityPass false/i)).toBeTruthy();
+    expect(tiles.getByText(/client detections are not sent/i)).toBeTruthy();
+    expect(tiles.getByText(/empty tiles stay unmerged/i)).toBeTruthy();
+    const sharing = within(screen.getByRole('region', { name: /unforced sharing/i }));
+    expect(sharing.getByText(/keeps expiredAtNow true/i)).toBeTruthy();
+    expect(sharing.getByText(/client expired false is not sent/i)).toBeTruthy();
+    expect(sharing.getByText(/empty TTL stays expired/i)).toBeTruthy();
+    const colour = within(screen.getByRole('region', { name: /unforced media colour/i }));
+    expect(colour.getByText(/keeps rotationApplied false/i)).toBeTruthy();
+    expect(colour.getByText(/client convert false is not sent/i)).toBeTruthy();
+    expect(colour.getByText(/colour round-trip stays bgr/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('loads stored independent reviewer, worked match flow, and decode memory without inventing acceptance or GPU residency', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);

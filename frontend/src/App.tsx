@@ -104,6 +104,9 @@ import PerceptionPreprocessWritePanel from './components/PerceptionPreprocessWri
 import PerceptionStratumWritePanel from './components/PerceptionStratumWritePanel';
 import PerceptionBallStatesWritePanel from './components/PerceptionBallStatesWritePanel';
 import IdentityPreviewWritePanel from './components/IdentityPreviewWritePanel';
+import PerceptionTilesWritePanel from './components/PerceptionTilesWritePanel';
+import SharingWritePanel from './components/SharingWritePanel';
+import MediaColourWritePanel from './components/MediaColourWritePanel';
 import StageTimingPanel from './components/StageTimingPanel';
 import GpuProbePanel from './components/GpuProbePanel';
 import IndependentReviewerPanel from './components/IndependentReviewerPanel';
@@ -2147,6 +2150,15 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           </div>
           <div className="mb-3 shrink-0">
             <IdentityPreviewWritePanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <PerceptionTilesWritePanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <SharingWritePanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <MediaColourWritePanel />
           </div>
           <div className="mb-3 shrink-0">
             <StageTimingPanel />

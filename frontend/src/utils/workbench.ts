@@ -1769,6 +1769,62 @@ export async function postIdentityPreview() {
   return response.json() as Promise<IdentityPreviewWriteSnapshot>;
 }
 
+export interface PerceptionTilesWriteSnapshot {
+  merged?: unknown[];
+  sourceCoordinates?: boolean;
+  productQualityPass?: boolean;
+}
+
+export async function postPerceptionTiles() {
+  const response = await fetch('/api/perception/tiles', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post perception tiles: ${response.status}`);
+  }
+  return response.json() as Promise<PerceptionTilesWriteSnapshot>;
+}
+
+export interface SharingWriteSnapshot {
+  objectId?: string;
+  expiresAt?: number;
+  expiredAtNow?: boolean;
+  expiredAtTtl?: boolean;
+}
+
+export async function postSharing() {
+  const response = await fetch('/api/sharing', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post sharing: ${response.status}`);
+  }
+  return response.json() as Promise<SharingWriteSnapshot>;
+}
+
+export interface MediaColourWriteSnapshot {
+  pixels?: number[];
+  sourceBox?: number[];
+  rotationApplied?: boolean;
+  colourOrder?: string;
+}
+
+export async function postMediaColour() {
+  const response = await fetch('/api/media/colour', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post media colour: ${response.status}`);
+  }
+  return response.json() as Promise<MediaColourWriteSnapshot>;
+}
+
 export interface StageTimingSnapshot {
   overlappedStagesAreAdditive?: boolean;
   wallTime?: number;
