@@ -1317,6 +1317,33 @@ export async function fetchEvaluationHota() {
   return response.json() as Promise<EvaluationHotaSnapshot>;
 }
 
+export interface CollaborationLockSnapshot {
+  local?: { silentlyReplaced?: boolean; admitted?: boolean };
+  hosted?: { silentlyReplaced?: boolean; admitted?: boolean };
+}
+
+export async function fetchCollaborationLock() {
+  const response = await fetch('/api/collaboration');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored collaboration lock: ${response.status}`);
+  }
+  return response.json() as Promise<CollaborationLockSnapshot>;
+}
+
+export interface MediaStrideSnapshot {
+  addsVidStrideAlone?: boolean;
+  targetFpsEqualsInferenceFps?: boolean;
+  explicitFrameContractRequired?: boolean;
+}
+
+export async function fetchMediaStride() {
+  const response = await fetch('/api/media/stride');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored media stride: ${response.status}`);
+  }
+  return response.json() as Promise<MediaStrideSnapshot>;
+}
+
 export interface ShadowMetricSnapshot {
   default?: boolean;
   shadowed?: boolean;

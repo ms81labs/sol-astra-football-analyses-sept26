@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { postMatchJob } from '../utils/workbench';
+import { fetchJobCost, postMatchJob } from '../utils/workbench';
 
 interface MatchJobWritePanelProps {
   matchId?: string;
@@ -18,7 +18,18 @@ export default function MatchJobWritePanel({ matchId }: MatchJobWritePanelProps)
     try {
       const payload = await postMatchJob(matchId);
       if (payload.status === 'queued' && payload.reused === false) {
-        setNote('Posted job ignores client GPU and completeMatch. Client secrets are not sent. This is not sealed inference.');
+        let next = 'Posted job ignores client GPU and completeMatch. Client secrets are not sent. This is not sealed inference.';
+        if (payload.jobId) {
+          try {
+            const cost = await fetchJobCost(payload.jobId);
+            if (typeof cost.reservedTotal === 'number') {
+              next += ' Stored job cost reservedTotal is not current-source sealed inference.';
+            }
+          } catch {
+            // Keep the posted-job note if the cost ledger is unavailable.
+          }
+        }
+        setNote(next);
       } else {
         setNote(null);
       }

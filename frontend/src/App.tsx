@@ -33,6 +33,8 @@ import EvaluationProtocolPanel from './components/EvaluationProtocolPanel';
 import EvaluationPrerequisitesPanel from './components/EvaluationPrerequisitesPanel';
 import EvaluationMeasuresPanel from './components/EvaluationMeasuresPanel';
 import EvaluationHotaPanel from './components/EvaluationHotaPanel';
+import CollaborationLockPanel from './components/CollaborationLockPanel';
+import MediaStridePanel from './components/MediaStridePanel';
 import MatchProvenancePanel from './components/MatchProvenancePanel';
 import MatchShotQualityPanel from './components/MatchShotQualityPanel';
 import MatchShotFeaturesPanel from './components/MatchShotFeaturesPanel';
@@ -1822,6 +1824,12 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           </div>
           <div className="mb-3 shrink-0">
             <EvaluationHotaPanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <CollaborationLockPanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <MediaStridePanel />
           </div>
           <div className="mb-3 shrink-0">
             <MatchProvenancePanel matchId={activeMatch?.id} />
