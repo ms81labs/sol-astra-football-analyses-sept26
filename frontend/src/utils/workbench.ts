@@ -958,6 +958,44 @@ export async function postJobCancel(jobId: string) {
   return response.json() as Promise<{ cancelRequested?: boolean; status?: string; durablePhase?: string | null }>;
 }
 
+export async function postJobTimeout(jobId: string) {
+  const response = await fetch(`/api/jobs/${jobId}/timeout`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to timeout job: ${response.status}`);
+  }
+  return response.json() as Promise<{ durablePhase?: string | null; status?: string; cleanupResult?: string }>;
+}
+
+export async function postJobLostConnection(jobId: string) {
+  const response = await fetch(`/api/jobs/${jobId}/lost-connection`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to mark lost connection: ${response.status}`);
+  }
+  return response.json() as Promise<{ durablePhase?: string | null; status?: string; cleanupResult?: string }>;
+}
+
+export interface ChallengerAdapterGetSnapshot {
+  kloppy?: { enabled?: boolean; replacesInternalProvenance?: boolean; default?: boolean };
+  roboflow?: { enabled?: boolean; name?: string };
+  mcbyte?: { enabled?: boolean; default?: boolean; name?: string };
+}
+
+export async function fetchChallengerAdapters() {
+  const response = await fetch('/api/challengers');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored challenger adapters: ${response.status}`);
+  }
+  return response.json() as Promise<ChallengerAdapterGetSnapshot>;
+}
+
 export interface StageTimingSnapshot {
   overlappedStagesAreAdditive?: boolean;
   wallTime?: number;

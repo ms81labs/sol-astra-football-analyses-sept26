@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { fetchJobBudget, fetchJobCharges, fetchJobCost, fetchJobRates, fetchJobView, postJobCancel, postMatchJob } from '../utils/workbench';
+import { fetchJobBudget, fetchJobCharges, fetchJobCost, fetchJobRates, fetchJobView, postJobCancel, postJobLostConnection, postJobTimeout, postMatchJob } from '../utils/workbench';
 
 interface MatchJobWritePanelProps {
   matchId?: string;
@@ -74,6 +74,43 @@ export default function MatchJobWritePanel({ matchId }: MatchJobWritePanelProps)
     }
   }
 
+  async function requestTimeout() {
+    if (!jobId || pending) return;
+    setPending(true);
+    try {
+      const timedOut = await postJobTimeout(jobId);
+      if (
+        timedOut.durablePhase === 'outcome_unknown'
+        && timedOut.status !== 'cancelled'
+        && timedOut.cleanupResult === 'unknown'
+      ) {
+        setNote('Posted job timeout keeps durablePhase outcome_unknown. Timeout is not cancelled. cleanupResult stays unknown.');
+      }
+    } catch {
+      // Keep the posted-job note if timeout is refused.
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function requestLostConnection() {
+    if (!jobId || pending) return;
+    setPending(true);
+    try {
+      const disconnected = await postJobLostConnection(jobId);
+      if (
+        disconnected.durablePhase === 'outcome_unknown'
+        && disconnected.status !== 'cancelled'
+      ) {
+        setNote('Posted lost connection keeps durablePhase outcome_unknown. A dropped connection is not completed work. status is not cancelled.');
+      }
+    } catch {
+      // Keep the posted-job note if lost-connection is refused.
+    } finally {
+      setPending(false);
+    }
+  }
+
   async function requestCancel() {
     if (!jobId || pending) return;
     setPending(true);
@@ -102,15 +139,35 @@ export default function MatchJobWritePanel({ matchId }: MatchJobWritePanelProps)
         Request durable job
       </button>
       {jobId && (
-        <button
-          type="button"
-          aria-label="Cancel durable job"
-          onClick={() => void requestCancel()}
-          disabled={pending}
-          className="px-3 py-1.5 rounded bg-slate-700 text-xs font-semibold text-white disabled:opacity-50"
-        >
-          Cancel durable job
-        </button>
+        <>
+          <button
+            type="button"
+            aria-label="Cancel durable job"
+            onClick={() => void requestCancel()}
+            disabled={pending}
+            className="px-3 py-1.5 rounded bg-slate-700 text-xs font-semibold text-white disabled:opacity-50"
+          >
+            Cancel durable job
+          </button>
+          <button
+            type="button"
+            aria-label="Timeout durable job"
+            onClick={() => void requestTimeout()}
+            disabled={pending}
+            className="px-3 py-1.5 rounded bg-slate-700 text-xs font-semibold text-white disabled:opacity-50"
+          >
+            Timeout durable job
+          </button>
+          <button
+            type="button"
+            aria-label="Mark lost connection"
+            onClick={() => void requestLostConnection()}
+            disabled={pending}
+            className="px-3 py-1.5 rounded bg-slate-700 text-xs font-semibold text-white disabled:opacity-50"
+          >
+            Mark lost connection
+          </button>
+        </>
       )}
       {note && <p className="text-xs text-slate-400">{note}</p>}
     </section>

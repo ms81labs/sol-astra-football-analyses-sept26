@@ -11624,6 +11624,165 @@ describe('App match workspace loading', () => {
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('loads stored challenger adapters and posts job timeout and lost-connection without inventing admission or completed work', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/challengers') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            kloppy: { enabled: false, replacesInternalProvenance: false, default: false },
+            roboflow: { enabled: false, name: 'roboflow_trackers' },
+            mcbyte: { enabled: false, default: false, name: 'mcbyte_plus_plus' },
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/jobs') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            jobId: 'job-scope-1',
+            status: 'queued',
+            reused: false,
+            costReserved: 0,
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/jobs/job-scope-1/cost') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ reservedTotal: 0, actualTotal: 0, p50Reserved: 0, requestId: 'job-scope-1' }),
+        } as Response);
+      }
+      if (url.endsWith('/api/jobs/job-scope-1/budget') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            reserve: { authorised: false, reserved: 0, estimate: 0, currency: 'USD' },
+            reconcile: { reserved: 0, actual: 0, variance: 0, exceeded: false, alert: false },
+            cost: { reservedTotal: 0, actualTotal: 0 },
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/jobs/job-scope-1/charges') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ cancelled: false, incurred: 0, chargesErased: false, reasonCodes: [] }),
+        } as Response);
+      }
+      if ((url === '/api/jobs/job-scope-1' || url.endsWith('/api/jobs/job-scope-1')) && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ status: 'queued', durablePhase: null, cancelRequested: false }),
+        } as Response);
+      }
+      if (url.endsWith('/api/jobs/job-scope-1/rates') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ exportFpsEqualsInferenceFps: false, decodeFpsEqualsExportFps: false, notes: [] }),
+        } as Response);
+      }
+      if (url.endsWith('/api/jobs/job-scope-1/timeout') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: 'queued',
+            durablePhase: 'outcome_unknown',
+            cleanupResult: 'unknown',
+            cancelRequested: false,
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/jobs/job-scope-1/lost-connection') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: 'queued',
+            durablePhase: 'outcome_unknown',
+            cleanupResult: 'unknown',
+            cancelRequested: false,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/challengers')
+        && (!init?.method || init.method === 'GET')
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/challengers') && init?.method === 'POST'
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/capacity'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/privacy/dpia'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/research/tracks/'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/roster/labels'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/incidents/ladder'))).toBe(false);
+    expect(screen.queryByText(/kloppy, roboflow, and mcbyte stay unadmitted challengers/i)).toBeNull();
+    const challengers = within(await screen.findByRole('region', { name: /stored challenger adapters/i }));
+    expect(challengers.getByText(/keep kloppy.enabled false/i)).toBeTruthy();
+    expect(challengers.getByText(/client kloppy true is not sent/i)).toBeTruthy();
+    expect(challengers.getByText(/roboflow and MCBYTE stay unadmitted/i)).toBeTruthy();
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/jobs/job-scope-1/timeout') && init?.method === 'POST'
+    ))).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: /request durable job/i }));
+    const posted = within(screen.getByRole('region', { name: /unforced job write/i }));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /timeout durable job/i })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole('button', { name: /timeout durable job/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/jobs/job-scope-1/timeout')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    expect(posted.getByText(/keeps durablePhase outcome_unknown/i)).toBeTruthy();
+    expect(posted.getByText(/timeout is not cancelled/i)).toBeTruthy();
+    expect(posted.getByText(/cleanupResult stays unknown/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /mark lost connection/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/jobs/job-scope-1/lost-connection')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    expect(posted.getByText(/posted lost connection keeps durablePhase outcome_unknown/i)).toBeTruthy();
+    expect(posted.getByText(/a dropped connection is not completed work/i)).toBeTruthy();
+    expect(posted.getByText(/status is not cancelled/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('loads stored independent reviewer, worked match flow, and decode memory without inventing acceptance or GPU residency', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
