@@ -1022,6 +1022,48 @@ export async function fetchDecodeChallengers() {
   return response.json() as Promise<DecodeChallengerSnapshot>;
 }
 
+export interface StoredDecodeFramesSnapshot {
+  backend?: string;
+  pyavDefault?: boolean;
+  gpuPromoted?: boolean;
+  device?: string;
+}
+
+export async function fetchStoredDecodeFrames() {
+  const response = await fetch('/api/decode/frames');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored decode frames: ${response.status}`);
+  }
+  return response.json() as Promise<StoredDecodeFramesSnapshot>;
+}
+
+export interface GpuDefaultEnabledSnapshot {
+  name?: string;
+  enabled?: boolean;
+}
+
+export async function fetchGpuDefaultEnabled() {
+  const response = await fetch('/api/flags/gpu_default/enabled');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored GPU default enabled flag: ${response.status}`);
+  }
+  return response.json() as Promise<GpuDefaultEnabledSnapshot>;
+}
+
+export interface LocalOnlyDeploymentSnapshot {
+  admitted?: boolean;
+  silentCloudFallback?: boolean;
+  requiresGNetwork?: boolean;
+}
+
+export async function fetchLocalOnlyDeployment() {
+  const response = await fetch('/api/deployment/local_only');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored local-only deployment: ${response.status}`);
+  }
+  return response.json() as Promise<LocalOnlyDeploymentSnapshot>;
+}
+
 export interface StageTimingSnapshot {
   overlappedStagesAreAdditive?: boolean;
   wallTime?: number;

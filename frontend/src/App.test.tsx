@@ -11893,6 +11893,111 @@ describe('App match workspace loading', () => {
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('loads stored decode frames, GPU default enabled flag, and local-only deployment without leftover POST cuda frames or GPU promotion', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/decode/frames') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            backend: 'fixture',
+            defaultBackend: 'opencv',
+            pyavDefault: false,
+            torchcodecDefault: false,
+            device: 'cpu',
+            gpuPromoted: false,
+            indexes: [0, 1],
+            firstIndex: 0,
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/flags/gpu_default/enabled') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ name: 'gpu_default', enabled: false }),
+        } as Response);
+      }
+      if (url.endsWith('/api/deployment/local_only') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            admitted: true,
+            silentCloudFallback: false,
+            requiresGNetwork: false,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/decode/frames')
+        && (!init?.method || init.method === 'GET')
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/decode/frames') && init?.method === 'POST'
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/flags/gpu_default/enabled')
+      && (!init?.method || init.method === 'GET')
+    ))).toBe(true);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/flags/gpu_default/enabled') && init?.method === 'POST'
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/deployment/local_only')
+      && (!init?.method || init.method === 'GET')
+    ))).toBe(true);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/capacity'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/privacy/dpia'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/research/tracks/'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/roster/labels'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/incidents/ladder'))).toBe(false);
+    expect(screen.queryByText(/gpu default flag stays off/i)).toBeNull();
+    expect(screen.queryByText(/production decode stays on the fixture FrameSource/i)).toBeNull();
+    expect(screen.queryByText(/pyav and torchcodec stay challengers/i)).toBeNull();
+    expect(screen.queryByText(/deployment does not commit always-on GPU/i)).toBeNull();
+    const decodeFrames = within(await screen.findByRole('region', { name: /stored decode frames/i }));
+    expect(decodeFrames.getByText(/keep backend fixture/i)).toBeTruthy();
+    expect(decodeFrames.getByText(/gpuPromoted stays false/i)).toBeTruthy();
+    expect(decodeFrames.getByText(/client pyav cuda frames are not sent/i)).toBeTruthy();
+    const gpuFlag = within(await screen.findByRole('region', { name: /stored GPU default enabled flag/i }));
+    expect(gpuFlag.getByText(/keeps enabled false/i)).toBeTruthy();
+    expect(gpuFlag.getByText(/client enabled true is not sent/i)).toBeTruthy();
+    expect(gpuFlag.getByText(/a GET flag is not GPU promotion/i)).toBeTruthy();
+    const localOnly = within(await screen.findByRole('region', { name: /stored local-only deployment/i }));
+    expect(localOnly.getByText(/keeps admitted true/i)).toBeTruthy();
+    expect(localOnly.getByText(/silentCloudFallback stays false/i)).toBeTruthy();
+    expect(localOnly.getByText(/local admission is not G-NETWORK/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('loads stored independent reviewer, worked match flow, and decode memory without inventing acceptance or GPU residency', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
