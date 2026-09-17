@@ -886,3 +886,115 @@ def test_production_app_registers_leftover_posts_only_under_dev_prefix(tmp_path:
     dev_detector = client.post("/api/workbench/dev/detector", json={"requestedBackend": "cuda"})
     assert dev_detector.status_code == 200
     assert dev_detector.json()["selectedBackend"] == "cpu"
+
+
+def test_leftover_gets_are_dev_namespaced_when_flag_off(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GA_FLAG_LEFTOVER_HTTP", "0")
+    from fastapi.testclient import TestClient
+
+    from backend.app.main import create_app
+
+    app = create_app(storage_root=tmp_path, run_jobs_inline=True)
+    client = TestClient(app, base_url="http://127.0.0.1")
+    public_bundle = client.get("/api/support/bundle")
+    assert public_bundle.status_code == 404
+    public_hota = client.get("/api/evaluation/hota")
+    assert public_hota.status_code == 404
+    public_gpu = client.get("/api/gpu")
+    assert public_gpu.status_code == 404
+    public_native = client.get("/api/native")
+    assert public_native.status_code == 404
+    public_html = client.get("/video-to-analysis/finish-line")
+    assert public_html.status_code == 404
+
+    flags = client.get("/api/flags")
+    assert flags.status_code == 200
+    dossier = client.get("/api/dossier")
+    assert dossier.status_code == 200
+    matches = client.get("/api/matches")
+    assert matches.status_code == 200
+
+    dev_bundle = client.get("/api/workbench/dev/support/bundle")
+    assert dev_bundle.status_code == 200
+    assert "released" in dev_bundle.json()
+    assert "expired" not in dev_bundle.json()
+    dev_hota = client.get("/api/workbench/dev/evaluation/hota")
+    assert dev_hota.status_code == 200
+    dev_gpu = client.get("/api/workbench/dev/gpu")
+    assert dev_gpu.status_code == 200
+    assert dev_gpu.json().get("canPromoteDefault") is False
+
+
+def test_leftover_gets_absent_from_public_openapi_when_flag_off(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GA_FLAG_LEFTOVER_HTTP", "0")
+    from backend.app.main import create_app
+
+    app = create_app(storage_root=tmp_path, run_jobs_inline=True)
+    paths = set(app.openapi()["paths"])
+    leftover_public = {
+        "/api/support/bundle",
+        "/api/evaluation/hota",
+        "/api/gpu",
+        "/api/native",
+        "/api/heatmap",
+        "/api/dossier/release",
+        "/video-to-analysis/finish-line",
+        "/api/video-to-analysis/finish-line",
+    }
+    assert leftover_public.isdisjoint(paths)
+    assert "/api/workbench/dev/support/bundle" in paths
+    assert "/api/workbench/dev/evaluation/hota" in paths
+    assert "/api/workbench/dev/gpu" in paths
+    assert "/api/matches" in paths
+    assert "/api/flags" in paths
+    assert "/api/dossier" in paths
+    assert "/api/jobs/{job_id}" in paths
+
+
+def test_leftover_gets_present_on_public_api_when_flag_on(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GA_FLAG_LEFTOVER_HTTP", "1")
+    from fastapi.testclient import TestClient
+
+    from backend.app.main import create_app
+
+    app = create_app(storage_root=tmp_path, run_jobs_inline=True)
+    paths = set(app.openapi()["paths"])
+    assert "/api/support/bundle" in paths
+    assert "/api/evaluation/hota" in paths
+    assert "/api/gpu" in paths
+    client = TestClient(app, base_url="http://127.0.0.1")
+    public = client.get("/api/support/bundle")
+    assert public.status_code == 200
+    assert "expired" not in public.json()
+    hota = client.get("/api/evaluation/hota")
+    assert hota.status_code == 200
+
+
+def test_production_main_does_not_define_leftover_contract_gets() -> None:
+    source = Path("backend/app/main.py").read_text(encoding="utf-8")
+    for path in (
+        "/api/support/bundle",
+        "/api/evaluation/hota",
+        "/api/gpu",
+        "/api/native",
+        "/api/heatmap",
+        "/api/dossier/release",
+        "/api/video-to-analysis/finish-line",
+    ):
+        assert f'@app.get("{path}")' not in source
+
+
+def test_leftover_get_handlers_live_outside_production_main() -> None:
+    from backend.app.workbench.leftover_http import LEFTOVER_GET_PATHS
+    from backend.app.workbench import leftover_routes
+
+    source = Path(leftover_routes.__file__).read_text(encoding="utf-8")
+    sibling = Path(leftover_routes.__file__).with_name("leftover_get_routes.py")
+    sibling_source = sibling.read_text(encoding="utf-8") if sibling.exists() else ""
+    combined = source + sibling_source
+    assert "create_leftover_get_router" in combined or "@router.get(\"/support/bundle\")" in combined
+    assert "/support/bundle" in combined
+    assert "/evaluation/hota" in combined
+    assert "/api/support/bundle" in LEFTOVER_GET_PATHS
+    assert "/api/evaluation/hota" in LEFTOVER_GET_PATHS
+    assert "/api/gpu" in LEFTOVER_GET_PATHS
