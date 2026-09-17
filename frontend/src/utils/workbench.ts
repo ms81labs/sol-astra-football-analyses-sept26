@@ -682,6 +682,20 @@ export async function fetchMatchPrivacy(matchId: string) {
   return response.json() as Promise<MatchPrivacyScreen>;
 }
 
+export interface MatchTracklets {
+  assignment?: { kind?: string; forced?: boolean; rosterId?: string | null };
+  chunk?: { silentlyReconnected?: boolean };
+  silentlyReconnected?: boolean;
+}
+
+export async function fetchMatchTracklets(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/tracklets`);
+  if (!response.ok) {
+    throw new Error(`Failed to load match tracklets: ${response.status}`);
+  }
+  return response.json() as Promise<MatchTracklets>;
+}
+
 export interface AnalystWorkflowSnapshot {
   measured?: boolean;
   analystCompletedReviewedMatch?: boolean;
