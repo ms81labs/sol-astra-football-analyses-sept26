@@ -1587,6 +1587,61 @@ export async function fetchScaleScenario() {
   return response.json() as Promise<ScaleScenarioSnapshot>;
 }
 
+export interface MediaAdmitSnapshot {
+  admitted?: boolean;
+  reasonCodes?: string[];
+}
+
+export async function postMediaAdmit() {
+  const response = await fetch('/api/media/admit', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post media admit: ${response.status}`);
+  }
+  return response.json() as Promise<MediaAdmitSnapshot>;
+}
+
+export interface CostEstimateSnapshot {
+  exportFpsEqualsInferenceFps?: boolean;
+  allocatedCompute?: number;
+  total?: number;
+}
+
+export async function postCostEstimate() {
+  const response = await fetch('/api/cost/estimate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post cost estimate: ${response.status}`);
+  }
+  return response.json() as Promise<CostEstimateSnapshot>;
+}
+
+export interface RollbackSnapshot {
+  newJobsAdmitted?: boolean;
+  artifactsPreserved?: boolean;
+  rewrotePastTrialOutcomes?: boolean;
+  staleOutputs?: string[];
+  flagName?: string;
+}
+
+export async function postRollback() {
+  const response = await fetch('/api/rollback', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post rollback: ${response.status}`);
+  }
+  return response.json() as Promise<RollbackSnapshot>;
+}
+
 export interface ShadowMetricSnapshot {
   default?: boolean;
   shadowed?: boolean;

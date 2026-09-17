@@ -53,6 +53,9 @@ import HostedDeploymentPanel from './components/HostedDeploymentPanel';
 import HandheldAdmissionPanel from './components/HandheldAdmissionPanel';
 import ResearchLanePanel from './components/ResearchLanePanel';
 import ScaleScenarioPanel from './components/ScaleScenarioPanel';
+import MediaAdmitWritePanel from './components/MediaAdmitWritePanel';
+import CostEstimateWritePanel from './components/CostEstimateWritePanel';
+import RollbackWritePanel from './components/RollbackWritePanel';
 import MatchProvenancePanel from './components/MatchProvenancePanel';
 import MatchShotQualityPanel from './components/MatchShotQualityPanel';
 import MatchShotFeaturesPanel from './components/MatchShotFeaturesPanel';
@@ -1902,6 +1905,15 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           </div>
           <div className="mb-3 shrink-0">
             <ScaleScenarioPanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <MediaAdmitWritePanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <CostEstimateWritePanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <RollbackWritePanel />
           </div>
           <div className="mb-3 shrink-0">
             <MatchProvenancePanel matchId={activeMatch?.id} />
