@@ -1313,6 +1313,48 @@ export async function fetchOperatorHandoff() {
   return response.json() as Promise<OperatorHandoffSnapshot>;
 }
 
+export interface ReleaseReadoutSnapshot {
+  schemaVersion?: string;
+  released?: boolean;
+  completeTasks?: number;
+}
+
+export async function fetchReleaseReadout() {
+  const response = await fetch('/api/video-to-analysis/release-readout');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored release readout: ${response.status}`);
+  }
+  return response.json() as Promise<ReleaseReadoutSnapshot>;
+}
+
+export interface PostReleaseMonitoringSnapshot {
+  schemaVersion?: string;
+  healthy?: boolean;
+  measured?: boolean;
+}
+
+export async function fetchPostReleaseMonitoring() {
+  const response = await fetch('/api/video-to-analysis/post-release-monitoring');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored post-release monitoring: ${response.status}`);
+  }
+  return response.json() as Promise<PostReleaseMonitoringSnapshot>;
+}
+
+export interface DetectorEvaluationReportSnapshot {
+  schemaVersion?: string;
+  labelsIndependent?: boolean;
+  qualityPassed?: boolean;
+}
+
+export async function fetchDetectorEvaluationReport() {
+  const response = await fetch('/api/video-to-analysis/detector-evaluation-report');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored detector-evaluation report: ${response.status}`);
+  }
+  return response.json() as Promise<DetectorEvaluationReportSnapshot>;
+}
+
 export interface StageTimingSnapshot {
   overlappedStagesAreAdditive?: boolean;
   wallTime?: number;

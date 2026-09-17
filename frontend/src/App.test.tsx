@@ -12561,6 +12561,105 @@ describe('App match workspace loading', () => {
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('loads stored release-readout, post-release-monitoring, and detector-evaluation-report without converting historical reports into current-source labels', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/video-to-analysis/release-readout') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            schemaVersion: 'video_to_analysis_release_readout_view_model_v1',
+            released: true,
+            completeTasks: 18,
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/video-to-analysis/post-release-monitoring') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            schemaVersion: 'video_to_analysis_post_release_monitoring_view_model_v1',
+            healthy: true,
+            measured: true,
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/video-to-analysis/detector-evaluation-report') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            schemaVersion: 'video_to_analysis_detector_evaluation_report_view_model_v1',
+            labelsIndependent: true,
+            qualityPassed: true,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/video-to-analysis/release-readout')
+        && !init
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/video-to-analysis/post-release-monitoring')
+      && !init
+    ))).toBe(true);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/video-to-analysis/detector-evaluation-report')
+      && !init
+    ))).toBe(true);
+    expect(fetchMock.mock.calls.some(([url]) => String(url) === '/video-to-analysis/release-readout')).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url) === '/video-to-analysis/post-release-monitoring')).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url) === '/video-to-analysis/detector-evaluation-report')).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/quota'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/training/admit'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/receipts/promotion'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/capacity'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/privacy/dpia'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/research/tracks/'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/roster/labels'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/incidents/ladder'))).toBe(false);
+    expect(screen.queryByText(/historical finish-line is not current-source sealed inference/i)).toBeNull();
+    expect(screen.queryByText(/reservedTotal is not current-source sealed inference/i)).toBeNull();
+    const readout = within(await screen.findByRole('region', { name: /stored release readout/i }));
+    expect(readout.getByText(/historical release-readout is not current-source sealed inference/i)).toBeTruthy();
+    expect(readout.getByText(/independent labels stay unaccepted/i)).toBeTruthy();
+    const monitoring = within(await screen.findByRole('region', { name: /stored post-release monitoring/i }));
+    expect(monitoring.getByText(/historical post-release-monitoring is not current-source sealed inference/i)).toBeTruthy();
+    expect(monitoring.getByText(/independent labels stay unmeasured/i)).toBeTruthy();
+    const detectorEval = within(await screen.findByRole('region', { name: /stored detector-evaluation report/i }));
+    expect(detectorEval.getByText(/historical detector-evaluation-report is not independent detector proof/i)).toBeTruthy();
+    expect(detectorEval.getByText(/detector scores stay unproven/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('loads stored independent reviewer, worked match flow, and decode memory without inventing acceptance or GPU residency', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
