@@ -1005,6 +1005,60 @@ export async function postDeploymentChoice() {
   return response.json() as Promise<DeploymentChoiceWriteSnapshot>;
 }
 
+export interface TrainingPromoteWriteSnapshot {
+  promoted?: boolean;
+  rollbackArtifact?: boolean;
+  reasonCodes?: string[];
+}
+
+export async function postTrainingPromote() {
+  const response = await fetch('/api/training/promote', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post training promote: ${response.status}`);
+  }
+  return response.json() as Promise<TrainingPromoteWriteSnapshot>;
+}
+
+export interface TrainingLedgerWriteSnapshot {
+  entries?: Array<Record<string, unknown>>;
+  promoted?: boolean;
+  independentGroundTruth?: boolean;
+}
+
+export async function postTrainingLedger() {
+  const response = await fetch('/api/training/ledger', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post training ledger: ${response.status}`);
+  }
+  return response.json() as Promise<TrainingLedgerWriteSnapshot>;
+}
+
+export interface CacheRecomputeWriteSnapshot {
+  reuse?: boolean;
+  rebuild?: string[];
+  reason?: string;
+}
+
+export async function postCacheRecompute() {
+  const response = await fetch('/api/cache/recompute', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post cache recompute: ${response.status}`);
+  }
+  return response.json() as Promise<CacheRecomputeWriteSnapshot>;
+}
+
 export interface JobBudgetSnapshot {
   reserve?: { authorised?: boolean; reserved?: number; estimate?: number; currency?: string };
   reconcile?: { reserved?: number; actual?: number; variance?: number; exceeded?: boolean; alert?: boolean };

@@ -12220,6 +12220,130 @@ describe('App match workspace loading', () => {
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('posts training promote, training ledger, and cache recompute without leftover independentAccepted, independentGroundTruth, or reuse', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/training/promote') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            promoted: false,
+            rollbackArtifact: true,
+            reasonCodes: ['INDEPENDENT_ACCEPTANCE_MISSING'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/training/ledger') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            entries: [{ run: 'exp-1', config: 'baseline' }],
+            promoted: false,
+            independentGroundTruth: false,
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/cache/recompute') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            reuse: false,
+            rebuild: ['observations'],
+            reason: 'cache_identity_changed',
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => expect(screen.getByRole('button', { name: /request training promote/i })).toBeTruthy());
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/training/promote'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/training/ledger'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/cache/recompute'))).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: /request training promote/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/training/promote')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /request training ledger/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/training/ledger')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /request cache recompute/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/cache/recompute')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/training/promote')
+      && Boolean(init?.body && String(init.body).includes('independentAccepted'))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/training/ledger')
+      && Boolean(init?.body && (String(init.body).includes('independentGroundTruth') || String(init.body).includes('promoted')))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/cache/recompute')
+      && Boolean(init?.body && String(init.body).includes('reuse'))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/training/admit'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/cache/tenancy'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/capacity'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/privacy/dpia'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/research/tracks/'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/roster/labels'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/incidents/ladder'))).toBe(false);
+    expect(screen.queryByText(/locked evaluation labels cannot enter training/i)).toBeNull();
+    expect(screen.queryByText(/pseudo-labels are not independent ground truth/i)).toBeNull();
+    const promote = within(screen.getByRole('region', { name: /unforced training promote/i }));
+    expect(promote.getByText(/keeps promoted false/i)).toBeTruthy();
+    expect(promote.getByText(/client independentAccepted true is not sent/i)).toBeTruthy();
+    expect(promote.getByText(/training candidate stays unpromoted/i)).toBeTruthy();
+    const ledger = within(screen.getByRole('region', { name: /unforced training ledger/i }));
+    expect(ledger.getByText(/keeps promoted false/i)).toBeTruthy();
+    expect(ledger.getByText(/client independentGroundTruth true is not sent/i)).toBeTruthy();
+    expect(ledger.getByText(/ledger rows are not independent ground truth/i)).toBeTruthy();
+    const recompute = within(screen.getByRole('region', { name: /unforced cache recompute/i }));
+    expect(recompute.getByText(/keeps reuse false/i)).toBeTruthy();
+    expect(recompute.getByText(/client reuse true is not sent/i)).toBeTruthy();
+    expect(recompute.getByText(/cache_identity_changed rebuilds observations/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('loads stored independent reviewer, worked match flow, and decode memory without inventing acceptance or GPU residency', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
