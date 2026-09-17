@@ -11479,6 +11479,151 @@ describe('App match workspace loading', () => {
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('loads stored job view and rates after a requested durable job and cancels without inventing completed work', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/jobs') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            jobId: 'job-scope-1',
+            status: 'queued',
+            reused: false,
+            costReserved: 0,
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/jobs/job-scope-1/cost') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ reservedTotal: 0, actualTotal: 0, p50Reserved: 0, requestId: 'job-scope-1' }),
+        } as Response);
+      }
+      if (url.endsWith('/api/jobs/job-scope-1/budget') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            reserve: { authorised: false, reserved: 0, estimate: 0, currency: 'USD' },
+            reconcile: { reserved: 0, actual: 0, variance: 0, exceeded: false, alert: false },
+            cost: { reservedTotal: 0, actualTotal: 0 },
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/jobs/job-scope-1/charges') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            cancelled: false,
+            incurred: 0,
+            chargesErased: false,
+            reasonCodes: [],
+          }),
+        } as Response);
+      }
+      if ((url === '/api/jobs/job-scope-1' || url.endsWith('/api/jobs/job-scope-1')) && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: 'queued',
+            durablePhase: null,
+            cancelRequested: false,
+            costReserved: 0,
+            costActual: null,
+            cleanupResult: 'unknown',
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/jobs/job-scope-1/rates') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            exportFpsEqualsInferenceFps: false,
+            decodeFpsEqualsExportFps: false,
+            notes: ['FOUR_RATES_UNRECORDED', 'EXPORT_FPS_IS_NOT_INFERENCE_FPS'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/jobs/job-scope-1/cancel') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            status: 'queued',
+            cancelRequested: true,
+            durablePhase: null,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/jobs/job-scope-1'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/matches/match-a/jobs') && init?.method === 'POST'
+    ))).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: /request durable job/i }));
+    const posted = within(await screen.findByRole('region', { name: /unforced job write/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        (String(url) === '/api/jobs/job-scope-1' || String(url).endsWith('/api/jobs/job-scope-1'))
+        && (!init?.method || init.method === 'GET')
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/jobs/job-scope-1/rates')
+      && (!init?.method || init.method === 'GET')
+    ))).toBe(true);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/jobs/job-scope-1/cancel') && init?.method === 'POST'
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/rates/four'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/capacity'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/privacy/dpia'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/research/tracks/'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/roster/labels'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/incidents/ladder'))).toBe(false);
+    expect(screen.queryByText(/export fps is not inference fps/i)).toBeNull();
+    expect(posted.getByText(/keeps cancelRequested false/i)).toBeTruthy();
+    expect(posted.getByText(/a queued durable job is not completed work/i)).toBeTruthy();
+    expect(posted.getByText(/keep exportFpsEqualsInferenceFps false/i)).toBeTruthy();
+    expect(posted.getByText(/job sampling rates are not leftover four-rate POST/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /cancel durable job/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/jobs/job-scope-1/cancel')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    expect(posted.getByText(/keeps cancelRequested true/i)).toBeTruthy();
+    expect(posted.getByText(/client completeMatch is not sent/i)).toBeTruthy();
+    expect(posted.getByText(/a cancel flag is not completed work/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('loads stored independent reviewer, worked match flow, and decode memory without inventing acceptance or GPU residency', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);

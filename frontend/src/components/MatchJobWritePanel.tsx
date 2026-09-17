@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { fetchJobBudget, fetchJobCharges, fetchJobCost, postMatchJob } from '../utils/workbench';
+import { fetchJobBudget, fetchJobCharges, fetchJobCost, fetchJobRates, fetchJobView, postJobCancel, postMatchJob } from '../utils/workbench';
 
 interface MatchJobWritePanelProps {
   matchId?: string;
@@ -9,6 +9,7 @@ interface MatchJobWritePanelProps {
 export default function MatchJobWritePanel({ matchId }: MatchJobWritePanelProps) {
   const [note, setNote] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [jobId, setJobId] = useState<string | null>(null);
 
   if (!matchId) return null;
 
@@ -44,6 +45,23 @@ export default function MatchJobWritePanel({ matchId }: MatchJobWritePanelProps)
           } catch {
             // Keep the posted-job note if the charge ledger is unavailable.
           }
+          try {
+            const view = await fetchJobView(payload.jobId);
+            if (view.cancelRequested === false) {
+              next += ' Stored job view keeps cancelRequested false. A queued durable job is not completed work.';
+            }
+          } catch {
+            // Keep the posted-job note if the job view is unavailable.
+          }
+          try {
+            const rates = await fetchJobRates(payload.jobId);
+            if (rates.exportFpsEqualsInferenceFps === false) {
+              next += ' Stored job rates keep exportFpsEqualsInferenceFps false. Job sampling rates are not leftover four-rate POST.';
+            }
+          } catch {
+            // Keep the posted-job note if the job rates are unavailable.
+          }
+          setJobId(payload.jobId);
         }
         setNote(next);
       } else {
@@ -51,6 +69,21 @@ export default function MatchJobWritePanel({ matchId }: MatchJobWritePanelProps)
       }
     } catch {
       setNote(null);
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function requestCancel() {
+    if (!jobId || pending) return;
+    setPending(true);
+    try {
+      const cancelled = await postJobCancel(jobId);
+      if (cancelled.cancelRequested === true) {
+        setNote('Posted job cancel keeps cancelRequested true. Client completeMatch is not sent. A cancel flag is not completed work. Stored job rates keep exportFpsEqualsInferenceFps false. Job sampling rates are not leftover four-rate POST.');
+      }
+    } catch {
+      // Keep the posted-job note if cancel is refused.
     } finally {
       setPending(false);
     }
@@ -68,6 +101,17 @@ export default function MatchJobWritePanel({ matchId }: MatchJobWritePanelProps)
       >
         Request durable job
       </button>
+      {jobId && (
+        <button
+          type="button"
+          aria-label="Cancel durable job"
+          onClick={() => void requestCancel()}
+          disabled={pending}
+          className="px-3 py-1.5 rounded bg-slate-700 text-xs font-semibold text-white disabled:opacity-50"
+        >
+          Cancel durable job
+        </button>
+      )}
       {note && <p className="text-xs text-slate-400">{note}</p>}
     </section>
   );

@@ -932,6 +932,32 @@ export async function fetchJobCharges(jobId: string) {
   return response.json() as Promise<JobChargesSnapshot>;
 }
 
+export interface JobRatesSnapshot {
+  exportFpsEqualsInferenceFps?: boolean;
+  decodeFpsEqualsExportFps?: boolean;
+  notes?: string[];
+}
+
+export async function fetchJobRates(jobId: string) {
+  const response = await fetch(`/api/jobs/${jobId}/rates`);
+  if (!response.ok) {
+    throw new Error(`Failed to load stored job rates: ${response.status}`);
+  }
+  return response.json() as Promise<JobRatesSnapshot>;
+}
+
+export async function postJobCancel(jobId: string) {
+  const response = await fetch(`/api/jobs/${jobId}/cancel`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to cancel job: ${response.status}`);
+  }
+  return response.json() as Promise<{ cancelRequested?: boolean; status?: string; durablePhase?: string | null }>;
+}
+
 export interface StageTimingSnapshot {
   overlappedStagesAreAdditive?: boolean;
   wallTime?: number;
