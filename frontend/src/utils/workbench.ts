@@ -291,6 +291,22 @@ export async function fetchMatchEventPartition(matchId: string) {
   return response.json() as Promise<MatchEventPartition>;
 }
 
+export interface MatchIdentity {
+  reset?: boolean;
+  silentlyReconnected: boolean;
+  cutCount?: number;
+  identityContinuous: boolean;
+  reasonCodes?: string[];
+}
+
+export async function fetchMatchIdentity(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/identity`);
+  if (!response.ok) {
+    throw new Error(`Failed to load match identity: ${response.status}`);
+  }
+  return response.json() as Promise<MatchIdentity>;
+}
+
 export async function fetchCorrectionHistory(matchId: string) {
   const response = await fetch(`/api/matches/${matchId}/corrections`);
   if (!response.ok) {
