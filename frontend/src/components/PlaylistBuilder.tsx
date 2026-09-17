@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 import { clipKey, type PlaylistClip } from '../utils/playlist';
-import { assembleMatchReport, exportPlaylistInterval } from '../utils/workbench';
+import { assembleMatchReport, exportPlaylistInterval, fetchMatchEdits } from '../utils/workbench';
 
 interface PlaylistBuilderProps {
   matchId?: string;
@@ -48,6 +48,27 @@ export default function PlaylistBuilder({
   const [exportError, setExportError] = useState<string | null>(null);
   const [reportNote, setReportNote] = useState<string | null>(null);
   const [reportError, setReportError] = useState<string | null>(null);
+  const [editNote, setEditNote] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!matchId) return;
+    let cancelled = false;
+    fetchMatchEdits(matchId)
+      .then((payload) => {
+        if (cancelled) return;
+        if (payload.reencodeFullMatch === false && payload.renderOnDemand === true) {
+          setEditNote('Source-linked playlist: render on demand and does not re-encode the full match.');
+        } else {
+          setEditNote(null);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setEditNote(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [matchId, storedClips.length]);
 
   async function addClip() {
     const from = Number(start);
@@ -136,6 +157,7 @@ export default function PlaylistBuilder({
         </button>
       ))}
       {reportNote && <p className="text-xs text-slate-300">{reportNote}</p>}
+      {editNote && <p className="text-xs text-slate-400">{editNote}</p>}
       <p className="text-xs text-slate-500">Reviewed passages do not establish a whole-match frequency.</p>
     </section>
   );

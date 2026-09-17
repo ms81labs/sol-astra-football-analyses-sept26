@@ -564,6 +564,7 @@ export async function fetchMatchProxy(matchId: string) {
 export interface EditListSnapshot {
   reencodeFullMatch?: boolean;
   renderOnDemand?: boolean;
+  intervals?: Array<[number, number] | { start: number; end: number }>;
 }
 
 export async function fetchMatchEdits(matchId: string) {
