@@ -1056,6 +1056,32 @@ export async function fetchLicenceRegister() {
   return response.json() as Promise<LicenceRegisterSnapshot>;
 }
 
+export interface DatasetRightsSnapshot {
+  soccernet?: { permittedPurpose?: string; commercialProduct?: boolean; redistributeCopyrightedVideo?: boolean };
+}
+
+export async function fetchDatasetRights() {
+  const response = await fetch('/api/rights/datasets');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored dataset rights: ${response.status}`);
+  }
+  return response.json() as Promise<DatasetRightsSnapshot>;
+}
+
+export interface MetricRoundTripSnapshot {
+  availability?: string;
+  publishedValue?: number | null;
+  value?: number | null;
+}
+
+export async function fetchMetricRoundTrip() {
+  const response = await fetch('/api/metrics/round-trip');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored metric round-trip: ${response.status}`);
+  }
+  return response.json() as Promise<MetricRoundTripSnapshot>;
+}
+
 export interface PreemptibleSnapshot {
   allowed?: boolean;
 }

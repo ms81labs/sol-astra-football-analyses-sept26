@@ -11750,6 +11750,108 @@ describe('App match workspace loading', () => {
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('loads stored telestration, dataset rights, and metric round-trip without inventing 3D overlay, SoccerNet product, or published values', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/telestration') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ blenderEnabled: false, pitchView: '2d', telestration: 'basic' }),
+        } as Response);
+      }
+      if (url.endsWith('/api/rights/datasets') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            soccernet: {
+              permittedPurpose: 'research',
+              commercialProduct: false,
+              redistributeCopyrightedVideo: false,
+            },
+            statsbomb_open_data: {
+              permittedPurpose: 'research_pending_licence_check',
+              commercialProduct: false,
+            },
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/metrics/round-trip') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            metric: 'possession_pct',
+            availability: 'unknown',
+            value: null,
+            publishedValue: null,
+            reasonCodes: ['ZERO_DENOMINATOR'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/telestration')
+        && (!init?.method || init.method === 'GET')
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/rights/datasets')
+      && (!init?.method || init.method === 'GET')
+    ))).toBe(true);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/metrics/round-trip')
+      && (!init?.method || init.method === 'GET')
+    ))).toBe(true);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/rights/evaluate'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/incidents/ladder'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/capacity'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/privacy/dpia'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/research/tracks/'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/roster/labels'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/shots/tree'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/cache/tenancy'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/reports/assemble'))).toBe(false);
+    expect(screen.queryByText(/telestration stays 2d before 3d/i)).toBeNull();
+    const telestration = within(await screen.findByRole('region', { name: /stored telestration/i }));
+    expect(telestration.getByText(/keeps blenderEnabled false/i)).toBeTruthy();
+    expect(telestration.getByText(/pitch view stays 2d/i)).toBeTruthy();
+    expect(telestration.getByText(/blender is not admitted as 3D overlay/i)).toBeTruthy();
+    const datasets = within(screen.getByRole('region', { name: /stored dataset rights/i }));
+    expect(datasets.getByText(/keep SoccerNet commercialProduct false/i)).toBeTruthy();
+    expect(datasets.getByText(/research purpose is not a commercial product licence/i)).toBeTruthy();
+    const roundTrip = within(screen.getByRole('region', { name: /stored metric round-trip/i }));
+    expect(roundTrip.getByText(/keeps availability unknown/i)).toBeTruthy();
+    expect(roundTrip.getByText(/publishedValue stays null/i)).toBeTruthy();
+    expect(roundTrip.getByText(/unknown metrics do not acquire a published value/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('loads derived proxy assets on the review App without replacing the original source', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
