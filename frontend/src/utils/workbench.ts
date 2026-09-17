@@ -226,6 +226,18 @@ export async function fetchMatchMetrics(matchId: string) {
   return response.json() as Promise<{ metrics: MetricAvailability[] }>;
 }
 
+export async function postMatchMetrics(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/metrics`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post match metrics: ${response.status}`);
+  }
+  return response.json() as Promise<{ metrics: MetricAvailability[] }>;
+}
+
 export async function fetchTrainingDrills() {
   const response = await fetch('/api/training/drills');
   if (!response.ok) {
