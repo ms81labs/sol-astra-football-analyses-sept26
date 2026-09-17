@@ -12759,6 +12759,116 @@ describe('App match workspace loading', () => {
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('loads stored real-video-scaleout and bounded-next-sample reports and posts decode first without leftover torchcodec frames or current-source scaleout', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/video-to-analysis/real-video-scaleout-report') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            schemaVersion: 'video_to_analysis_real_video_scaleout_report_view_model_v1',
+            scaled: true,
+            labelsIndependent: true,
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/video-to-analysis/bounded-next-sample-report') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            schemaVersion: 'video_to_analysis_bounded_next_sample_report_view_model_v1',
+            complete: true,
+            completeTasks: 18,
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/decode/first') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            backend: 'fixture',
+            sourceFrameIndex: 0,
+            device: 'cpu',
+            gpuPromoted: false,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/video-to-analysis/real-video-scaleout-report')
+        && !init
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/video-to-analysis/bounded-next-sample-report')
+      && !init
+    ))).toBe(true);
+    await waitFor(() => expect(screen.getByRole('button', { name: /request decode first/i })).toBeTruthy());
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/decode/first'))).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: /request decode first/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/decode/first')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/decode/first')
+      && Boolean(init?.body && (String(init.body).includes('torchcodec') || String(init.body).includes('sourceFrameIndex')))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url) === '/video-to-analysis/real-video-scaleout-report')).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url) === '/video-to-analysis/bounded-next-sample-report')).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/quota'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/training/admit'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/receipts/promotion'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/capacity'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/privacy/dpia'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/research/tracks/'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/roster/labels'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/incidents/ladder'))).toBe(false);
+    expect(screen.queryByText(/decimal GB is not GiB/i)).toBeNull();
+    expect(screen.queryByText(/client pyav cuda frames are not sent/i)).toBeNull();
+    const scaleout = within(await screen.findByRole('region', { name: /stored real-video-scaleout report/i }));
+    expect(scaleout.getByText(/historical real-video-scaleout-report is not current-source sealed inference/i)).toBeTruthy();
+    expect(scaleout.getByText(/scaleout does not admit independent labels/i)).toBeTruthy();
+    const nextSample = within(await screen.findByRole('region', { name: /stored bounded next-sample report/i }));
+    expect(nextSample.getByText(/historical bounded-next-sample-report is not current-source sealed inference/i)).toBeTruthy();
+    expect(nextSample.getByText(/next sample stays bounded and unlabeled/i)).toBeTruthy();
+    const decodeFirst = within(screen.getByRole('region', { name: /unforced decode first/i }));
+    expect(decodeFirst.getByText(/keeps sourceFrameIndex 0/i)).toBeTruthy();
+    expect(decodeFirst.getByText(/client torchcodec index 7 is not sent/i)).toBeTruthy();
+    expect(decodeFirst.getByText(/first-frame decode is not GPU promotion/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('loads stored independent reviewer, worked match flow, and decode memory without inventing acceptance or GPU residency', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);

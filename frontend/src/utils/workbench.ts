@@ -1397,6 +1397,53 @@ export async function fetchOperatorDashboard() {
   return response.json() as Promise<OperatorDashboardSnapshot>;
 }
 
+export interface RealVideoScaleoutReportSnapshot {
+  schemaVersion?: string;
+  scaled?: boolean;
+  labelsIndependent?: boolean;
+}
+
+export async function fetchRealVideoScaleoutReport() {
+  const response = await fetch('/api/video-to-analysis/real-video-scaleout-report');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored real-video-scaleout report: ${response.status}`);
+  }
+  return response.json() as Promise<RealVideoScaleoutReportSnapshot>;
+}
+
+export interface BoundedNextSampleReportSnapshot {
+  schemaVersion?: string;
+  complete?: boolean;
+  completeTasks?: number;
+}
+
+export async function fetchBoundedNextSampleReport() {
+  const response = await fetch('/api/video-to-analysis/bounded-next-sample-report');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored bounded next-sample report: ${response.status}`);
+  }
+  return response.json() as Promise<BoundedNextSampleReportSnapshot>;
+}
+
+export interface DecodeFirstWriteSnapshot {
+  backend?: string;
+  sourceFrameIndex?: number;
+  device?: string;
+  gpuPromoted?: boolean;
+}
+
+export async function postDecodeFirst() {
+  const response = await fetch('/api/decode/first', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post decode first: ${response.status}`);
+  }
+  return response.json() as Promise<DecodeFirstWriteSnapshot>;
+}
+
 export interface StageTimingSnapshot {
   overlappedStagesAreAdditive?: boolean;
   wallTime?: number;

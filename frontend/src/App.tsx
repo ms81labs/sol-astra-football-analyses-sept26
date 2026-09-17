@@ -85,6 +85,7 @@ import CacheRecomputeWritePanel from './components/CacheRecomputeWritePanel';
 import CleanupCompleteWritePanel from './components/CleanupCompleteWritePanel';
 import TrainingCycleWritePanel from './components/TrainingCycleWritePanel';
 import ExperimentPauseWritePanel from './components/ExperimentPauseWritePanel';
+import DecodeFirstWritePanel from './components/DecodeFirstWritePanel';
 import StageTimingPanel from './components/StageTimingPanel';
 import GpuProbePanel from './components/GpuProbePanel';
 import IndependentReviewerPanel from './components/IndependentReviewerPanel';
@@ -124,6 +125,8 @@ import DetectorEvaluationReportPanel from './components/DetectorEvaluationReport
 import PromotionReviewReportPanel from './components/PromotionReviewReportPanel';
 import PromotedRuntimeMonitoringPanel from './components/PromotedRuntimeMonitoringPanel';
 import OperatorDashboardPanel from './components/OperatorDashboardPanel';
+import RealVideoScaleoutReportPanel from './components/RealVideoScaleoutReportPanel';
+import BoundedNextSampleReportPanel from './components/BoundedNextSampleReportPanel';
 import MatchProvenancePanel from './components/MatchProvenancePanel';
 import MatchShotQualityPanel from './components/MatchShotQualityPanel';
 import MatchShotFeaturesPanel from './components/MatchShotFeaturesPanel';
@@ -2071,6 +2074,9 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
             <ExperimentPauseWritePanel />
           </div>
           <div className="mb-3 shrink-0">
+            <DecodeFirstWritePanel />
+          </div>
+          <div className="mb-3 shrink-0">
             <StageTimingPanel />
           </div>
           <div className="mb-3 shrink-0">
@@ -2186,6 +2192,12 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           </div>
           <div className="mb-3 shrink-0">
             <OperatorDashboardPanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <RealVideoScaleoutReportPanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <BoundedNextSampleReportPanel />
           </div>
           <div className="mb-3 shrink-0">
             <MatchProvenancePanel matchId={activeMatch?.id} />
