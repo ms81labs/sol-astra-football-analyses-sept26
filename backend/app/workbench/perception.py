@@ -156,6 +156,21 @@ def tile_to_source(
     return (ox + x1 * scale, oy + y1 * scale, ox + x2 * scale, oy + y2 * scale)
 
 
+def unwrap_ultralytics_track_result(tracked: object) -> object:
+    """Ultralytics track() may return a Result, a list, or an iterator of Results."""
+
+    if hasattr(tracked, "boxes"):
+        return tracked
+    if isinstance(tracked, (list, tuple)):
+        if not tracked:
+            raise RuntimeError("ultralytics track returned no results")
+        return tracked[0]
+    try:
+        return next(iter(tracked))  # type: ignore[arg-type]
+    except StopIteration as exc:
+        raise RuntimeError("ultralytics track returned no results") from exc
+
+
 def _ultralytics_scalar(value: Any) -> float:
     if hasattr(value, "tolist"):
         value = value.tolist()
@@ -343,20 +358,38 @@ class TrackerAdapter:
         broadcast_replay: bool = False,
         previous_tracks: list[dict[str, Any]] | None = None,
     ) -> list[dict[str, Any]]:
-        del previous_tracks
         chunk = tracker_chunk(scene_discontinuity=cut_detected, broadcast_replay=broadcast_replay)
         policy = reconnect_across_cut(cut_detected=cut_detected or broadcast_replay)
+        reset = bool(chunk["reset"] or policy["reset"])
+        used_previous: set[int] = set()
         tracks = []
         for detection in detections:
-            prefix = f"{self.name}:reset" if chunk["reset"] else self.name
+            prefix = f"{self.name}:reset" if reset else self.name
+            track_id = f"{prefix}:{detection.frameId}:{detection.bbox}"
+            if not reset and previous_tracks:
+                best_index = None
+                best_iou = 0.5
+                for index, previous in enumerate(previous_tracks):
+                    if index in used_previous:
+                        continue
+                    previous_bbox = previous.get("bbox")
+                    if not previous_bbox:
+                        continue
+                    score = _iou(detection.bbox, tuple(previous_bbox))  # type: ignore[arg-type]
+                    if score >= best_iou:
+                        best_iou = score
+                        best_index = index
+                if best_index is not None:
+                    used_previous.add(best_index)
+                    track_id = str(previous_tracks[best_index]["trackId"])
             tracks.append(
                 {
                     "frameId": detection.frameId,
-                    "trackId": f"{prefix}:{detection.frameId}:{detection.bbox}",
+                    "trackId": track_id,
                     "bbox": detection.bbox,
                     "kind": detection.kind,
                     "observationSource": detection.observationSource,
-                    "reset": chunk["reset"] or policy["reset"],
+                    "reset": reset,
                     "silentlyReconnected": False,
                 }
             )

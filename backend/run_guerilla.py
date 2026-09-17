@@ -8059,7 +8059,7 @@ def process_video(
     # We will use generator to track frame by frame
     def _frame_source_track_results():
             from backend.app.workbench.media import iter_bgr_frames, pixels_from_decoded_frame
-            from backend.app.workbench.perception import DetectorAdapter, TrackerAdapter
+            from backend.app.workbench.perception import DetectorAdapter, TrackerAdapter, unwrap_ultralytics_track_result
 
             detector = DetectorAdapter()
             tracker = TrackerAdapter()
@@ -8074,7 +8074,7 @@ def process_video(
                     classes=detector_tracking_class_ids(resolved_primary_detector_profile),
                     verbose=False,
                 )
-                result = tracked[0] if isinstance(tracked, (list, tuple)) else tracked
+                result = unwrap_ultralytics_track_result(tracked)
                 if getattr(result, "orig_img", None) is None:
                     try:
                         result.orig_img = frame
@@ -8086,6 +8086,7 @@ def process_video(
                     result.presentation_time_seconds = decoded.presentation_time_seconds
                     result.source_frame_index = decoded.source_frame_index
                     result.pts = decoded.pts
+                    result.presentation_clock = getattr(decoded, "presentation_clock", "decoder_pts")
                 except Exception:
                     pass
                 yield result
@@ -8112,8 +8113,9 @@ def process_video(
                     except ValueError:
                         pass  # Keep current H
         
+        presentation = None if getattr(r, "presentation_clock", "decoder_pts") == "missing" else getattr(r, "presentation_time_seconds", None)
         if should_export_on_source_grid(
-            getattr(r, "presentation_time_seconds", None),
+            presentation,
             frame_count=frame_count,
             frame_interval=frame_interval,
             last_export_presentation_time=last_export_presentation_time,
@@ -8121,11 +8123,11 @@ def process_video(
         ):
             sampling_audit.record_export_sample()
             timestamp = export_timestamp_seconds(
-                presentation_time_seconds=getattr(r, "presentation_time_seconds", None),
+                presentation_time_seconds=presentation,
                 frame_count=frame_count,
                 fps=fps,
             )
-            last_export_presentation_time = getattr(r, "presentation_time_seconds", timestamp)
+            last_export_presentation_time = presentation if presentation is not None else timestamp
             
             boxes = r.boxes
             if boxes is not None:

@@ -653,3 +653,97 @@ def test_match_calibration_commit_persists_uncertified_profile(tmp_path: Path) -
         preview = client.get(f"/api/matches/{match.id}/setup/preview")
         assert preview.json()["committed"] is True
         assert preview.json()["certified"] is False
+
+
+def test_unwrap_ultralytics_track_result_accepts_result_list_and_iterator() -> None:
+    from backend.app.workbench.perception import unwrap_ultralytics_track_result
+
+    boxed = SimpleNamespace(boxes=["ok"])
+    assert unwrap_ultralytics_track_result(boxed) is boxed
+    assert unwrap_ultralytics_track_result([boxed]) is boxed
+    assert unwrap_ultralytics_track_result(iter([boxed])) is boxed
+    with pytest.raises(RuntimeError, match="no results"):
+        unwrap_ultralytics_track_result([])
+
+
+def test_opencv_stuck_pos_msec_marks_clock_missing_instead_of_collapsing_export() -> None:
+    class Capture:
+        def __init__(self) -> None:
+            self._index = -1
+
+        def isOpened(self) -> bool:
+            return True
+
+        def get(self, _prop: int) -> float:
+            return 5.0
+
+        def read(self):
+            self._index += 1
+            if self._index >= 3:
+                return False, None
+            image = SimpleNamespace(shape=(2, 2, 3), tobytes=lambda: b"x" * 12)
+            return True, image
+
+        def release(self) -> None:
+            return None
+
+    class Cv2:
+        CAP_PROP_FPS = 5
+        CAP_PROP_POS_MSEC = 0
+        CAP_PROP_FRAME_WIDTH = 3
+        CAP_PROP_FRAME_HEIGHT = 4
+        CAP_PROP_FRAME_COUNT = 7
+
+        @staticmethod
+        def VideoCapture(_path: str) -> Capture:
+            return Capture()
+
+    frames = list(OpenCvFrameSource(cv2_module=Cv2()).iter_frames(Path("/tmp/stuck.mp4")))
+    assert len(frames) == 3
+    assert frames[0].presentation_clock == "decoder_pts"
+    assert all(frame.presentation_clock == "missing" for frame in frames[1:])
+    exported = 0
+    last = None
+    from backend.app.workbench.media import should_export_on_source_grid
+
+    for index, frame in enumerate(frames):
+        presentation = None if frame.presentation_clock == "missing" else frame.presentation_time_seconds
+        if should_export_on_source_grid(
+            presentation,
+            frame_count=index,
+            frame_interval=1,
+            last_export_presentation_time=last,
+            grid_step_seconds=0.2,
+        ):
+            exported += 1
+            last = presentation if presentation is not None else last
+    assert exported == 3
+
+
+def test_tracker_associate_reuses_previous_track_id_by_iou_without_silent_cut_reconnect() -> None:
+    detection = Detection(
+        frameId=1,
+        bbox=(10.0, 20.0, 30.0, 80.0),
+        score=0.9,
+        kind="player",
+        stratum="near",
+    )
+    previous = [
+        {
+            "frameId": 0,
+            "trackId": "botsort_baseline:stable-7",
+            "bbox": (11.0, 21.0, 31.0, 81.0),
+            "kind": "player",
+            "observationSource": "observed",
+            "reset": False,
+            "silentlyReconnected": False,
+        }
+    ]
+    adapter = TrackerAdapter()
+    continuous = adapter.associate([detection], previous_tracks=previous)
+    assert continuous[0]["trackId"] == "botsort_baseline:stable-7"
+    assert continuous[0]["silentlyReconnected"] is False
+    cut = adapter.associate([detection], cut_detected=True, previous_tracks=previous)
+    assert cut[0]["trackId"] != "botsort_baseline:stable-7"
+    assert cut[0]["reset"] is True
+    assert cut[0]["silentlyReconnected"] is False

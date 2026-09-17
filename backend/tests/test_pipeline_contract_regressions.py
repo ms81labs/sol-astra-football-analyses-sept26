@@ -100,11 +100,14 @@ def test_tracking_updates_polygon_and_forwards_calibration_history_to_both_passe
     initial=[[0,0],[100,0],[100,100],[0,100]]
     shifted=[[100,0],[200,0],[200,100],[100,100]]
     class Model:
+        def __init__(self):
+            self._xs = iter((50, 150))
         def track(self,**kw):
-            return iter([SimpleNamespace(orig_img=frame,boxes=[box(32,x,50),box(0,x,48)]) for x in (50,150)])
+            x = next(self._xs)
+            return iter([SimpleNamespace(orig_img=frame,boxes=[box(32,x,50),box(0,x,48)])])
         def predict(self,*a,**kw): return []
     monkeypatch.setattr(pipeline,'YOLO',lambda _:Model())
-    monkeypatch.setattr(pipeline.cv2,'VideoCapture',lambda _:Capture([frame]))
+    monkeypatch.setattr(pipeline.cv2,'VideoCapture',lambda _:Capture([frame, frame]))
     monkeypatch.setattr(pipeline,'resolve_homography',lambda *a,**kw:(np.eye(3),initial))
     monkeypatch.setattr(pipeline,'HOMOGRAPHY_RECALC_FRAMES',1)
     monkeypatch.setattr(pipeline,'AUTO_HOMOGRAPHY_AVAILABLE',True)

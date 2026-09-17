@@ -34,6 +34,7 @@ class DecodedFrame:
     crop: tuple[int, int, int, int] | None = None
     image: object | None = None
     buffer: FrameBuffer | None = None
+    presentation_clock: Literal["decoder_pts", "missing"] = "decoder_pts"
 
 
 @dataclass
@@ -156,6 +157,7 @@ class OpenCvFrameSource(FrameSource):
                 capture.release()
             return
         index = 0
+        last_msec: float | None = None
         try:
             while True:
                 if cancel_event is not None and cancel_event.is_set():
@@ -165,7 +167,11 @@ class OpenCvFrameSource(FrameSource):
                     return
                 payload = image.tobytes() if hasattr(image, "tobytes") else bytes(image)
                 height, width = (int(image.shape[0]), int(image.shape[1])) if hasattr(image, "shape") else (0, 0)
-                presentation_time_seconds, pts = _opencv_presentation_clock(capture, cv2, index)
+                presentation_time_seconds, pts, clock = _opencv_presentation_clock(
+                    capture, cv2, index, last_msec=last_msec
+                )
+                if clock == "decoder_pts":
+                    last_msec = presentation_time_seconds * 1000.0
                 yield DecodedFrame(
                     source_frame_index=index,
                     pts=pts,
@@ -177,6 +183,7 @@ class OpenCvFrameSource(FrameSource):
                     payload=payload,
                     backend=self.name,
                     image=image,
+                    presentation_clock=clock,
                 )
                 index += 1
         finally:
@@ -276,10 +283,11 @@ class FfmpegFrameSource(FrameSource):
                     if remainder:
                         stderr_chunks.append(remainder)
                     pts_time = _pts_time_from_showinfo(b"".join(stderr_chunks), index)
+                clock: Literal["decoder_pts", "missing"] = "decoder_pts" if pts_time is not None else "missing"
                 presentation_time_seconds = float(pts_time if pts_time is not None else 0.0)
                 yield DecodedFrame(
                     source_frame_index=index,
-                    pts=int(round(presentation_time_seconds * float(identity.timeBaseDen or 1))),
+                    pts=int(round(presentation_time_seconds * float(identity.timeBaseDen or 1))) if clock == "decoder_pts" else None,
                     presentation_time_seconds=presentation_time_seconds,
                     width=width,
                     height=height,
@@ -287,6 +295,7 @@ class FfmpegFrameSource(FrameSource):
                     rotation=int(identity.rotation or 0),
                     payload=payload,
                     backend=self.name,
+                    presentation_clock=clock,
                 )
                 index += 1
         finally:
@@ -449,14 +458,22 @@ def _admit_local_decode_path(path: Path) -> None:
         raise ValueError("unconstrained decoder")
 
 
-def _opencv_presentation_clock(capture: object, cv2_module: object, index: int) -> tuple[float, int | None]:
+def _opencv_presentation_clock(
+    capture: object,
+    cv2_module: object,
+    index: int,
+    *,
+    last_msec: float | None = None,
+) -> tuple[float, int | None, Literal["decoder_pts", "missing"]]:
     del index
     msec_prop = getattr(cv2_module, "CAP_PROP_POS_MSEC", 0)
     try:
         msec = float(capture.get(msec_prop) or 0.0)  # type: ignore[attr-defined]
     except Exception:
         msec = 0.0
-    return msec / 1000.0, int(round(msec))
+    if last_msec is not None and msec <= last_msec + 1e-6:
+        return msec / 1000.0, None, "missing"
+    return msec / 1000.0, int(round(msec)), "decoder_pts"
 
 
 def _pts_time_from_showinfo(blob: bytes, index: int) -> float | None:

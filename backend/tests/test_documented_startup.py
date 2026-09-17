@@ -13,9 +13,16 @@ import tomllib
 from urllib.request import urlopen
 import zipfile
 
+import pytest
+
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 SIDECAR_ROOT = REPOSITORY_ROOT / "research-addon"
+_ENSUREPIP_AVAILABLE = __import__("importlib.util").util.find_spec("ensurepip") is not None
+
+
+def _host_pytest_site_packages() -> str:
+    return str(Path(pytest.__file__).resolve().parents[1])
 
 
 def _environment_without_pythonpath() -> dict[str, str]:
@@ -303,7 +310,7 @@ def test_collect_only_uses_and_removes_pytest_owned_storage(tmp_path: Path) -> N
             "TMPDIR": str(temporary_root),
             "PYTHONDONTWRITEBYTECODE": "1",
             "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
-            "PYTHONPATH": str(plugin_root),
+            "PYTHONPATH": os.pathsep.join((str(plugin_root), _host_pytest_site_packages())),
             "GUERILLA_PYTEST_STORAGE_OBSERVER": str(observed_storage_root),
         },
         env_removals=("GUERILLA_STORAGE_ROOT",),
@@ -318,6 +325,7 @@ def test_collect_only_uses_and_removes_pytest_owned_storage(tmp_path: Path) -> N
     assert not pytest_storage_root.exists()
 
 
+@pytest.mark.skipif(not _ENSUREPIP_AVAILABLE, reason="environment has no ensurepip/python3-venv")
 def test_root_package_builds_and_imports_documented_asgi_target_outside_checkout(
     tmp_path: Path,
     request,
@@ -394,6 +402,7 @@ def test_root_package_builds_and_imports_documented_asgi_target_outside_checkout
     assert _storage_snapshot() == before_storage
 
 
+@pytest.mark.skipif(not _ENSUREPIP_AVAILABLE, reason="environment has no ensurepip/python3-venv")
 def test_sidecar_package_installs_imports_and_exposes_cli_without_pythonpath(
     tmp_path: Path,
     request,
