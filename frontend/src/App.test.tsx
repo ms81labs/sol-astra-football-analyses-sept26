@@ -15045,6 +15045,134 @@ describe('App match workspace loading', () => {
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('posts leftover proxy pts, ownership hysteresis, and four rates without leftover originalPts, owner my_team, or exportFpsEqualsInferenceFps true', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/decode/proxy-pts') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ mapping: [], replacesOriginal: false }),
+        } as Response);
+      }
+      if (url.endsWith('/api/ownership/hysteresis') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ owner: 'unknown', minPersistence: 3 }),
+        } as Response);
+      }
+      if (url.endsWith('/api/rates/four') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            decodeCount: 25,
+            exportCount: 5,
+            exportFpsEqualsInferenceFps: false,
+            decodeFpsEqualsExportFps: false,
+            notes: ['EXPORT_FPS_IS_NOT_INFERENCE_FPS'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => expect(screen.getByRole('button', { name: /request leftover proxy pts/i })).toBeTruthy());
+    expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith('/api/decode/proxy-pts') && init?.method === 'POST')).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith('/api/ownership/hysteresis') && init?.method === 'POST')).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith('/api/rates/four') && init?.method === 'POST')).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: /request leftover proxy pts/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/decode/proxy-pts')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /request leftover ownership hysteresis/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/ownership/hysteresis')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /request leftover four rates/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/rates/four')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/decode/proxy-pts')
+      && Boolean(init?.body && (String(init.body).includes('originalPts') || String(init.body).includes('proxyPts')))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/ownership/hysteresis')
+      && Boolean(init?.body && (String(init.body).includes('owner') || String(init.body).includes('my_team')))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/rates/four')
+      && Boolean(init?.body && String(init.body).includes('exportFpsEqualsInferenceFps'))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/quota'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/training/admit'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/receipts/promotion'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/capacity'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/privacy/dpia'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/research/tracks/'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/roster/labels'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/incidents/ladder'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/access/object'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/geometry/landmarks'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/geometry/preview'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/library/search'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/reports/assemble'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/shots/tree'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/cache/tenancy'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/setup/preview'))).toBe(false);
+    expect(screen.queryByText(/the proxy does not replace the original source/i)).toBeNull();
+    expect(screen.queryByText(/Decode, detector, tracker and export are separate rates/i)).toBeNull();
+    expect(screen.queryByText(/Posted leftover signed object access keeps admitted false/i)).toBeNull();
+    const proxyPts = within(screen.getByRole('region', { name: /unforced leftover proxy pts/i }));
+    expect(proxyPts.getByText(/Posted leftover proxy pts keeps mapping empty/i)).toBeTruthy();
+    expect(proxyPts.getByText(/client POST originalPts is not sent/i)).toBeTruthy();
+    expect(proxyPts.getByText(/Posted leftover proxy pts keeps replacesOriginal false/i)).toBeTruthy();
+    const hysteresis = within(screen.getByRole('region', { name: /unforced leftover ownership hysteresis/i }));
+    expect(hysteresis.getByText(/Posted leftover ownership hysteresis keeps owner unknown/i)).toBeTruthy();
+    expect(hysteresis.getByText(/client POST owner my_team is not sent/i)).toBeTruthy();
+    expect(hysteresis.getByText(/Posted leftover hysteresis stays unscoped/i)).toBeTruthy();
+    const fourRates = within(screen.getByRole('region', { name: /unforced leftover four rates/i }));
+    expect(fourRates.getByText(/Posted leftover four rates keeps exportFpsEqualsInferenceFps false/i)).toBeTruthy();
+    expect(fourRates.getByText(/client POST exportFpsEqualsInferenceFps true is not sent/i)).toBeTruthy();
+    expect(fourRates.getByText(/Posted leftover four rates is not match-scoped rates/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('loads stored independent reviewer, worked match flow, and decode memory without inventing acceptance or GPU residency', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
@@ -15799,6 +15927,7 @@ describe('App match workspace loading', () => {
       ))).toBe(true);
     });
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/decode/proxy-pts'))).toBe(false);
+    expect(screen.queryByText(/Posted leftover proxy pts keeps mapping empty/i)).toBeNull();
     expect(await screen.findByText(/retain the original/i)).toBeTruthy();
     expect(screen.getByText(/does not replace the original/i)).toBeTruthy();
     expect(screen.getByText(/original-to-proxy presentation time/i)).toBeTruthy();
@@ -16074,6 +16203,7 @@ describe('App match workspace loading', () => {
       ))).toBe(true);
     });
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/rates/four'))).toBe(false);
+    expect(screen.queryByText(/Posted leftover four rates keeps exportFpsEqualsInferenceFps false/i)).toBeNull();
     expect(await screen.findByText(/decode, detector, tracker and export/i)).toBeTruthy();
     expect(screen.getByText(/export fps is not inference fps/i)).toBeTruthy();
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
@@ -18018,6 +18148,7 @@ describe('App match workspace loading', () => {
       ))).toBe(true);
     });
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/ownership/hysteresis'))).toBe(false);
+    expect(screen.queryByText(/Posted leftover ownership hysteresis keeps owner unknown/i)).toBeNull();
     const ownership = within(await screen.findByRole('region', { name: /ball ownership/i }));
     expect(ownership.getByText(/ownership mode is unknown/i)).toBeTruthy();
     expect(ownership.getByText(/NEAREST_PLAYER_INSUFFICIENT/)).toBeTruthy();

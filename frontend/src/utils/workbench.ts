@@ -2361,6 +2361,58 @@ export async function postLeftoverSignedAccess() {
   return response.json() as Promise<LeftoverSignedAccessWriteSnapshot>;
 }
 
+export interface LeftoverProxyPtsWriteSnapshot {
+  mapping?: Array<Record<string, unknown>>;
+  replacesOriginal?: boolean;
+}
+
+export async function postLeftoverProxyPts() {
+  const response = await fetch('/api/decode/proxy-pts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post leftover proxy pts: ${response.status}`);
+  }
+  return response.json() as Promise<LeftoverProxyPtsWriteSnapshot>;
+}
+
+export interface LeftoverOwnershipHysteresisWriteSnapshot {
+  owner?: string;
+  minPersistence?: number;
+}
+
+export async function postLeftoverOwnershipHysteresis() {
+  const response = await fetch('/api/ownership/hysteresis', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post leftover ownership hysteresis: ${response.status}`);
+  }
+  return response.json() as Promise<LeftoverOwnershipHysteresisWriteSnapshot>;
+}
+
+export interface LeftoverFourRatesWriteSnapshot {
+  exportFpsEqualsInferenceFps?: boolean;
+  decodeFpsEqualsExportFps?: boolean;
+  notes?: string[];
+}
+
+export async function postLeftoverFourRates() {
+  const response = await fetch('/api/rates/four', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post leftover four rates: ${response.status}`);
+  }
+  return response.json() as Promise<LeftoverFourRatesWriteSnapshot>;
+}
+
 export interface StageTimingSnapshot {
   overlappedStagesAreAdditive?: boolean;
   wallTime?: number;
