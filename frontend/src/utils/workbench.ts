@@ -2503,6 +2503,60 @@ export async function fetchLeftoverDpia() {
   return response.json() as Promise<LeftoverDpiaSnapshot>;
 }
 
+export interface LeftoverSupportBundleWriteSnapshot {
+  released?: boolean;
+  reasonCodes?: string[];
+}
+
+export async function postLeftoverSupportBundle() {
+  const response = await fetch('/api/support/bundle', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post leftover support bundle: ${response.status}`);
+  }
+  return response.json() as Promise<LeftoverSupportBundleWriteSnapshot>;
+}
+
+export interface LeftoverRosterPromotionWriteSnapshot {
+  promoted?: boolean;
+  task?: string;
+  reasonCodes?: string[];
+}
+
+export async function postLeftoverRosterPromotion() {
+  const response = await fetch('/api/roster/promotion/player_ball', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post leftover roster promotion: ${response.status}`);
+  }
+  return response.json() as Promise<LeftoverRosterPromotionWriteSnapshot>;
+}
+
+export interface LeftoverExperimentB2WriteSnapshot {
+  experiment?: string;
+  promoted?: boolean;
+  hardwareVerified?: boolean;
+  reasonCodes?: string[];
+}
+
+export async function postLeftoverExperimentB2() {
+  const response = await fetch('/api/experiments/B2', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post leftover experiment B2: ${response.status}`);
+  }
+  return response.json() as Promise<LeftoverExperimentB2WriteSnapshot>;
+}
+
 export interface StageTimingSnapshot {
   overlappedStagesAreAdditive?: boolean;
   wallTime?: number;

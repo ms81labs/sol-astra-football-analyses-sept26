@@ -9453,6 +9453,7 @@ describe('App match workspace loading', () => {
     expect(bundle.getByText(/stays unreleased/i)).toBeTruthy();
     expect(bundle.getByText(/client consented true is ignored/i)).toBeTruthy();
     expect(bundle.getByText(/CONSENT_REQUIRED stays blocking/i)).toBeTruthy();
+    expect(screen.queryByText(/Posted leftover support bundle keeps released false/i)).toBeNull();
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
@@ -10012,6 +10013,7 @@ describe('App match workspace loading', () => {
     expect(experiment.getByText(/stays unpromoted/i)).toBeTruthy();
     expect(experiment.getByText(/hardware stays unverified/i)).toBeTruthy();
     expect(experiment.getByText(/HARDWARE_UNAVAILABLE stays blocking/i)).toBeTruthy();
+    expect(screen.queryByText(/Posted leftover experiment B2 keeps promoted false/i)).toBeNull();
     const disk = within(screen.getByRole('region', { name: /stored disk recovery/i }));
     expect(disk.getByText(/refuses partial acceptance/i)).toBeTruthy();
     expect(disk.getByText(/disk_exhaustion stays blocking/i)).toBeTruthy();
@@ -10672,6 +10674,7 @@ describe('App match workspace loading', () => {
     expect(promotion.getByText(/stays closed/i)).toBeTruthy();
     expect(promotion.getByText(/INDEPENDENT_ACCEPTANCE_MISSING stays blocking/i)).toBeTruthy();
     expect(promotion.getByText(/client independentAccepted is not sent/i)).toBeTruthy();
+    expect(screen.queryByText(/Posted leftover roster promotion keeps promoted false/i)).toBeNull();
     const gate = within(screen.getByRole('region', { name: /unforced quality gate/i }));
     expect(gate.getByText(/stays unpromoted/i)).toBeTruthy();
     expect(gate.getByText(/client faster and qualityPassed are not sent/i)).toBeTruthy();
@@ -15411,6 +15414,158 @@ describe('App match workspace loading', () => {
     expect(dpia.getByText(/Requested leftover DPIA keeps cloudAllowed false/i)).toBeTruthy();
     expect(dpia.getByText(/client faceRecognition true is not sent/i)).toBeTruthy();
     expect(dpia.getByText(/Leftover DPIA is not match-scoped privacy/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
+  it('posts leftover support bundle, leftover roster promotion, and leftover experiment B2 without leftover consented true, independentAccepted true, or hardwareVerified true', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/support/bundle') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ released: false, reasonCodes: ['CONSENT_REQUIRED'] }),
+        } as Response);
+      }
+      if (url.endsWith('/api/support/bundle') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ released: false, reasonCodes: ['CONSENT_REQUIRED'] }),
+        } as Response);
+      }
+      if (url.endsWith('/api/roster/promotion/player_ball') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            promoted: false,
+            task: 'player_ball',
+            reasonCodes: ['INDEPENDENT_ACCEPTANCE_MISSING', 'LICENCE_UNREVIEWED'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/roster/promotion/player_ball') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            promoted: false,
+            task: 'player_ball',
+            reasonCodes: ['INDEPENDENT_ACCEPTANCE_MISSING', 'LICENCE_UNREVIEWED'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/experiments/B2') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            experiment: 'B2',
+            promoted: false,
+            hardwareVerified: false,
+            reasonCodes: ['HARDWARE_UNAVAILABLE'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/experiments/B2') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            experiment: 'B2',
+            promoted: false,
+            hardwareVerified: false,
+            reasonCodes: ['HARDWARE_UNAVAILABLE'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => expect(screen.getByRole('button', { name: /request leftover support bundle/i })).toBeTruthy());
+    expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith('/api/support/bundle') && init?.method === 'POST')).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => String(url).includes('/api/roster/promotion') && init?.method === 'POST')).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith('/api/experiments/B2') && init?.method === 'POST')).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: /request leftover support bundle/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/support/bundle')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /request leftover roster promotion/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/roster/promotion/player_ball')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /request leftover experiment B2/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/experiments/B2')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/support/bundle')
+      && Boolean(init?.body && (String(init.body).includes('consented') || String(init.body).includes('true')))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/roster/promotion')
+      && Boolean(init?.body && (String(init.body).includes('independentAccepted') || String(init.body).includes('promoted')))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/experiments/B2')
+      && Boolean(init?.body && (String(init.body).includes('hardwareVerified') || String(init.body).includes('promoted')))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/quota'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/receipts/promotion'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/research/tracks/'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/roster/labels'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/incidents/ladder'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/access/object'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/geometry/landmarks'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/geometry/preview'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/reports/assemble'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/setup/preview'))).toBe(false);
+    expect(screen.queryByText(/Support bundle requires consent/i)).toBeNull();
+    expect(screen.queryByText(/Hardware experiment receipts stay unpromoted/i)).toBeNull();
+    expect(screen.queryByText(/Requested leftover cache tenancy keeps crossTenant allowed false/i)).toBeNull();
+    const leftoverBundle = within(screen.getByRole('region', { name: /unforced leftover support bundle/i }));
+    expect(leftoverBundle.getByText(/Posted leftover support bundle keeps released false/i)).toBeTruthy();
+    expect(leftoverBundle.getByText(/client POST consented true is not sent/i)).toBeTruthy();
+    expect(leftoverBundle.getByText(/Leftover POST is not stored GET support bundle/i)).toBeTruthy();
+    const leftoverPromotion = within(screen.getByRole('region', { name: /unforced leftover roster promotion/i }));
+    expect(leftoverPromotion.getByText(/Posted leftover roster promotion keeps promoted false/i)).toBeTruthy();
+    expect(leftoverPromotion.getByText(/client POST independentAccepted true is not sent/i)).toBeTruthy();
+    expect(leftoverPromotion.getByText(/Leftover POST is not stored GET promotion gate/i)).toBeTruthy();
+    const leftoverB2 = within(screen.getByRole('region', { name: /unforced leftover experiment B2/i }));
+    expect(leftoverB2.getByText(/Posted leftover experiment B2 keeps promoted false/i)).toBeTruthy();
+    expect(leftoverB2.getByText(/client POST hardwareVerified true is not sent/i)).toBeTruthy();
+    expect(leftoverB2.getByText(/Leftover POST is not stored GET experiment B2/i)).toBeTruthy();
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
