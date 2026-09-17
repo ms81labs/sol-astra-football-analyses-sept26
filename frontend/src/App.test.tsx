@@ -12461,6 +12461,106 @@ describe('App match workspace loading', () => {
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('loads stored finish-line, acceptance-report, and operator-handoff without converting historical reports into current-source labels', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/video-to-analysis/finish-line') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            schemaVersion: 'video_to_analysis_finish_line_product_view_model_v1',
+            accepted: true,
+            completeTasks: 18,
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/video-to-analysis/acceptance-report') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            schemaVersion: 'video_to_analysis_acceptance_report_view_model_v1',
+            accepted: true,
+            analystCompletedReviewedMatch: true,
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/video-to-analysis/operator-handoff') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            schemaVersion: 'video_to_analysis_operator_handoff_view_model_v1',
+            ready: true,
+            currentSourceSealedInference: true,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/video-to-analysis/finish-line')
+        && !init
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/video-to-analysis/acceptance-report')
+      && !init
+    ))).toBe(true);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/video-to-analysis/operator-handoff')
+      && !init
+    ))).toBe(true);
+    expect(fetchMock.mock.calls.some(([url]) => String(url) === '/video-to-analysis/finish-line')).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url) === '/video-to-analysis/acceptance-report')).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url) === '/video-to-analysis/operator-handoff')).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/quota'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/training/admit'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/receipts/promotion'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/capacity'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/privacy/dpia'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/research/tracks/'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/roster/labels'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/incidents/ladder'))).toBe(false);
+    expect(screen.queryByText(/reservedTotal is not current-source sealed inference/i)).toBeNull();
+    expect(screen.queryByText(/tested restore is not current-source sealed inference/i)).toBeNull();
+    const finishLine = within(await screen.findByRole('region', { name: /stored finish-line report/i }));
+    expect(finishLine.getByText(/historical finish-line is not current-source sealed inference/i)).toBeTruthy();
+    expect(finishLine.getByText(/independent labels stay 0\/18/i)).toBeTruthy();
+    expect(finishLine.queryByText(/completeTasks stays 0/i)).toBeNull();
+    const acceptance = within(await screen.findByRole('region', { name: /stored acceptance report/i }));
+    expect(acceptance.getByText(/historical acceptance-report is not analyst-accepted current-source/i)).toBeTruthy();
+    expect(acceptance.getByText(/independent locked labels remain 0\/18/i)).toBeTruthy();
+    const handoff = within(await screen.findByRole('region', { name: /stored operator handoff/i }));
+    expect(handoff.getByText(/historical operator-handoff is not current-source sealed inference/i)).toBeTruthy();
+    expect(handoff.getByText(/current-source labels stay 0 of 18/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('loads stored independent reviewer, worked match flow, and decode memory without inventing acceptance or GPU residency', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);

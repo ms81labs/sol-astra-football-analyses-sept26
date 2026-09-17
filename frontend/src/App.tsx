@@ -115,6 +115,9 @@ import DecodeChallengersPanel from './components/DecodeChallengersPanel';
 import DecodeFramesPanel from './components/DecodeFramesPanel';
 import GpuDefaultEnabledPanel from './components/GpuDefaultEnabledPanel';
 import LocalOnlyDeploymentPanel from './components/LocalOnlyDeploymentPanel';
+import FinishLineReportPanel from './components/FinishLineReportPanel';
+import AcceptanceReportPanel from './components/AcceptanceReportPanel';
+import OperatorHandoffPanel from './components/OperatorHandoffPanel';
 import MatchProvenancePanel from './components/MatchProvenancePanel';
 import MatchShotQualityPanel from './components/MatchShotQualityPanel';
 import MatchShotFeaturesPanel from './components/MatchShotFeaturesPanel';
@@ -2150,6 +2153,15 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           </div>
           <div className="mb-3 shrink-0">
             <LocalOnlyDeploymentPanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <FinishLineReportPanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <AcceptanceReportPanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <OperatorHandoffPanel />
           </div>
           <div className="mb-3 shrink-0">
             <MatchProvenancePanel matchId={activeMatch?.id} />

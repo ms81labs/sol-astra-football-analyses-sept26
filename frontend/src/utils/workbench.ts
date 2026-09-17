@@ -1271,6 +1271,48 @@ export async function fetchLocalOnlyDeployment() {
   return response.json() as Promise<LocalOnlyDeploymentSnapshot>;
 }
 
+export interface FinishLineReportSnapshot {
+  schemaVersion?: string;
+  accepted?: boolean;
+  completeTasks?: number;
+}
+
+export async function fetchFinishLineReport() {
+  const response = await fetch('/api/video-to-analysis/finish-line');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored finish-line report: ${response.status}`);
+  }
+  return response.json() as Promise<FinishLineReportSnapshot>;
+}
+
+export interface AcceptanceReportSnapshot {
+  schemaVersion?: string;
+  accepted?: boolean;
+  analystCompletedReviewedMatch?: boolean;
+}
+
+export async function fetchAcceptanceReport() {
+  const response = await fetch('/api/video-to-analysis/acceptance-report');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored acceptance report: ${response.status}`);
+  }
+  return response.json() as Promise<AcceptanceReportSnapshot>;
+}
+
+export interface OperatorHandoffSnapshot {
+  schemaVersion?: string;
+  ready?: boolean;
+  currentSourceSealedInference?: boolean;
+}
+
+export async function fetchOperatorHandoff() {
+  const response = await fetch('/api/video-to-analysis/operator-handoff');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored operator handoff: ${response.status}`);
+  }
+  return response.json() as Promise<OperatorHandoffSnapshot>;
+}
+
 export interface StageTimingSnapshot {
   overlappedStagesAreAdditive?: boolean;
   wallTime?: number;
