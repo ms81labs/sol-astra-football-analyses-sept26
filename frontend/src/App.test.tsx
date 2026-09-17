@@ -12109,6 +12109,117 @@ describe('App match workspace loading', () => {
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('posts pseudo-label, event score, and deployment choice without leftover approved true, independent labels, or always-on GPU', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/training/pseudo') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ approved: false, independentGroundTruth: false }),
+        } as Response);
+      }
+      if (url.endsWith('/api/events/score') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ labelsIndependent: false, toleranceSeconds: 0.5 }),
+        } as Response);
+      }
+      if (url.endsWith('/api/costs/deployment') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ selected: 'local', alwaysOnGpuCommitted: false }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => expect(screen.getByRole('button', { name: /request pseudo-label/i })).toBeTruthy());
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/training/pseudo'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/events/score'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/costs/deployment'))).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: /request pseudo-label/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/training/pseudo')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /request event score/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/events/score')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /request deployment choice/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/costs/deployment')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/training/pseudo')
+      && Boolean(init?.body && (String(init.body).includes('approved') || String(init.body).includes('player')))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/events/score')
+      && Boolean(init?.body && String(init.body).includes('labelsIndependent'))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/costs/deployment')
+      && Boolean(init?.body && String(init.body).includes('alwaysOnGpuCommitted'))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/capacity'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/privacy/dpia'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/research/tracks/'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/roster/labels'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/incidents/ladder'))).toBe(false);
+    expect(screen.queryByText(/pseudo-labels are not independent ground truth/i)).toBeNull();
+    expect(screen.queryByText(/event scoring does not treat labels as independent/i)).toBeNull();
+    expect(screen.queryByText(/deployment does not commit always-on GPU/i)).toBeNull();
+    const pseudo = within(screen.getByRole('region', { name: /unforced pseudo-label/i }));
+    expect(pseudo.getByText(/keeps approved false/i)).toBeTruthy();
+    expect(pseudo.getByText(/client approved true is not sent/i)).toBeTruthy();
+    expect(pseudo.getByText(/independentGroundTruth stays false/i)).toBeTruthy();
+    const eventScore = within(screen.getByRole('region', { name: /unforced event score/i }));
+    expect(eventScore.getByText(/keeps labelsIndependent false/i)).toBeTruthy();
+    expect(eventScore.getByText(/client labelsIndependent true is not sent/i)).toBeTruthy();
+    expect(eventScore.getByText(/event AP stays unproven/i)).toBeTruthy();
+    const deployment = within(screen.getByRole('region', { name: /unforced deployment choice/i }));
+    expect(deployment.getByText(/keeps alwaysOnGpuCommitted false/i)).toBeTruthy();
+    expect(deployment.getByText(/client alwaysOnGpuCommitted true is not sent/i)).toBeTruthy();
+    expect(deployment.getByText(/local hardware does not commit GPU/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('loads stored independent reviewer, worked match flow, and decode memory without inventing acceptance or GPU residency', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);

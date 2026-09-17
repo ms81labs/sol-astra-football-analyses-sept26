@@ -954,6 +954,57 @@ export async function postInterruptedUpload() {
   return response.json() as Promise<InterruptedUploadWriteSnapshot>;
 }
 
+export interface PseudoLabelWriteSnapshot {
+  approved?: boolean;
+  independentGroundTruth?: boolean;
+}
+
+export async function postPseudoLabel() {
+  const response = await fetch('/api/training/pseudo', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post pseudo-label: ${response.status}`);
+  }
+  return response.json() as Promise<PseudoLabelWriteSnapshot>;
+}
+
+export interface EventScoreWriteSnapshot {
+  labelsIndependent?: boolean;
+  toleranceSeconds?: number;
+}
+
+export async function postEventScore() {
+  const response = await fetch('/api/events/score', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post event score: ${response.status}`);
+  }
+  return response.json() as Promise<EventScoreWriteSnapshot>;
+}
+
+export interface DeploymentChoiceWriteSnapshot {
+  selected?: string;
+  alwaysOnGpuCommitted?: boolean;
+}
+
+export async function postDeploymentChoice() {
+  const response = await fetch('/api/costs/deployment', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post deployment choice: ${response.status}`);
+  }
+  return response.json() as Promise<DeploymentChoiceWriteSnapshot>;
+}
+
 export interface JobBudgetSnapshot {
   reserve?: { authorised?: boolean; reserved?: number; estimate?: number; currency?: string };
   reconcile?: { reserved?: number; actual?: number; variance?: number; exceeded?: boolean; alert?: boolean };
