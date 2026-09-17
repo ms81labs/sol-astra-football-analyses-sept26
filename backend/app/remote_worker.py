@@ -480,7 +480,7 @@ def _load_processor_result_source(
         before = os.fstat(descriptor)
         if not stat.S_ISREG(before.st_mode) or before.st_size != entry.size_bytes:
             raise ValueError
-        handle = os.fdopen(descriptor, "rb", buffering=0)
+        handle = os.fdopen(descriptor, "rb")
         descriptor = -1  # The handle now owns this descriptor.
         raw, header = _canonical_processor_line(handle, MAX_PROCESSOR_METADATA_LINE_BYTES)
         row_count = result.result.processor_row_count
