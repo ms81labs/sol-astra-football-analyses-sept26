@@ -5491,6 +5491,260 @@ describe('App match workspace loading', () => {
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('loads stored frozen protocol without posting completeTasks 18', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/evaluation/protocol') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            accepted: false,
+            completeTasks: 0,
+            protocolVersion: 'football_analysis_pilot_labels_v3',
+            reasonCodes: ['LABELS_INCOMPLETE'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/evaluation/prerequisites') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            accepted: false,
+            completeTasks: 0,
+            lockedLabelsPresent: false,
+            reasonCodes: ['LABELS_INCOMPLETE'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/evaluation/workflow') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            measured: false,
+            analystCompletedReviewedMatch: false,
+            reasonCodes: ['ANALYST_ACCEPTANCE_MISSING'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).includes('/api/evaluation/protocol')
+        && (!init?.method || init.method === 'GET')
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/evaluation/protocol')
+      && init?.method === 'POST'
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([, init]) => (
+      Boolean(init?.body && String(init.body).includes('"completeTasks":18'))
+    ))).toBe(false);
+    const protocol = within(await screen.findByRole('region', { name: /stored frozen protocol/i }));
+    expect(protocol.getByText(/football_analysis_pilot_labels_v3 remains unaccepted/i)).toBeTruthy();
+    expect(protocol.getByText(/LABELS_INCOMPLETE/)).toBeTruthy();
+    expect(protocol.getByText(/completeTasks stays 0/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
+  it('loads stored protocol prerequisites without treating locked labels as present', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/evaluation/prerequisites') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            accepted: false,
+            completeTasks: 0,
+            lockedLabelsPresent: false,
+            nativePredictionsPresent: false,
+            reasonCodes: ['LABELS_INCOMPLETE'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/evaluation/prerequisites') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            accepted: false,
+            completeTasks: 0,
+            lockedLabelsPresent: false,
+            reasonCodes: ['LABELS_INCOMPLETE'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/evaluation/workflow') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            measured: false,
+            analystCompletedReviewedMatch: false,
+            reasonCodes: ['ANALYST_ACCEPTANCE_MISSING'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/evaluation/protocol') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            accepted: false,
+            completeTasks: 0,
+            protocolVersion: 'football_analysis_pilot_labels_v3',
+            reasonCodes: ['LABELS_INCOMPLETE'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).includes('/api/evaluation/prerequisites')
+        && (!init?.method || init.method === 'GET')
+      ))).toBe(true);
+    });
+    const stored = within(await screen.findByRole('region', { name: /stored protocol prerequisites/i }));
+    expect(stored.getByText(/remain incomplete/i)).toBeTruthy();
+    expect(stored.getByText(/lockedLabelsPresent is false/i)).toBeTruthy();
+    expect(stored.getByText(/native predictions are not treated as labels/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
+  it('loads stored evaluation measures without treating TrackEval as ground truth', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/evaluation/measures') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            trackevalIsGroundTruth: false,
+            annotationServiceHealthSatisfiesLabelGate: false,
+            analystWorkflow: { measured: false },
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/evaluation/prerequisites')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            accepted: false,
+            completeTasks: 0,
+            lockedLabelsPresent: false,
+            nativePredictionsPresent: false,
+            reasonCodes: ['LABELS_INCOMPLETE'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/evaluation/workflow') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            measured: false,
+            analystCompletedReviewedMatch: false,
+            reasonCodes: ['ANALYST_ACCEPTANCE_MISSING'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/evaluation/protocol') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            accepted: false,
+            completeTasks: 0,
+            protocolVersion: 'football_analysis_pilot_labels_v3',
+            reasonCodes: ['LABELS_INCOMPLETE'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).includes('/api/evaluation/measures')
+        && (!init?.method || init.method === 'GET')
+      ))).toBe(true);
+    });
+    const measures = within(await screen.findByRole('region', { name: /stored evaluation measures/i }));
+    expect(measures.getByText(/do not treat TrackEval as ground truth/i)).toBeTruthy();
+    expect(measures.getByText(/annotation service health does not satisfy the label gate/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('loads derived proxy assets on the review App without replacing the original source', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);

@@ -1244,7 +1244,16 @@ export interface EvaluationPrerequisitesSnapshot {
   accepted?: boolean;
   completeTasks?: number;
   lockedLabelsPresent?: boolean;
+  nativePredictionsPresent?: boolean;
   reasonCodes?: string[];
+}
+
+export async function fetchEvaluationPrerequisites() {
+  const response = await fetch('/api/evaluation/prerequisites');
+  if (!response.ok) {
+    throw new Error(`Failed to load evaluation prerequisites: ${response.status}`);
+  }
+  return response.json() as Promise<EvaluationPrerequisitesSnapshot>;
 }
 
 export async function postEvaluationPrerequisites() {
@@ -1257,6 +1266,20 @@ export async function postEvaluationPrerequisites() {
     throw new Error(`Failed to post evaluation prerequisites: ${response.status}`);
   }
   return response.json() as Promise<EvaluationPrerequisitesSnapshot>;
+}
+
+export interface EvaluationMeasuresSnapshot {
+  trackevalIsGroundTruth?: boolean;
+  annotationServiceHealthSatisfiesLabelGate?: boolean;
+  analystWorkflow?: { measured?: boolean };
+}
+
+export async function fetchEvaluationMeasures() {
+  const response = await fetch('/api/evaluation/measures');
+  if (!response.ok) {
+    throw new Error(`Failed to load evaluation measures: ${response.status}`);
+  }
+  return response.json() as Promise<EvaluationMeasuresSnapshot>;
 }
 
 export interface ShadowMetricSnapshot {
@@ -1410,6 +1433,14 @@ export interface EvaluationProtocolSnapshot {
   completeTasks?: number;
   protocolVersion?: string;
   reasonCodes?: string[];
+}
+
+export async function fetchStoredEvaluationProtocol() {
+  const response = await fetch('/api/evaluation/protocol');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored evaluation protocol: ${response.status}`);
+  }
+  return response.json() as Promise<EvaluationProtocolSnapshot>;
 }
 
 export async function fetchEvaluationProtocol() {

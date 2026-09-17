@@ -29,6 +29,9 @@ import LoadedMatchSetupPanel from './components/LoadedMatchSetupPanel';
 import MatchMetricInspectorPanel from './components/MatchMetricInspectorPanel';
 import MatchCoveragePanel from './components/MatchCoveragePanel';
 import AnalystWorkflowPanel from './components/AnalystWorkflowPanel';
+import EvaluationProtocolPanel from './components/EvaluationProtocolPanel';
+import EvaluationPrerequisitesPanel from './components/EvaluationPrerequisitesPanel';
+import EvaluationMeasuresPanel from './components/EvaluationMeasuresPanel';
 import MatchProvenancePanel from './components/MatchProvenancePanel';
 import MatchShotQualityPanel from './components/MatchShotQualityPanel';
 import MatchShotFeaturesPanel from './components/MatchShotFeaturesPanel';
@@ -1805,6 +1808,15 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           </div>
           <div className="mb-3 shrink-0">
             <AnalystWorkflowPanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <EvaluationProtocolPanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <EvaluationPrerequisitesPanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <EvaluationMeasuresPanel />
           </div>
           <div className="mb-3 shrink-0">
             <MatchProvenancePanel matchId={activeMatch?.id} />
