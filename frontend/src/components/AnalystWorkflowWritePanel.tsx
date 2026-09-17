@@ -2,10 +2,15 @@ import { useEffect, useState } from 'react';
 
 import { postAnalystWorkflow } from '../utils/workbench';
 
-export default function AnalystWorkflowWritePanel() {
+interface AnalystWorkflowWritePanelProps {
+  matchId?: string;
+}
+
+export default function AnalystWorkflowWritePanel({ matchId }: AnalystWorkflowWritePanelProps) {
   const [note, setNote] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!matchId) return;
     let cancelled = false;
     postAnalystWorkflow()
       .then((payload) => {
@@ -27,7 +32,7 @@ export default function AnalystWorkflowWritePanel() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [matchId]);
 
   if (!note) return null;
   return (

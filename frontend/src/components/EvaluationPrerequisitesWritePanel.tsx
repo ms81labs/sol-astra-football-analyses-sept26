@@ -2,10 +2,15 @@ import { useEffect, useState } from 'react';
 
 import { postEvaluationPrerequisites } from '../utils/workbench';
 
-export default function EvaluationPrerequisitesWritePanel() {
+interface EvaluationPrerequisitesWritePanelProps {
+  matchId?: string;
+}
+
+export default function EvaluationPrerequisitesWritePanel({ matchId }: EvaluationPrerequisitesWritePanelProps) {
   const [note, setNote] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!matchId) return;
     let cancelled = false;
     postEvaluationPrerequisites()
       .then((payload) => {
@@ -22,7 +27,7 @@ export default function EvaluationPrerequisitesWritePanel() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [matchId]);
 
   if (!note) return null;
   return (

@@ -1906,10 +1906,10 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
             <MatchShotQualityWritePanel matchId={activeMatch?.id} />
           </div>
           <div className="mb-3 shrink-0">
-            <AnalystWorkflowWritePanel />
+            <AnalystWorkflowWritePanel matchId={activeMatch?.id} />
           </div>
           <div className="mb-3 shrink-0">
-            <EvaluationPrerequisitesWritePanel />
+            <EvaluationPrerequisitesWritePanel matchId={activeMatch?.id} />
           </div>
           <div className="mb-3 shrink-0">
             <MatchAuditTrailPanel matchId={activeMatch?.id} />
