@@ -46,8 +46,6 @@ class JobRunner:
         budget: float = 0.0,
         namespace: str = "production",
     ) -> JobAttempt:
-        if job_id in self.ledger.requests:
-            return self.ledger.attempts[job_id][-1]
         location = "daytona" if self.settings.processing_backend == "daytona" else "local"
         return self.ledger.submit(
             JobRequest(

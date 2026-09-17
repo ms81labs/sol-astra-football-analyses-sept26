@@ -2854,7 +2854,7 @@ def create_app(
         request_id = str(body.get("requestId") or uuid.uuid4().hex)
         budget = float(body.get("budget") or 0.0)
         try:
-            job, created = storage.ensure_job(match.id, request_id, created_status="queued")
+            job, created = storage.ensure_job(match.id, request_id, created_status="queued", budget=budget)
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         try:

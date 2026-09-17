@@ -42,11 +42,14 @@ _REMOTE_RESULT_FILENAMES = (
     "analytics.json",
     "ball_pipeline_trace.json",
     "ball_truth_layers.json",
+    "decode_anchors.json",
     "events.json",
+    "four_rates.json",
     "tactical_report.json",
     "drills.json",
     "frames.json",
     "input_video_identity.json",
+    "ownership_publication.json",
     "raw_rows.json",
     "recovery_debug.json",
     "recovery_profile_matrix.json",
@@ -492,7 +495,15 @@ class Storage:
         job, _created = self.ensure_job(match_id, uuid.uuid4().hex, created_status="queued")
         return job
 
-    def ensure_job(self, match_id: str, job_id: str, *, created_status: str = "queued") -> tuple[JobRecord, bool]:
+    def ensure_job(
+        self,
+        match_id: str,
+        job_id: str,
+        *,
+        created_status: str = "queued",
+        budget: float = 0.0,
+        namespace: str = "production",
+    ) -> tuple[JobRecord, bool]:
         self.get_match(match_id)
         try:
             existing = self.get_job(job_id)
@@ -512,10 +523,17 @@ class Storage:
                 """,
                 (job_id, match_id, created_status, 0.0, "Queued", None, log_path, now, now),
             )
-        self._admit_durable_job(match_id, job_id)
+        self._admit_durable_job(match_id, job_id, budget=budget, namespace=namespace)
         return self.get_job(job_id), True
 
-    def _admit_durable_job(self, match_id: str, job_id: str) -> None:
+    def _admit_durable_job(
+        self,
+        match_id: str,
+        job_id: str,
+        *,
+        budget: float = 0.0,
+        namespace: str = "production",
+    ) -> None:
         from .workbench.jobs import JobRequest
 
         if job_id in self.job_ledger.requests:
@@ -535,9 +553,9 @@ class Storage:
                 decoderVersion="opencv",
                 modelHash="unspecified",
                 outputSchema="evidence_v1",
-                budget=0.0,
+                budget=float(budget),
                 authorisedLocation="local",
-                namespace="production",
+                namespace=namespace,  # type: ignore[arg-type]
             )
         )
 
