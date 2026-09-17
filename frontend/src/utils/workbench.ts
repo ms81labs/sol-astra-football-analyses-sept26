@@ -612,6 +612,19 @@ export async function fetchMatchPackage(matchId: string) {
   return response.json() as Promise<MatchPackageSnapshot>;
 }
 
+export interface MatchReportCoverage {
+  coverageAware: boolean;
+  representsWholeMatch: boolean;
+}
+
+export async function fetchMatchCoverage(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/reports/coverage`);
+  if (!response.ok) {
+    throw new Error(`Failed to load match coverage: ${response.status}`);
+  }
+  return response.json() as Promise<MatchReportCoverage>;
+}
+
 export interface AnalystWorkflowSnapshot {
   measured?: boolean;
   analystCompletedReviewedMatch?: boolean;
