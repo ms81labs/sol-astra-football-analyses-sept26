@@ -1469,6 +1469,104 @@ describe('App match workspace loading', () => {
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('renders a stored playlist interval on demand without re-encoding the full match', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue({
+      ...loadedWorkspace('match-a', 'Match A'),
+      frames: [0, 1, 2].map((Frame_ID) => ({
+        Frame_ID,
+        Timestamp: Frame_ID * 0.2,
+        Ball: null,
+        My_Team: [],
+        Enemies: [],
+      })),
+      frameCount: 3,
+    });
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/playlists/export-interval') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            sourceStartSeconds: 0,
+            sourceEndSeconds: 0.2,
+            sourceEndFrameExclusive: 1,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits/render') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            interval: [0, 0.2],
+            reencodedFullMatch: false,
+            sourceSha256: 'stored-source',
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && init?.method === 'POST' && !String(url).includes('/undo') && !String(url).includes('/recover')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ correctionId: 'clip-1', saveState: 'saved', kind: 'playlist_item' }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && url.includes('state=pending') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    fireEvent.keyDown(window, { key: 'i' });
+    fireEvent.keyDown(window, { key: 'o' });
+    await waitFor(() => {
+      expect((screen.getByLabelText(/clip start/i) as HTMLInputElement).value).toBe('0');
+      expect((screen.getByLabelText(/clip end/i) as HTMLInputElement).value).toBe('0.2');
+    });
+    fireEvent.click(screen.getByRole('button', { name: /add clip/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).includes('/api/matches/match-a/edits/render')
+        && init?.method === 'POST'
+      ))).toBe(true);
+    });
+    const renderCall = fetchMock.mock.calls.find(([url, init]) => (
+      String(url).includes('/api/matches/match-a/edits/render')
+      && init?.method === 'POST'
+    ));
+    expect(renderCall?.[1]?.body).toContain('"start":0');
+    expect(renderCall?.[1]?.body).toContain('"end":0.2');
+    expect(renderCall?.[1]?.body).not.toContain('"reencodedFullMatch":true');
+    const playlist = within(await screen.findByRole('region', { name: /playlist builder/i }));
+    expect(playlist.getByText(/rendered interval on demand/i)).toBeTruthy();
+    expect(playlist.getByText(/reencodedFullMatch is false/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('loads derived proxy assets on the review App without replacing the original source', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);

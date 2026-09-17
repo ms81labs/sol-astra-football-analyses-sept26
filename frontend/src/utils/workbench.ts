@@ -723,6 +723,24 @@ export async function fetchMatchEdits(matchId: string) {
   return response.json() as Promise<EditListSnapshot>;
 }
 
+export interface MatchEditRender {
+  interval?: [number, number] | { start: number; end: number };
+  reencodedFullMatch: boolean;
+  sourceSha256?: string;
+}
+
+export async function renderMatchEdit(matchId: string, start: number, end: number) {
+  const response = await fetch(`/api/matches/${matchId}/edits/render`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ start, end }),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to render match edit: ${response.status}`);
+  }
+  return response.json() as Promise<MatchEditRender>;
+}
+
 export interface MatchPackageSnapshot {
   analyst?: {
     playlist?: unknown[];

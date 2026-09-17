@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 
 import { clipKey, type PlaylistClip } from '../utils/playlist';
-import { assembleMatchReport, exportPlaylistInterval, fetchMatchEdits } from '../utils/workbench';
+import { assembleMatchReport, exportPlaylistInterval, fetchMatchEdits, renderMatchEdit } from '../utils/workbench';
 
 interface PlaylistBuilderProps {
   matchId?: string;
@@ -49,6 +49,7 @@ export default function PlaylistBuilder({
   const [reportNote, setReportNote] = useState<string | null>(null);
   const [reportError, setReportError] = useState<string | null>(null);
   const [editNote, setEditNote] = useState<string | null>(null);
+  const [renderNote, setRenderNote] = useState<string | null>(null);
 
   useEffect(() => {
     if (!matchId) return;
@@ -89,6 +90,18 @@ export default function PlaylistBuilder({
         setClips((current) => [...current, clip]);
       }
       onOpenInterval?.(clip.start);
+      if (matchId) {
+        try {
+          const rendered = await renderMatchEdit(matchId, clip.start, clip.end);
+          if (rendered.reencodedFullMatch === false) {
+            setRenderNote('Rendered interval on demand. reencodedFullMatch is false.');
+          } else {
+            setRenderNote(null);
+          }
+        } catch {
+          setRenderNote(null);
+        }
+      }
     } catch (error) {
       setExportError(error instanceof Error ? error.message : 'Failed to export playlist interval');
     }
@@ -158,6 +171,7 @@ export default function PlaylistBuilder({
       ))}
       {reportNote && <p className="text-xs text-slate-300">{reportNote}</p>}
       {editNote && <p className="text-xs text-slate-400">{editNote}</p>}
+      {renderNote && <p className="text-xs text-slate-400">{renderNote}</p>}
       <p className="text-xs text-slate-500">Reviewed passages do not establish a whole-match frequency.</p>
     </section>
   );
