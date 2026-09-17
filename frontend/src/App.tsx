@@ -30,6 +30,7 @@ import MatchMetricInspectorPanel from './components/MatchMetricInspectorPanel';
 import MatchCoveragePanel from './components/MatchCoveragePanel';
 import AnalystWorkflowPanel from './components/AnalystWorkflowPanel';
 import MatchProvenancePanel from './components/MatchProvenancePanel';
+import MatchShotQualityPanel from './components/MatchShotQualityPanel';
 import ProxyAssetsPanel from './components/ProxyAssetsPanel';
 import HoldoutCalibrationPanel from './components/HoldoutCalibrationPanel';
 import TypedSearchPanel from './components/TypedSearchPanel';
@@ -1754,6 +1755,9 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           </div>
           <div className="mb-3 shrink-0">
             <MatchProvenancePanel matchId={activeMatch?.id} />
+          </div>
+          <div className="mb-3 shrink-0">
+            <MatchShotQualityPanel matchId={activeMatch?.id} />
           </div>
           <div className="mb-3 shrink-0">
             <ProxyAssetsPanel matchId={activeMatch?.id} />

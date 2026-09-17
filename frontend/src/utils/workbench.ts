@@ -639,6 +639,20 @@ export async function fetchMatchProvenance(matchId: string) {
   return response.json() as Promise<MatchReportProvenance>;
 }
 
+export interface MatchShotQuality {
+  publishedLabel: string;
+  calibratedXg: boolean;
+  items?: Array<{ publishedLabel?: string; availability?: string; reasonCodes?: string[] }>;
+}
+
+export async function fetchMatchShotQuality(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/shots/quality`);
+  if (!response.ok) {
+    throw new Error(`Failed to load match shot quality: ${response.status}`);
+  }
+  return response.json() as Promise<MatchShotQuality>;
+}
+
 export interface AnalystWorkflowSnapshot {
   measured?: boolean;
   analystCompletedReviewedMatch?: boolean;
