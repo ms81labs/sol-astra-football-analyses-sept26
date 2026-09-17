@@ -200,6 +200,9 @@ export interface MatchSetup {
   cannotMeasure: string[];
   certified: boolean;
   pitchLengthM: number | null;
+  homeTeam?: string;
+  awayTeam?: string;
+  calibrationCommitted?: boolean;
 }
 
 export interface MetricInspect {

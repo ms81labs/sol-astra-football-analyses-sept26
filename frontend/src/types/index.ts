@@ -232,6 +232,9 @@ export interface UploadConfig {
         retentionClass: 'working' | 'review' | 'publication' | 'unknown';
         audience?: string | null;
     };
+    homeTeam?: string;
+    awayTeam?: string;
+    calibrationCommitted?: boolean;
 }
 
 export interface AnalyticsPayload {

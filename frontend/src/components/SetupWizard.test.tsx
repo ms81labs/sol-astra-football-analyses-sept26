@@ -66,3 +66,16 @@ it('persists periods, pitch, camera, teams and rights through onSave', async () 
   }));
   expect(onSave.mock.calls[0][0].periods.map((period: { name: string }) => period.name)).toEqual(['1', '2', 'ET']);
 });
+
+it('commits calibration without certifying when holdout is accepted', () => {
+  const onCommitCalibration = vi.fn();
+  render(
+    <SetupWizard
+      cameraProfile="stable_elevated_wide"
+      landmarkPreview={{ residualP95M: 1.2, accepted: true, committed: false }}
+      onCommitCalibration={onCommitCalibration}
+    />,
+  );
+  fireEvent.click(screen.getByRole('button', { name: /commit calibration/i }));
+  expect(onCommitCalibration).toHaveBeenCalledWith({ committed: true, certified: false });
+});

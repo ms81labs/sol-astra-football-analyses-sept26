@@ -35,6 +35,7 @@ interface SetupWizardProps {
   cloudPermission?: boolean;
   periods?: string;
   onSave?: (payload: SetupWizardSavePayload) => Promise<void> | void;
+  onCommitCalibration?: (payload: { committed: boolean; certified: boolean }) => void;
 }
 
 const CAMERA_PROFILES = [
@@ -58,6 +59,7 @@ export default function SetupWizard({
   cloudPermission = false,
   periods = '1,2',
   onSave,
+  onCommitCalibration,
 }: SetupWizardProps) {
   const [periodText, setPeriodText] = useState(periods);
   const [pitch, setPitch] = useState(pitchLengthM);
@@ -156,6 +158,18 @@ export default function SetupWizard({
           )}
           <p className="text-xs text-slate-400">{landmarkPreview.committed ? 'Committed' : 'Not committed'}</p>
           <p className="text-xs text-slate-500">Does not rerun image-space detection.</p>
+          {onCommitCalibration && (
+            <button
+              type="button"
+              onClick={() => onCommitCalibration({
+                committed: Boolean(landmarkPreview.accepted),
+                certified: false,
+              })}
+              className="px-3 py-1.5 rounded bg-slate-700 text-xs font-semibold text-white"
+            >
+              Commit calibration
+            </button>
+          )}
         </div>
       )}
       <label className="flex items-center gap-2 text-xs text-slate-400">

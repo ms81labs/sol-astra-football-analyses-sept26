@@ -922,6 +922,8 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
                 matchId={matchId}
                 cameraProfile={setup?.cameraProfile ?? dossier.baseline.declaredCameraProfile}
                 pitchLengthM={setup?.pitchLengthM != null ? String(setup.pitchLengthM) : ''}
+                homeTeam={setup?.homeTeam ?? ''}
+                awayTeam={setup?.awayTeam ?? ''}
                 automationAdmitted={setup?.automationAdmitted ?? false}
                 manualTaggingPermitted={setup?.manualTaggingPermitted ?? true}
                 cannotMeasure={setup?.cannotMeasure ?? ['physical_metrics']}
@@ -940,6 +942,8 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
                     pitchLengthM: payload.pitchLengthM,
                     periods: payload.periods,
                     rights: payload.rights,
+                    homeTeam: payload.homeTeam,
+                    awayTeam: payload.awayTeam,
                   });
                 }}
               />

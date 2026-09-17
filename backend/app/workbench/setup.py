@@ -13,6 +13,9 @@ def assess_match_setup(
     pitch_length_m: float | None,
     rights: dict[str, Any],
     periods: list[dict[str, Any]] | None = None,
+    home_team: str = "",
+    away_team: str = "",
+    calibration_committed: bool = False,
 ) -> dict[str, Any]:
     admission = admit_camera(camera_profile)  # type: ignore[arg-type]
     automation = admission.automation in {"candidate", "development"} and not admission.withhold
@@ -26,6 +29,9 @@ def assess_match_setup(
         "certified": False,
         "pitchLengthM": pitch_length_m,
         "periods": periods or [],
+        "homeTeam": home_team,
+        "awayTeam": away_team,
+        "calibrationCommitted": bool(calibration_committed),
         "cloudPermission": bool(rights.get("cloudPermission")),
         "costEstimateRequiresAuthorisation": True,
         "explanation": (

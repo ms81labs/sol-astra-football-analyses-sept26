@@ -110,6 +110,18 @@ def evaluate_landmarks(profile: CalibrationProfile, *, max_p95_m: float) -> dict
     }
 
 
+def commit_calibration(profile: CalibrationProfile, *, max_p95_m: float = 3.0) -> dict[str, Any]:
+    """Persist a live calibration only when holdout residuals exist. Never a certification."""
+
+    evaluation = evaluate_landmarks(profile, max_p95_m=max_p95_m)
+    return {
+        "committed": bool(evaluation.get("accepted")),
+        "certified": False,
+        "evaluation": evaluation,
+        "profile": profile.model_dump(mode="json") if evaluation.get("accepted") else None,
+    }
+
+
 def withhold_if_invalid(profile: CalibrationProfile, metric_name: str, *, max_p95_m: float = 3.0) -> dict[str, Any]:
     result = evaluate_landmarks(profile, max_p95_m=max_p95_m)
     if not result["accepted"]:

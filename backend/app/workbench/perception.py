@@ -238,12 +238,19 @@ class DetectorAdapter:
         *,
         requested_backend: str = "cpu",
         video_engine_capability: bool = False,
+        runtime: Any | None = None,
     ) -> dict[str, Any]:
         selected = requested_backend
         fallback = None
         if requested_backend == "cuda" and not video_engine_capability:
             selected = "cpu"
             fallback = "cpu"
+        detections: list[dict[str, Any]] = []
+        production_path = None
+        if callable(runtime):
+            wrapped = self.from_ultralytics(runtime(frame), frame_id=int(frame.get("frameId") or 0))
+            detections = list(wrapped.get("detections") or [])
+            production_path = wrapped.get("productionPath")
         return {
             "requestedBackend": requested_backend,
             "selectedBackend": selected,
@@ -251,8 +258,48 @@ class DetectorAdapter:
             "silentlyChangedColour": False,
             "exportFpsEqualsInferenceFps": False,
             "colourOrder": frame.get("colourOrder", "bgr"),
-            "counts": {"primary": 0, "recovery": 0},
-            "detections": [],
+            "counts": {"primary": len(detections), "recovery": 0},
+            "detections": detections,
+            "productionPath": production_path,
+        }
+
+    def ingest_recovery_rows(self, rows: list[dict[str, Any]]) -> dict[str, Any]:
+        detections: list[dict[str, Any]] = []
+        for row in rows:
+            source = str(row.get("observationSource") or row.get("source") or row.get("Ball_Source") or "")
+            if source in {"observed", "visible", "observed_ball"}:
+                observation = "observed_ball"
+            elif source in {"inferred", "inferred_ball", "temporally_predicted"}:
+                observation = "inferred_ball"
+            else:
+                observation = "inferred_ball"
+            detections.append(
+                {
+                    "frameId": int(row.get("Frame_ID") or row.get("frameId") or 0),
+                    "bbox": (
+                        float(row.get("Source_X1") or 0.0),
+                        float(row.get("Source_Y1") or 0.0),
+                        float(row.get("Source_X2") or 0.0),
+                        float(row.get("Source_Y2") or 0.0),
+                    ),
+                    "score": float(row.get("Conf") or row.get("score") or 0.0),
+                    "kind": "ball",
+                    "observationSource": observation,
+                    "stratum": "near",
+                }
+            )
+        states = separate_ball_states(detections)
+        return {
+            "requestedBackend": "cpu",
+            "selectedBackend": "cpu",
+            "fallback": None,
+            "silentlyChangedColour": False,
+            "exportFpsEqualsInferenceFps": False,
+            "counts": {"primary": states["visible"], "recovery": states["inferred"] + states["unknown"]},
+            "detections": detections,
+            "states": states,
+            "productionPath": "recover_ball_rows",
+            "labelsIndependent": False,
         }
 
     def from_ultralytics(self, result: object, *, frame_id: int = 0) -> dict[str, Any]:

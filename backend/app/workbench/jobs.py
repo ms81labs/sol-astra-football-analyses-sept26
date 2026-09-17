@@ -92,8 +92,12 @@ class DurableJobLedger:
         assert self.db_path is not None
         connection = sqlite3.connect(str(self.db_path), check_same_thread=False, timeout=30.0)
         connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA journal_mode=WAL")
         connection.execute("PRAGMA busy_timeout=30000")
         return connection
+
+    def close(self) -> None:
+        return None
 
     def _ensure_schema(self) -> None:
         with self._connect() as connection:
@@ -136,28 +140,27 @@ class DurableJobLedger:
         if self.db_path is None:
             return
         with self._connect() as connection:
-            connection.execute("DELETE FROM job_ledger_requests")
-            connection.execute("DELETE FROM job_ledger_attempts")
-            connection.execute("DELETE FROM job_ledger_costs")
-            connection.execute("DELETE FROM job_ledger_cancels")
             for request_id, request in self.requests.items():
                 connection.execute(
-                    "INSERT INTO job_ledger_requests (request_id, payload_json) VALUES (?, ?)",
+                    "INSERT OR REPLACE INTO job_ledger_requests (request_id, payload_json) VALUES (?, ?)",
                     (request_id, request.model_dump_json()),
                 )
             for request_id, attempts in self.attempts.items():
                 for sequence, attempt in enumerate(attempts):
                     connection.execute(
-                        "INSERT INTO job_ledger_attempts (attempt_id, request_id, sequence, payload_json) VALUES (?, ?, ?, ?)",
+                        "INSERT OR REPLACE INTO job_ledger_attempts (attempt_id, request_id, sequence, payload_json) VALUES (?, ?, ?, ?)",
                         (attempt.attemptId, request_id, sequence, attempt.model_dump_json()),
                     )
             for entry in self.costs:
                 connection.execute(
-                    "INSERT INTO job_ledger_costs (attempt_id, request_id, payload_json) VALUES (?, ?, ?)",
+                    "INSERT OR REPLACE INTO job_ledger_costs (attempt_id, request_id, payload_json) VALUES (?, ?, ?)",
                     (entry.attemptId, entry.requestId, entry.model_dump_json()),
                 )
             for request_id in self.cancel_flags:
-                connection.execute("INSERT INTO job_ledger_cancels (request_id) VALUES (?)", (request_id,))
+                connection.execute(
+                    "INSERT OR IGNORE INTO job_ledger_cancels (request_id) VALUES (?)",
+                    (request_id,),
+                )
 
     def reconcile_after_restart(self) -> None:
         for request_id, attempts in list(self.attempts.items()):

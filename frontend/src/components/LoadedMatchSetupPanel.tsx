@@ -38,6 +38,8 @@ export default function LoadedMatchSetupPanel({ matchId }: LoadedMatchSetupPanel
       pitchLengthM: payload.pitchLengthM,
       periods: payload.periods,
       rights: payload.rights,
+      homeTeam: payload.homeTeam,
+      awayTeam: payload.awayTeam,
     });
   }
 
@@ -47,6 +49,8 @@ export default function LoadedMatchSetupPanel({ matchId }: LoadedMatchSetupPanel
       matchId={matchId}
       cameraProfile={setup.cameraProfile}
       pitchLengthM={setup.pitchLengthM != null ? String(setup.pitchLengthM) : ''}
+      homeTeam={setup.homeTeam ?? ''}
+      awayTeam={setup.awayTeam ?? ''}
       automationAdmitted={setup.automationAdmitted}
       manualTaggingPermitted={setup.manualTaggingPermitted}
       cannotMeasure={setup.cannotMeasure}

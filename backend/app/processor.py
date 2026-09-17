@@ -935,6 +935,9 @@ def _persist_prepared_video_outputs(
         four_rates = video_result.get("fourRates")
         if isinstance(four_rates, dict):
             storage.save_analysis_artifact(match_id, "four_rates", four_rates)
+        decode_anchors = video_result.get("decodeAnchors")
+        if isinstance(decode_anchors, dict):
+            storage.save_analysis_artifact(match_id, "decode_anchors", decode_anchors)
         projection_policy = video_result.get("projectionPolicy")
         if isinstance(projection_policy, dict):
             storage.save_analysis_artifact(match_id, "projection_policy", projection_policy)
@@ -1001,6 +1004,19 @@ def _persist_prepared_video_outputs(
     )
 
     storage.save_frames(match_id, enriched_frames)
+    if isinstance(video_result, dict) and not isinstance(video_result.get("decodeAnchors"), dict) and enriched_frames:
+        times = [float(frame.timestamp) for frame in enriched_frames]
+        storage.save_analysis_artifact(
+            match_id,
+            "decode_anchors",
+            {
+                "beginning": times[0],
+                "middle": times[len(times) // 2],
+                "end": times[-1],
+                "source": "persisted_frames",
+                "discontinuities": [],
+            },
+        )
     storage.save_analytics(match_id, summary, assignments, formation_timeline, shots)
     storage.save_events(match_id, events)
     try:

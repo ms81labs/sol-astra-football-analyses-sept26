@@ -41,6 +41,9 @@ class MatchConfig(BaseModel):
     pitchWidthM: float | None = None
     periods: list[MatchPeriod] = Field(default_factory=list)
     rights: SourceRights = Field(default_factory=SourceRights)
+    homeTeam: str = ""
+    awayTeam: str = ""
+    calibrationCommitted: bool = False
 
 
 class BallData(BaseModel):

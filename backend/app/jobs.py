@@ -56,7 +56,7 @@ class JobRunner:
                 sourceSha256=source_sha256,
                 intervalStart=0.0,
                 intervalEnd=0.0,
-                temporalPolicy="clip_local_index_modulo",
+                temporalPolicy="source_global_grid",
                 decoderVersion="opencv",
                 modelHash="unspecified",
                 outputSchema="evidence_v1",

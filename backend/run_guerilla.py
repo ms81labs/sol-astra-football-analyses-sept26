@@ -8009,7 +8009,7 @@ def process_video(
     emit_worker_heartbeat("modelLoad", "completed")
     
     video_open_started_at = time.monotonic()
-    from backend.app.workbench.media import OpenCvFrameSource, first_bgr_frame, pixels_from_decoded_frame
+    from backend.app.workbench.media import OpenCvFrameSource, first_bgr_frame, pixels_from_decoded_frame, SamplingAudit, should_export_on_source_grid, export_timestamp_seconds
 
     decode_source = frame_source or OpenCvFrameSource(cv2_module=cv2)
     identity = decode_source.probe(Path(video_path))
@@ -8023,15 +8023,13 @@ def process_video(
     fps = float(identity.nominalFps or 0.0) or 1.0
     frame_interval = int(fps / TARGET_FPS) if fps > TARGET_FPS else 1
     sample_interval = frame_interval
-    from backend.app.workbench.media import SamplingAudit
-
     sampling_audit = SamplingAudit(
         source_sha256=str(identity.sourceSha256 or ""),
         declared_target_fps=float(TARGET_FPS),
         nominal_fps=float(fps) if fps else None,
         frame_interval=int(frame_interval),
         selected_backend=f"{decode_source.name}+ultralytics_track",
-        temporal_policy="clip_local_index_modulo",
+        temporal_policy="source_global_grid",
     )
         
     H, pitch_points = resolve_homography(first_frame, homography_points=homography_points, use_auto=auto_homography)
@@ -8049,6 +8047,7 @@ def process_video(
     frame_player_windows = {}
     frame_count = 0
     last_homography_recalc = 0
+    last_export_presentation_time = None
     recalc_interval = HOMOGRAPHY_RECALC_FRAMES
     
     print("\nStarting BoT-SORT/YOLO Video Processing...")
@@ -8113,9 +8112,20 @@ def process_video(
                     except ValueError:
                         pass  # Keep current H
         
-        if frame_count % frame_interval == 0:
+        if should_export_on_source_grid(
+            getattr(r, "presentation_time_seconds", None),
+            frame_count=frame_count,
+            frame_interval=frame_interval,
+            last_export_presentation_time=last_export_presentation_time,
+            grid_step_seconds=frame_interval / fps if fps else 0.0,
+        ):
             sampling_audit.record_export_sample()
-            timestamp = round(getattr(r, "presentation_time_seconds", frame_count / fps), 2)
+            timestamp = export_timestamp_seconds(
+                presentation_time_seconds=getattr(r, "presentation_time_seconds", None),
+                frame_count=frame_count,
+                fps=fps,
+            )
+            last_export_presentation_time = getattr(r, "presentation_time_seconds", timestamp)
             
             boxes = r.boxes
             if boxes is not None:
@@ -8253,6 +8263,9 @@ def process_video(
             max_crop_width_ratio=0.0,
             frame_source=decode_source,
         )
+        from backend.app.workbench.perception import DetectorAdapter as _RecoveryDetectorAdapter
+
+        _RecoveryDetectorAdapter().ingest_recovery_rows(probe_observed_ball_rows)
     probe_observed_ball_rows = suppress_repeated_false_ball_clusters(
         probe_observed_ball_rows,
         player_windows=frame_player_windows,
@@ -8727,6 +8740,7 @@ def process_video(
     )
 
     ball_pipeline_trace["samplingReceipt"] = sampling_audit.receipt().model_dump(mode="json")
+    rates = sampling_audit.four_rates()
 
     return {
         "rows": match_data_rows,
@@ -8737,6 +8751,23 @@ def process_video(
         "ballTruthLayers": ball_truth_layers,
         "matchStateEvidence": match_state_evidence,
         "samplingReceipt": ball_pipeline_trace["samplingReceipt"],
+        "fourRates": {
+            "decodeCount": rates.decodeCount,
+            "detectorPrimaryCount": rates.detectorPrimaryCount,
+            "detectorRecoveryCount": rates.detectorRecoveryCount,
+            "trackerUpdateCount": rates.trackerUpdateCount,
+            "exportCount": rates.exportCount,
+            "exportFpsEqualsInferenceFps": False,
+            "decodeFpsEqualsExportFps": False,
+            "notes": list(rates.notes),
+        },
+        "decodeAnchors": {
+            "beginning": getattr(first_decoded, "presentation_time_seconds", None),
+            "middle": last_export_presentation_time,
+            "end": last_export_presentation_time,
+            "source": "production_decode",
+            "discontinuities": [],
+        },
     }
 
 if __name__ == "__main__":

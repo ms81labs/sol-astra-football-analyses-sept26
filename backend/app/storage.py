@@ -231,6 +231,11 @@ class Storage:
 
         self.job_ledger = DurableJobLedger(db_path=self.db_path)
 
+    def close(self) -> None:
+        ledger = getattr(self, "job_ledger", None)
+        if ledger is not None and hasattr(ledger, "close"):
+            ledger.close()
+
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(str(self.db_path), check_same_thread=False, timeout=30.0)
         connection.row_factory = sqlite3.Row
@@ -526,7 +531,7 @@ class Storage:
                 sourceSha256=sha or "0" * 64,
                 intervalStart=0.0,
                 intervalEnd=0.0,
-                temporalPolicy="clip_local_index_modulo",
+                temporalPolicy="source_global_grid",
                 decoderVersion="opencv",
                 modelHash="unspecified",
                 outputSchema="evidence_v1",
@@ -1407,6 +1412,9 @@ class Storage:
             pitch_length_m=config.pitchLengthM,
             rights=config.rights.model_dump(mode="json"),
             periods=[period.model_dump(mode="json") for period in config.periods],
+            home_team=config.homeTeam,
+            away_team=config.awayTeam,
+            calibration_committed=config.calibrationCommitted,
         )
 
     def four_rates_for_match(self, match_id: str) -> dict:
@@ -2079,7 +2087,7 @@ class Storage:
         }
 
     def proxy_assets_for_match(self, match_id: str) -> dict:
-        from .workbench.media import derive_proxy_assets
+        from .workbench.media import derive_proxy_assets, run_proxy_ffmpeg_job
 
         original = self.get_match_input_path(match_id)
         sha = self.source_sha256(match_id)
@@ -2088,7 +2096,23 @@ class Storage:
             pts = [int(float(frame.timestamp) * 90000) for frame in frames[:8]] or [0]
         except FileNotFoundError:
             pts = [0]
-        return derive_proxy_assets(original, original_sha256=sha, original_pts=pts, time_base=(1, 90000))
+        destination = self._match_dir(match_id) / "proxy.mp4"
+        try:
+            receipt = dict(
+                run_proxy_ffmpeg_job(
+                    original,
+                    destination,
+                    original_sha256=sha,
+                )
+            )
+            receipt["ranFfmpeg"] = True
+            return receipt
+        except (FileNotFoundError, ValueError, OSError, Exception):
+            receipt = dict(
+                derive_proxy_assets(original, original_sha256=sha, original_pts=pts, time_base=(1, 90000))
+            )
+            receipt["ranFfmpeg"] = False
+            return receipt
 
     def edit_list_for_match(self, match_id: str) -> dict:
         from .workbench.media import store_edit_list

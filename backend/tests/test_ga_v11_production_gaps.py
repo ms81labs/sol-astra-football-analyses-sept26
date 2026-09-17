@@ -279,3 +279,229 @@ def test_ownership_publication_walks_frames_with_hysteresis(tmp_path: Path) -> N
     assert published["nearestIsNotControl"] is True
     assert published["states"]
     assert published["eventsPublication"]["status"] in {"candidate", "withheld", "provisional"}
+
+
+def test_source_grid_export_uses_presentation_time_not_index_modulo() -> None:
+    from backend.app.workbench.media import should_export_on_source_grid
+
+    times = [0.0, 0.08, 0.10, 0.21]
+    exported: list[float] = []
+    last = None
+    for index, presentation in enumerate(times):
+        if should_export_on_source_grid(
+            presentation,
+            frame_count=index,
+            frame_interval=1,
+            last_export_presentation_time=last,
+            grid_step_seconds=0.10,
+        ):
+            exported.append(presentation)
+            last = presentation
+    assert exported == [0.0, 0.10, 0.21]
+    assert exported != [index / 25.0 for index in range(len(times))]
+
+
+def test_detector_detect_wraps_runtime_boxes_instead_of_staying_empty() -> None:
+    box = SimpleNamespace(
+        cls=[0],
+        conf=[0.88],
+        id=[4],
+        xyxy=[[1.0, 2.0, 3.0, 4.0]],
+    )
+    runtime_result = SimpleNamespace(boxes=[box], orig_img=object())
+    receipt = DetectorAdapter().detect(
+        {"colourOrder": "bgr", "frameId": 9},
+        requested_backend="cpu",
+        runtime=lambda _frame: runtime_result,
+    )
+    assert receipt["counts"]["primary"] == 1
+    assert receipt["detections"][0]["bbox"] == (1.0, 2.0, 3.0, 4.0)
+    assert receipt["productionPath"] == "ultralytics"
+
+
+def test_detector_ingest_recovery_separates_inferred_from_visible() -> None:
+    rows = [
+        {"Frame_ID": 1, "Entity_Type": "ball", "observationSource": "observed_ball", "Conf": 0.9, "Source_X1": 0, "Source_Y1": 0, "Source_X2": 8, "Source_Y2": 8},
+        {"Frame_ID": 2, "Entity_Type": "ball", "observationSource": "inferred_ball", "Conf": 0.4, "Source_X1": 1, "Source_Y1": 1, "Source_X2": 9, "Source_Y2": 9},
+        {"Frame_ID": 3, "Entity_Type": "ball", "Conf": 0.2, "Source_X1": 2, "Source_Y1": 2, "Source_X2": 10, "Source_Y2": 10},
+    ]
+    receipt = DetectorAdapter().ingest_recovery_rows(rows)
+    assert receipt["counts"]["primary"] == 1
+    assert receipt["counts"]["recovery"] == 2
+    assert receipt["states"] == {"visible": 1, "inferred": 2, "unknown": 0}
+    assert receipt["labelsIndependent"] is False
+    assert receipt["productionPath"] == "recover_ball_rows"
+
+
+def test_commit_calibration_stays_uncertified_without_holdout() -> None:
+    from backend.app.workbench.geometry import CalibrationProfile, Landmark, commit_calibration
+
+    preview = CalibrationProfile(
+        calibrationId="cal-1",
+        cameraModel="planar_homography",
+        landmarks=[Landmark(name="corner", imageX=0, imageY=0, pitchX=0, pitchY=0, independentHoldout=False)],
+    )
+    refused = commit_calibration(preview)
+    assert refused["committed"] is False
+    assert refused["certified"] is False
+    held = CalibrationProfile(
+        calibrationId="cal-2",
+        cameraModel="planar_homography",
+        homography=[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+        landmarks=[
+            Landmark(name="holdout", imageX=10, imageY=10, pitchX=10, pitchY=10, independentHoldout=True),
+        ],
+        residualP95M=0.4,
+    )
+    accepted = commit_calibration(held, max_p95_m=3.0)
+    assert accepted["committed"] is True
+    assert accepted["certified"] is False
+
+
+def test_match_config_persists_teams_periods_and_rights(tmp_path: Path) -> None:
+    from backend.app.schemas import MatchConfig, MatchPeriod, SourceRights
+    from backend.app.storage import Storage
+
+    storage = Storage(tmp_path)
+    match = storage.create_match(
+        name="setup",
+        input_mode="tracking_json",
+        original_filename="rows.json",
+        input_path=tmp_path / "rows.json",
+        config=MatchConfig(),
+    )
+    updated = storage.update_match_config(
+        match.id,
+        MatchConfig(
+            cameraProfile="stable_elevated_wide",
+            pitchLengthM=105,
+            homeTeam="Home FC",
+            awayTeam="Away FC",
+            periods=[MatchPeriod(name="1", startSeconds=0, endSeconds=2700)],
+            rights=SourceRights(cloudPermission=True, processingScope="hosted"),
+        ),
+    )
+    assert updated.config.homeTeam == "Home FC"
+    assert updated.config.awayTeam == "Away FC"
+    setup = storage.assess_stored_match_setup(match.id)
+    assert setup["homeTeam"] == "Home FC"
+    assert setup["awayTeam"] == "Away FC"
+    assert setup["cameraProfile"] == "stable_elevated_wide"
+    assert setup["certified"] is False
+    storage.close()
+
+
+def test_ingest_persists_decode_anchors_from_frame_clocks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.app.processor import _persist_video_outputs
+    from backend.app.schemas import MatchConfig, MatchSummary
+    import backend.app.processor as processor
+    from backend.app.storage import Storage
+
+    storage = Storage(tmp_path)
+    match = storage.create_match(
+        name="anchors",
+        input_mode="video",
+        original_filename="clip.mp4",
+        input_path=tmp_path / "clip.mp4",
+        config=MatchConfig(),
+    )
+    job = storage.create_job(match.id)
+    (tmp_path / "clip.mp4").write_bytes(b"video")
+
+    def fake_outputs(frames, **_kwargs):  # noqa: ANN001
+        return (
+            frames,
+            MatchSummary(
+                possession=50,
+                myTeamDistance=None,
+                enemyDistance=None,
+                myTeamTopSpeed=None,
+                enemyTopSpeed=None,
+                myTeamSprints=None,
+                enemySprints=None,
+            ),
+            [],
+            [],
+            [],
+            [],
+            {"stateContinuityAppliedFrames": 0, "frames": []},
+        )
+
+    monkeypatch.setattr(processor, "_compute_outputs_and_match_state", fake_outputs)
+    _persist_video_outputs(
+        storage,
+        job.id,
+        match.id,
+        MatchConfig(),
+        {
+            "rows": [
+                {"Frame_ID": 0, "Timestamp": 0.0, "Entity_Type": "ball", "Track_ID": -1, "X": 50.0, "Y": 34.0, "Conf": 0.9},
+                {"Frame_ID": 2, "Timestamp": 0.21, "Entity_Type": "ball", "Track_ID": -1, "X": 51.0, "Y": 34.0, "Conf": 0.9},
+            ],
+            "trackColors": {},
+            "fourRates": {"exportFpsEqualsInferenceFps": False, "decodeCount": 3, "exportCount": 2},
+        },
+        processing_backend="local",
+        video_path=tmp_path / "clip.mp4",
+        worker_path="local",
+    )
+    anchors = storage.load_analysis_artifact(match.id, "decode_anchors")
+    assert anchors["beginning"] == 0.0
+    assert anchors["end"] == 0.21
+    assert anchors["source"] in {"production_decode", "persisted_frames"}
+    ownership = storage.load_analysis_artifact(match.id, "ownership_publication")
+    assert ownership["nearestIsNotControl"] is True
+    storage.close()
+
+
+def test_proxy_assets_attempt_constrained_ffmpeg_job(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from backend.app.schemas import MatchConfig
+    from backend.app.storage import Storage
+
+    storage = Storage(tmp_path)
+    original = tmp_path / "clip.mp4"
+    original.write_bytes(b"orig-bytes")
+    match = storage.create_match(
+        name="proxy",
+        input_mode="video",
+        original_filename="clip.mp4",
+        input_path=original,
+        config=MatchConfig(),
+    )
+    seen: list[list[str]] = []
+
+    def runner(argv, **kwargs):  # noqa: ANN001
+        seen.append([str(item) for item in argv])
+        dest = tmp_path / "matches" / match.id / "proxy.mp4"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(b"proxy")
+        return SimpleNamespace(returncode=0, stdout=b"", stderr=b"")
+
+    monkeypatch.setattr("backend.app.workbench.media.subprocess.run", runner)
+    receipt = storage.proxy_assets_for_match(match.id)
+    assert receipt["replacesOriginal"] is False
+    assert receipt["ranFfmpeg"] is True
+    assert seen and "ffmpeg" in seen[0][0]
+    storage.close()
+
+
+def test_storage_close_releases_sqlite_so_exclusive_lock_succeeds(tmp_path: Path) -> None:
+    from backend.app.schemas import MatchConfig
+    from backend.app.storage import Storage
+
+    storage = Storage(tmp_path)
+    match = storage.create_match(
+        name="fd",
+        input_mode="tracking_json",
+        original_filename="rows.json",
+        input_path=tmp_path / "rows.json",
+        config=MatchConfig(),
+    )
+    storage.ensure_job(match.id, "job-fd")
+    storage.close()
+    connection = sqlite3.connect(str(storage.db_path), timeout=1.0)
+    try:
+        connection.execute("BEGIN EXCLUSIVE")
+        connection.commit()
+    finally:
+        connection.close()

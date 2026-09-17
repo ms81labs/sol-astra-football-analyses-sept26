@@ -107,7 +107,7 @@ def _sampling_and_cache(source_clock: dict[str, object], adapter: FrameSource) -
         nominal_fps=nominal_fps,
         frame_interval=interval,
         selected_backend=f"{getattr(adapter, 'name', 'opencv')}+ultralytics_track",
-        temporal_policy="clip_local_index_modulo",
+        temporal_policy="source_global_grid",
     )
     rates = four_rates_receipt(audit)
     identity = cache_identity(

@@ -479,13 +479,33 @@ def export_timestamp_seconds(*, presentation_time_seconds: float | None, frame_c
     return round(frame_count / (fps or 1.0), 2)
 
 
+def should_export_on_source_grid(
+    presentation_time_seconds: float | None,
+    *,
+    frame_count: int,
+    frame_interval: int,
+    last_export_presentation_time: float | None,
+    grid_step_seconds: float,
+) -> bool:
+    """Export on a source-time grid. Index modulo is only used when PTS is missing."""
+
+    if presentation_time_seconds is None:
+        return frame_count % max(int(frame_interval), 1) == 0
+    if last_export_presentation_time is None:
+        return True
+    step = float(grid_step_seconds) if grid_step_seconds > 0 else 0.0
+    if step <= 0:
+        return True
+    return float(presentation_time_seconds) + 1e-9 >= float(last_export_presentation_time) + step
+
+
 def run_proxy_ffmpeg_job(
     original: Path,
     destination: Path,
     *,
     original_sha256: str,
     proxy_height: int = 720,
-    runner=subprocess.run,
+    runner=None,
 ) -> dict[str, object]:
     digest = hashlib.sha256(original.read_bytes()).hexdigest()
     if digest != original_sha256:
@@ -507,7 +527,8 @@ def run_proxy_ffmpeg_job(
     if not decision["admitted"]:
         raise ValueError("unconstrained decoder")
     _assert_safe_ffmpeg_argv(command)
-    runner(command, check=True, capture_output=True, timeout=120)
+    execute = runner or subprocess.run
+    execute(command, check=True, capture_output=True, timeout=120)
     return derive_proxy_assets(
         original,
         original_sha256=original_sha256,
@@ -547,7 +568,7 @@ class SamplingAudit:
     nominal_fps: float | None
     frame_interval: int
     selected_backend: str
-    temporal_policy: str = "clip_local_index_modulo"
+    temporal_policy: str = "source_global_grid"
     fallback_backend: str | None = None
     decoded_frame_count: int = 0
     primary_inference_count: int = 0
