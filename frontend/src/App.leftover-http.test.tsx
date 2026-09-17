@@ -1,9 +1,9 @@
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import type { FrameData, MatchRecord, MatchStats, ProcessingJob, RuntimeCapabilities } from './types';
+import type { MatchRecord, MatchStats } from './types';
 import * as api from './utils/api';
-import App, { formatJobStatus } from './App';
+import App from './App';
 
 vi.mock('./utils/api', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./utils/api')>();
@@ -65,16 +65,6 @@ function loadedWorkspace(id: string, name: string, eventLabel?: string, possessi
   };
 }
 
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (reason: Error) => void;
-  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise;
-    reject = rejectPromise;
-  });
-  return { promise, reject, resolve };
-}
-
 const reviewStats: MatchStats = {
   possession: 50,
   ballSignalStatus: 'trusted',
@@ -101,56 +91,6 @@ const reviewStats: MatchStats = {
   enemyCounterpressRecoverySeconds: null,
   formation: null,
 };
-
-function reviewWorkspace(): Workspace {
-  const frame: FrameData = {
-    Frame_ID: 0,
-    Timestamp: 3.5,
-    Ball: null,
-    My_Team: [],
-    Enemies: [],
-  };
-  return {
-    detail: {
-      id: 'match-review',
-      name: 'Review Match',
-      status: 'ready',
-      inputMode: 'tracking_json',
-      originalFilename: 'review.json',
-    },
-    frames: [frame],
-    frameCount: 1,
-    nextCursor: null,
-    analytics: { summary: reviewStats, formationTimeline: [], shots: [], ballAssignments: [] },
-    events: [],
-    benchmark: null,
-    evidence: null,
-  };
-}
-
-const localOnlyCapabilities: RuntimeCapabilities = {
-  analysisProviders: ['local'],
-  defaultAnalysisProvider: 'local',
-  pdfExportAvailable: false,
-};
-
-const cloudCapabilities: RuntimeCapabilities = {
-  analysisProviders: ['local', 'cloud'],
-  defaultAnalysisProvider: 'local',
-  pdfExportAvailable: false,
-};
-
-function mockReadyReviewMatch() {
-  vi.mocked(api.fetchMatches).mockResolvedValue([{
-    id: 'match-review',
-    name: 'Review Match',
-    status: 'ready',
-    inputMode: 'tracking_json',
-    originalFilename: 'review.json',
-  }]);
-  vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(reviewWorkspace());
-  vi.mocked(api.runMatchAnalysis).mockResolvedValue({ verdict: 'onside' });
-}
 
 function stubPitchCanvas() {
   const context = {
