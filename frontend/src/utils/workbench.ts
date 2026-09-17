@@ -307,6 +307,21 @@ export async function fetchMatchIdentity(matchId: string) {
   return response.json() as Promise<MatchIdentity>;
 }
 
+export interface MatchAttackDirection {
+  direction: string | null;
+  fromStoredConfig: boolean;
+  team?: string;
+  period?: number;
+}
+
+export async function fetchMatchAttackDirection(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/attack-direction`);
+  if (!response.ok) {
+    throw new Error(`Failed to load match attack direction: ${response.status}`);
+  }
+  return response.json() as Promise<MatchAttackDirection>;
+}
+
 export async function fetchCorrectionHistory(matchId: string) {
   const response = await fetch(`/api/matches/${matchId}/corrections`);
   if (!response.ok) {
