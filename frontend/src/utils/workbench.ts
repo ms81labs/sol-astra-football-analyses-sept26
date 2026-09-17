@@ -653,6 +653,20 @@ export async function fetchMatchShotQuality(matchId: string) {
   return response.json() as Promise<MatchShotQuality>;
 }
 
+export interface MatchAuditTrail {
+  undoable: boolean;
+  rewrotePastOutcomes: boolean;
+  items?: unknown[];
+}
+
+export async function fetchMatchHistory(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/history`);
+  if (!response.ok) {
+    throw new Error(`Failed to load match history: ${response.status}`);
+  }
+  return response.json() as Promise<MatchAuditTrail>;
+}
+
 export interface AnalystWorkflowSnapshot {
   measured?: boolean;
   analystCompletedReviewedMatch?: boolean;
