@@ -13106,6 +13106,134 @@ describe('App match workspace loading', () => {
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('posts decode crop, decode cuts, and decode grid without leftover rotation, invented cuts, or client onGrid', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/decode/crop') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            width: 1920,
+            height: 1080,
+            colourOrder: 'bgr',
+            rotation: 0,
+            crop: [0, 0, 1920, 1080],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/decode/cuts') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            cuts: [],
+            anchors: { beginning: null, middle: null, end: null, discontinuities: [] },
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/decode/grid') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            clipStartSourceFrame: 0,
+            evaluationStep: 1,
+            onGrid: true,
+            remainder: 0,
+            policy: 'source_global_grid',
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => expect(screen.getByRole('button', { name: /request decode crop/i })).toBeTruthy());
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/decode/crop'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/decode/cuts'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/decode/grid'))).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: /request decode crop/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/decode/crop')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /request decode cuts/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/decode/cuts')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /request decode grid/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/decode/grid')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/decode/crop')
+      && Boolean(init?.body && (String(init.body).includes('rotation') || String(init.body).includes('colourOrder')))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/decode/cuts')
+      && Boolean(init?.body && (String(init.body).includes('times') || String(init.body).includes('cuts')))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/decode/grid')
+      && Boolean(init?.body && (String(init.body).includes('clipStartSourceFrame') || String(init.body).includes('onGrid')))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/quota'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/training/admit'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/receipts/promotion'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/capacity'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/privacy/dpia'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/research/tracks/'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/roster/labels'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/incidents/ladder'))).toBe(false);
+    expect(screen.queryByText(/cut reconnect stays off/i)).toBeNull();
+    expect(screen.queryByText(/live pixel wrap stays on cpu/i)).toBeNull();
+    const decodeCrop = within(screen.getByRole('region', { name: /unforced decode crop/i }));
+    expect(decodeCrop.getByText(/keeps rotation 0/i)).toBeTruthy();
+    expect(decodeCrop.getByText(/client colourOrder rgb is not sent/i)).toBeTruthy();
+    expect(decodeCrop.getByText(/crop stays bgr/i)).toBeTruthy();
+    const decodeCuts = within(screen.getByRole('region', { name: /unforced decode cuts/i }));
+    expect(decodeCuts.getByText(/keep stored times empty/i)).toBeTruthy();
+    expect(decodeCuts.getByText(/client cuts array is not sent/i)).toBeTruthy();
+    expect(decodeCuts.getByText(/camera-cut invention stays off/i)).toBeTruthy();
+    const decodeGrid = within(screen.getByRole('region', { name: /unforced decode grid/i }));
+    expect(decodeGrid.getByText(/keeps policy source_global_grid/i)).toBeTruthy();
+    expect(decodeGrid.getByText(/client clipStartSourceFrame 13 is not sent/i)).toBeTruthy();
+    expect(decodeGrid.getByText(/client onGrid true is not sent/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('loads stored independent reviewer, worked match flow, and decode memory without inventing acceptance or GPU residency', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);

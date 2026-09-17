@@ -1552,6 +1552,63 @@ export async function postDecodePixels() {
   return response.json() as Promise<DecodePixelsWriteSnapshot>;
 }
 
+export interface DecodeCropWriteSnapshot {
+  width?: number;
+  height?: number;
+  colourOrder?: string;
+  rotation?: number;
+  crop?: number[];
+}
+
+export async function postDecodeCrop() {
+  const response = await fetch('/api/decode/crop', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post decode crop: ${response.status}`);
+  }
+  return response.json() as Promise<DecodeCropWriteSnapshot>;
+}
+
+export interface DecodeCutsWriteSnapshot {
+  cuts?: number[];
+  anchors?: { discontinuities?: number[] };
+}
+
+export async function postDecodeCuts() {
+  const response = await fetch('/api/decode/cuts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post decode cuts: ${response.status}`);
+  }
+  return response.json() as Promise<DecodeCutsWriteSnapshot>;
+}
+
+export interface DecodeGridWriteSnapshot {
+  clipStartSourceFrame?: number;
+  evaluationStep?: number;
+  onGrid?: boolean;
+  remainder?: number;
+  policy?: string;
+}
+
+export async function postDecodeGrid() {
+  const response = await fetch('/api/decode/grid', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post decode grid: ${response.status}`);
+  }
+  return response.json() as Promise<DecodeGridWriteSnapshot>;
+}
+
 export interface StageTimingSnapshot {
   overlappedStagesAreAdditive?: boolean;
   wallTime?: number;
