@@ -369,6 +369,25 @@ export async function fetchMatchThemes(matchId: string) {
   return response.json() as Promise<MatchThemes>;
 }
 
+export interface MatchAssistanceFallback {
+  route: string;
+  reasonCodes?: string[];
+  reviewOperational: boolean;
+  output?: { kind?: string };
+}
+
+export async function fetchMatchAssistanceFallback(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/assistance/fallback`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to load match assistance fallback: ${response.status}`);
+  }
+  return response.json() as Promise<MatchAssistanceFallback>;
+}
+
 export async function fetchCorrectionHistory(matchId: string) {
   const response = await fetch(`/api/matches/${matchId}/corrections`);
   if (!response.ok) {
