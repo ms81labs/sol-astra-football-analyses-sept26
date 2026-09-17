@@ -661,6 +661,20 @@ export async function fetchMatchShotQuality(matchId: string) {
   return response.json() as Promise<MatchShotQuality>;
 }
 
+export interface MatchShotFeatures {
+  recorded: boolean;
+  missing?: string[];
+  imputedAsCalibrated: boolean;
+}
+
+export async function fetchMatchShotFeatures(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/shots/features`);
+  if (!response.ok) {
+    throw new Error(`Failed to load match shot features: ${response.status}`);
+  }
+  return response.json() as Promise<MatchShotFeatures>;
+}
+
 export interface MatchAuditTrail {
   undoable: boolean;
   rewrotePastOutcomes: boolean;
