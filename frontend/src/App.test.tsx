@@ -12344,6 +12344,123 @@ describe('App match workspace loading', () => {
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('posts cleanup complete, training cycle, and experiment pause without leftover complete true, measurableFailure, or remaining 0', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/cleanup/complete') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ complete: false, cleanupResult: 'failed' }),
+        } as Response);
+      }
+      if (url.endsWith('/api/training/cycle') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            stage: 'diagnose',
+            proceed: false,
+            reason: 'no_specific_measurable_failure',
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/pause') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ paused: false }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => expect(screen.getByRole('button', { name: /request cleanup complete/i })).toBeTruthy());
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/cleanup/complete'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/training/cycle'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/pause'))).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: /request cleanup complete/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/cleanup/complete')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /request training cycle/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/training/cycle')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /request experiment pause/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/pause')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/cleanup/complete')
+      && Boolean(init?.body && (String(init.body).includes('complete') || String(init.body).includes('cleanupResult')))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/training/cycle')
+      && Boolean(init?.body && (String(init.body).includes('measurableFailure') || String(init.body).includes('stage')))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/pause')
+      && Boolean(init?.body && (String(init.body).includes('remaining') || String(init.body).includes('terminationAndRecovery')))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/training/admit'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/quota'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/cache/tenancy'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/capacity'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/privacy/dpia'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/research/tracks/'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/roster/labels'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/incidents/ladder'))).toBe(false);
+    expect(screen.queryByText(/locked evaluation labels cannot enter training/i)).toBeNull();
+    expect(screen.queryByText(/cleanupResult stays unknown/i)).toBeNull();
+    const cleanupComplete = within(screen.getByRole('region', { name: /unforced cleanup complete/i }));
+    expect(cleanupComplete.getByText(/keeps complete false/i)).toBeTruthy();
+    expect(cleanupComplete.getByText(/client complete true is not sent/i)).toBeTruthy();
+    expect(cleanupComplete.getByText(/failed cleanup stays incomplete/i)).toBeTruthy();
+    const cycle = within(screen.getByRole('region', { name: /unforced training cycle/i }));
+    expect(cycle.getByText(/keeps proceed false/i)).toBeTruthy();
+    expect(cycle.getByText(/client measurableFailure true is not sent/i)).toBeTruthy();
+    expect(cycle.getByText(/diagnose stays no_specific_measurable_failure/i)).toBeTruthy();
+    const pause = within(screen.getByRole('region', { name: /unforced experiment pause/i }));
+    expect(pause.getByText(/keeps paused false/i)).toBeTruthy();
+    expect(pause.getByText(/client remaining 0 is not sent/i)).toBeTruthy();
+    expect(pause.getByText(/remaining still exceeds termination/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('loads stored independent reviewer, worked match flow, and decode memory without inventing acceptance or GPU residency', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);

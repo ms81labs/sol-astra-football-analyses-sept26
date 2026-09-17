@@ -1059,6 +1059,57 @@ export async function postCacheRecompute() {
   return response.json() as Promise<CacheRecomputeWriteSnapshot>;
 }
 
+export interface CleanupCompleteWriteSnapshot {
+  complete?: boolean;
+  cleanupResult?: string;
+}
+
+export async function postCleanupComplete() {
+  const response = await fetch('/api/cleanup/complete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post cleanup complete: ${response.status}`);
+  }
+  return response.json() as Promise<CleanupCompleteWriteSnapshot>;
+}
+
+export interface TrainingCycleWriteSnapshot {
+  stage?: string;
+  proceed?: boolean;
+  reason?: string;
+}
+
+export async function postTrainingCycle() {
+  const response = await fetch('/api/training/cycle', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post training cycle: ${response.status}`);
+  }
+  return response.json() as Promise<TrainingCycleWriteSnapshot>;
+}
+
+export interface ExperimentPauseWriteSnapshot {
+  paused?: boolean;
+}
+
+export async function postExperimentPause() {
+  const response = await fetch('/api/pause', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post experiment pause: ${response.status}`);
+  }
+  return response.json() as Promise<ExperimentPauseWriteSnapshot>;
+}
+
 export interface JobBudgetSnapshot {
   reserve?: { authorised?: boolean; reserved?: number; estimate?: number; currency?: string };
   reconcile?: { reserved?: number; actual?: number; variance?: number; exceeded?: boolean; alert?: boolean };
