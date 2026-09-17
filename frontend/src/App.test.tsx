@@ -14903,6 +14903,148 @@ describe('App match workspace loading', () => {
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('posts leftover heatmap, leftover search, and leftover signed access without leftover identityContinuous true, matchId-less events, or leftover token', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/heatmap') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/search') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: false,
+          status: 400,
+          json: async () => ({ detail: 'matchId is required' }),
+        } as Response);
+      }
+      if (url.endsWith('/api/access/signed') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            admitted: false,
+            scoped: true,
+            reasonCodes: ['UNSIGNED_OR_UNSCOPED_OBJECT_ACCESS'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => expect(screen.getByRole('button', { name: /request leftover heatmap/i })).toBeTruthy());
+    expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith('/api/heatmap') && init?.method === 'POST')).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith('/api/search') && init?.method === 'POST')).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith('/api/access/signed') && init?.method === 'POST')).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: /request leftover heatmap/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/heatmap')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /request leftover search/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/search')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /request leftover signed access/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/access/signed')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/heatmap')
+      && Boolean(init?.body && String(init.body).includes('identityContinuous'))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/search')
+      && Boolean(init?.body && (String(init.body).includes('matchId') || String(init.body).includes('events')))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/access/signed')
+      && Boolean(init?.body && (String(init.body).includes('token') || String(init.body).includes('admitted')))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/quota'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/training/admit'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/receipts/promotion'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/capacity'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/privacy/dpia'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/research/tracks/'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/roster/labels'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/incidents/ladder'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/decode/proxy-pts'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/access/object'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/ownership/hysteresis'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/geometry/landmarks'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/geometry/preview'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/library/search'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/reports/assemble'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/rates/four'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/shots/tree'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/cache/tenancy'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/setup/preview'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => String(url).includes('/api/support/bundle') && init?.method === 'POST')).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => String(url).includes('/api/roster/promotion') && init?.method === 'POST')).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => String(url).includes('/api/experiments/B2') && init?.method === 'POST')).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/search/tactical-themes'))).toBe(false);
+    expect(screen.queryByText(/Heatmaps stay interval-limited without identity continuity/i)).toBeNull();
+    expect(screen.queryByText(/Load a match before running typed search/i)).toBeNull();
+    expect(screen.queryByText(/unsigned or unscoped job access is refused/i)).toBeNull();
+    expect(screen.queryByText(/a missing token is not scoped object admission/i)).toBeNull();
+    expect(screen.queryByText(/Posted release dossier keeps nativeCode gated_inert/i)).toBeNull();
+    const heatmap = within(screen.getByRole('region', { name: /unforced leftover heatmap/i }));
+    expect(heatmap.getByText(/Posted leftover heatmap keeps identityContinuous false/i)).toBeTruthy();
+    expect(heatmap.getByText(/client POST identityContinuous true is not sent/i)).toBeTruthy();
+    expect(heatmap.getByText(/Posted leftover heatmap stays withheld and interval-limited/i)).toBeTruthy();
+    const leftoverSearch = within(screen.getByRole('region', { name: /unforced leftover search/i }));
+    expect(leftoverSearch.getByText(/Posted leftover search without matchId stays rejected/i)).toBeTruthy();
+    expect(leftoverSearch.getByText(/client POST events are not sent/i)).toBeTruthy();
+    expect(leftoverSearch.getByText(/Posted leftover search is not match-scoped queries/i)).toBeTruthy();
+    const signed = within(screen.getByRole('region', { name: /unforced leftover signed access/i }));
+    expect(signed.getByText(/Posted leftover signed object access keeps admitted false/i)).toBeTruthy();
+    expect(signed.getByText(/client POST token is not sent/i)).toBeTruthy();
+    expect(signed.getByText(/Posted UNSIGNED_OR_UNSCOPED_OBJECT_ACCESS stays blocking/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('loads stored independent reviewer, worked match flow, and decode memory without inventing acceptance or GPU residency', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
@@ -15475,6 +15617,9 @@ describe('App match workspace loading', () => {
     expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/incidents/ladder'))).toBe(false);
     expect(screen.queryByText(/unsigned or unscoped job access is refused/i)).toBeNull();
     expect(screen.queryByText(/four homography points do not make calibration accepted/i)).toBeNull();
+    expect(screen.queryByText(/Posted leftover heatmap keeps identityContinuous false/i)).toBeNull();
+    expect(screen.queryByText(/Posted leftover search without matchId stays rejected/i)).toBeNull();
+    expect(screen.queryByText(/Posted leftover signed object access keeps admitted false/i)).toBeNull();
     const signed = within(await screen.findByRole('region', { name: /stored signed object access/i }));
     expect(signed.getByText(/keeps admitted false/i)).toBeTruthy();
     expect(signed.getByText(/UNSIGNED_OR_UNSCOPED_OBJECT_ACCESS stays blocking/i)).toBeTruthy();

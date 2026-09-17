@@ -2303,6 +2303,64 @@ export async function postReleaseDossier() {
   return response.json() as Promise<ReleaseDossierWriteSnapshot>;
 }
 
+export interface LeftoverHeatmapWriteSnapshot {
+  identityContinuous?: boolean;
+  wholeMatch?: boolean;
+  intervalLimited?: boolean;
+  withheld?: boolean;
+  reasonCodes?: string[];
+}
+
+export async function postLeftoverHeatmap() {
+  const response = await fetch('/api/heatmap', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post leftover heatmap: ${response.status}`);
+  }
+  return response.json() as Promise<LeftoverHeatmapWriteSnapshot>;
+}
+
+export interface LeftoverSearchWriteSnapshot {
+  ok: boolean;
+  status: number;
+  detail?: string;
+}
+
+export async function postLeftoverSearch() {
+  const response = await fetch('/api/search', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  const payload = await response.json().catch(() => ({})) as { detail?: string };
+  return {
+    ok: response.ok,
+    status: response.status,
+    detail: typeof payload.detail === 'string' ? payload.detail : undefined,
+  } satisfies LeftoverSearchWriteSnapshot;
+}
+
+export interface LeftoverSignedAccessWriteSnapshot {
+  admitted?: boolean;
+  scoped?: boolean;
+  reasonCodes?: string[];
+}
+
+export async function postLeftoverSignedAccess() {
+  const response = await fetch('/api/access/signed', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post leftover signed access: ${response.status}`);
+  }
+  return response.json() as Promise<LeftoverSignedAccessWriteSnapshot>;
+}
+
 export interface StageTimingSnapshot {
   overlappedStagesAreAdditive?: boolean;
   wallTime?: number;
