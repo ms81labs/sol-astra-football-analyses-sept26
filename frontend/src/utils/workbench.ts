@@ -851,6 +851,18 @@ export async function fetchMatchPackage(matchId: string) {
   return response.json() as Promise<MatchPackageSnapshot>;
 }
 
+export async function postMatchPackage(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/package`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post match package: ${response.status}`);
+  }
+  return response.json() as Promise<MatchPackageSnapshot>;
+}
+
 export interface MatchReportCoverage {
   coverageAware: boolean;
   representsWholeMatch: boolean;
