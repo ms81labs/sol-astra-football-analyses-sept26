@@ -796,6 +796,22 @@ export async function importMatchRecovery(matchId: string) {
   return response.json() as Promise<MatchRecoveryImport>;
 }
 
+export interface MatchAssistanceReport {
+  factualCheck?: { accepted?: boolean; reasonCodes?: string[] };
+}
+
+export async function postMatchAssistanceReport(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/assistance/report`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to assemble match assistance report: ${response.status}`);
+  }
+  return response.json() as Promise<MatchAssistanceReport>;
+}
+
 export interface MatchPackageSnapshot {
   analyst?: {
     playlist?: unknown[];
