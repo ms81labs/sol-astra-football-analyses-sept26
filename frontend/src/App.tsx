@@ -125,6 +125,9 @@ import IdentityClusterWritePanel from './components/IdentityClusterWritePanel';
 import IdentityClusterPanel from './components/IdentityClusterPanel';
 import IdentityPromoteWritePanel from './components/IdentityPromoteWritePanel';
 import IdentityRepairWritePanel from './components/IdentityRepairWritePanel';
+import ChallengerAdaptersWritePanel from './components/ChallengerAdaptersWritePanel';
+import StalePermissionsWritePanel from './components/StalePermissionsWritePanel';
+import LeftoverGeometryWritePanel from './components/LeftoverGeometryWritePanel';
 import StageTimingPanel from './components/StageTimingPanel';
 import GpuProbePanel from './components/GpuProbePanel';
 import IndependentReviewerPanel from './components/IndependentReviewerPanel';
@@ -2231,6 +2234,15 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           </div>
           <div className="mb-3 shrink-0">
             <IdentityRepairWritePanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <ChallengerAdaptersWritePanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <StalePermissionsWritePanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <LeftoverGeometryWritePanel />
           </div>
           <div className="mb-3 shrink-0">
             <StageTimingPanel />

@@ -2142,6 +2142,60 @@ export async function postIdentityRepair() {
   return response.json() as Promise<IdentityRepairWriteSnapshot>;
 }
 
+export interface ChallengerAdaptersWriteSnapshot {
+  kloppy?: { enabled?: boolean; replacesInternalProvenance?: boolean; default?: boolean };
+  roboflow?: { enabled?: boolean; name?: string };
+  mcbyte?: { enabled?: boolean; default?: boolean; name?: string };
+}
+
+export async function postChallengerAdapters() {
+  const response = await fetch('/api/challengers', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post challenger adapters: ${response.status}`);
+  }
+  return response.json() as Promise<ChallengerAdaptersWriteSnapshot>;
+}
+
+export interface StalePermissionsWriteSnapshot {
+  stale?: boolean;
+  admitted?: boolean;
+  reasonCodes?: string[];
+}
+
+export async function postStalePermissions() {
+  const response = await fetch('/api/permissions/stale', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post stale permissions: ${response.status}`);
+  }
+  return response.json() as Promise<StalePermissionsWriteSnapshot>;
+}
+
+export interface LeftoverGeometryWriteSnapshot {
+  compatibleWithFourPointV1?: boolean;
+  evaluation?: { accepted?: boolean; reasonCodes?: string[]; holdoutCount?: number };
+  withheld?: { availability?: string };
+}
+
+export async function postLeftoverGeometry() {
+  const response = await fetch('/api/geometry/legacy', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post leftover geometry: ${response.status}`);
+  }
+  return response.json() as Promise<LeftoverGeometryWriteSnapshot>;
+}
+
 export interface StageTimingSnapshot {
   overlappedStagesAreAdditive?: boolean;
   wallTime?: number;

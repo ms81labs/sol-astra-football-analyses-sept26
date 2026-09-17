@@ -14498,6 +14498,139 @@ describe('App match workspace loading', () => {
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('posts challengers, stale permissions, and leftover geometry without leftover kloppy true, admitted true, or accepted true', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/challengers') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            kloppy: { enabled: false, replacesInternalProvenance: false, default: false },
+            roboflow: { enabled: false, name: 'roboflow_trackers' },
+            mcbyte: { enabled: false, default: false, name: 'mcbyte_plus_plus' },
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/permissions/stale') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            stale: true,
+            admitted: false,
+            reasonCodes: ['STALE_PERMISSION'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/geometry/legacy') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            compatibleWithFourPointV1: true,
+            evaluation: { accepted: false, reasonCodes: ['CALIBRATION_UNAVAILABLE'], holdoutCount: 0 },
+            withheld: { availability: 'withheld' },
+            landmarks: [{ independentHoldout: false }],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => expect(screen.getByRole('button', { name: /request challenger adapters/i })).toBeTruthy());
+    expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith('/api/challengers') && init?.method === 'POST')).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith('/api/permissions/stale') && init?.method === 'POST')).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith('/api/geometry/legacy') && init?.method === 'POST')).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: /request challenger adapters/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/challengers')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /request stale permissions/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/permissions/stale')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /request leftover geometry/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/geometry/legacy')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/challengers')
+      && Boolean(init?.body && (String(init.body).includes('kloppy') || String(init.body).includes('enabled')))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/permissions/stale')
+      && Boolean(init?.body && String(init.body).includes('admitted'))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/geometry/legacy')
+      && Boolean(init?.body && (String(init.body).includes('accepted') || String(init.body).includes('points')))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/quota'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/training/admit'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/receipts/promotion'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/capacity'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/privacy/dpia'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/research/tracks/'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/roster/labels'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/incidents/ladder'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/decode/proxy-pts'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/access/object'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/ownership/hysteresis'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/geometry/landmarks'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/geometry/preview'))).toBe(false);
+    expect(screen.queryByText(/kloppy, roboflow, and mcbyte stay unadmitted challengers/i)).toBeNull();
+    expect(screen.queryByText(/stale permissions are not admitted/i)).toBeNull();
+    expect(screen.queryByText(/four homography points do not make calibration accepted/i)).toBeNull();
+    expect(screen.queryByText(/Posted identity promote keeps kind tracklet/i)).toBeNull();
+    const challengers = within(screen.getByRole('region', { name: /unforced challenger adapters/i }));
+    expect(challengers.getByText(/Posted challenger adapters keep kloppy.enabled false/i)).toBeTruthy();
+    expect(challengers.getByText(/client POST kloppy true is not sent/i)).toBeTruthy();
+    expect(challengers.getByText(/Posted adapters stay unadmitted/i)).toBeTruthy();
+    const stale = within(screen.getByRole('region', { name: /unforced stale permissions/i }));
+    expect(stale.getByText(/Posted stale permissions keep admitted false/i)).toBeTruthy();
+    expect(stale.getByText(/client POST admitted true is not sent/i)).toBeTruthy();
+    expect(stale.getByText(/Posted STALE_PERMISSION stays blocking/i)).toBeTruthy();
+    const geometry = within(screen.getByRole('region', { name: /unforced leftover geometry/i }));
+    expect(geometry.getByText(/Posted leftover geometry keeps evaluation.accepted false/i)).toBeTruthy();
+    expect(geometry.getByText(/client POST accepted true is not sent/i)).toBeTruthy();
+    expect(geometry.getByText(/Posted four corners stay CALIBRATION_UNAVAILABLE/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('loads stored independent reviewer, worked match flow, and decode memory without inventing acceptance or GPU residency', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
