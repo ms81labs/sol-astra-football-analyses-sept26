@@ -625,6 +625,20 @@ export async function fetchMatchCoverage(matchId: string) {
   return response.json() as Promise<MatchReportCoverage>;
 }
 
+export interface MatchReportProvenance {
+  accepted: boolean;
+  reasonCodes?: string[];
+  missingEvidenceIds?: string[];
+}
+
+export async function fetchMatchProvenance(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/reports/provenance`);
+  if (!response.ok) {
+    throw new Error(`Failed to load match provenance: ${response.status}`);
+  }
+  return response.json() as Promise<MatchReportProvenance>;
+}
+
 export interface AnalystWorkflowSnapshot {
   measured?: boolean;
   analystCompletedReviewedMatch?: boolean;
