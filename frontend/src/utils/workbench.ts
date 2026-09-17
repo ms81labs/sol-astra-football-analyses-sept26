@@ -903,6 +903,57 @@ export async function postAssistancePolicy() {
   return response.json() as Promise<AssistancePolicySnapshot>;
 }
 
+export interface WorkerEnvironmentWriteSnapshot {
+  REQUEST_ID?: string;
+  NAMESPACE?: string;
+}
+
+export async function postWorkerEnvironment() {
+  const response = await fetch('/api/worker/environment', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post worker environment: ${response.status}`);
+  }
+  return response.json() as Promise<WorkerEnvironmentWriteSnapshot>;
+}
+
+export interface PerceptionScoreWriteSnapshot {
+  labelsIndependent?: boolean;
+  notes?: string[];
+}
+
+export async function postPerceptionScore() {
+  const response = await fetch('/api/perception/score', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post perception score: ${response.status}`);
+  }
+  return response.json() as Promise<PerceptionScoreWriteSnapshot>;
+}
+
+export interface InterruptedUploadWriteSnapshot {
+  accepted?: boolean;
+  quarantined?: boolean;
+}
+
+export async function postInterruptedUpload() {
+  const response = await fetch('/api/upload/interrupt', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post interrupted upload: ${response.status}`);
+  }
+  return response.json() as Promise<InterruptedUploadWriteSnapshot>;
+}
+
 export interface JobBudgetSnapshot {
   reserve?: { authorised?: boolean; reserved?: number; estimate?: number; currency?: string };
   reconcile?: { reserved?: number; actual?: number; variance?: number; exceeded?: boolean; alert?: boolean };

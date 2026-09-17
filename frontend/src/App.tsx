@@ -73,6 +73,9 @@ import PromotionGatePanel from './components/PromotionGatePanel';
 import QualityGateWritePanel from './components/QualityGateWritePanel';
 import JsonRepairWritePanel from './components/JsonRepairWritePanel';
 import AssistancePolicyWritePanel from './components/AssistancePolicyWritePanel';
+import WorkerEnvironmentWritePanel from './components/WorkerEnvironmentWritePanel';
+import PerceptionScoreWritePanel from './components/PerceptionScoreWritePanel';
+import InterruptedUploadWritePanel from './components/InterruptedUploadWritePanel';
 import StageTimingPanel from './components/StageTimingPanel';
 import GpuProbePanel from './components/GpuProbePanel';
 import IndependentReviewerPanel from './components/IndependentReviewerPanel';
@@ -2012,6 +2015,15 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           </div>
           <div className="mb-3 shrink-0">
             <AssistancePolicyWritePanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <WorkerEnvironmentWritePanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <PerceptionScoreWritePanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <InterruptedUploadWritePanel />
           </div>
           <div className="mb-3 shrink-0">
             <StageTimingPanel />

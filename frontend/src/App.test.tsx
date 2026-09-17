@@ -11998,6 +11998,117 @@ describe('App match workspace loading', () => {
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('posts worker environment, perception score, and interrupted upload without leftover host secrets or accepted true', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/worker/environment') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ REQUEST_ID: 'production', NAMESPACE: 'production' }),
+        } as Response);
+      }
+      if (url.endsWith('/api/perception/score') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ labelsIndependent: false, notes: ['LABELS_INCOMPLETE'] }),
+        } as Response);
+      }
+      if (url.endsWith('/api/upload/interrupt') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ accepted: false, quarantined: true }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => expect(screen.getByRole('button', { name: /request worker environment/i })).toBeTruthy());
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/worker/environment'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/perception/score'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/upload/interrupt'))).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: /request worker environment/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/worker/environment')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /request perception score/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/perception/score')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /request interrupted upload/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/upload/interrupt')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/worker/environment')
+      && Boolean(init?.body && (String(init.body).includes('hostSecret') || String(init.body).includes('must-not-leak')))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/perception/score')
+      && Boolean(init?.body && String(init.body).includes('labelsIndependent'))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/upload/interrupt')
+      && Boolean(init?.body && String(init.body).includes('accepted'))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/capacity'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/privacy/dpia'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/research/tracks/'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/roster/labels'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/incidents/ladder'))).toBe(false);
+    expect(screen.queryByText(/host credentials stay out of the worker environment/i)).toBeNull();
+    expect(screen.queryByText(/independent labels remain incomplete for perception scoring/i)).toBeNull();
+    expect(screen.queryByText(/interrupted uploads are quarantined, not accepted/i)).toBeNull();
+    const worker = within(screen.getByRole('region', { name: /unforced worker environment/i }));
+    expect(worker.getByText(/excludes host secrets/i)).toBeTruthy();
+    expect(worker.getByText(/client hostSecret is not sent/i)).toBeTruthy();
+    expect(worker.getByText(/NAMESPACE stays production/i)).toBeTruthy();
+    const perception = within(screen.getByRole('region', { name: /unforced perception score/i }));
+    expect(perception.getByText(/keeps labelsIndependent false/i)).toBeTruthy();
+    expect(perception.getByText(/client labelsIndependent true is not sent/i)).toBeTruthy();
+    expect(perception.getByText(/LABELS_INCOMPLETE stays blocking/i)).toBeTruthy();
+    const interrupted = within(screen.getByRole('region', { name: /unforced interrupted upload/i }));
+    expect(interrupted.getByText(/keeps accepted false/i)).toBeTruthy();
+    expect(interrupted.getByText(/client accepted true is not sent/i)).toBeTruthy();
+    expect(interrupted.getByText(/quarantined stays true/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('loads stored independent reviewer, worked match flow, and decode memory without inventing acceptance or GPU residency', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
