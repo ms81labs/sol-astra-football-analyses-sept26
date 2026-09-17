@@ -1715,6 +1715,60 @@ export async function postPerceptionPreprocess() {
   return response.json() as Promise<PerceptionPreprocessWriteSnapshot>;
 }
 
+export interface PerceptionStratumWriteSnapshot {
+  labelsIndependent?: boolean;
+  byStratum?: Record<string, unknown>;
+}
+
+export async function postPerceptionStratum() {
+  const response = await fetch('/api/perception/stratum', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post perception stratum: ${response.status}`);
+  }
+  return response.json() as Promise<PerceptionStratumWriteSnapshot>;
+}
+
+export interface PerceptionBallStatesWriteSnapshot {
+  visible?: number;
+  inferred?: number;
+  unknown?: number;
+}
+
+export async function postPerceptionBallStates() {
+  const response = await fetch('/api/perception/ball-states', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post perception ball-states: ${response.status}`);
+  }
+  return response.json() as Promise<PerceptionBallStatesWriteSnapshot>;
+}
+
+export interface IdentityPreviewWriteSnapshot {
+  preview?: boolean;
+  committed?: boolean;
+  visionRerun?: boolean;
+  kind?: string;
+}
+
+export async function postIdentityPreview() {
+  const response = await fetch('/api/identity/preview', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post identity preview: ${response.status}`);
+  }
+  return response.json() as Promise<IdentityPreviewWriteSnapshot>;
+}
+
 export interface StageTimingSnapshot {
   overlappedStagesAreAdditive?: boolean;
   wallTime?: number;
