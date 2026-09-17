@@ -2095,6 +2095,53 @@ export async function postIdentityCluster() {
   return response.json() as Promise<IdentityClusterWriteSnapshot>;
 }
 
+export async function fetchIdentityCluster() {
+  const response = await fetch('/api/identity/clusters/0');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored identity cluster: ${response.status}`);
+  }
+  return response.json() as Promise<IdentityClusterWriteSnapshot>;
+}
+
+export interface IdentityPromoteWriteSnapshot {
+  kind?: string;
+  trackId?: string;
+  rosterId?: string | null;
+  reviewed?: boolean;
+}
+
+export async function postIdentityPromote() {
+  const response = await fetch('/api/identity/promote', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post identity promote: ${response.status}`);
+  }
+  return response.json() as Promise<IdentityPromoteWriteSnapshot>;
+}
+
+export interface IdentityRepairWriteSnapshot {
+  preview?: boolean;
+  committed?: boolean;
+  kind?: string;
+  trackId?: string | null;
+  visionRerun?: boolean;
+}
+
+export async function postIdentityRepair() {
+  const response = await fetch('/api/identity/repair', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post identity repair: ${response.status}`);
+  }
+  return response.json() as Promise<IdentityRepairWriteSnapshot>;
+}
+
 export interface StageTimingSnapshot {
   overlappedStagesAreAdditive?: boolean;
   wallTime?: number;

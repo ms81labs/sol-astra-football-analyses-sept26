@@ -14294,7 +14294,7 @@ describe('App match workspace loading', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: /request decode challengers/i })).toBeTruthy());
     expect(fetchMock.mock.calls.some(([url, init]) => String(url).includes('/api/decode/challengers') && init?.method === 'POST')).toBe(false);
     expect(fetchMock.mock.calls.some(([url, init]) => String(url).includes('/api/flags/gpu_default/enabled') && init?.method === 'POST')).toBe(false);
-    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/identity/clusters/'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => String(url).includes('/api/identity/clusters/') && init?.method === 'POST')).toBe(false);
     fireEvent.click(screen.getByRole('button', { name: /request decode challengers/i }));
     await waitFor(() => {
       expect(fetchMock.mock.calls.some(([url, init]) => (
@@ -14358,6 +14358,143 @@ describe('App match workspace loading', () => {
     expect(cluster.getByText(/keeps semanticTeam None/i)).toBeTruthy();
     expect(cluster.getByText(/client selectedSemantic my_team is not sent/i)).toBeTruthy();
     expect(cluster.getByText(/numeric cluster IDs stay suggestions/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
+  it('loads stored identity cluster and posts identity promote and repair without leftover selectedSemantic, reviewed true, or trackId', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/identity/clusters/0') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            clusterId: 0,
+            semanticTeam: null,
+            suggestion: true,
+            notes: 'Numeric cluster IDs are not stable home/away labels.',
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/identity/promote') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            kind: 'tracklet',
+            trackId: 't-0',
+            rosterId: null,
+            reviewed: false,
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/identity/repair') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            preview: true,
+            committed: false,
+            kind: 'track_split',
+            trackId: null,
+            visionRerun: false,
+            edits: [{ kind: 'track_split', trackId: 't-1', atFrame: 0, author: 'analyst' }],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/identity/clusters/0')
+        && (!init?.method || init.method === 'GET')
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/identity/clusters/') && init?.method === 'POST'
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/identity/promote') && init?.method === 'POST'
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/identity/repair') && init?.method === 'POST'
+    ))).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: /request identity promote/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/identity/promote')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /request identity repair/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/identity/repair')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/identity/clusters/')
+      && Boolean(init?.body && (String(init.body).includes('selectedSemantic') || String(init.body).includes('my_team')))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/identity/promote')
+      && Boolean(init?.body && (String(init.body).includes('reviewed') || String(init.body).includes('rosterId')))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/identity/repair')
+      && Boolean(init?.body && (String(init.body).includes('trackId') || String(init.body).includes('committed')))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/quota'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/training/admit'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/receipts/promotion'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/capacity'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/privacy/dpia'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/research/tracks/'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/roster/labels'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/incidents/ladder'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/decode/proxy-pts'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/access/object'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/ownership/hysteresis'))).toBe(false);
+    expect(screen.queryByText(/Posted identity cluster keeps semanticTeam None/i)).toBeNull();
+    expect(screen.queryByText(/client committed true is not sent/i)).toBeNull();
+    expect(screen.queryByText(/ignores client identityContinuous true/i)).toBeNull();
+    const storedCluster = within(await screen.findByRole('region', { name: /stored identity cluster/i }));
+    expect(storedCluster.getByText(/Stored identity cluster GET keeps suggestion true/i)).toBeTruthy();
+    expect(storedCluster.getByText(/GET selectedSemantic is not sent/i)).toBeTruthy();
+    expect(storedCluster.getByText(/Cluster GET stays unlabeled/i)).toBeTruthy();
+    const promote = within(screen.getByRole('region', { name: /unforced identity promote/i }));
+    expect(promote.getByText(/Posted identity promote keeps kind tracklet/i)).toBeTruthy();
+    expect(promote.getByText(/client reviewed true is not sent/i)).toBeTruthy();
+    expect(promote.getByText(/Tracklets stay off the roster/i)).toBeTruthy();
+    const repair = within(screen.getByRole('region', { name: /unforced identity repair/i }));
+    expect(repair.getByText(/Posted identity repair keeps committed false/i)).toBeTruthy();
+    expect(repair.getByText(/client trackId is not sent/i)).toBeTruthy();
+    expect(repair.getByText(/Unscoped repair stays uncommitted/i)).toBeTruthy();
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
