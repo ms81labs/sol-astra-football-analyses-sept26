@@ -116,6 +116,9 @@ import MetricsLegacyZeroWritePanel from './components/MetricsLegacyZeroWritePane
 import MetricsPossessionStatesWritePanel from './components/MetricsPossessionStatesWritePanel';
 import ReportsTemplateWritePanel from './components/ReportsTemplateWritePanel';
 import OwnershipInvalidateWritePanel from './components/OwnershipInvalidateWritePanel';
+import ResearchPathsWritePanel from './components/ResearchPathsWritePanel';
+import RightsEvaluateWritePanel from './components/RightsEvaluateWritePanel';
+import RetentionDeleteWritePanel from './components/RetentionDeleteWritePanel';
 import StageTimingPanel from './components/StageTimingPanel';
 import GpuProbePanel from './components/GpuProbePanel';
 import IndependentReviewerPanel from './components/IndependentReviewerPanel';
@@ -2195,6 +2198,15 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           </div>
           <div className="mb-3 shrink-0">
             <OwnershipInvalidateWritePanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <ResearchPathsWritePanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <RightsEvaluateWritePanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <RetentionDeleteWritePanel />
           </div>
           <div className="mb-3 shrink-0">
             <StageTimingPanel />

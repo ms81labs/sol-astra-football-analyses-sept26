@@ -1989,6 +1989,58 @@ export async function postOwnershipInvalidate() {
   return response.json() as Promise<OwnershipInvalidateWriteSnapshot>;
 }
 
+export interface ResearchPathsWriteSnapshot {
+  allowed?: boolean;
+}
+
+export async function postResearchPaths() {
+  const response = await fetch('/api/research/paths', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post research paths: ${response.status}`);
+  }
+  return response.json() as Promise<ResearchPathsWriteSnapshot>;
+}
+
+export interface RightsEvaluateWriteSnapshot {
+  allowed?: boolean;
+  cloudPermitted?: boolean;
+  reasonCodes?: string[];
+}
+
+export async function postRightsEvaluate() {
+  const response = await fetch('/api/rights/evaluate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post rights evaluate: ${response.status}`);
+  }
+  return response.json() as Promise<RightsEvaluateWriteSnapshot>;
+}
+
+export interface RetentionDeleteWriteSnapshot {
+  kind?: string;
+  mayDelete?: boolean;
+  protected?: boolean;
+}
+
+export async function postRetentionDelete() {
+  const response = await fetch('/api/retention/delete', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post retention delete: ${response.status}`);
+  }
+  return response.json() as Promise<RetentionDeleteWriteSnapshot>;
+}
+
 export interface StageTimingSnapshot {
   overlappedStagesAreAdditive?: boolean;
   wallTime?: number;
