@@ -335,6 +335,18 @@ export async function fetchMatchIdentity(matchId: string) {
   return response.json() as Promise<MatchIdentity>;
 }
 
+export async function postMatchIdentity(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/identity`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post match identity: ${response.status}`);
+  }
+  return response.json() as Promise<MatchIdentity>;
+}
+
 export interface MatchAttackDirection {
   direction: string | null;
   fromStoredConfig: boolean;
@@ -584,6 +596,18 @@ export async function fetchMatchFormation(matchId: string) {
   const response = await fetch(`/api/matches/${matchId}/formation`);
   if (!response.ok) {
     throw new Error(`Failed to load formation availability: ${response.status}`);
+  }
+  return response.json() as Promise<FormationAvailability>;
+}
+
+export async function postMatchFormation(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/formation`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post formation availability: ${response.status}`);
   }
   return response.json() as Promise<FormationAvailability>;
 }
