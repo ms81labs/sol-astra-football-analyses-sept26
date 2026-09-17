@@ -273,6 +273,25 @@ export async function fetchJobView(jobId: string) {
   }>;
 }
 
+export interface MatchJobSnapshot {
+  jobId?: string;
+  status?: string;
+  reused?: boolean;
+  costReserved?: number;
+}
+
+export async function postMatchJob(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/jobs`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post match job: ${response.status}`);
+  }
+  return response.json() as Promise<MatchJobSnapshot>;
+}
+
 export async function fetchMatchClock(matchId: string) {
   const response = await fetch(`/api/matches/${matchId}/clock`);
   if (!response.ok) {
@@ -1280,6 +1299,22 @@ export async function fetchEvaluationMeasures() {
     throw new Error(`Failed to load evaluation measures: ${response.status}`);
   }
   return response.json() as Promise<EvaluationMeasuresSnapshot>;
+}
+
+export interface EvaluationHotaSnapshot {
+  scored?: boolean;
+  hota?: number | null;
+  idf1?: number | null;
+  trackevalIsGroundTruth?: boolean;
+  reasonCodes?: string[];
+}
+
+export async function fetchEvaluationHota() {
+  const response = await fetch('/api/evaluation/hota');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored HOTA measures: ${response.status}`);
+  }
+  return response.json() as Promise<EvaluationHotaSnapshot>;
 }
 
 export interface ShadowMetricSnapshot {

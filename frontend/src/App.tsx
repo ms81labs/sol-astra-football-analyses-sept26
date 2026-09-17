@@ -32,6 +32,7 @@ import AnalystWorkflowPanel from './components/AnalystWorkflowPanel';
 import EvaluationProtocolPanel from './components/EvaluationProtocolPanel';
 import EvaluationPrerequisitesPanel from './components/EvaluationPrerequisitesPanel';
 import EvaluationMeasuresPanel from './components/EvaluationMeasuresPanel';
+import EvaluationHotaPanel from './components/EvaluationHotaPanel';
 import MatchProvenancePanel from './components/MatchProvenancePanel';
 import MatchShotQualityPanel from './components/MatchShotQualityPanel';
 import MatchShotFeaturesPanel from './components/MatchShotFeaturesPanel';
@@ -67,6 +68,7 @@ import MatchProvenanceWritePanel from './components/MatchProvenanceWritePanel';
 import MatchShotQualityWritePanel from './components/MatchShotQualityWritePanel';
 import AnalystWorkflowWritePanel from './components/AnalystWorkflowWritePanel';
 import EvaluationPrerequisitesWritePanel from './components/EvaluationPrerequisitesWritePanel';
+import MatchJobWritePanel from './components/MatchJobWritePanel';
 import MatchAuditTrailPanel from './components/MatchAuditTrailPanel';
 import MatchPrivacyPanel from './components/MatchPrivacyPanel';
 import MatchTrackletsPanel from './components/MatchTrackletsPanel';
@@ -1819,6 +1821,9 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
             <EvaluationMeasuresPanel />
           </div>
           <div className="mb-3 shrink-0">
+            <EvaluationHotaPanel />
+          </div>
+          <div className="mb-3 shrink-0">
             <MatchProvenancePanel matchId={activeMatch?.id} />
           </div>
           <div className="mb-3 shrink-0">
@@ -1922,6 +1927,9 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           </div>
           <div className="mb-3 shrink-0">
             <EvaluationPrerequisitesWritePanel matchId={activeMatch?.id} />
+          </div>
+          <div className="mb-3 shrink-0">
+            <MatchJobWritePanel matchId={activeMatch?.id} />
           </div>
           <div className="mb-3 shrink-0">
             <MatchAuditTrailPanel matchId={activeMatch?.id} />
