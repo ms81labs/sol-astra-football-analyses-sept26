@@ -37,6 +37,7 @@ import MatchEventPartitionPanel from './components/MatchEventPartitionPanel';
 import MatchIdentityPanel from './components/MatchIdentityPanel';
 import MatchAttackDirectionPanel from './components/MatchAttackDirectionPanel';
 import MatchLegacyRecordsPanel from './components/MatchLegacyRecordsPanel';
+import MatchExportPanel from './components/MatchExportPanel';
 import MatchAuditTrailPanel from './components/MatchAuditTrailPanel';
 import MatchPrivacyPanel from './components/MatchPrivacyPanel';
 import MatchTrackletsPanel from './components/MatchTrackletsPanel';
@@ -1802,6 +1803,9 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           </div>
           <div className="mb-3 shrink-0">
             <MatchLegacyRecordsPanel matchId={activeMatch?.id} />
+          </div>
+          <div className="mb-3 shrink-0">
+            <MatchExportPanel matchId={activeMatch?.id} />
           </div>
           <div className="mb-3 shrink-0">
             <MatchAuditTrailPanel matchId={activeMatch?.id} />

@@ -336,6 +336,25 @@ export async function fetchMatchLegacyMigrate(matchId: string) {
   return response.json() as Promise<MatchLegacyMigrate>;
 }
 
+export interface MatchExportBundle {
+  schemaVersion: string;
+  provenance?: { storageArtifactsAreSourceOfTruth?: boolean; llmGenerated?: boolean };
+  exports?: {
+    matchJson?: string;
+    framesCsv?: string;
+    eventsCsv?: string;
+    metricsCsv?: string;
+  };
+}
+
+export async function fetchMatchExport(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/export/match.json`);
+  if (!response.ok) {
+    throw new Error(`Failed to load match export: ${response.status}`);
+  }
+  return response.json() as Promise<MatchExportBundle>;
+}
+
 export async function fetchCorrectionHistory(matchId: string) {
   const response = await fetch(`/api/matches/${matchId}/corrections`);
   if (!response.ok) {

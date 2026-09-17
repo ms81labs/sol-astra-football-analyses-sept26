@@ -6195,6 +6195,234 @@ describe('App match workspace loading', () => {
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('loads stored match export downloads without leftover soccertrack or whole-match certification', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/export/match.json') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            schemaVersion: 'match_bundle_v1',
+            provenance: { storageArtifactsAreSourceOfTruth: true, llmGenerated: false },
+            exports: {
+              matchJson: '/api/matches/match-a/export/match.json',
+              framesCsv: '/api/matches/match-a/export/frames.csv',
+              eventsCsv: '/api/matches/match-a/export/events.csv',
+              metricsCsv: '/api/matches/match-a/export/metrics.csv',
+            },
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/records/migrate') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            migrated: { possession_pct: { availability: 'unknown' } },
+            rollback: { possession: null, myTeamDistance: null },
+            rewrotePastOutcomes: false,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/attack-direction') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ direction: 'right_to_left', fromStoredConfig: true }),
+        } as Response);
+      }
+      if (
+        url.includes('/api/matches/match-a/identity')
+        && !url.includes('/repair')
+        && !url.includes('/promote')
+        && (!init?.method || init.method === 'GET')
+      ) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ silentlyReconnected: false, cutCount: 0, identityContinuous: false }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/events/partition') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ rejectedRemovedFromAcceptedViews: true }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/players') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ intervalLimited: true, totalsWithheld: true, reasonCodes: ['IDENTITY_DISCONTINUITY'] }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/shots/features') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ recorded: true, missing: ['x'], imputedAsCalibrated: false }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/shots/quality') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ publishedLabel: 'experimental_shot_quality', calibratedXg: false, items: [] }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/metrics/inspect/')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            metric: 'my_team_distance_m',
+            unit: 'metres',
+            denominator: 'identity_continuous_eligible_seconds',
+            definitionVersion: '1',
+            eligibleDuration: 0,
+            exclusions: ['IDENTITY_DISCONTINUITY'],
+            rendered: 'unavailable',
+            publishedValue: null,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/metrics') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ metrics: [{ metric: 'my_team_distance_m', availability: 'unknown', value: null, reasonCodes: ['IDENTITY_DISCONTINUITY'] }] }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/incidents/package') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ level: 0, decision: null, validatedMeasurement: false, reasonCodes: ['IFAB_LAW_11_NOT_APPLIED'] }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/incidents/geometry') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ decision: null, validatedMeasurement: false, reasonCodes: ['IFAB_LAW_11_NOT_APPLIED'] }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/ownership') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ mode: 'unknown', reasonCodes: ['NEAREST_PLAYER_INSUFFICIENT'] }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/promotion') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ completeMatchAccepted: false, stageBenchmarkIsCompleteMatchAcceptance: false, outputQuality: 'unproven' }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/cache') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ namespace: 'production', compatibleWithDevelopment: false }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/tracklets') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ assignment: { kind: 'tracklet', forced: false }, silentlyReconnected: false }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/privacy') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ cloudAllowed: false, localProcessingRequired: true, faceRecognition: false }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/history') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ undoable: true, rewrotePastOutcomes: false, items: [] }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/reports/provenance') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ accepted: true, reasonCodes: [], missingEvidenceIds: [] }) } as Response);
+      }
+      if (url.includes('/api/evaluation/workflow') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ measured: false, analystCompletedReviewedMatch: false, reasonCodes: ['ANALYST_ACCEPTANCE_MISSING'] }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/reports/coverage') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ coverageAware: true, representsWholeMatch: false }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/setup') && !url.includes('/preview') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ certified: false, automationAdmitted: false, manualTaggingPermitted: true }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/rates') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ exportFpsEqualsInferenceFps: false, notes: ['EXPORT_FPS_IS_NOT_INFERENCE_FPS'] }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/package') && !url.includes('/incidents/') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            analyst: { limitations: ['Independent labels 0/18 complete.'] },
+            operator: { manifest: { schema: 'match_package_v1' }, secretsAdmitted: true },
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/clock') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ presentationTimeSeconds: 0, matchClockSeconds: 0, frameAccurateOverlay: false }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/media/proxy') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            replacesOriginal: false,
+            originalRetained: true,
+            assets: { proxy: { kind: 'browsing_proxy' }, thumbnails: { kind: 'thumbnails' }, waveform: { kind: 'waveform' } },
+            ptsMap: [],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && url.includes('state=pending') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).includes('/api/matches/match-a/export/match.json')
+        && (!init?.method || init.method === 'GET')
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/external/soccertrack'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/matches/match-a/export/')
+      && init?.method === 'POST'
+    ))).toBe(false);
+    const exported = within(await screen.findByRole('region', { name: /match export/i }));
+    expect(exported.getByRole('link', { name: /frames.csv/i }).getAttribute('href')).toBe('/api/matches/match-a/export/frames.csv');
+    expect(exported.getByRole('link', { name: /events.csv/i }).getAttribute('href')).toBe('/api/matches/match-a/export/events.csv');
+    expect(exported.getByRole('link', { name: /metrics.csv/i }).getAttribute('href')).toBe('/api/matches/match-a/export/metrics.csv');
+    expect(exported.getByRole('link', { name: /match.json/i }).getAttribute('href')).toBe('/api/matches/match-a/export/match.json');
+    expect(exported.getByText(/match_bundle_v1/i)).toBeTruthy();
+    expect(exported.getByText(/source-linked downloads/i)).toBeTruthy();
+    expect(exported.getByText(/not a whole-match certification/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('swaps stored teams on the loaded match without a vision rerun', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
