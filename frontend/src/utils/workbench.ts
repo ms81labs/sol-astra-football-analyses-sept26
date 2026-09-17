@@ -933,6 +933,18 @@ export async function fetchMatchTracklets(matchId: string) {
   return response.json() as Promise<MatchTracklets>;
 }
 
+export async function postMatchTracklets(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/tracklets`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post match tracklets: ${response.status}`);
+  }
+  return response.json() as Promise<MatchTracklets>;
+}
+
 export interface MatchCacheIdentity {
   namespace: string;
   compatibleWithDevelopment: boolean;
