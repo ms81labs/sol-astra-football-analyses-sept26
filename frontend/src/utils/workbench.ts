@@ -2041,6 +2041,60 @@ export async function postRetentionDelete() {
   return response.json() as Promise<RetentionDeleteWriteSnapshot>;
 }
 
+export interface DecodeChallengersWriteSnapshot {
+  pyav?: { name?: string; default?: boolean; enabled?: boolean; role?: string };
+  torchcodec?: { name?: string; default?: boolean; enabled?: boolean; role?: string };
+  selected?: string;
+}
+
+export async function postDecodeChallengers() {
+  const response = await fetch('/api/decode/challengers', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post decode challengers: ${response.status}`);
+  }
+  return response.json() as Promise<DecodeChallengersWriteSnapshot>;
+}
+
+export interface GpuDefaultFlagWriteSnapshot {
+  name?: string;
+  enabled?: boolean;
+}
+
+export async function postGpuDefaultFlag() {
+  const response = await fetch('/api/flags/gpu_default/enabled', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post GPU default flag: ${response.status}`);
+  }
+  return response.json() as Promise<GpuDefaultFlagWriteSnapshot>;
+}
+
+export interface IdentityClusterWriteSnapshot {
+  clusterId?: number;
+  semanticTeam?: string | null;
+  suggestion?: boolean;
+  notes?: string;
+}
+
+export async function postIdentityCluster() {
+  const response = await fetch('/api/identity/clusters/0', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post identity cluster: ${response.status}`);
+  }
+  return response.json() as Promise<IdentityClusterWriteSnapshot>;
+}
+
 export interface StageTimingSnapshot {
   overlappedStagesAreAdditive?: boolean;
   wallTime?: number;

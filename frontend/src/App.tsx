@@ -119,6 +119,9 @@ import OwnershipInvalidateWritePanel from './components/OwnershipInvalidateWrite
 import ResearchPathsWritePanel from './components/ResearchPathsWritePanel';
 import RightsEvaluateWritePanel from './components/RightsEvaluateWritePanel';
 import RetentionDeleteWritePanel from './components/RetentionDeleteWritePanel';
+import DecodeChallengersWritePanel from './components/DecodeChallengersWritePanel';
+import GpuDefaultFlagWritePanel from './components/GpuDefaultFlagWritePanel';
+import IdentityClusterWritePanel from './components/IdentityClusterWritePanel';
 import StageTimingPanel from './components/StageTimingPanel';
 import GpuProbePanel from './components/GpuProbePanel';
 import IndependentReviewerPanel from './components/IndependentReviewerPanel';
@@ -2207,6 +2210,15 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           </div>
           <div className="mb-3 shrink-0">
             <RetentionDeleteWritePanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <DecodeChallengersWritePanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <GpuDefaultFlagWritePanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <IdentityClusterWritePanel />
           </div>
           <div className="mb-3 shrink-0">
             <StageTimingPanel />
