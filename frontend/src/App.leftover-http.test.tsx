@@ -29,8 +29,9 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-beforeEach(() => {
+beforeEach(async () => {
   sessionStorage.setItem('ga_leftover_panels', 'on');
+  await import('./components/LeftoverContractWorkbench');
   vi.mocked(api.fetchMatchAnnotations).mockResolvedValue([]);
   vi.mocked(api.fetchMatchIssues).mockResolvedValue([]);
 });

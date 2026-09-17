@@ -139,4 +139,12 @@ describe('production analyst shell', () => {
     expect(screen.queryByText(/offside check/i)).toBeNull();
     expect(screen.queryByTestId('leftover-contract-workbench')).toBeNull();
   });
+
+  it('does not statically import leftover contract workbench into the operator bundle', async () => {
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    const source = fs.readFileSync(path.join(__dirname, 'App.tsx'), 'utf8');
+    expect(source).not.toMatch(/import LeftoverContractWorkbench from/);
+    expect(source).toMatch(/lazy\(\(\) => import\('\.\/components\/LeftoverContractWorkbench'\)\)/);
+  });
 });

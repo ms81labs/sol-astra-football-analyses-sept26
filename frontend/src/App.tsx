@@ -1,6 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import ModalDialog from './components/ModalDialog';
-import { useState, useEffect, useCallback, useLayoutEffect, useMemo, useRef } from 'react';
+import { lazy, Suspense, useState, useEffect, useCallback, useLayoutEffect, useMemo, useRef } from 'react';
 
 
 import AnnotationList from './components/AnnotationList';
@@ -26,7 +26,6 @@ import PlaylistBuilder from './components/PlaylistBuilder';
 import MatchPackagePanel from './components/MatchPackagePanel';
 import FourRatesPanel from './components/FourRatesPanel';
 import LoadedMatchSetupPanel from './components/LoadedMatchSetupPanel';
-import LeftoverContractWorkbench from './components/LeftoverContractWorkbench';
 import OperationsView from './components/OperationsView';
 import MatchMetricInspectorPanel from './components/MatchMetricInspectorPanel';
 import MatchCoveragePanel from './components/MatchCoveragePanel';
@@ -132,6 +131,8 @@ const LOCAL_RUNTIME_CAPABILITIES: RuntimeCapabilities = {
   defaultAnalysisProvider: 'local',
   pdfExportAvailable: false,
 };
+
+const LeftoverContractWorkbench = lazy(() => import('./components/LeftoverContractWorkbench'));
 
 export function leftoverPanelsEnabled(experimentalUi = false): boolean {
   if (typeof window === 'undefined') return experimentalUi;
@@ -1774,7 +1775,11 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           <div className="mb-3 shrink-0">
             <MatchCoveragePanel matchId={activeMatch?.id} />
           </div>
-          {showLeftoverPanels && <LeftoverContractWorkbench matchId={activeMatch?.id} />}
+          {showLeftoverPanels && (
+            <Suspense fallback={null}>
+              <LeftoverContractWorkbench matchId={activeMatch?.id} />
+            </Suspense>
+          )}
           <div className="mb-3 shrink-0">
             <OperationsView />
           </div>

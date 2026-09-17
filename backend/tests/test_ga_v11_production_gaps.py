@@ -840,3 +840,49 @@ def test_collect_primary_player_windows_samples_pts_grid_not_index_modulo(tmp_pa
     # Index modulo 2 would sample frames 0 and 2. PTS grid 2/30s samples 0 and 3.
     assert sorted(windows) == [0, 3]
     assert len(sampled) == 2
+
+
+def test_production_main_does_not_define_leftover_del_payload_posts() -> None:
+    source = Path("backend/app/main.py").read_text(encoding="utf-8")
+    assert "del payload" not in source
+
+
+def test_leftover_post_handlers_live_outside_production_main() -> None:
+    from backend.app.workbench.leftover_http import LEFTOVER_POST_PATHS
+    from backend.app.workbench import leftover_routes
+
+    source = Path(leftover_routes.__file__).read_text(encoding="utf-8")
+    main_source = Path("backend/app/main.py").read_text(encoding="utf-8")
+    assert "create_leftover_post_router" in source
+    assert "@app.post(\"/api/support/bundle\")" not in main_source
+    assert "/support/bundle" in source
+    assert "/api/support/bundle" in LEFTOVER_POST_PATHS
+
+
+def test_production_app_registers_leftover_posts_only_under_dev_prefix(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GA_FLAG_LEFTOVER_HTTP", "0")
+    from fastapi.testclient import TestClient
+
+    from backend.app.main import create_app
+
+    app = create_app(storage_root=tmp_path, run_jobs_inline=True)
+    leftover_posts = {
+        route.path
+        for route in app.routes
+        if getattr(route, "methods", None) and "POST" in route.methods
+        and (route.path == "/api/support/bundle" or route.path.endswith("/support/bundle"))
+    }
+    assert "/api/support/bundle" not in leftover_posts
+    assert "/api/workbench/dev/support/bundle" in leftover_posts
+
+    client = TestClient(app, base_url="http://127.0.0.1")
+    public = client.post("/api/support/bundle", json={"consented": True})
+    assert public.status_code == 404
+    detector = client.post("/api/detector", json={"requestedBackend": "cuda"})
+    assert detector.status_code == 404
+    dev = client.post("/api/workbench/dev/support/bundle", json={"consented": True})
+    assert dev.status_code == 200
+    assert dev.json()["released"] is False
+    dev_detector = client.post("/api/workbench/dev/detector", json={"requestedBackend": "cuda"})
+    assert dev_detector.status_code == 200
+    assert dev_detector.json()["selectedBackend"] == "cpu"

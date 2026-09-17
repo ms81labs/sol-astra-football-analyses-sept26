@@ -29,8 +29,9 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-beforeEach(() => {
+beforeEach(async () => {
   sessionStorage.setItem('ga_leftover_panels', 'on');
+  await import('./components/LeftoverContractWorkbench');
   vi.mocked(api.fetchMatchAnnotations).mockResolvedValue([]);
   vi.mocked(api.fetchMatchIssues).mockResolvedValue([]);
 });
@@ -190,6 +191,7 @@ describe('App leftover contract workbench', () => {
 
       render(<App />);
 
+      await screen.findByTestId('leftover-contract-workbench');
       const zones = await screen.findByRole('button', { name: 'Zones' });
       expect(zones.getAttribute('aria-pressed')).toBe('false');
       fireEvent.click(zones);
@@ -266,6 +268,7 @@ describe('App leftover contract workbench', () => {
 
       render(<App />);
       await screen.findByText('Match A', { selector: 'header span' });
+      await screen.findByTestId('leftover-contract-workbench');
       fireEvent.change(screen.getByLabelText(/image x/i), { target: { value: '50' } });
       fireEvent.change(screen.getByLabelText(/image y/i), { target: { value: '50' } });
       fireEvent.change(screen.getByLabelText(/pitch x/i), { target: { value: '52.5' } });
