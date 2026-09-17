@@ -1125,6 +1125,48 @@ export async function fetchStalePermissionGate() {
   return response.json() as Promise<StalePermissionGateSnapshot>;
 }
 
+export interface SignedObjectAccessSnapshot {
+  admitted?: boolean;
+  scoped?: boolean;
+  reasonCodes?: string[];
+}
+
+export async function fetchSignedObjectAccess() {
+  const response = await fetch('/api/access/signed');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored signed object access: ${response.status}`);
+  }
+  return response.json() as Promise<SignedObjectAccessSnapshot>;
+}
+
+export interface LegacyGeometrySnapshot {
+  compatibleWithFourPointV1?: boolean;
+  evaluation?: { accepted?: boolean; reasonCodes?: string[]; holdoutCount?: number };
+  withheld?: { availability?: string };
+}
+
+export async function fetchLegacyGeometry() {
+  const response = await fetch('/api/geometry/legacy');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored legacy geometry: ${response.status}`);
+  }
+  return response.json() as Promise<LegacyGeometrySnapshot>;
+}
+
+export interface SplitScoresSnapshot {
+  detectorScore?: number | null;
+  calibratedProbability?: number | null;
+  confidenceInterval?: [number, number] | null;
+}
+
+export async function fetchSplitScores() {
+  const response = await fetch('/api/quantities/scores');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored split scores: ${response.status}`);
+  }
+  return response.json() as Promise<SplitScoresSnapshot>;
+}
+
 export interface PreemptibleSnapshot {
   allowed?: boolean;
 }

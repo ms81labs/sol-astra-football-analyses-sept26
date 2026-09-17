@@ -90,6 +90,9 @@ import MetricRoundTripPanel from './components/MetricRoundTripPanel';
 import IncidentResponsePanel from './components/IncidentResponsePanel';
 import ProviderRosterPanel from './components/ProviderRosterPanel';
 import StalePermissionGatePanel from './components/StalePermissionGatePanel';
+import SignedObjectAccessPanel from './components/SignedObjectAccessPanel';
+import LegacyGeometryPanel from './components/LegacyGeometryPanel';
+import SplitScoresPanel from './components/SplitScoresPanel';
 import MatchProvenancePanel from './components/MatchProvenancePanel';
 import MatchShotQualityPanel from './components/MatchShotQualityPanel';
 import MatchShotFeaturesPanel from './components/MatchShotFeaturesPanel';
@@ -2050,6 +2053,15 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           </div>
           <div className="mb-3 shrink-0">
             <StalePermissionGatePanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <SignedObjectAccessPanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <LegacyGeometryPanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <SplitScoresPanel />
           </div>
           <div className="mb-3 shrink-0">
             <MatchProvenancePanel matchId={activeMatch?.id} />

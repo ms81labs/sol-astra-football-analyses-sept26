@@ -11957,6 +11957,115 @@ describe('App match workspace loading', () => {
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('loads stored signed object access, legacy geometry, and split scores without inventing tokens or calibration', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/access/signed') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            admitted: false,
+            scoped: true,
+            reasonCodes: ['UNSIGNED_OR_UNSCOPED_OBJECT_ACCESS'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/geometry/legacy') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            compatibleWithFourPointV1: true,
+            evaluation: { accepted: false, reasonCodes: ['CALIBRATION_UNAVAILABLE'], holdoutCount: 0 },
+            withheld: { availability: 'withheld' },
+            landmarks: [{ independentHoldout: false }],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/quantities/scores') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            detectorScore: null,
+            calibratedProbability: null,
+            confidenceInterval: null,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/access/signed')
+        && (!init?.method || init.method === 'GET')
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/geometry/legacy')
+      && (!init?.method || init.method === 'GET')
+    ))).toBe(true);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/quantities/scores')
+      && (!init?.method || init.method === 'GET')
+    ))).toBe(true);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/access/signed') && init?.method === 'POST'
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/geometry/legacy') && init?.method === 'POST'
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).endsWith('/api/quantities/scores') && init?.method === 'POST'
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/geometry/landmarks'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/geometry/preview'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/rates/four'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/capacity'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/privacy/dpia'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/research/tracks/'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/roster/labels'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/incidents/ladder'))).toBe(false);
+    expect(screen.queryByText(/unsigned or unscoped job access is refused/i)).toBeNull();
+    expect(screen.queryByText(/four homography points do not make calibration accepted/i)).toBeNull();
+    const signed = within(await screen.findByRole('region', { name: /stored signed object access/i }));
+    expect(signed.getByText(/keeps admitted false/i)).toBeTruthy();
+    expect(signed.getByText(/UNSIGNED_OR_UNSCOPED_OBJECT_ACCESS stays blocking/i)).toBeTruthy();
+    expect(signed.getByText(/a missing token is not scoped object admission/i)).toBeTruthy();
+    const geometry = within(screen.getByRole('region', { name: /stored legacy geometry/i }));
+    expect(geometry.getByText(/keeps evaluation.accepted false/i)).toBeTruthy();
+    expect(geometry.getByText(/four default corners do not invent calibration_accepted/i)).toBeTruthy();
+    expect(geometry.getByText(/CALIBRATION_UNAVAILABLE stays blocking/i)).toBeTruthy();
+    const scores = within(screen.getByRole('region', { name: /stored split scores/i }));
+    expect(scores.getByText(/keep detectorScore null/i)).toBeTruthy();
+    expect(scores.getByText(/calibratedProbability stays null/i)).toBeTruthy();
+    expect(scores.getByText(/a detector score is not a calibrated probability/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('loads derived proxy assets on the review App without replacing the original source', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
