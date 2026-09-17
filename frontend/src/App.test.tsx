@@ -12993,6 +12993,119 @@ describe('App match workspace loading', () => {
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('posts decode export, decode probe, and decode pixels without leftover sourceUrl, ffmpeg default, or cuda', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/decode/export') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ admitted: false, reasonCodes: ['UNCONSTRAINED_DECODER'] }),
+        } as Response);
+      }
+      if (url.endsWith('/api/decode/probe') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ name: 'ffmpeg', default: false, role: 'challenger' }),
+        } as Response);
+      }
+      if (url.endsWith('/api/decode/pixels') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ shape: [1, 1, 3], gpuPromoted: false, device: 'cpu' }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => expect(screen.getByRole('button', { name: /request decode export/i })).toBeTruthy());
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/decode/export'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/decode/probe'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/decode/pixels'))).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: /request decode export/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/decode/export')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /request decode probe/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/decode/probe')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /request decode pixels/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/decode/pixels')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/decode/export')
+      && Boolean(init?.body && (String(init.body).includes('sourceUrl') || String(init.body).includes('admitted')))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/decode/probe')
+      && Boolean(init?.body && (String(init.body).includes('ffmpeg') || String(init.body).includes('default')))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/decode/pixels')
+      && Boolean(init?.body && (String(init.body).includes('cuda') || String(init.body).includes('device')))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/quota'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/training/admit'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/receipts/promotion'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/capacity'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/privacy/dpia'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/research/tracks/'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/roster/labels'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/incidents/ladder'))).toBe(false);
+    expect(screen.queryByText(/client pyav cuda frames are not sent/i)).toBeNull();
+    expect(screen.queryByText(/torchcodec stays a challenger/i)).toBeNull();
+    const decodeExport = within(screen.getByRole('region', { name: /unforced decode export/i }));
+    expect(decodeExport.getByText(/keeps admitted false/i)).toBeTruthy();
+    expect(decodeExport.getByText(/client sourceUrl is not sent/i)).toBeTruthy();
+    expect(decodeExport.getByText(/unconstrained decoder stays refused/i)).toBeTruthy();
+    const decodeProbe = within(screen.getByRole('region', { name: /unforced decode probe/i }));
+    expect(decodeProbe.getByText(/keeps ffmpeg default false/i)).toBeTruthy();
+    expect(decodeProbe.getByText(/client default true is not sent/i)).toBeTruthy();
+    expect(decodeProbe.getByText(/ffmpeg probe is not the production decoder/i)).toBeTruthy();
+    const decodePixels = within(screen.getByRole('region', { name: /unforced decode pixels/i }));
+    expect(decodePixels.getByText(/keep gpuPromoted false/i)).toBeTruthy();
+    expect(decodePixels.getByText(/client device cuda is not sent/i)).toBeTruthy();
+    expect(decodePixels.getByText(/live pixel wrap stays on cpu/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('loads stored independent reviewer, worked match flow, and decode memory without inventing acceptance or GPU residency', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);

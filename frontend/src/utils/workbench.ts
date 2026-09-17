@@ -1499,6 +1499,59 @@ export async function postEventPropose() {
   return response.json() as Promise<EventProposeWriteSnapshot>;
 }
 
+export interface DecodeExportWriteSnapshot {
+  admitted?: boolean;
+  reasonCodes?: string[];
+}
+
+export async function postDecodeExport() {
+  const response = await fetch('/api/decode/export', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post decode export: ${response.status}`);
+  }
+  return response.json() as Promise<DecodeExportWriteSnapshot>;
+}
+
+export interface DecodeProbeWriteSnapshot {
+  name?: string;
+  default?: boolean;
+  role?: string;
+}
+
+export async function postDecodeProbe() {
+  const response = await fetch('/api/decode/probe', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post decode probe: ${response.status}`);
+  }
+  return response.json() as Promise<DecodeProbeWriteSnapshot>;
+}
+
+export interface DecodePixelsWriteSnapshot {
+  shape?: number[];
+  gpuPromoted?: boolean;
+  device?: string;
+}
+
+export async function postDecodePixels() {
+  const response = await fetch('/api/decode/pixels', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post decode pixels: ${response.status}`);
+  }
+  return response.json() as Promise<DecodePixelsWriteSnapshot>;
+}
+
 export interface StageTimingSnapshot {
   overlappedStagesAreAdditive?: boolean;
   wallTime?: number;
