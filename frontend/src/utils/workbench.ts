@@ -331,6 +331,18 @@ export async function fetchMatchEventPartition(matchId: string) {
   return response.json() as Promise<MatchEventPartition>;
 }
 
+export async function postMatchEventPartition(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/events/partition`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post match event partition: ${response.status}`);
+  }
+  return response.json() as Promise<MatchEventPartition>;
+}
+
 export interface MatchIdentity {
   reset?: boolean;
   silentlyReconnected: boolean;
@@ -1138,6 +1150,18 @@ export async function fetchMatchIncidentPackage(matchId: string) {
   const response = await fetch(`/api/matches/${matchId}/incidents/package`);
   if (!response.ok) {
     throw new Error(`Failed to load match incident package: ${response.status}`);
+  }
+  return response.json() as Promise<MatchIncidentPackage>;
+}
+
+export async function postMatchIncidentPackage(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/incidents/package`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post match incident package: ${response.status}`);
   }
   return response.json() as Promise<MatchIncidentPackage>;
 }
