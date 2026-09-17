@@ -3756,6 +3756,244 @@ describe('App match workspace loading', () => {
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('loads stored incident geometry without inventing a validated offside', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/incidents/geometry') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            decision: null,
+            validatedMeasurement: false,
+            reasonCodes: ['IFAB_LAW_11_NOT_APPLIED'],
+            mostAdvancedTeammateX: 21.0,
+            secondLastOpponentX: 18.0,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/ownership') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            mode: 'unknown',
+            reasonCodes: ['NEAREST_PLAYER_INSUFFICIENT'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/promotion') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            completeMatchAccepted: false,
+            stageBenchmarkIsCompleteMatchAcceptance: false,
+            outputQuality: 'unproven',
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/cache') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            namespace: 'production',
+            compatibleWithDevelopment: false,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/tracklets') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            assignment: { kind: 'tracklet', forced: false, rosterId: null },
+            chunk: { silentlyReconnected: false },
+            silentlyReconnected: false,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/privacy') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            cloudAllowed: false,
+            localProcessingRequired: true,
+            faceRecognition: false,
+            crossSeasonIdentity: false,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/history') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            undoable: true,
+            rewrotePastOutcomes: false,
+            items: [],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/shots/quality') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            publishedLabel: 'experimental_shot_quality',
+            calibratedXg: false,
+            items: [{ publishedLabel: 'experimental_shot_quality', availability: 'experimental', reasonCodes: ['EXPERIMENTAL_NOT_CALIBRATED_XG'] }],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/reports/provenance') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            accepted: true,
+            reasonCodes: [],
+            missingEvidenceIds: [],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/evaluation/workflow') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            measured: false,
+            analystCompletedReviewedMatch: false,
+            reasonCodes: ['ANALYST_ACCEPTANCE_MISSING'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/reports/coverage') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            coverageAware: true,
+            representsWholeMatch: false,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/metrics/inspect/my_team_distance_m') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            metric: 'my_team_distance_m',
+            unit: 'metres',
+            denominator: 'identity_continuous_eligible_seconds',
+            definitionVersion: '1',
+            eligibleDuration: 0,
+            exclusions: ['IDENTITY_DISCONTINUITY'],
+            rendered: 'unavailable',
+            publishedValue: null,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/setup') && !url.includes('/preview') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            cameraProfile: 'stitched_panoramic_view',
+            automationAdmitted: false,
+            manualTaggingPermitted: true,
+            certified: false,
+            cannotMeasure: ['physical_metrics'],
+            pitchLengthM: null,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/rates') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            exportFpsEqualsInferenceFps: false,
+            notes: ['EXPORT_FPS_IS_NOT_INFERENCE_FPS'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/package') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            analyst: { limitations: ['Independent labels 0/18 complete.'] },
+            operator: { manifest: { schema: 'match_package_v1' }, secretsAdmitted: true },
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/clock') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ presentationTimeSeconds: 0, matchClockSeconds: 0, frameAccurateOverlay: false }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/media/proxy') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            replacesOriginal: false,
+            originalRetained: true,
+            assets: { proxy: { kind: 'browsing_proxy' }, thumbnails: { kind: 'thumbnails' }, waveform: { kind: 'waveform' } },
+            ptsMap: [],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && url.includes('state=pending') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ items: [] }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ items: [] }),
+        } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).includes('/api/matches/match-a/incidents/geometry')
+        && (!init?.method || init.method === 'GET')
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/matches/match-a/incidents/geometry')
+      && init?.method === 'POST'
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/workbench/'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([, init]) => (
+      Boolean(init?.body && String(init.body).includes('myTeam'))
+    ))).toBe(false);
+    const geometry = within(await screen.findByRole('region', { name: /incident geometry/i }));
+    expect(geometry.getByText(/stored incident geometry is not a validated measurement/i)).toBeTruthy();
+    expect(geometry.getByText(/IFAB_LAW_11_NOT_APPLIED/)).toBeTruthy();
+    expect(geometry.getByText(/decision is unpublished/i)).toBeTruthy();
+    expect(screen.queryAllByText(/attackerX=0/)).toHaveLength(0);
+    expect(screen.queryAllByText(/line=0/)).toHaveLength(0);
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('swaps stored teams on the loaded match without a vision rerun', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);

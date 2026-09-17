@@ -736,6 +736,22 @@ export async function fetchMatchOwnership(matchId: string) {
   return response.json() as Promise<MatchOwnership>;
 }
 
+export interface MatchIncidentGeometry {
+  decision: string | null;
+  validatedMeasurement: boolean;
+  reasonCodes?: string[];
+  mostAdvancedTeammateX?: number | null;
+  secondLastOpponentX?: number | null;
+}
+
+export async function fetchMatchIncidentGeometry(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/incidents/geometry`);
+  if (!response.ok) {
+    throw new Error(`Failed to load match incident geometry: ${response.status}`);
+  }
+  return response.json() as Promise<MatchIncidentGeometry>;
+}
+
 export interface AnalystWorkflowSnapshot {
   measured?: boolean;
   analystCompletedReviewedMatch?: boolean;

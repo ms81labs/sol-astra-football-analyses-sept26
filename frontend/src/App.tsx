@@ -37,6 +37,7 @@ import MatchTrackletsPanel from './components/MatchTrackletsPanel';
 import MatchCachePanel from './components/MatchCachePanel';
 import MatchPromotionPanel from './components/MatchPromotionPanel';
 import MatchOwnershipPanel from './components/MatchOwnershipPanel';
+import MatchIncidentGeometryPanel from './components/MatchIncidentGeometryPanel';
 import ProxyAssetsPanel from './components/ProxyAssetsPanel';
 import HoldoutCalibrationPanel from './components/HoldoutCalibrationPanel';
 import TypedSearchPanel from './components/TypedSearchPanel';
@@ -1782,6 +1783,9 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           </div>
           <div className="mb-3 shrink-0">
             <MatchOwnershipPanel matchId={activeMatch?.id} />
+          </div>
+          <div className="mb-3 shrink-0">
+            <MatchIncidentGeometryPanel matchId={activeMatch?.id} />
           </div>
           <div className="mb-3 shrink-0">
             <ProxyAssetsPanel matchId={activeMatch?.id} />
