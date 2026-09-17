@@ -819,6 +819,52 @@ export async function fetchVideoRoster() {
   return response.json() as Promise<VideoRosterSnapshot>;
 }
 
+export interface FrontierRosterSnapshot {
+  promoted?: boolean;
+  hardCodedModelName?: boolean;
+  role?: string;
+}
+
+export async function fetchFrontierRoster() {
+  const response = await fetch('/api/roster/frontier');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored frontier roster: ${response.status}`);
+  }
+  return response.json() as Promise<FrontierRosterSnapshot>;
+}
+
+export interface PromotionGateSnapshot {
+  promoted?: boolean;
+  reasonCodes?: string[];
+  task?: string;
+}
+
+export async function fetchPromotionGate() {
+  const response = await fetch('/api/roster/promotion/player_ball');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored promotion gate: ${response.status}`);
+  }
+  return response.json() as Promise<PromotionGateSnapshot>;
+}
+
+export interface QualityGateSnapshot {
+  promoted?: boolean;
+  threshold?: number;
+  reasonCodes?: string[];
+}
+
+export async function postQualityGate() {
+  const response = await fetch('/api/experiments/quality-gate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post quality gate: ${response.status}`);
+  }
+  return response.json() as Promise<QualityGateSnapshot>;
+}
+
 export interface PreemptibleSnapshot {
   allowed?: boolean;
 }

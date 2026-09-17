@@ -68,6 +68,9 @@ import RecoveryDiskPanel from './components/RecoveryDiskPanel';
 import ExperimentB5Panel from './components/ExperimentB5Panel';
 import RecoveryRestorePanel from './components/RecoveryRestorePanel';
 import VideoRosterPanel from './components/VideoRosterPanel';
+import FrontierRosterPanel from './components/FrontierRosterPanel';
+import PromotionGatePanel from './components/PromotionGatePanel';
+import QualityGateWritePanel from './components/QualityGateWritePanel';
 import MatchProvenancePanel from './components/MatchProvenancePanel';
 import MatchShotQualityPanel from './components/MatchShotQualityPanel';
 import MatchShotFeaturesPanel from './components/MatchShotFeaturesPanel';
@@ -1962,6 +1965,15 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           </div>
           <div className="mb-3 shrink-0">
             <VideoRosterPanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <FrontierRosterPanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <PromotionGatePanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <QualityGateWritePanel />
           </div>
           <div className="mb-3 shrink-0">
             <MatchProvenancePanel matchId={activeMatch?.id} />
