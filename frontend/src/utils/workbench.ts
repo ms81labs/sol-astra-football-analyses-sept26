@@ -1505,6 +1505,48 @@ export async function fetchResidencyClaim() {
   return response.json() as Promise<ResidencyClaimSnapshot>;
 }
 
+export interface DistributedBrokerSnapshot {
+  enabled?: boolean;
+  admitted?: boolean;
+  renamesCurrentQueue?: boolean;
+}
+
+export async function fetchDistributedBroker() {
+  const response = await fetch('/api/broker');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored distributed broker: ${response.status}`);
+  }
+  return response.json() as Promise<DistributedBrokerSnapshot>;
+}
+
+export interface VectorDatabaseSnapshot {
+  enabled?: boolean;
+  admitted?: boolean;
+  embeddingsProveTacticalWeakness?: boolean;
+}
+
+export async function fetchVectorDatabase() {
+  const response = await fetch('/api/vector');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored vector database: ${response.status}`);
+  }
+  return response.json() as Promise<VectorDatabaseSnapshot>;
+}
+
+export interface HostedDeploymentSnapshot {
+  admitted?: boolean;
+  silentCloudFallback?: boolean;
+  requiresGNetwork?: boolean;
+}
+
+export async function fetchHostedDeployment() {
+  const response = await fetch('/api/deployment/hosted_collaboration');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored hosted deployment: ${response.status}`);
+  }
+  return response.json() as Promise<HostedDeploymentSnapshot>;
+}
+
 export interface ShadowMetricSnapshot {
   default?: boolean;
   shadowed?: boolean;
