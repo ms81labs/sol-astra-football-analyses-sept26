@@ -505,6 +505,17 @@ describe('App match workspace loading', () => {
           }),
         } as Response);
       }
+      if (url.includes('/api/matches/match-a/calibration') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            fromStoredPoints: true,
+            measured: false,
+            evaluation: { accepted: false },
+            residualP95M: null,
+          }),
+        } as Response);
+      }
       if (url.includes('/api/matches/match-a/calibration') && init?.method === 'POST') {
         return Promise.resolve({
           ok: true,
@@ -541,9 +552,15 @@ describe('App match workspace loading', () => {
     fireEvent.change(screen.getByLabelText(/pitch y/i), { target: { value: '34' } });
     fireEvent.click(screen.getByRole('button', { name: /measure holdout/i }));
     await waitFor(() => {
-      expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/matches/match-a/calibration'))).toBe(true);
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).includes('/api/matches/match-a/calibration')
+        && init?.method === 'POST'
+      ))).toBe(true);
     });
-    const calibrationCall = fetchMock.mock.calls.find(([url]) => String(url).includes('/api/matches/match-a/calibration'));
+    const calibrationCall = fetchMock.mock.calls.find(([url, init]) => (
+      String(url).includes('/api/matches/match-a/calibration')
+      && init?.method === 'POST'
+    ));
     expect(calibrationCall?.[1]?.method).toBe('POST');
     expect(calibrationCall?.[1]?.body).toContain('"independentHoldout":true');
     expect(calibrationCall?.[1]?.body).toContain('"imageX":50');
@@ -6887,6 +6904,254 @@ describe('App match workspace loading', () => {
     expect(fallback.getByText(/template route/i)).toBeTruthy();
     expect(fallback.getByText(/PROVIDER_DISABLED/)).toBeTruthy();
     expect(fallback.getByText(/review remains operational/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
+  it('loads stored match calibration without inventing acceptance from four homography points', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/calibration') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            fromStoredPoints: true,
+            measured: false,
+            evaluation: { accepted: false },
+            residualP95M: null,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/assistance/fallback') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            route: 'template',
+            reasonCodes: ['PROVIDER_DISABLED'],
+            reviewOperational: true,
+            output: { kind: 'deterministic_template' },
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/themes') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ matchId: 'match-a', detectedThemes: ['high_press'] }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/export/match.json') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            schemaVersion: 'match_bundle_v1',
+            exports: {
+              matchJson: '/api/matches/match-a/export/match.json',
+              framesCsv: '/api/matches/match-a/export/frames.csv',
+              eventsCsv: '/api/matches/match-a/export/events.csv',
+              metricsCsv: '/api/matches/match-a/export/metrics.csv',
+            },
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/records/migrate') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            migrated: { possession_pct: { availability: 'unknown' } },
+            rollback: { possession: null },
+            rewrotePastOutcomes: false,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/attack-direction') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ direction: 'right_to_left', fromStoredConfig: true }) } as Response);
+      }
+      if (
+        url.includes('/api/matches/match-a/identity')
+        && !url.includes('/repair')
+        && !url.includes('/promote')
+        && (!init?.method || init.method === 'GET')
+      ) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ silentlyReconnected: false, cutCount: 0, identityContinuous: false }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/events/partition') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ rejectedRemovedFromAcceptedViews: true }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/players') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ intervalLimited: true, totalsWithheld: true, reasonCodes: ['IDENTITY_DISCONTINUITY'] }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/shots/features') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ recorded: true, missing: ['x'], imputedAsCalibrated: false }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/shots/quality') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ publishedLabel: 'experimental_shot_quality', calibratedXg: false, items: [] }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/metrics/inspect/')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            metric: 'my_team_distance_m',
+            unit: 'metres',
+            denominator: 'identity_continuous_eligible_seconds',
+            definitionVersion: '1',
+            eligibleDuration: 0,
+            exclusions: ['IDENTITY_DISCONTINUITY'],
+            rendered: 'unavailable',
+            publishedValue: null,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/metrics') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ metrics: [{ metric: 'my_team_distance_m', availability: 'unknown', value: null, reasonCodes: ['IDENTITY_DISCONTINUITY'] }] }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/incidents/package') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ level: 0, decision: null, validatedMeasurement: false, reasonCodes: ['IFAB_LAW_11_NOT_APPLIED'] }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/incidents/geometry') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ decision: null, validatedMeasurement: false, reasonCodes: ['IFAB_LAW_11_NOT_APPLIED'] }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/ownership') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ mode: 'unknown', reasonCodes: ['NEAREST_PLAYER_INSUFFICIENT'] }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/promotion') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ completeMatchAccepted: false, stageBenchmarkIsCompleteMatchAcceptance: false, outputQuality: 'unproven' }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/cache') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ namespace: 'production', compatibleWithDevelopment: false }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/tracklets') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ assignment: { kind: 'tracklet', forced: false }, silentlyReconnected: false }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/privacy') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ cloudAllowed: false, localProcessingRequired: true, faceRecognition: false }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/history') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ undoable: true, rewrotePastOutcomes: false, items: [] }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/reports/provenance') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ accepted: true, reasonCodes: [], missingEvidenceIds: [] }) } as Response);
+      }
+      if (url.includes('/api/evaluation/workflow') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ measured: false, analystCompletedReviewedMatch: false, reasonCodes: ['ANALYST_ACCEPTANCE_MISSING'] }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/reports/coverage') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ coverageAware: true, representsWholeMatch: false }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/setup') && !url.includes('/preview') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ certified: false, automationAdmitted: false, manualTaggingPermitted: true }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/rates') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ exportFpsEqualsInferenceFps: false, notes: ['EXPORT_FPS_IS_NOT_INFERENCE_FPS'] }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/package') && !url.includes('/incidents/') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            analyst: { limitations: ['Independent labels 0/18 complete.'] },
+            operator: { manifest: { schema: 'match_package_v1' }, secretsAdmitted: true },
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/clock') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ presentationTimeSeconds: 0, matchClockSeconds: 0, frameAccurateOverlay: false }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/media/proxy') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            replacesOriginal: false,
+            originalRetained: true,
+            assets: { proxy: { kind: 'browsing_proxy' }, thumbnails: { kind: 'thumbnails' }, waveform: { kind: 'waveform' } },
+            ptsMap: [],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && url.includes('state=pending') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      if (url === '/api/assistance' || url.endsWith('/api/assistance')) {
+        return Promise.resolve({ ok: true, json: async () => ({ providersEnabled: false }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).includes('/api/matches/match-a/calibration')
+        && (!init?.method || init.method === 'GET')
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/matches/match-a/calibration')
+      && init?.method === 'POST'
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/geometry/preview'))).toBe(false);
+    const calibration = within(await screen.findByRole('region', { name: /stored calibration/i }));
+    expect(calibration.getByText(/four homography points do not make calibration accepted/i)).toBeTruthy();
+    expect(calibration.getByText(/unmeasured/i)).toBeTruthy();
+    expect(calibration.getByText(/fromStoredPoints is true/i)).toBeTruthy();
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 

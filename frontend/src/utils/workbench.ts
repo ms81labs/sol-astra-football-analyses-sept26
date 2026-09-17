@@ -388,6 +388,21 @@ export async function fetchMatchAssistanceFallback(matchId: string) {
   return response.json() as Promise<MatchAssistanceFallback>;
 }
 
+export interface MatchCalibration {
+  fromStoredPoints: boolean;
+  measured: boolean;
+  evaluation?: { accepted?: boolean };
+  residualP95M?: number | null;
+}
+
+export async function fetchMatchCalibration(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/calibration`);
+  if (!response.ok) {
+    throw new Error(`Failed to load match calibration: ${response.status}`);
+  }
+  return response.json() as Promise<MatchCalibration>;
+}
+
 export async function fetchCorrectionHistory(matchId: string) {
   const response = await fetch(`/api/matches/${matchId}/corrections`);
   if (!response.ok) {

@@ -40,6 +40,7 @@ import MatchLegacyRecordsPanel from './components/MatchLegacyRecordsPanel';
 import MatchExportPanel from './components/MatchExportPanel';
 import MatchThemesPanel from './components/MatchThemesPanel';
 import MatchAssistanceFallbackPanel from './components/MatchAssistanceFallbackPanel';
+import MatchCalibrationPanel from './components/MatchCalibrationPanel';
 import MatchAuditTrailPanel from './components/MatchAuditTrailPanel';
 import MatchPrivacyPanel from './components/MatchPrivacyPanel';
 import MatchTrackletsPanel from './components/MatchTrackletsPanel';
@@ -1814,6 +1815,9 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           </div>
           <div className="mb-3 shrink-0">
             <MatchAssistanceFallbackPanel matchId={activeMatch?.id} />
+          </div>
+          <div className="mb-3 shrink-0">
+            <MatchCalibrationPanel matchId={activeMatch?.id} />
           </div>
           <div className="mb-3 shrink-0">
             <MatchAuditTrailPanel matchId={activeMatch?.id} />
