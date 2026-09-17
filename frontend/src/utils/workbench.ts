@@ -277,6 +277,20 @@ export async function fetchIncidentReview(matchId: string) {
   }>;
 }
 
+export interface MatchEventPartition {
+  acceptedViews?: Array<Record<string, unknown>>;
+  retainedCandidates?: Array<Record<string, unknown>>;
+  rejectedRemovedFromAcceptedViews: boolean;
+}
+
+export async function fetchMatchEventPartition(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/events/partition`);
+  if (!response.ok) {
+    throw new Error(`Failed to load match event partition: ${response.status}`);
+  }
+  return response.json() as Promise<MatchEventPartition>;
+}
+
 export async function fetchCorrectionHistory(matchId: string) {
   const response = await fetch(`/api/matches/${matchId}/corrections`);
   if (!response.ok) {
