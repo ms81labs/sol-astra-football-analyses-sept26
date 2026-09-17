@@ -23,12 +23,14 @@ vi.mock('./utils/api', async (importOriginal) => {
 
 afterEach(() => {
   cleanup();
+  sessionStorage.removeItem('ga_leftover_panels');
   vi.resetAllMocks();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
 });
 
 beforeEach(() => {
+  sessionStorage.setItem('ga_leftover_panels', 'on');
   vi.mocked(api.fetchMatchAnnotations).mockResolvedValue([]);
   vi.mocked(api.fetchMatchIssues).mockResolvedValue([]);
 });

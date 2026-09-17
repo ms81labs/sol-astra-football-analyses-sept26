@@ -10,6 +10,7 @@ DEFAULT_FLAGS = {
     "native_code": False,
     "experimental_ui": False,
     "embeddings_search": False,
+    "leftover_http": False,
 }
 
 

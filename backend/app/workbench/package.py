@@ -50,7 +50,7 @@ def assemble_match_package(
             ],
         },
         "operator": {
-            "manifest": {"schema": "match_package_v1", "sourceSnapshot": "5099e1fd50d856a7cd0449f1ef4b1695d8f930c3"},
+            "manifest": {"schema": "match_package_v1", "sourceSnapshot": "5fa98440c09cabdbc5847920cea097268c5a5171"},
             "cost": _scrub(cost or {}),
             "cleanupStatus": "not_required",
             "errorCategories": [],

@@ -35,7 +35,7 @@ class JobRunner:
         self.storage_root = Path(storage_root)
         self.run_jobs_inline = run_jobs_inline
         self.settings = settings or ProcessingSettings.from_env()
-        self.ledger = ledger or DurableJobLedger()
+        self.ledger = ledger or DurableJobLedger(db_path=self.storage_root / "guerilla.sqlite3")
 
     def admit(
         self,
@@ -46,6 +46,8 @@ class JobRunner:
         budget: float = 0.0,
         namespace: str = "production",
     ) -> JobAttempt:
+        if job_id in self.ledger.requests:
+            return self.ledger.attempts[job_id][-1]
         location = "daytona" if self.settings.processing_backend == "daytona" else "local"
         return self.ledger.submit(
             JobRequest(

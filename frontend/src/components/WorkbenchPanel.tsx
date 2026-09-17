@@ -13,8 +13,9 @@ import SecurityBoundary from './SecurityBoundary';
 import ReleaseGate from './ReleaseGate';
 import NativePackaging from './NativePackaging';
 import QualityTimeline from './QualityTimeline';
-import SetupWizard from './SetupWizard';
+import SetupWizard, { type SetupWizardSavePayload } from './SetupWizard';
 import TrainingSuggestions from './TrainingSuggestions';
+import { updateMatchConfig } from '../utils/api';
 import {
   exportPlaylistInterval,
   fetchAssistance,
@@ -918,6 +919,7 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
                 {playersLimited && <p className="text-xs text-amber-200">Interval-limited player observations. Totals withheld.</p>}
               </div>
               <SetupWizard
+                matchId={matchId}
                 cameraProfile={setup?.cameraProfile ?? dossier.baseline.declaredCameraProfile}
                 pitchLengthM={setup?.pitchLengthM != null ? String(setup.pitchLengthM) : ''}
                 automationAdmitted={setup?.automationAdmitted ?? false}
@@ -931,6 +933,15 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
                     measured: false,
                   }
                 }
+                onSave={async (payload: SetupWizardSavePayload) => {
+                  if (!matchId) return;
+                  await updateMatchConfig(matchId, {
+                    cameraProfile: payload.cameraProfile,
+                    pitchLengthM: payload.pitchLengthM,
+                    periods: payload.periods,
+                    rights: payload.rights,
+                  });
+                }}
               />
               <ClockReadout
                 presentationTimeSeconds={clock?.presentationTimeSeconds ?? 0}

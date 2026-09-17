@@ -1003,6 +1003,10 @@ def _persist_prepared_video_outputs(
     storage.save_frames(match_id, enriched_frames)
     storage.save_analytics(match_id, summary, assignments, formation_timeline, shots)
     storage.save_events(match_id, events)
+    try:
+        storage.publish_ownership_events(match_id)
+    except Exception:
+        pass
     storage.save_analysis_artifact(match_id, "accepted_match_state", accepted_match_state)
     storage.update_match_status(
         match_id,

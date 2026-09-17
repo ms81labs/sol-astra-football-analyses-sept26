@@ -2,13 +2,23 @@
 
 from __future__ import annotations
 
+import sqlite3
 import uuid
+from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import Field
 
 from .cache import REBUILD_FOR, cache_identity
 from .contracts import JobPhase, StrictModel
+
+_RUNNING_STATUSES = {
+    "validating",
+    "waiting_for_capacity",
+    "running",
+    "importing",
+    "cancelling",
+}
 
 MAX_ATTEMPTS = 3
 
@@ -66,11 +76,95 @@ class CostEntry(StrictModel):
 
 
 class DurableJobLedger:
-    def __init__(self) -> None:
+    def __init__(self, db_path: Path | str | None = None) -> None:
+        self.db_path = Path(db_path) if db_path is not None else None
         self.requests: dict[str, JobRequest] = {}
         self.attempts: dict[str, list[JobAttempt]] = {}
         self.costs: list[CostEntry] = []
         self.cancel_flags: set[str] = set()
+        if self.db_path is not None:
+            self.db_path.parent.mkdir(parents=True, exist_ok=True)
+            self._ensure_schema()
+            self._load()
+            self.reconcile_after_restart()
+
+    def _connect(self) -> sqlite3.Connection:
+        assert self.db_path is not None
+        connection = sqlite3.connect(str(self.db_path), check_same_thread=False, timeout=30.0)
+        connection.row_factory = sqlite3.Row
+        connection.execute("PRAGMA busy_timeout=30000")
+        return connection
+
+    def _ensure_schema(self) -> None:
+        with self._connect() as connection:
+            connection.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS job_ledger_requests (
+                    request_id TEXT PRIMARY KEY,
+                    payload_json TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS job_ledger_attempts (
+                    attempt_id TEXT PRIMARY KEY,
+                    request_id TEXT NOT NULL,
+                    sequence INTEGER NOT NULL,
+                    payload_json TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS job_ledger_costs (
+                    attempt_id TEXT PRIMARY KEY,
+                    request_id TEXT NOT NULL,
+                    payload_json TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS job_ledger_cancels (
+                    request_id TEXT PRIMARY KEY
+                );
+                """
+            )
+
+    def _load(self) -> None:
+        with self._connect() as connection:
+            for row in connection.execute("SELECT request_id, payload_json FROM job_ledger_requests"):
+                self.requests[row["request_id"]] = JobRequest.model_validate_json(row["payload_json"])
+            for row in connection.execute(
+                "SELECT request_id, payload_json FROM job_ledger_attempts ORDER BY request_id, sequence"
+            ):
+                self.attempts.setdefault(row["request_id"], []).append(JobAttempt.model_validate_json(row["payload_json"]))
+            for row in connection.execute("SELECT payload_json FROM job_ledger_costs"):
+                self.costs.append(CostEntry.model_validate_json(row["payload_json"]))
+            self.cancel_flags = {row["request_id"] for row in connection.execute("SELECT request_id FROM job_ledger_cancels")}
+
+    def _persist(self) -> None:
+        if self.db_path is None:
+            return
+        with self._connect() as connection:
+            connection.execute("DELETE FROM job_ledger_requests")
+            connection.execute("DELETE FROM job_ledger_attempts")
+            connection.execute("DELETE FROM job_ledger_costs")
+            connection.execute("DELETE FROM job_ledger_cancels")
+            for request_id, request in self.requests.items():
+                connection.execute(
+                    "INSERT INTO job_ledger_requests (request_id, payload_json) VALUES (?, ?)",
+                    (request_id, request.model_dump_json()),
+                )
+            for request_id, attempts in self.attempts.items():
+                for sequence, attempt in enumerate(attempts):
+                    connection.execute(
+                        "INSERT INTO job_ledger_attempts (attempt_id, request_id, sequence, payload_json) VALUES (?, ?, ?, ?)",
+                        (attempt.attemptId, request_id, sequence, attempt.model_dump_json()),
+                    )
+            for entry in self.costs:
+                connection.execute(
+                    "INSERT INTO job_ledger_costs (attempt_id, request_id, payload_json) VALUES (?, ?, ?)",
+                    (entry.attemptId, entry.requestId, entry.model_dump_json()),
+                )
+            for request_id in self.cancel_flags:
+                connection.execute("INSERT INTO job_ledger_cancels (request_id) VALUES (?)", (request_id,))
+
+    def reconcile_after_restart(self) -> None:
+        for request_id, attempts in list(self.attempts.items()):
+            if not attempts:
+                continue
+            if attempts[-1].status in _RUNNING_STATUSES:
+                self.timeout_before_response(request_id)
 
     def submit(self, request: JobRequest) -> JobAttempt:
         existing = self.requests.get(request.requestId)
@@ -91,6 +185,7 @@ class DurableJobLedger:
         self.costs.append(
             CostEntry(requestId=request.requestId, attemptId=attempt.attemptId, reserved=request.budget, actual=None, scope="job")
         )
+        self._persist()
         return attempt
 
     def transition(self, request_id: str, status: JobStatus, **updates: Any) -> JobAttempt:
@@ -99,6 +194,7 @@ class DurableJobLedger:
             status = "cancelling"
         updated = attempt.model_copy(update={"status": status, **updates})
         self.attempts[request_id][-1] = updated
+        self._persist()
         return updated
 
     def timeout_before_response(self, request_id: str) -> JobAttempt:
@@ -109,10 +205,12 @@ class DurableJobLedger:
 
     def cancel(self, request_id: str) -> JobAttempt:
         self.cancel_flags.add(request_id)
+        self._persist()
         return self.transition(request_id, "cancelling")
 
     def request_cancel(self, request_id: str) -> JobAttempt | None:
         self.cancel_flags.add(request_id)
+        self._persist()
         if request_id not in self.attempts:
             return None
         latest = self.attempts[request_id][-1]
@@ -143,6 +241,7 @@ class DurableJobLedger:
             reservedCost=request.budget,
         )
         self.attempts[request_id].append(attempt)
+        self._persist()
         return attempt
 
     def invalidate_for(self, change: Literal["report", "team_mapping", "track_edit", "calibration", "perception", "ownership"]) -> list[str]:
@@ -300,11 +399,12 @@ def attach_durable_job_view(payload: dict[str, Any], ledger: DurableJobLedger) -
 
 
 def signed_scoped_job_access(*, token: str | None, job_id: str, token_job_id: str | None) -> dict[str, object]:
-    admitted = bool(token) and token_job_id == job_id
+    del token, job_id, token_job_id
     return {
-        "admitted": admitted,
-        "scoped": True,
-        "reasonCodes": [] if admitted else ["UNSIGNED_OR_UNSCOPED_JOB_ACCESS"],
+        "admitted": False,
+        "scoped": False,
+        "hmacOrJwtImplemented": False,
+        "reasonCodes": ["HOSTED_SIGNED_ACCESS_UNIMPLEMENTED", "UNSIGNED_OR_UNSCOPED_JOB_ACCESS"],
     }
 
 

@@ -23,11 +23,12 @@ def authorize_object(
 
 
 def signed_scoped_object_access(*, token: str | None, object_id: str, token_object_id: str | None) -> dict[str, Any]:
-    admitted = bool(token) and token_object_id == object_id
+    del token, object_id, token_object_id
     return {
-        "admitted": admitted,
-        "scoped": True,
-        "reasonCodes": [] if admitted else ["UNSIGNED_OR_UNSCOPED_OBJECT_ACCESS"],
+        "admitted": False,
+        "scoped": False,
+        "hmacOrJwtImplemented": False,
+        "reasonCodes": ["HOSTED_SIGNED_ACCESS_UNIMPLEMENTED", "UNSIGNED_OR_UNSCOPED_OBJECT_ACCESS"],
     }
 
 
@@ -52,20 +53,11 @@ def object_access_decision(
             "reasonCodes": [] if decision["allowed"] else ["OBJECT_ACCESS_DENIED"],
         }
     scoped = signed_scoped_object_access(token=authorization, object_id=object_id, token_object_id=object_scope)
-    if not scoped["admitted"]:
-        return {
-            "allowed": False,
-            "admitted": False,
-            "sessionTenant": None,
-            "reasonCodes": list(scoped["reasonCodes"]),
-        }
-    session_tenant = authorization.split("/", 1)[0] if authorization else "session"
-    decision = authorize_object(object_id=object_id, session_tenant=session_tenant, object_tenant=object_tenant)
     return {
-        "allowed": decision["allowed"],
-        "admitted": decision["allowed"],
-        "sessionTenant": session_tenant,
-        "reasonCodes": [] if decision["allowed"] else ["OBJECT_ACCESS_DENIED"],
+        "allowed": False,
+        "admitted": False,
+        "sessionTenant": None,
+        "reasonCodes": list(scoped["reasonCodes"]),
     }
 
 

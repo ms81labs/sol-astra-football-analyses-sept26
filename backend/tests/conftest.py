@@ -11,6 +11,8 @@ import types
 import pytest
 
 
+os.environ.setdefault("GA_FLAG_LEFTOVER_HTTP", "1")
+
 _STORAGE_ROOT_ENV = "GUERILLA_STORAGE_ROOT"
 _ORIGINAL_STORAGE_ROOT_PRESENT = _STORAGE_ROOT_ENV in os.environ
 _ORIGINAL_STORAGE_ROOT = os.environ.get(_STORAGE_ROOT_ENV)
@@ -94,6 +96,7 @@ def _make_cv2_stub():
     m.FILLED = -1
     m.CAP_PROP_FPS = 5
     m.CAP_PROP_POS_FRAMES = 1
+    m.CAP_PROP_POS_MSEC = 0
     return m
 
 

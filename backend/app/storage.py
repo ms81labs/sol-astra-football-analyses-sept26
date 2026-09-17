@@ -227,11 +227,15 @@ class Storage:
         # ponytail: per-instance config serialization; use per-match cross-process locks for multiple API workers.
         self.config_update_lock = threading.Lock()
         self._initialize()
+        from .workbench.jobs import DurableJobLedger
+
+        self.job_ledger = DurableJobLedger(db_path=self.db_path)
 
     def _connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(str(self.db_path), check_same_thread=False)
+        connection = sqlite3.connect(str(self.db_path), check_same_thread=False, timeout=30.0)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA journal_mode=WAL")
+        connection.execute("PRAGMA busy_timeout=30000")
         return connection
 
     def _initialize(self) -> None:
@@ -503,7 +507,34 @@ class Storage:
                 """,
                 (job_id, match_id, created_status, 0.0, "Queued", None, log_path, now, now),
             )
+        self._admit_durable_job(match_id, job_id)
         return self.get_job(job_id), True
+
+    def _admit_durable_job(self, match_id: str, job_id: str) -> None:
+        from .workbench.jobs import JobRequest
+
+        if job_id in self.job_ledger.requests:
+            return
+        try:
+            sha = self.source_sha256(match_id)
+        except Exception:
+            sha = "0" * 64
+        self.job_ledger.submit(
+            JobRequest(
+                requestId=job_id,
+                matchId=match_id,
+                sourceSha256=sha or "0" * 64,
+                intervalStart=0.0,
+                intervalEnd=0.0,
+                temporalPolicy="clip_local_index_modulo",
+                decoderVersion="opencv",
+                modelHash="unspecified",
+                outputSchema="evidence_v1",
+                budget=0.0,
+                authorisedLocation="local",
+                namespace="production",
+            )
+        )
 
     def source_sha256(self, match_id: str) -> str:
         path = self.get_match_input_path(match_id)
@@ -1274,6 +1305,41 @@ class Storage:
             calibrated=False,
         )
         return observation.model_dump(mode="json")
+
+    def publish_ownership_events(self, match_id: str) -> dict:
+        from .workbench.events import propose_event
+        from .workbench.ownership import OwnershipHysteresis, classify_ownership
+
+        frames = self.load_frames(match_id)
+        hysteresis = OwnershipHysteresis()
+        states = []
+        for frame in frames:
+            possession = frame.possession
+            nearest_team = possession.team if possession is not None and possession.team in {"my_team", "enemy"} else None
+            if nearest_team is None and frame.myTeam:
+                nearest_team = "my_team"
+            observation = classify_ownership(
+                ball_visible=frame.ball is not None,
+                nearest_team=nearest_team,
+                nearest_distance=possession.distance if possession is not None else None,
+                relative_motion="stable" if nearest_team else None,
+                persistence_frames=3 if nearest_team else 0,
+                calibrated=False,
+            )
+            held = hysteresis.observe(observation.controllingTeam if observation.mode == "controlled_possession" else "unknown")
+            payload = observation.model_dump(mode="json")
+            payload["hysteresisTeam"] = held
+            payload["timestamp"] = frame.timestamp
+            payload["nearestIsNotControl"] = True
+            states.append(payload)
+        event = propose_event(family="turnover", release=None, receipt=None)
+        published = {
+            "nearestIsNotControl": True,
+            "states": states,
+            "eventsPublication": event.model_dump(mode="json"),
+        }
+        self.save_analysis_artifact(match_id, "ownership_publication", published)
+        return published
 
     def assemble_stored_match_package(self, match_id: str) -> dict:
         from .workbench.assistance import events_as_query_rows

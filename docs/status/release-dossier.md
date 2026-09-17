@@ -1,6 +1,9 @@
 # Source-bound release dossier (GA-14)
 
-Deployment boundary: **loopback only**. Origin/Host checks and CORS are browser boundaries, not authentication. G-NETWORK remains required for any non-local deployment.
+Candidate checkout: git HEAD of `cursor/finish-ga-v11-todos-bf09` (feature base `5fa98440c09cabdbc5847920cea097268c5a5171`).
+Plan source snapshot: `5099e1fd50d856a7cd0449f1ef4b1695d8f930c3`.
+
+Deployment boundary: **loopback only**. Origin/Host checks and CORS are browser boundaries, not authentication. G-NETWORK remains required for any non-local deployment. Hosted HMAC/JWT object tokens are **not implemented**; hosted access stays fail-closed.
 
 ## Rights and processing
 

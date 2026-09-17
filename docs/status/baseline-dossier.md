@@ -1,6 +1,6 @@
 # Baseline dossier (GA-01)
 
-Selected commit: `5099e1fd50d856a7cd0449f1ef4b1695d8f930c3` (inspected v1.1 source snapshot).
+Selected commit: git HEAD of this candidate (feature base `5fa98440c09cabdbc5847920cea097268c5a5171`; plan source snapshot `5099e1fd50d856a7cd0449f1ef4b1695d8f930c3`).
 Plan version: 1.1 (16 September 2026).
 Protocol: `football_analysis_pilot_labels_v3`.
 Declared camera profile: **stitched panoramic/tactical view** (development profile; not certified).

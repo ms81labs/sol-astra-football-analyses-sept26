@@ -661,12 +661,15 @@ def create_app(
 ) -> FastAPI:
     settings = settings or ProcessingSettings.from_env()
     storage = Storage(_resolve_storage_root(storage_root))
-    runner = JobRunner(storage.storage_root, run_jobs_inline=run_jobs_inline, settings=settings)
+    runner = JobRunner(storage.storage_root, run_jobs_inline=run_jobs_inline, settings=settings, ledger=storage.job_ledger)
 
     app = FastAPI(title="Guerilla Analytics API", version="0.1.0")
     app.state.storage = storage
     app.state.runner = runner
     app.include_router(create_workbench_router(storage.storage_root))
+    from .workbench.leftover_http import LeftoverHttpGate
+
+    app.add_middleware(LeftoverHttpGate)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.trusted_frontend_origins,

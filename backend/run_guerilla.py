@@ -5084,7 +5084,7 @@ def recover_ball_rows(
             frame_count += 1
             continue
         if frame_count % frame_interval == 0:
-            timestamp = round(frame_count / fps, 2)
+            timestamp = round(decoded.presentation_time_seconds, 2)
             if calibrations:
                 while calibration_index + 1 < len(calibrations) and calibrations[calibration_index + 1][0] <= frame_count:
                     calibration_index += 1
@@ -8058,11 +8058,13 @@ def process_video(
     last_tracking_progress_frames_seen = 0
     
     # We will use generator to track frame by frame
-    if frame_source is not None:
-        def _frame_source_track_results():
+    def _frame_source_track_results():
             from backend.app.workbench.media import iter_bgr_frames, pixels_from_decoded_frame
+            from backend.app.workbench.perception import DetectorAdapter, TrackerAdapter
 
-            for decoded in iter_bgr_frames(Path(video_path), frame_source, cv2_module=cv2):
+            detector = DetectorAdapter()
+            tracker = TrackerAdapter()
+            for decoded in iter_bgr_frames(Path(video_path), decode_source, cv2_module=cv2):
                 frame = pixels_from_decoded_frame(decoded)
                 tracked = primary_model.track(
                     source=frame,
@@ -8079,19 +8081,17 @@ def process_video(
                         result.orig_img = frame
                     except Exception:
                         pass
+                detector.from_ultralytics(result, frame_id=decoded.source_frame_index)
+                tracker.from_ultralytics(result)
+                try:
+                    result.presentation_time_seconds = decoded.presentation_time_seconds
+                    result.source_frame_index = decoded.source_frame_index
+                    result.pts = decoded.pts
+                except Exception:
+                    pass
                 yield result
 
-        results = _frame_source_track_results()
-    else:
-        results = primary_model.track(
-            source=video_path,
-            stream=True,
-            persist=True,
-            tracker="botsort.yaml",
-            imgsz=TRACKING_IMGSZ,
-            conf=TRACKING_CONF,
-            classes=detector_tracking_class_ids(resolved_primary_detector_profile),
-        )
+    results = _frame_source_track_results()
     
     for r in results:
         sampling_audit.record_decoded_frame()
@@ -8115,7 +8115,7 @@ def process_video(
         
         if frame_count % frame_interval == 0:
             sampling_audit.record_export_sample()
-            timestamp = round(frame_count / fps, 2)
+            timestamp = round(getattr(r, "presentation_time_seconds", frame_count / fps), 2)
             
             boxes = r.boxes
             if boxes is not None:

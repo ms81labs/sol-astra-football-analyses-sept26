@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 
-import SetupWizard from './SetupWizard';
+import SetupWizard, { type SetupWizardSavePayload } from './SetupWizard';
+import { updateMatchConfig } from '../utils/api';
 import { fetchMatchSetup, type MatchSetup } from '../utils/workbench';
 
 interface LoadedMatchSetupPanelProps {
@@ -30,14 +31,26 @@ export default function LoadedMatchSetupPanel({ matchId }: LoadedMatchSetupPanel
     };
   }, [matchId]);
 
+  async function handleSave(payload: SetupWizardSavePayload) {
+    if (!matchId) return;
+    await updateMatchConfig(matchId, {
+      cameraProfile: payload.cameraProfile,
+      pitchLengthM: payload.pitchLengthM,
+      periods: payload.periods,
+      rights: payload.rights,
+    });
+  }
+
   if (!setup) return null;
   return (
     <SetupWizard
+      matchId={matchId}
       cameraProfile={setup.cameraProfile}
       pitchLengthM={setup.pitchLengthM != null ? String(setup.pitchLengthM) : ''}
       automationAdmitted={setup.automationAdmitted}
       manualTaggingPermitted={setup.manualTaggingPermitted}
       cannotMeasure={setup.cannotMeasure}
+      onSave={handleSave}
     />
   );
 }

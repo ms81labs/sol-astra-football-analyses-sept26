@@ -1963,7 +1963,7 @@ def test_object_access_ignores_client_tenant_and_expires_sharing_links() -> None
         client_tenant="club-a",
     )
     assert hosted_spoofed["allowed"] is False
-    assert hosted_spoofed["sessionTenant"] == "club-b"
+    assert hosted_spoofed["sessionTenant"] is None
     hosted_ok = object_access_decision(
         object_id="match-1",
         object_tenant="club-a",
@@ -1972,8 +1972,9 @@ def test_object_access_ignores_client_tenant_and_expires_sharing_links() -> None
         deployment_boundary="hosted",
         client_tenant="club-b",
     )
-    assert hosted_ok["allowed"] is True
-    assert hosted_ok["sessionTenant"] == "club-a"
+    assert hosted_ok["allowed"] is False
+    assert hosted_ok["admitted"] is False
+    assert "HOSTED_SIGNED_ACCESS_UNIMPLEMENTED" in hosted_ok["reasonCodes"] or "UNSIGNED_OR_UNSCOPED_OBJECT_ACCESS" in hosted_ok["reasonCodes"]
     link = mint_sharing_link(object_id="clip-1", now=100, ttl_seconds=10)
     assert link["expired"](100) is False
     assert link["expired"](111) is True

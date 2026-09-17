@@ -327,8 +327,7 @@ def test_hosted_job_reads_require_signed_scoped_access(tmp_path: Path) -> None:
                     "x-deployment-boundary": "hosted",
                 },
             )
-            assert admitted.status_code == 200
-            assert admitted.json()["status"] == "submitted"
+            assert admitted.status_code == 403
             local = await client.get("/api/workbench/jobs/r-signed")
             assert local.status_code == 200
 

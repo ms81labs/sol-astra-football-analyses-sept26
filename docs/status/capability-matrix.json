@@ -1,6 +1,7 @@
 {
   "planVersion": "1.1",
-  "selectedCommit": "5099e1fd50d856a7cd0449f1ef4b1695d8f930c3",
+  "selectedCommit": "5fa98440c09cabdbc5847920cea097268c5a5171",
+  "planSourceSnapshot": "5099e1fd50d856a7cd0449f1ef4b1695d8f930c3",
   "declaredCameraProfile": "stitched_panoramic_view",
   "capabilities": [
     {

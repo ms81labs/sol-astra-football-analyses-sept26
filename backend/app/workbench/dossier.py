@@ -13,7 +13,8 @@ from .contracts import (
     StrictModel,
 )
 
-INSPECTED_SOURCE_SHA = "5099e1fd50d856a7cd0449f1ef4b1695d8f930c3"
+INSPECTED_SOURCE_SHA = "5fa98440c09cabdbc5847920cea097268c5a5171"
+PLAN_SOURCE_SNAPSHOT = "5099e1fd50d856a7cd0449f1ef4b1695d8f930c3"
 PLAN_VERSION = "1.1"
 PROTOCOL_VERSION = "football_analysis_pilot_labels_v3"
 INITIAL_CAMERA_PROFILE = "stitched_panoramic_view"

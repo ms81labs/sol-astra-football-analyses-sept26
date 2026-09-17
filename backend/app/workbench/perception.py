@@ -156,6 +156,25 @@ def tile_to_source(
     return (ox + x1 * scale, oy + y1 * scale, ox + x2 * scale, oy + y2 * scale)
 
 
+def _ultralytics_scalar(value: Any) -> float:
+    if hasattr(value, "tolist"):
+        value = value.tolist()
+    if isinstance(value, (list, tuple)):
+        return _ultralytics_scalar(value[0] if value else 0)
+    return float(value or 0)
+
+
+def _ultralytics_xyxy(value: Any) -> tuple[float, float, float, float]:
+    if hasattr(value, "tolist"):
+        value = value.tolist()
+    if isinstance(value, (list, tuple)) and value and isinstance(value[0], (list, tuple)):
+        value = value[0]
+    coords = [float(item) for item in list(value)[:4]]
+    while len(coords) < 4:
+        coords.append(0.0)
+    return (coords[0], coords[1], coords[2], coords[3])
+
+
 def merge_tiled_detections(
     detections: list[dict[str, Any]],
     *,
@@ -236,6 +255,35 @@ class DetectorAdapter:
             "detections": [],
         }
 
+    def from_ultralytics(self, result: object, *, frame_id: int = 0) -> dict[str, Any]:
+        detections: list[dict[str, Any]] = []
+        boxes = getattr(result, "boxes", None) or []
+        for box in boxes:
+            cls_id = int(_ultralytics_scalar(getattr(box, "cls", 0)))
+            score = float(_ultralytics_scalar(getattr(box, "conf", 0.0)))
+            xyxy = _ultralytics_xyxy(getattr(box, "xyxy", (0, 0, 0, 0)))
+            kind = "ball" if cls_id in {32, 37} else "player" if cls_id == 0 else "other"
+            detections.append(
+                {
+                    "frameId": frame_id,
+                    "bbox": xyxy,
+                    "score": score,
+                    "kind": kind,
+                    "observationSource": "observed",
+                    "stratum": "near",
+                }
+            )
+        return {
+            "requestedBackend": "cpu",
+            "selectedBackend": "cpu",
+            "fallback": None,
+            "silentlyChangedColour": False,
+            "exportFpsEqualsInferenceFps": False,
+            "counts": {"primary": len(detections), "recovery": 0},
+            "detections": detections,
+            "productionPath": "ultralytics",
+        }
+
 
 class TrackerAdapter:
     name = "botsort_baseline"
@@ -263,6 +311,27 @@ class TrackerAdapter:
                     "observationSource": detection.observationSource,
                     "reset": chunk["reset"] or policy["reset"],
                     "silentlyReconnected": False,
+                }
+            )
+        return tracks
+
+    def from_ultralytics(self, result: object, *, detections: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
+        boxes = getattr(result, "boxes", None) or []
+        tracks: list[dict[str, Any]] = []
+        for index, box in enumerate(boxes):
+            track_id = getattr(box, "id", None)
+            identity = "unassigned" if track_id is None else str(int(_ultralytics_scalar(track_id)))
+            detection = (detections or [{}])[index] if detections and index < len(detections) else {}
+            tracks.append(
+                {
+                    "frameId": detection.get("frameId", 0),
+                    "trackId": identity,
+                    "bbox": detection.get("bbox") or _ultralytics_xyxy(getattr(box, "xyxy", (0, 0, 0, 0))),
+                    "kind": detection.get("kind", "player"),
+                    "observationSource": detection.get("observationSource", "observed"),
+                    "reset": False,
+                    "silentlyReconnected": False,
+                    "productionPath": "botsort",
                 }
             )
         return tracks

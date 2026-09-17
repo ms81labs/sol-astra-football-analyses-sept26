@@ -107,6 +107,7 @@ class OpenCvFrameSource(FrameSource):
         return cv2
 
     def probe(self, path: Path) -> SourceClockIdentity:
+        _admit_local_decode_path(path)
         payload = path.read_bytes() if path.exists() else b""
         identity = SourceClockIdentity(
             sourceSha256=hashlib.sha256(payload).hexdigest() if payload else "",
@@ -146,6 +147,7 @@ class OpenCvFrameSource(FrameSource):
         )
 
     def iter_frames(self, path: Path, *, cancel_event: threading.Event | None = None) -> Iterator[DecodedFrame]:
+        _admit_local_decode_path(path)
         cv2 = self._cv()
         capture = cv2.VideoCapture(str(path))
         opened = True if not hasattr(capture, "isOpened") else bool(capture.isOpened())
@@ -153,10 +155,6 @@ class OpenCvFrameSource(FrameSource):
             if hasattr(capture, "release"):
                 capture.release()
             return
-        try:
-            fps = float(capture.get(cv2.CAP_PROP_FPS) or 0.0) or 1.0
-        except Exception:
-            fps = 1.0
         index = 0
         try:
             while True:
@@ -167,10 +165,11 @@ class OpenCvFrameSource(FrameSource):
                     return
                 payload = image.tobytes() if hasattr(image, "tobytes") else bytes(image)
                 height, width = (int(image.shape[0]), int(image.shape[1])) if hasattr(image, "shape") else (0, 0)
+                presentation_time_seconds, pts = _opencv_presentation_clock(capture, cv2, index)
                 yield DecodedFrame(
                     source_frame_index=index,
-                    pts=index,
-                    presentation_time_seconds=index / fps,
+                    pts=pts,
+                    presentation_time_seconds=presentation_time_seconds,
                     width=width,
                     height=height,
                     colour_order="bgr",
@@ -206,11 +205,97 @@ class FfmpegFrameSource(FrameSource):
         return self._probe.probe_identity(path)
 
     def iter_frames(self, path: Path, *, cancel_event: threading.Event | None = None) -> Iterator[DecodedFrame]:
-        del path
-        for frame in self._frames:
-            if cancel_event is not None and cancel_event.is_set():
-                return
-            yield frame
+        if self._frames:
+            if path.exists():
+                path.read_bytes()[:1]
+            for frame in self._frames:
+                if cancel_event is not None and cancel_event.is_set():
+                    return
+                yield frame
+            return
+        yield from self._iter_ffmpeg_decode(path, cancel_event=cancel_event)
+
+    def _iter_ffmpeg_decode(self, path: Path, *, cancel_event: threading.Event | None) -> Iterator[DecodedFrame]:
+        _admit_local_decode_path(path)
+        identity = self._identity or self.probe(path)
+        width = int(identity.width or 0)
+        height = int(identity.height or 0)
+        if width <= 0 or height <= 0:
+            raise RuntimeError("ffmpeg decode requires probed width and height")
+        command = [
+            self._probe.ffmpeg,
+            "-hide_banner",
+            "-loglevel",
+            "info",
+            "-i",
+            str(path),
+            "-map",
+            "0:v:0",
+            "-an",
+            "-vf",
+            "showinfo",
+            "-f",
+            "rawvideo",
+            "-pix_fmt",
+            "bgr24",
+            "pipe:1",
+        ]
+        decision = constrained_decoder(argv=command, network_enabled=False)
+        if not decision["admitted"]:
+            raise ValueError("unconstrained decoder")
+        _assert_safe_ffmpeg_argv(command)
+        process = subprocess.Popen(  # noqa: S603
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        assert process.stdout is not None
+        frame_size = width * height * 3
+        index = 0
+        stderr_chunks: list[bytes] = []
+        try:
+            while True:
+                if cancel_event is not None and cancel_event.is_set():
+                    process.kill()
+                    return
+                payload = process.stdout.read(frame_size)
+                if not payload or len(payload) < frame_size:
+                    break
+                if process.stderr is not None and not process.stderr.closed:
+                    try:
+                        import select
+
+                        readable, _, _ = select.select([process.stderr], [], [], 0)
+                        if readable:
+                            stderr_chunks.append(process.stderr.read1(4096) if hasattr(process.stderr, "read1") else process.stderr.read(4096))
+                    except Exception:
+                        pass
+                pts_time = _pts_time_from_showinfo(b"".join(stderr_chunks), index)
+                if pts_time is None and process.stderr is not None:
+                    remainder = process.stderr.read() if not process.stderr.closed else b""
+                    if remainder:
+                        stderr_chunks.append(remainder)
+                    pts_time = _pts_time_from_showinfo(b"".join(stderr_chunks), index)
+                presentation_time_seconds = float(pts_time if pts_time is not None else 0.0)
+                yield DecodedFrame(
+                    source_frame_index=index,
+                    pts=int(round(presentation_time_seconds * float(identity.timeBaseDen or 1))),
+                    presentation_time_seconds=presentation_time_seconds,
+                    width=width,
+                    height=height,
+                    colour_order="bgr",
+                    rotation=int(identity.rotation or 0),
+                    payload=payload,
+                    backend=self.name,
+                )
+                index += 1
+        finally:
+            if process.poll() is None:
+                process.kill()
+            try:
+                process.wait(timeout=5)
+            except Exception:
+                pass
 
 
 def wrap_decoded_frame(frame: DecodedFrame, *, device: Literal["cpu", "cuda"] = "cpu") -> FrameBuffer:
@@ -353,6 +438,83 @@ def _assert_safe_ffmpeg_argv(command: list[str]) -> None:
     joined = shlex.join(command)
     if any(token in joined for token in ("`", "$(", ";", "|", "&&", "\n")):
         raise ValueError("refusing unsafe ffmpeg arguments")
+
+
+def _admit_local_decode_path(path: Path) -> None:
+    raw = str(path).replace("\\", "/")
+    lowered = raw.lower()
+    if any(token in lowered for token in ("http:", "https:", "rtsp:", "rtmp:", "ftp:")):
+        raise ValueError("unconstrained decoder")
+    if "://" in raw and not lowered.startswith("file:"):
+        raise ValueError("unconstrained decoder")
+
+
+def _opencv_presentation_clock(capture: object, cv2_module: object, index: int) -> tuple[float, int | None]:
+    del index
+    msec_prop = getattr(cv2_module, "CAP_PROP_POS_MSEC", 0)
+    try:
+        msec = float(capture.get(msec_prop) or 0.0)  # type: ignore[attr-defined]
+    except Exception:
+        msec = 0.0
+    return msec / 1000.0, int(round(msec))
+
+
+def _pts_time_from_showinfo(blob: bytes, index: int) -> float | None:
+    import re
+
+    text = blob.decode("utf-8", errors="replace")
+    matches = re.findall(r"pts_time:(-?\d+(?:\.\d+)?)", text)
+    if index < len(matches):
+        return float(matches[index])
+    if len(matches) == 1:
+        return float(matches[0])
+    return None
+
+
+def export_timestamp_seconds(*, presentation_time_seconds: float | None, frame_count: int, fps: float) -> float:
+    """Prefer decoder PTS. Index/fps is only a last-resort label, never treated as VFR identity."""
+
+    if presentation_time_seconds is not None:
+        return round(float(presentation_time_seconds), 2)
+    return round(frame_count / (fps or 1.0), 2)
+
+
+def run_proxy_ffmpeg_job(
+    original: Path,
+    destination: Path,
+    *,
+    original_sha256: str,
+    proxy_height: int = 720,
+    runner=subprocess.run,
+) -> dict[str, object]:
+    digest = hashlib.sha256(original.read_bytes()).hexdigest()
+    if digest != original_sha256:
+        raise ValueError("original digest mismatch; refusing to replace the source asset")
+    command = [
+        "ffmpeg",
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-i",
+        str(original),
+        "-vf",
+        f"scale=-2:{int(proxy_height)}",
+        "-an",
+        "-y",
+        str(destination),
+    ]
+    decision = constrained_decoder(argv=command, network_enabled=False)
+    if not decision["admitted"]:
+        raise ValueError("unconstrained decoder")
+    _assert_safe_ffmpeg_argv(command)
+    runner(command, check=True, capture_output=True, timeout=120)
+    return derive_proxy_assets(
+        original,
+        original_sha256=original_sha256,
+        original_pts=[0],
+        time_base=(1, 1),
+        proxy_height=proxy_height,
+    )
 
 
 def _parse_rate(value: str) -> tuple[int, int]:
