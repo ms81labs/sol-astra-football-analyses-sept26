@@ -890,6 +890,18 @@ export async function fetchMatchShotFeatures(matchId: string) {
   return response.json() as Promise<MatchShotFeatures>;
 }
 
+export async function postMatchShotFeatures(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/shots/features`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post match shot features: ${response.status}`);
+  }
+  return response.json() as Promise<MatchShotFeatures>;
+}
+
 export interface MatchAuditTrail {
   undoable: boolean;
   rewrotePastOutcomes: boolean;
