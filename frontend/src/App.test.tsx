@@ -1633,6 +1633,86 @@ describe('App match workspace loading', () => {
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('runs report-only recompute without invoking vision or injecting perception rows', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/recompute') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            visionInvoked: false,
+            reused: true,
+            admitted: true,
+            imageSpaceDetectionsReused: true,
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/artifacts/alongside') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            digest: 'sha-new',
+            previousDigest: 'sha-old',
+            mutatedHistorical: false,
+            namespace: 'match:match-a',
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && url.includes('state=pending') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).includes('/api/matches/match-a/recompute')
+        && init?.method === 'POST'
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([, init]) => (
+      Boolean(init?.body && String(init.body).includes('visionRows'))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([, init]) => (
+      Boolean(init?.body && String(init.body).includes('"change":"perception"'))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([, init]) => (
+      Boolean(init?.body && String(init.body).includes('"visionInvoked":true'))
+    ))).toBe(false);
+    const recompute = within(await screen.findByRole('region', { name: /report-only recompute/i }));
+    expect(recompute.getByText(/does not invoke vision/i)).toBeTruthy();
+    expect(recompute.getByText(/visionInvoked is false/i)).toBeTruthy();
+    expect(recompute.getByText(/stored detections are reused/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('loads derived proxy assets on the review App without replacing the original source', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);

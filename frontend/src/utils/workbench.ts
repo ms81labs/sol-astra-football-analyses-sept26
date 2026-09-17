@@ -760,6 +760,25 @@ export async function writeMatchAlongside(matchId: string) {
   return response.json() as Promise<MatchWriteAlongside>;
 }
 
+export interface MatchReportRecompute {
+  visionInvoked: boolean;
+  reused?: boolean;
+  admitted?: boolean;
+  imageSpaceDetectionsReused?: boolean;
+}
+
+export async function recomputeMatchReport(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/recompute`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to recompute match report: ${response.status}`);
+  }
+  return response.json() as Promise<MatchReportRecompute>;
+}
+
 export interface MatchPackageSnapshot {
   analyst?: {
     playlist?: unknown[];
