@@ -667,6 +667,21 @@ export async function fetchMatchHistory(matchId: string) {
   return response.json() as Promise<MatchAuditTrail>;
 }
 
+export interface MatchPrivacyScreen {
+  cloudAllowed: boolean;
+  localProcessingRequired: boolean;
+  faceRecognition: boolean;
+  crossSeasonIdentity?: boolean;
+}
+
+export async function fetchMatchPrivacy(matchId: string) {
+  const response = await fetch(`/api/matches/${matchId}/privacy`);
+  if (!response.ok) {
+    throw new Error(`Failed to load match privacy: ${response.status}`);
+  }
+  return response.json() as Promise<MatchPrivacyScreen>;
+}
+
 export interface AnalystWorkflowSnapshot {
   measured?: boolean;
   analystCompletedReviewedMatch?: boolean;
