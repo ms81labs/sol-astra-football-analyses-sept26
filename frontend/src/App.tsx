@@ -121,6 +121,9 @@ import OperatorHandoffPanel from './components/OperatorHandoffPanel';
 import ReleaseReadoutPanel from './components/ReleaseReadoutPanel';
 import PostReleaseMonitoringPanel from './components/PostReleaseMonitoringPanel';
 import DetectorEvaluationReportPanel from './components/DetectorEvaluationReportPanel';
+import PromotionReviewReportPanel from './components/PromotionReviewReportPanel';
+import PromotedRuntimeMonitoringPanel from './components/PromotedRuntimeMonitoringPanel';
+import OperatorDashboardPanel from './components/OperatorDashboardPanel';
 import MatchProvenancePanel from './components/MatchProvenancePanel';
 import MatchShotQualityPanel from './components/MatchShotQualityPanel';
 import MatchShotFeaturesPanel from './components/MatchShotFeaturesPanel';
@@ -2174,6 +2177,15 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           </div>
           <div className="mb-3 shrink-0">
             <DetectorEvaluationReportPanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <PromotionReviewReportPanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <PromotedRuntimeMonitoringPanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <OperatorDashboardPanel />
           </div>
           <div className="mb-3 shrink-0">
             <MatchProvenancePanel matchId={activeMatch?.id} />

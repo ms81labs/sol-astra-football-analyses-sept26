@@ -1355,6 +1355,48 @@ export async function fetchDetectorEvaluationReport() {
   return response.json() as Promise<DetectorEvaluationReportSnapshot>;
 }
 
+export interface PromotionReviewReportSnapshot {
+  schemaVersion?: string;
+  promoted?: boolean;
+  independentAccepted?: boolean;
+}
+
+export async function fetchPromotionReviewReport() {
+  const response = await fetch('/api/video-to-analysis/promotion-review');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored promotion-review report: ${response.status}`);
+  }
+  return response.json() as Promise<PromotionReviewReportSnapshot>;
+}
+
+export interface PromotedRuntimeMonitoringSnapshot {
+  schemaVersion?: string;
+  healthy?: boolean;
+  currentSourceSealedInference?: boolean;
+}
+
+export async function fetchPromotedRuntimeMonitoring() {
+  const response = await fetch('/api/video-to-analysis/promoted-runtime-monitoring');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored promoted-runtime monitoring: ${response.status}`);
+  }
+  return response.json() as Promise<PromotedRuntimeMonitoringSnapshot>;
+}
+
+export interface OperatorDashboardSnapshot {
+  schemaVersion?: string;
+  ready?: boolean;
+  accepted?: boolean;
+}
+
+export async function fetchOperatorDashboard() {
+  const response = await fetch('/api/video-to-analysis/operator-dashboard');
+  if (!response.ok) {
+    throw new Error(`Failed to load stored operator dashboard: ${response.status}`);
+  }
+  return response.json() as Promise<OperatorDashboardSnapshot>;
+}
+
 export interface StageTimingSnapshot {
   overlappedStagesAreAdditive?: boolean;
   wallTime?: number;
