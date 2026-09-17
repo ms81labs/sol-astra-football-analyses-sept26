@@ -110,6 +110,9 @@ import MediaColourWritePanel from './components/MediaColourWritePanel';
 import GeometryZoomCutWritePanel from './components/GeometryZoomCutWritePanel';
 import MetricsSpecWritePanel from './components/MetricsSpecWritePanel';
 import WorkerImportWritePanel from './components/WorkerImportWritePanel';
+import AssistanceGroundWritePanel from './components/AssistanceGroundWritePanel';
+import AssistanceSelectEvidenceWritePanel from './components/AssistanceSelectEvidenceWritePanel';
+import MetricsLegacyZeroWritePanel from './components/MetricsLegacyZeroWritePanel';
 import StageTimingPanel from './components/StageTimingPanel';
 import GpuProbePanel from './components/GpuProbePanel';
 import IndependentReviewerPanel from './components/IndependentReviewerPanel';
@@ -2171,6 +2174,15 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           </div>
           <div className="mb-3 shrink-0">
             <WorkerImportWritePanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <AssistanceGroundWritePanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <AssistanceSelectEvidenceWritePanel />
+          </div>
+          <div className="mb-3 shrink-0">
+            <MetricsLegacyZeroWritePanel />
           </div>
           <div className="mb-3 shrink-0">
             <StageTimingPanel />

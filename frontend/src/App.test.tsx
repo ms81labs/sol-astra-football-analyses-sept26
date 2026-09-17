@@ -13850,6 +13850,135 @@ describe('App match workspace loading', () => {
     expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
   });
 
+  it('posts assistance ground, select-evidence, and metrics legacy-zero without leftover fabricated evidence, claimedIds, or measured true', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/heatmap')) {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            identityContinuous: false,
+            wholeMatch: false,
+            intervalLimited: true,
+            withheld: true,
+            reasonCodes: ['IDENTITY_DISCONTINUITY'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/assistance/ground') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            route: 'template',
+            reasonCodes: ['GROUNDED'],
+            output: { evidence: [] },
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/assistance/select-evidence') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            accepted: true,
+            evidence: [],
+            reasonCodes: ['GROUNDED'],
+          }),
+        } as Response);
+      }
+      if (url.endsWith('/api/metrics/legacy-zero') && init?.method === 'POST') {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({
+            metric: 'possession_pct',
+            value: null,
+            availability: 'unknown',
+            reasonCodes: ['LEGACY_ZERO_DEFAULT', 'UNMEASURED_LEGACY_DEFAULT'],
+          }),
+        } as Response);
+      }
+      if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
+        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    await waitFor(() => expect(screen.getByRole('button', { name: /request assistance ground/i })).toBeTruthy());
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/assistance/ground'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/assistance/select-evidence'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/metrics/legacy-zero'))).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: /request assistance ground/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/assistance/ground')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /request assistance select-evidence/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/assistance/select-evidence')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    fireEvent.click(screen.getByRole('button', { name: /request metrics legacy-zero/i }));
+    await waitFor(() => {
+      expect(fetchMock.mock.calls.some(([url, init]) => (
+        String(url).endsWith('/api/metrics/legacy-zero')
+        && init?.method === 'POST'
+        && init.body === '{}'
+      ))).toBe(true);
+    });
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/assistance/ground')
+      && Boolean(init?.body && (String(init.body).includes('evidence') || String(init.body).includes('forged')))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/assistance/select-evidence')
+      && Boolean(init?.body && (String(init.body).includes('claimedIds') || String(init.body).includes('forged')))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url, init]) => (
+      String(url).includes('/api/metrics/legacy-zero')
+      && Boolean(init?.body && (String(init.body).includes('measured') || String(init.body).includes('availability')))
+    ))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/quota'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/training/admit'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/receipts/promotion'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/capacity'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/privacy/dpia'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/research/tracks/'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/roster/labels'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/incidents/ladder'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/decode/proxy-pts'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/access/object'))).toBe(false);
+    expect(screen.queryByText(/homography shift stays a cut/i)).toBeNull();
+    expect(screen.queryByText(/spec value stays None/i)).toBeNull();
+    expect(screen.queryByText(/empty kind stays unrecognised/i)).toBeNull();
+    const ground = within(screen.getByRole('region', { name: /unforced assistance ground/i }));
+    expect(ground.getByText(/keeps route template/i)).toBeTruthy();
+    expect(ground.getByText(/client evidence is not sent/i)).toBeTruthy();
+    expect(ground.getByText(/empty claimed ids stay grounded/i)).toBeTruthy();
+    const selected = within(screen.getByRole('region', { name: /unforced assistance select-evidence/i }));
+    expect(selected.getByText(/keeps accepted true/i)).toBeTruthy();
+    expect(selected.getByText(/client claimedIds are not sent/i)).toBeTruthy();
+    expect(selected.getByText(/empty claimed ids stay selected/i)).toBeTruthy();
+    const legacyZero = within(screen.getByRole('region', { name: /unforced metrics legacy-zero/i }));
+    expect(legacyZero.getByText(/keeps value None/i)).toBeTruthy();
+    expect(legacyZero.getByText(/client measured true is not sent/i)).toBeTruthy();
+    expect(legacyZero.getByText(/legacy zero stays unmeasured/i)).toBeTruthy();
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+  });
+
   it('loads stored independent reviewer, worked match flow, and decode memory without inventing acceptance or GPU residency', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);

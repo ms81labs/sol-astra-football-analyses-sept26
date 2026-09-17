@@ -1879,6 +1879,61 @@ export async function postWorkerImport() {
   return response.json() as Promise<WorkerImportWriteSnapshot>;
 }
 
+export interface AssistanceGroundWriteSnapshot {
+  route?: string;
+  reasonCodes?: string[];
+  output?: { evidence?: string[] };
+}
+
+export async function postAssistanceGround() {
+  const response = await fetch('/api/assistance/ground', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post assistance ground: ${response.status}`);
+  }
+  return response.json() as Promise<AssistanceGroundWriteSnapshot>;
+}
+
+export interface AssistanceSelectEvidenceWriteSnapshot {
+  accepted?: boolean;
+  evidence?: string[];
+  reasonCodes?: string[];
+}
+
+export async function postAssistanceSelectEvidence() {
+  const response = await fetch('/api/assistance/select-evidence', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post assistance select-evidence: ${response.status}`);
+  }
+  return response.json() as Promise<AssistanceSelectEvidenceWriteSnapshot>;
+}
+
+export interface MetricsLegacyZeroWriteSnapshot {
+  metric?: string;
+  value?: number | null;
+  availability?: string;
+  reasonCodes?: string[];
+}
+
+export async function postMetricsLegacyZero() {
+  const response = await fetch('/api/metrics/legacy-zero', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to post metrics legacy-zero: ${response.status}`);
+  }
+  return response.json() as Promise<MetricsLegacyZeroWriteSnapshot>;
+}
+
 export interface StageTimingSnapshot {
   overlappedStagesAreAdditive?: boolean;
   wallTime?: number;
