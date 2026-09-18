@@ -11,26 +11,33 @@ CONFIGURED_DEFAULT = "disabled_until_policy"
 Validator = Callable[[str, Any], dict]
 
 
-def execute_local(prompt: str, analysis_type: str, validate: Validator) -> dict:
+def execute_local(prompt: str, analysis_type: str, validate: Validator, *, timeout_seconds: float = 120.0) -> dict:
     import requests
 
     response = requests.post(
         "http://localhost:11434/api/generate",
         json={"model": "deepseek-r1:1.5b", "prompt": prompt, "stream": False, "format": "json"},
-        timeout=120,
+        timeout=timeout_seconds,
     )
     response.raise_for_status()
     return validate(analysis_type, json.loads(response.json()["response"]))
 
 
-def execute_cloud(prompt: str, analysis_type: str, validate: Validator) -> dict:
+def execute_cloud(
+    prompt: str,
+    analysis_type: str,
+    validate: Validator,
+    *,
+    timeout_seconds: float = 120.0,
+    model_id: str | None = None,
+) -> dict:
     api_key = os.getenv("OPENROUTER_API_KEY")
     if not api_key:
         raise RuntimeError("OPENROUTER_API_KEY is not configured.")
-    model = os.getenv("OPENROUTER_MODEL", "anthropic/claude-3.5-haiku")
+    model = model_id or os.getenv("OPENROUTER_MODEL", "anthropic/claude-3.5-haiku")
     import httpx
 
-    with httpx.Client(timeout=120) as client:
+    with httpx.Client(timeout=timeout_seconds) as client:
         resp = client.post(
             "https://openrouter.ai/api/v1/chat/completions",
             headers={

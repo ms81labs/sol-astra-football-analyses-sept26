@@ -29,6 +29,7 @@ from .export_flatteners import (
 )
 from .jobs import JobDispatchError, JobRunner
 from .llm import run_analysis
+from .provider_gateway import ProviderDenied, ProviderGateway
 from .report_export import build_match_report_export
 from .settings import ProcessingSettings, SettingsError, canonicalize_origin
 from .trust_crops import compute_trust_crops
@@ -672,6 +673,8 @@ def create_app(
     app = FastAPI(title="Guerilla Analytics API", version="0.1.0", lifespan=lifespan)
     app.state.storage = storage
     app.state.runner = runner
+    provider_gateway = ProviderGateway(storage, settings, adapter_factory=lambda: run_analysis)
+    app.state.provider_gateway = provider_gateway
     app.include_router(create_workbench_router(storage.storage_root, ledger=storage.job_ledger))
     from .workbench.leftover_http import LeftoverHttpGate
     from .workbench.leftover_get_routes import attach_leftover_get_routes
@@ -1571,43 +1574,19 @@ def create_app(
     @app.post("/api/matches/{match_id}/analysis/{analysis_type}")
     def analyze_match(analysis_type: str, match: MatchRecord = Depends(require_match), body: dict | None = None) -> dict:
         match_id = match.id
-        with storage.config_update_lock:
-            try:
-                snapshot = storage.get_match(match_id)
-                frames = storage.load_frames(match_id)
-            except (KeyError, FileNotFoundError) as exc:
-                raise HTTPException(status_code=404, detail="Frames not ready") from exc
-
-            body = body or {}
-            provider = body.get("provider") or snapshot.config.llmProvider
-            current_frame_index = body.get("currentFrameIndex")
-            summary = None
-            formation_timeline = None
-            events = None
-            shots = None
-            if analysis_type in {"tactical_report", "drills"}:
-                try:
-                    summary, _, formation_timeline, shots = storage.load_analytics(match_id)
-                except FileNotFoundError:
-                    summary = None
-                    formation_timeline = None
-                    shots = None
-                try:
-                    events = storage.load_events(match_id)
-                except FileNotFoundError:
-                    events = None
+        body = body or {}
+        snapshot = storage.get_match(match_id)
         try:
-            result = run_analysis(
+            result = provider_gateway.execute(
+                match_id,
                 analysis_type,
-                frames,
-                provider=provider,
-                attack_direction=snapshot.config.attackDirection,
-                current_frame_index=current_frame_index,
-                summary=summary,
-                events=events,
-                formation_timeline=formation_timeline,
-                shots=shots,
+                requested_provider=body.get("provider"),
+                body=body,
             )
+        except ProviderDenied as exc:
+            raise HTTPException(status_code=403, detail={"reasonCodes": exc.reason_codes}) from exc
+        except (KeyError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=404, detail="Frames not ready") from exc
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
