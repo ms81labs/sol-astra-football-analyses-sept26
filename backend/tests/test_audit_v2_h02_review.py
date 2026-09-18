@@ -11,9 +11,11 @@ from backend.app.main import create_app
 from backend.app.processor import reprocess_video_match
 from backend.app.schemas import ColorClusterSummary, MatchConfig
 from backend.app.storage import Storage
+from backend.app.workbench.review import CorrectionLog
 
 
 FIXTURE = Path(__file__).parent / "fixtures" / "raw_rows_two_teams.json"
+LEGACY_CORRECTIONS = Path(__file__).parent / "fixtures" / "corrections_v1.json"
 
 
 def install_raw_row_match(storage: Storage, tmp_path: Path) -> str:
@@ -143,3 +145,15 @@ def test_t28_idempotency_payload_mismatch_is_a_stable_conflict(tmp_path: Path) -
         }
         assert len(storage.job_ledger.attempts["normal-conflict"]) == 1
         assert len([item for item in storage.job_ledger.costs if item.requestId == "normal-conflict"]) == 1
+
+
+def test_legacy_correction_log_migrates_application_state() -> None:
+    log = CorrectionLog.from_payload(json.loads(LEGACY_CORRECTIONS.read_text(encoding="utf-8")))
+    saved = log.history("match-legacy")[0]
+    pending = log.pending("match-legacy")[0]
+
+    assert saved.commandId == saved.correctionId == "legacy-saved"
+    assert saved.applyState == "applied"
+    assert saved.migrationNotes == ["APPLICATION_STATE_INFERRED_FROM_SAVE_STATE"]
+    assert pending.commandId == pending.correctionId == "legacy-pending"
+    assert pending.applyState == "received"

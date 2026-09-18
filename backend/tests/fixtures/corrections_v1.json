@@ -1,0 +1,28 @@
+{
+  "items": [
+    {
+      "correctionId": "legacy-saved",
+      "matchId": "match-legacy",
+      "kind": "team_mapping",
+      "author": "analyst",
+      "createdAt": "2026-09-18T00:00:00Z",
+      "payload": {"swap": true},
+      "undoOf": null,
+      "saveState": "saved",
+      "version": 1
+    }
+  ],
+  "pending": [
+    {
+      "correctionId": "legacy-pending",
+      "matchId": "match-legacy",
+      "kind": "event_reject",
+      "author": "analyst",
+      "createdAt": "2026-09-18T00:01:00Z",
+      "payload": {"eventId": "event-1"},
+      "undoOf": null,
+      "saveState": "pending",
+      "version": 2
+    }
+  ]
+}
