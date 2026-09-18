@@ -122,6 +122,8 @@ export interface MatchStats {
         evidenceIds?: string[];
         reviewStatus?: string;
         denominator?: string | null;
+        teamScope?: 'my_team' | 'enemy' | null;
+        deprecated?: boolean;
     }>;
 }
 

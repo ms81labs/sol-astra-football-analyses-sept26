@@ -1260,21 +1260,33 @@ def _summary_metric_availability(
         )
         for name in physical_values
     ]
-    labelled_shot_quality = [value for value in (summary.myTeamXg, summary.enemyXg) if value is not None]
-    shot_quality = MetricAvailabilityRecord(
-        metric="experimental_shot_quality",
-        value=round(sum(labelled_shot_quality), 2) if labelled_shot_quality else None,
-        availability="experimental" if labelled_shot_quality else "unknown",
-        publishedLabel="experimental_shot_quality",
-        unit="probability",
-        denominator="labelled_shots",
-        reasonCodes=[] if labelled_shot_quality else ["NO_LABELLED_SHOTS"],
+    shot_quality = [
+        MetricAvailabilityRecord(
+            metric=f"{team}_experimental_shot_quality_sum",
+            value=None if value is None else round(value, 2),
+            availability="unknown" if value is None else "experimental",
+            publishedLabel="experimental_shot_quality",
+            unit="expected_shots_heuristic",
+            denominator="labelled_shots",
+            reasonCodes=["NO_LABELLED_SHOTS"] if value is None else [],
+            teamScope=team,
+        )
+        for team, value in (("my_team", summary.myTeamXg), ("enemy", summary.enemyXg))
+    ]
+    shot_quality.append(
+        MetricAvailabilityRecord(
+            metric="experimental_shot_quality",
+            availability="unknown",
+            reasonCodes=["DEPRECATED_TEAM_SCOPE_REQUIRED"],
+            publishedLabel="experimental_shot_quality",
+            deprecated=True,
+        )
     )
     return [
         possession,
         _ppda_availability("my_team_ppda", summary.myTeamPpda, my_pressing_actions),
         _ppda_availability("enemy_ppda", summary.enemyPpda, enemy_pressing_actions),
-        shot_quality,
+        *shot_quality,
         *physical,
     ]
 

@@ -637,13 +637,15 @@ def _dashboard_metric_measured(summary: dict, metric: str) -> bool:
 
 
 def _dashboard_average(summaries: list[dict], *, field: str, metric: str, digits: int = 1) -> float | None:
-    values = [
-        float(value)
-        for summary in summaries
-        if _dashboard_metric_measured(summary, metric)
-        for value in [summary.get(field)]
-        if value is not None
-    ]
+    values: list[float] = []
+    for summary in summaries:
+        record = next(
+            (item for item in summary.get("metricAvailability") or [] if item.get("metric") == metric),
+            None,
+        )
+        value = summary.get(field) if record is None else record.get("value")
+        if value is not None and (record is None or record.get("availability") in {"available", "experimental"}):
+            values.append(float(value))
     if not values:
         return None
     return round(sum(values) / len(values), digits)
@@ -1880,8 +1882,8 @@ def create_app(
         summaries = [m["summary"] for m in all_matches]
         measured_possession = [s["possession"] for s in summaries if s.get("possession") is not None]
         avg_pos = sum(measured_possession) / len(measured_possession) if measured_possession else None
-        avg_my_xg = _dashboard_average(summaries, field="myTeamXg", metric="experimental_shot_quality", digits=2)
-        avg_enemy_xg = _dashboard_average(summaries, field="enemyXg", metric="experimental_shot_quality", digits=2)
+        avg_my_xg = _dashboard_average(summaries, field="myTeamXg", metric="my_team_experimental_shot_quality_sum", digits=2)
+        avg_enemy_xg = _dashboard_average(summaries, field="enemyXg", metric="enemy_experimental_shot_quality_sum", digits=2)
         avg_xg_diff = None if avg_my_xg is None or avg_enemy_xg is None else round(avg_my_xg - avg_enemy_xg, 2)
         avg_my_sprints = _dashboard_average(summaries, field="myTeamSprints", metric="my_team_sprints")
         avg_enemy_sprints = _dashboard_average(summaries, field="enemySprints", metric="enemy_sprints")

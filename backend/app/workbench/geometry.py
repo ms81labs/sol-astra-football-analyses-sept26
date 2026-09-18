@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any, Literal
 
 from pydantic import Field
@@ -9,6 +10,11 @@ from pydantic import Field
 from .contracts import StrictModel
 
 CameraModel = Literal["planar_homography", "distortion_corrected", "segmented"]
+CameraSide = Literal["touchline_north", "touchline_south", "goal_east", "goal_west"]
+
+
+class CalibrationUnavailable(Exception):
+    pass
 
 
 class Landmark(StrictModel):
@@ -24,6 +30,7 @@ class CalibrationProfile(StrictModel):
     calibrationId: str
     schemaVersion: str = "calibration_v2"
     cameraModel: CameraModel
+    cameraSide: CameraSide | None = None
     pitchLengthM: float | None = None
     pitchWidthM: float | None = None
     validRegion: Literal["full_pitch", "near", "middle", "far", "unknown"] = "unknown"
@@ -86,28 +93,89 @@ def homography_from_four_points(points: list[dict[str, float]]) -> list[list[flo
 
 
 def evaluate_landmarks(profile: CalibrationProfile, *, max_p95_m: float) -> dict[str, Any]:
+    transform_errors = validate_homography(profile.homography)
+    if transform_errors:
+        return {"accepted": False, "reasonCodes": transform_errors, "holdoutCount": 0, "farSideCount": 0}
     holdout = [mark for mark in profile.landmarks if mark.independentHoldout]
-    if not holdout:
+    if len(holdout) < 4:
         return {
             "accepted": False,
-            "reasonCodes": ["CALIBRATION_UNAVAILABLE"],
-            "holdoutCount": 0,
+            "reasonCodes": ["CALIBRATION_UNAVAILABLE", "INSUFFICIENT_HOLDOUTS"],
+            "holdoutCount": len(holdout),
+            "farSideCount": 0,
         }
-    residuals = []
-    for mark in holdout:
-        projected = _project(profile, mark.imageX, mark.imageY)
-        residuals.append(((projected[0] - mark.pitchX) ** 2 + (projected[1] - mark.pitchY) ** 2) ** 0.5)
-    residuals.sort()
+    try:
+        pairs = [
+            (mark, math.hypot(projected[0] - mark.pitchX, projected[1] - mark.pitchY))
+            for mark in holdout
+            for projected in [_project(profile, mark.imageX, mark.imageY)]
+        ]
+    except CalibrationUnavailable as exc:
+        return {
+            "accepted": False,
+            "reasonCodes": [str(exc)],
+            "holdoutCount": len(holdout),
+            "farSideCount": 0,
+        }
+    residuals = sorted(value for _, value in pairs)
     p95 = residuals[min(len(residuals) - 1, max(0, int(round(0.95 * (len(residuals) - 1)))))]
-    far = [value for mark, value in zip(holdout, residuals) if mark.pitchY >= 45]
+    far, heuristic = _far_side_residuals(pairs, profile)
     region_ok = (max(far) if far else p95) <= max_p95_m
+    reason_codes = [] if p95 <= max_p95_m and region_ok else ["CALIBRATION_UNAVAILABLE"]
+    if heuristic:
+        reason_codes.append("FAR_SIDE_HEURISTIC")
     return {
         "accepted": p95 <= max_p95_m and region_ok,
         "p95M": p95,
         "holdoutCount": len(holdout),
+        "farSideCount": len(far),
         "farSideMaxM": max(far) if far else None,
-        "reasonCodes": [] if p95 <= max_p95_m and region_ok else ["CALIBRATION_UNAVAILABLE"],
+        "reasonCodes": reason_codes,
     }
+
+
+def validate_homography(matrix: list[list[float]] | None) -> list[str]:
+    if matrix is None:
+        return ["NO_TRANSFORM"]
+    if len(matrix) != 3 or any(len(row) != 3 for row in matrix):
+        return ["INVALID_TRANSFORM_SHAPE"]
+    if any(not math.isfinite(value) for row in matrix for value in row):
+        return ["NONFINITE_TRANSFORM"]
+    try:
+        import numpy as np
+
+        values = np.asarray(matrix, dtype=float)
+        if abs(float(np.linalg.det(values))) <= 1e-9 or float(np.linalg.cond(values)) >= 1e8:
+            return ["SINGULAR_TRANSFORM"]
+        if not np.isfinite(np.linalg.inv(values)).all() or matrix[2][2] == 0:
+            return ["SINGULAR_TRANSFORM"]
+    except (ImportError, ValueError, TypeError, OverflowError):
+        return ["INVALID_TRANSFORM"]
+    return []
+
+
+def _far_side_residuals(
+    pairs: list[tuple[Landmark, float]], profile: CalibrationProfile
+) -> tuple[list[float], bool]:
+    length = profile.pitchLengthM or 105.0
+    width = profile.pitchWidthM or 68.0
+    if profile.cameraSide == "touchline_north":
+        return [value for mark, value in pairs if mark.pitchY >= width / 2], False
+    if profile.cameraSide == "touchline_south":
+        return [value for mark, value in pairs if mark.pitchY <= width / 2], False
+    if profile.cameraSide == "goal_west":
+        return [value for mark, value in pairs if mark.pitchX >= length / 2], False
+    if profile.cameraSide == "goal_east":
+        return [value for mark, value in pairs if mark.pitchX <= length / 2], False
+    fit_points = [mark for mark in profile.landmarks if not mark.independentHoldout]
+    north = [mark.imageY for mark in fit_points if mark.pitchY <= width / 4]
+    south = [mark.imageY for mark in fit_points if mark.pitchY >= width * 3 / 4]
+    if north and south:
+        camera_side = "touchline_north" if sum(north) / len(north) > sum(south) / len(south) else "touchline_south"
+        if camera_side == "touchline_north":
+            return [value for mark, value in pairs if mark.pitchY >= width / 2], False
+        return [value for mark, value in pairs if mark.pitchY <= width / 2], False
+    return [value for mark, value in pairs if mark.pitchY >= 45], True
 
 
 def commit_calibration(profile: CalibrationProfile, *, max_p95_m: float = 3.0) -> dict[str, Any]:
@@ -302,14 +370,16 @@ def preview_landmark_fit(*, residual_p95_m: float, max_p95_m: float) -> dict[str
 
 
 def _project(profile: CalibrationProfile, image_x: float, image_y: float) -> tuple[float, float]:
-    if profile.homography:
-        h = profile.homography
-        denom = h[2][0] * image_x + h[2][1] * image_y + h[2][2]
-        if denom == 0:
-            return (float("nan"), float("nan"))
-        x = (h[0][0] * image_x + h[0][1] * image_y + h[0][2]) / denom
-        y = (h[1][0] * image_x + h[1][1] * image_y + h[1][2]) / denom
-        return x, y
-    if profile.landmarks:
-        return profile.landmarks[0].pitchX, profile.landmarks[0].pitchY
-    return 0.0, 0.0
+    errors = validate_homography(profile.homography)
+    if errors:
+        raise CalibrationUnavailable(errors[0])
+    h = profile.homography
+    assert h is not None
+    denom = h[2][0] * image_x + h[2][1] * image_y + h[2][2]
+    if denom == 0:
+        raise CalibrationUnavailable("DEGENERATE_POINT")
+    x = (h[0][0] * image_x + h[0][1] * image_y + h[0][2]) / denom
+    y = (h[1][0] * image_x + h[1][1] * image_y + h[1][2]) / denom
+    if not math.isfinite(x) or not math.isfinite(y):
+        raise CalibrationUnavailable("NONFINITE_PROJECTION")
+    return x, y

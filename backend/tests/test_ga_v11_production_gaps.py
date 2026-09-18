@@ -349,7 +349,8 @@ def test_commit_calibration_stays_uncertified_without_holdout() -> None:
         cameraModel="planar_homography",
         homography=[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
         landmarks=[
-            Landmark(name="holdout", imageX=10, imageY=10, pitchX=10, pitchY=10, independentHoldout=True),
+            Landmark(name=f"holdout-{index}", imageX=x, imageY=y, pitchX=x, pitchY=y, independentHoldout=True)
+            for index, (x, y) in enumerate(((10, 10), (90, 10), (10, 60), (90, 60)))
         ],
         residualP95M=0.4,
     )
@@ -628,13 +629,14 @@ def test_match_calibration_commit_persists_uncertified_profile(tmp_path: Path) -
                 "residualP95M": 0.4,
                 "landmarks": [
                     {
-                        "name": "holdout",
-                        "imageX": 10,
-                        "imageY": 10,
-                        "pitchX": 10,
-                        "pitchY": 10,
+                        "name": f"holdout-{index}",
+                        "imageX": x,
+                        "imageY": y,
+                        "pitchX": x,
+                        "pitchY": y,
                         "independentHoldout": True,
                     }
+                    for index, (x, y) in enumerate(((10, 10), (90, 10), (10, 60), (90, 60)))
                 ],
             },
         )
