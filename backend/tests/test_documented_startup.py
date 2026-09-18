@@ -222,9 +222,11 @@ def _start_asgi_server(python: Path, cwd: Path, environment: dict[str, str]) -> 
 def test_readme_installs_and_starts_backend_from_repository_root() -> None:
     readme = (REPOSITORY_ROOT / "README.md").read_text(encoding="utf-8")
 
-    assert "python -m pip install . -r backend/requirements-dev.txt\n" in readme
+    assert "python -m pip install --require-hashes -r backend/requirements/dev.lock\n" in readme
+    assert "python -m pip install -e . --no-deps\n" in readme
     assert "export GUERILLA_STORAGE_ROOT=" in readme
-    assert "python -m pip install -r backend/requirements-ml.txt" in readme
+    assert "python -m pip install --require-hashes -r backend/requirements/cpu-cv-macos.lock" in readme
+    assert "python -m pip install -e '.[cv]' --no-deps" in readme
     assert "python -m uvicorn backend.app.main:app" in readme
     assert "python -m uvicorn app.main:app" not in readme
 

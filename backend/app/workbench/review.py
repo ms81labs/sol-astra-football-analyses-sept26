@@ -21,8 +21,10 @@ EditKind = Literal[
     "event_accept",
     "calibration",
     "playlist_item",
+    "undo",
 ]
 SaveState = Literal["saved", "pending", "conflicted"]
+ApplyState = Literal["received", "committed", "applying", "applied", "failed"]
 
 CORRECTION_INVALIDATION: dict[str, str] = {
     "team_mapping": "team_mapping",
@@ -39,6 +41,7 @@ CORRECTION_INVALIDATION: dict[str, str] = {
 
 class Correction(StrictModel):
     correctionId: str
+    commandId: str
     matchId: str
     kind: EditKind
     author: str
@@ -46,6 +49,13 @@ class Correction(StrictModel):
     payload: dict[str, Any]
     undoOf: str | None = None
     saveState: SaveState = "saved"
+    applyState: ApplyState = "received"
+    baseGeneration: str | None = None
+    appliedGeneration: str | None = None
+    attempts: int = 0
+    lastError: str | None = None
+    migrationNotes: list[str] = Field(default_factory=list)
+    supersededBy: str | None = None
     version: int = 1
 
 
@@ -80,7 +90,7 @@ class CorrectionLog:
             if crash_before_commit:
                 return pending
             version = current + 1 if expected_version is not None else (correction.version if current == 0 else current + 1)
-            committed = pending.model_copy(update={"saveState": "saved", "version": version})
+            committed = pending.model_copy(update={"saveState": "saved", "applyState": "committed", "version": version})
             self._items.append(committed)
             self._pending.pop(pending.correctionId, None)
             return committed
@@ -89,7 +99,7 @@ class CorrectionLog:
         with self._lock:
             if correction_id in self._pending:
                 pending = self._pending[correction_id]
-                committed = pending.model_copy(update={"saveState": "saved"})
+                committed = pending.model_copy(update={"saveState": "saved", "applyState": "committed"})
                 self._items.append(committed)
                 self._pending.pop(correction_id)
                 return committed
@@ -100,8 +110,10 @@ class CorrectionLog:
 
     def undo(self, correction_id: str, *, author: str) -> Correction:
         original = self._require(correction_id)
+        command_id = str(uuid.uuid4())
         inverse = Correction(
-            correctionId=str(uuid.uuid4()),
+            correctionId=command_id,
+            commandId=command_id,
             matchId=original.matchId,
             kind=original.kind,
             author=author,
@@ -120,6 +132,15 @@ class CorrectionLog:
     def history(self, match_id: str) -> list[Correction]:
         return [item for item in self._items if item.matchId == match_id]
 
+    def update(self, correction_id: str, **changes: Any) -> Correction:
+        with self._lock:
+            for index, item in enumerate(self._items):
+                if item.correctionId == correction_id:
+                    updated = item.model_copy(update=changes)
+                    self._items[index] = updated
+                    return updated
+        raise KeyError(correction_id)
+
     def dump(self) -> dict[str, Any]:
         with self._lock:
             return {
@@ -132,10 +153,21 @@ class CorrectionLog:
         log = cls()
         if not payload:
             return log
+        def migrated(item: dict[str, Any]) -> Correction:
+            body = dict(item)
+            body.setdefault("commandId", body["correctionId"])
+            if "applyState" not in body:
+                body["applyState"] = "applied" if body.get("saveState") == "saved" else "received"
+                body["migrationNotes"] = [
+                    *list(body.get("migrationNotes") or []),
+                    "APPLICATION_STATE_INFERRED_FROM_SAVE_STATE",
+                ]
+            return Correction.model_validate(body)
+
         for item in payload.get("items") or []:
-            log._items.append(Correction.model_validate(item))
+            log._items.append(migrated(item))
         for item in payload.get("pending") or []:
-            pending = Correction.model_validate(item)
+            pending = migrated(item)
             log._pending[pending.correctionId] = pending
         return log
 
@@ -153,8 +185,10 @@ def new_correction(
     *,
     author: str = "analyst",
 ) -> Correction:
+    correction_id = str(uuid.uuid4())
     return Correction(
-        correctionId=str(uuid.uuid4()),
+        correctionId=correction_id,
+        commandId=correction_id,
         matchId=match_id,
         kind=kind,
         author=author,

@@ -5,7 +5,9 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator, model_validator
+
+from ..domain_types import FiniteFloat, Homography3x3, Interval as CalibrationInterval
 
 
 Availability = Literal[
@@ -200,6 +202,121 @@ class SamplingReceipt(StrictModel):
         return False
 
 
+class GenerationManifest(StrictModel):
+    generationId: str
+    matchId: str
+    observationDigest: str
+    detectionIdentity: str | None = None
+    trackingIdentity: str | None = None
+    projectionIdentity: str | None = None
+    reviewedIdentity: str | None = None
+    reportIdentity: str | None = None
+    calibrationRevision: str | None = None
+    correctionHead: str
+    algorithmVersions: dict[str, str]
+    files: dict[str, str]
+    stale: list[str] = Field(default_factory=list)
+    orphanedDecisions: list[str] = Field(default_factory=list)
+    publishedAt: str
+
+
+class GenerationRef(StrictModel):
+    generationId: str
+    publishedAt: str
+    correctionHead: str
+    calibrationRevision: str | None = None
+    recoveryRequired: bool = False
+    migrated: bool = False
+
+
+class CalibrationRevision(StrictModel):
+    revisionId: str
+    profile: dict[str, Any]
+    evaluation: dict[str, Any]
+    accepted: bool
+    measured: bool
+    sourceSha256: str
+    validInterval: CalibrationInterval
+    createdAt: str
+    fitPointSpace: Literal["source_pixels", "normalized"] = "source_pixels"
+    pitchLengthM: FiniteFloat = Field(gt=0)
+    pitchWidthM: FiniteFloat = Field(gt=0)
+    migrated: bool = False
+
+    @field_validator("profile")
+    @classmethod
+    def valid_profile_homography(cls, profile: dict[str, Any]) -> dict[str, Any]:
+        if profile.get("homography") is not None:
+            TypeAdapter(Homography3x3).validate_python(profile["homography"])
+        return profile
+
+    @model_validator(mode="after")
+    def accepted_is_measured(self):
+        if self.accepted and not self.measured:
+            raise ValueError("accepted calibration must be measured")
+        return self
+
+
+class MetricScope(StrictModel):
+    team: Literal["my_team", "enemy"] | None = None
+    player: str | None = None
+    interval: Interval | None = None
+
+
+class CanonicalMetricRecord(StrictModel):
+    metric: str
+    definitionVersion: str
+    scope: MetricScope
+    generationId: str
+    value: float | None
+    unit: str
+    availability: Literal["available", "experimental", "withheld", "unknown"]
+    status: Literal["observed", "estimated", "reviewed"]
+    eligibleSeconds: float | None
+    requestedSeconds: float | None
+    exclusions: list[str] = Field(default_factory=list)
+    algorithmRevision: str
+    calibrationRevision: str | None = None
+    uncertainty: float | None = None
+    reasonCodes: list[str] = Field(default_factory=list)
+
+
+ChargeKind = Literal["reserved", "estimated", "unsettled", "settled", "released"]
+
+
+class JobBudgetSnapshot(StrictModel):
+    requestId: str
+    authorisedBudget: float
+    settledTotal: float
+    reservedTotal: float
+    unsettledTotal: float
+    actualTotal: float | None
+
+
+class EvidenceReference(StrictModel):
+    matchId: str
+    generationId: str
+    evidenceId: str
+
+
+class MeasuredRuntimeReceipt(StrictModel):
+    sourceIdentity: str
+    modelIdentity: str | None
+    runtimeBuild: str
+    decodedFrames: int
+    inferenceCalls: int
+    batchSizes: list[int]
+    recoveryCalls: int
+    trackerUpdates: int
+    exportedSamples: int
+    timestampPolicy: str
+    timeBase: tuple[int, int] | None
+    timingBoundaries: dict[str, float]
+    peakMemoryBytes: int | None
+    transferredBytes: int | None
+    committedGeneration: str | None
+
+
 class JobPhase(StrictModel):
     requestId: str
     attemptId: str
@@ -224,6 +341,11 @@ class JobPhase(StrictModel):
     cleanupResult: Literal["confirmed", "failed", "not_required", "unknown"] = "not_required"
     cacheIdentity: str | None = None
     error: str | None = None
+    attemptCount: int = 1
+    reservedTotal: float = 0.0
+    settledTotal: float = 0.0
+    unsettledTotal: float = 0.0
+    actualTotal: float | None = None
 
 
 def utc_now() -> datetime:

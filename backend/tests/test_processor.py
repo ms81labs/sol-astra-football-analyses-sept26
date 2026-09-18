@@ -99,7 +99,10 @@ def test_remote_stream_persists_the_same_rows_and_frames(tmp_path, selected_clus
     with storage.remote_result_import(match.id), ProcessorResultStream(metadata, len(rows), iter(rows)) as source:
         processor.persist_remote_video_result_stream(storage, job.id, source)
 
-    assert {path.name: json.loads(path.read_text()) for path in match_dir.glob("*.json")} == before
+    after = {path.name: json.loads(path.read_text()) for path in match_dir.glob("*.json")}
+    assert {name: value for name, value in after.items() if name != "current_generation.json"} == {
+        name: value for name, value in before.items() if name != "current_generation.json"
+    }
     assert storage.load_raw_rows(match.id) == rows
     frames = storage.load_frames(match.id)
     assert [frame.frameId for frame in frames] == [0, 1, 2]
@@ -142,7 +145,7 @@ def test_remote_stream_failure_restores_existing_outputs(tmp_path, monkeypatch, 
     if failure == "analytics":
         monkeypatch.setattr(processor, "_compute_outputs_and_match_state", fail)
     elif failure == "persistence":
-        monkeypatch.setattr(storage, "save_events", fail)
+        monkeypatch.setattr(storage, "publish_generation", fail)
     source = ProcessorResultStream({"trackColors": {}, "recoveryDebug": {"new": True}}, 0 if failure == "empty" else 1, rows())
     with pytest.raises(RuntimeError), storage.remote_result_import(match.id), source:
         processor.persist_remote_video_result_stream(storage, job.id, source)
@@ -1772,7 +1775,7 @@ def test_persist_video_outputs_preserves_producer_sample_interval_for_sparse_bal
     ]
 
 
-def test_persist_video_outputs_saves_four_rates_projection_and_cache_identity(tmp_path, monkeypatch):
+def test_persist_video_outputs_saves_producer_receipts_and_declared_policy(tmp_path, monkeypatch):
     storage = Storage(tmp_path)
     config = MatchConfig()
     match = storage.create_match(
@@ -1825,8 +1828,9 @@ def test_persist_video_outputs_saves_four_rates_projection_and_cache_identity(tm
                 "boxCentreIsFoot": False,
                 "aerialBallMeasuredGroundLocation": False,
             },
-            "cacheIdentity": "cache-abc",
-            "sampling": {"selectedBackend": "opencv+ultralytics_track", "exportFpsEqualsInferenceFps": False},
+            "samplingReceipt": {"selectedBackend": "opencv+ultralytics_track", "decodeCount": 25},
+            "policy": {"requestedBackend": "opencv+ultralytics_track", "targetFps": 5.0},
+            "hardware": {"declaredBackend": "cpu", "observedDevice": None},
             "vidStridePolicy": {"addsVidStrideAlone": False, "targetFpsEqualsInferenceFps": False},
             "decodeMemoryPolicy": {"retainAllDecodedFrames": False, "gpuResident": False},
         },
@@ -1839,10 +1843,12 @@ def test_persist_video_outputs_saves_four_rates_projection_and_cache_identity(tm
     policy = storage.load_analysis_artifact(match.id, "projection_policy")
     assert policy["boxCentreIsFoot"] is False
     assert policy["playerAnchor"] == "ground_contact"
-    cache = storage.load_analysis_artifact(match.id, "cache_identity")
-    assert cache["cacheIdentity"] == "cache-abc"
-    sampling = storage.load_analysis_artifact(match.id, "sampling")
-    assert sampling["selectedBackend"] == "opencv+ultralytics_track"
+    sampling = storage.load_analysis_artifact(match.id, "sampling_receipt")
+    assert sampling["decodeCount"] == 25
+    declared = storage.load_analysis_artifact(match.id, "sampling_policy")
+    assert declared["requestedBackend"] == "opencv+ultralytics_track"
+    hardware = storage.load_analysis_artifact(match.id, "hardware")
+    assert hardware == {"declaredBackend": "cpu", "observedDevice": None}
     stride = storage.load_analysis_artifact(match.id, "vid_stride_policy")
     assert stride["addsVidStrideAlone"] is False
 

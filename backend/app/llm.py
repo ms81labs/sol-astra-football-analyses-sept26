@@ -7,6 +7,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from .provider_adapters import execute_cloud, execute_local
+from .provider_gateway import GatewayToken, is_valid_gateway_token
 from .schemas import DetectedEvent, FormationSegment, FrameData, MatchSummary, ShotAnalytics
 
 CREATOR_EVENT_TYPES = {"pass", "cross", "through_ball"}
@@ -71,20 +72,8 @@ class _Drills(_ProviderPayload):
     player_focus: _PlayerFocus = Field(default_factory=_PlayerFocus)
 
 
-class _Offside(_ProviderPayload):
-    offside: bool
-    offside_x: float
-    explanation: str
-
-
-class _Spacing(_ProviderPayload):
-    width: float
-    too_wide: bool
-    explanation: str
-
-
 def _validate_provider_output(analysis_type: str, payload: object) -> dict:
-    schema = {"tactical_report": _TacticalReport, "drills": _Drills, "offside": _Offside, "spacing": _Spacing}[analysis_type]
+    schema = {"tactical_report": _TacticalReport, "drills": _Drills}[analysis_type]
     return schema.model_validate(payload).model_dump(mode="json", exclude_unset=True)
 
 
@@ -356,6 +345,11 @@ def _build_match_signals(summary: MatchSummary | None, formation_timeline: list[
         return {}
     my_ppda = _published_metric(summary, "my_team_ppda")
     enemy_ppda = _published_metric(summary, "enemy_ppda")
+    my_shot_quality = _published_metric(summary, "my_team_experimental_shot_quality_sum")
+    enemy_shot_quality = _published_metric(summary, "enemy_experimental_shot_quality_sum")
+    if not summary.metricAvailability:
+        my_shot_quality = summary.myTeamXg
+        enemy_shot_quality = summary.enemyXg
     pressing_edge = None if my_ppda is None or enemy_ppda is None else _round_two(enemy_ppda - my_ppda)
     if not summary.metricAvailability:
         pressing_edge = (
@@ -367,9 +361,11 @@ def _build_match_signals(summary: MatchSummary | None, formation_timeline: list[
         "possession": summary.possession,
         "xgBalance": (
             None
-            if summary.myTeamXg is None or summary.enemyXg is None
-            else _round_two(summary.myTeamXg - summary.enemyXg)
+            if my_shot_quality is None or enemy_shot_quality is None
+            else _round_two(my_shot_quality - enemy_shot_quality)
         ),
+        "myTeamExperimentalShotQualitySum": my_shot_quality,
+        "enemyExperimentalShotQualitySum": enemy_shot_quality,
         "pressingEdge": pressing_edge,
         "shotQualityLabel": "experimental_shot_quality",
         "defensiveLineEdge": (
@@ -432,22 +428,6 @@ def build_prompt(
         f"{'decreasing' if attack_direction == 'right_to_left' else 'increasing'} x; "
         "the opponent attacks the opposite direction. Coordinates are the original 0-100 display coordinates. "
     )
-    if analysis_type == "offside" and current_frame:
-        return (
-            direction_context + "You are a football tactician API. Based on this frame data: "
-            f"{json.dumps(current_frame.model_dump(mode='json'))}. "
-            'Determine if any my-team player is behind the last enemy defender. '
-            'Return JSON {"offside": boolean, "offside_x": number, "explanation": string}. '
-            "This is a review prompt only: do not present it as a validated IFAB Law 11 decision; "
-            "involvement, first contact, restarts and eligible body parts are not measured."
-        )
-    if analysis_type == "spacing" and current_frame:
-        return (
-            direction_context + "You are a football tactician API. Based on this frame data: "
-            f"{json.dumps(current_frame.model_dump(mode='json'))}. "
-            'Analyze the horizontal distance between the leftmost and rightmost my-team players. '
-            'Return JSON {"width": number, "too_wide": boolean, "explanation": string}.'
-        )
     if analysis_type == "tactical_report":
         context = _build_match_context(frames, summary, events, formation_timeline, shots)
         context["attackDirection"] = attack_direction
@@ -471,7 +451,7 @@ def build_prompt(
     raise ValueError(f"Unsupported analysis type: {analysis_type}")
 
 
-def run_analysis(
+def _run_analysis_unguarded(
     analysis_type: str,
     frames: list[FrameData],
     *,
@@ -482,6 +462,8 @@ def run_analysis(
     events: list[DetectedEvent] | None = None,
     formation_timeline: list[FormationSegment] | None = None,
     shots: list[ShotAnalytics] | None = None,
+    model_id: str | None = None,
+    deadline_seconds: float = 120.0,
 ) -> dict:
     current_frame = frames[current_frame_index] if current_frame_index is not None and frames else None
     prompt = build_prompt(
@@ -496,9 +478,47 @@ def run_analysis(
     )
 
     if provider == "local":
-        return execute_local(prompt, analysis_type, _validate_provider_output)
+        return execute_local(prompt, analysis_type, _validate_provider_output, timeout_seconds=deadline_seconds)
 
     if provider == "cloud":
-        return execute_cloud(prompt, analysis_type, _validate_provider_output)
+        return execute_cloud(
+            prompt,
+            analysis_type,
+            _validate_provider_output,
+            timeout_seconds=deadline_seconds,
+            model_id=model_id,
+        )
 
     raise ValueError(f"Unsupported provider: {provider}")
+
+
+def run_analysis(
+    analysis_type: str,
+    frames: list[FrameData],
+    *,
+    gateway_token: GatewayToken | None = None,
+    provider: str = "local",
+    attack_direction: Literal["left_to_right", "right_to_left"] = "left_to_right",
+    current_frame_index: int | None = None,
+    summary: MatchSummary | None = None,
+    events: list[DetectedEvent] | None = None,
+    formation_timeline: list[FormationSegment] | None = None,
+    shots: list[ShotAnalytics] | None = None,
+    model_id: str | None = None,
+    deadline_seconds: float = 120.0,
+) -> dict:
+    if not is_valid_gateway_token(gateway_token):
+        raise PermissionError("provider gateway token required")
+    return _run_analysis_unguarded(
+        analysis_type,
+        frames,
+        provider=provider,
+        attack_direction=attack_direction,
+        current_frame_index=current_frame_index,
+        summary=summary,
+        events=events,
+        formation_timeline=formation_timeline,
+        shots=shots,
+        model_id=model_id,
+        deadline_seconds=deadline_seconds,
+    )

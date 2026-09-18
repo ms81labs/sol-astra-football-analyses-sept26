@@ -124,17 +124,26 @@ def test_ffmpeg_frame_source_decodes_the_path_instead_of_injected_frames(tmp_pat
     assert any(str(source) in token for argv in seen for token in argv)
     assert all(frame.backend == "ffmpeg" for frame in frames)
     assert frames[0].payload == frame_bytes
-    assert frames[0].presentation_time_seconds == pytest.approx(0.04)
+    assert frames[0].presentation_time_seconds == pytest.approx(0.0)
 
 
-def test_durable_job_ledger_survives_process_restart_and_reconciles_outcome_unknown(tmp_path: Path) -> None:
+def test_durable_job_ledger_survives_restart_until_explicit_lease_reclaim(tmp_path: Path) -> None:
     db_path = tmp_path / "jobs.sqlite3"
     first = DurableJobLedger(db_path=db_path)
-    first.submit(_request())
-    first.transition("job-restart", "running", selectedBackend="local")
+    attempt = first.submit(_request())
+    first.transition(
+        attempt.attemptId,
+        expected_revision=attempt.revision,
+        owner_id="legacy",
+        status="running",
+        selectedBackend="local",
+    )
     del first
 
     restarted = DurableJobLedger(db_path=db_path)
+    receipt = restarted.receipt("job-restart")
+    assert receipt.status == "running"
+    restarted.reclaim_expired(now=float("inf"))
     receipt = restarted.receipt("job-restart")
     assert receipt.status == "outcome_unknown"
     assert receipt.attemptId
@@ -349,7 +358,8 @@ def test_commit_calibration_stays_uncertified_without_holdout() -> None:
         cameraModel="planar_homography",
         homography=[[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
         landmarks=[
-            Landmark(name="holdout", imageX=10, imageY=10, pitchX=10, pitchY=10, independentHoldout=True),
+            Landmark(name=f"holdout-{index}", imageX=x, imageY=y, pitchX=x, pitchY=y, independentHoldout=True)
+            for index, (x, y) in enumerate(((10, 10), (90, 10), (10, 60), (90, 60)))
         ],
         residualP95M=0.4,
     )
@@ -549,26 +559,18 @@ def test_workbench_timeout_and_lost_connection_use_storage_sqlite_ledger(tmp_pat
     from fastapi.testclient import TestClient
 
     from backend.app.main import create_app
-    from backend.app.workbench.jobs import DurableJobLedger
-
     app = create_app(storage_root=tmp_path, run_jobs_inline=True)
     with TestClient(app, base_url="http://127.0.0.1") as client:
         created = client.post(
             "/api/workbench/jobs",
             json={"requestId": "shared-timeout", "matchId": "match-a", "sourceSha256": "c" * 64, "budget": 1.0},
         )
-        assert created.status_code == 200
-        assert created.json()["status"] == "submitted"
-        assert "shared-timeout" in app.state.storage.job_ledger.requests
+        assert created.status_code == 410
+        assert "shared-timeout" not in app.state.storage.job_ledger.requests
         timed_out = client.post("/api/workbench/jobs/shared-timeout/timeout")
-        assert timed_out.json()["status"] == "outcome_unknown"
+        assert timed_out.status_code == 410
         lost = client.post("/api/workbench/jobs/shared-timeout/lost-connection")
-        assert lost.status_code == 200
-        assert lost.json()["status"] == "outcome_unknown"
-        assert lost.json()["error"] == "lost_connection"
-        restarted = DurableJobLedger(db_path=app.state.storage.db_path)
-        assert restarted.receipt("shared-timeout").status == "outcome_unknown"
-        assert restarted.receipt("shared-timeout").error == "lost_connection"
+        assert lost.status_code == 410
 
 
 def test_storage_completed_job_marks_ledger_complete_and_websocket_closes(tmp_path: Path) -> None:
@@ -636,13 +638,14 @@ def test_match_calibration_commit_persists_uncertified_profile(tmp_path: Path) -
                 "residualP95M": 0.4,
                 "landmarks": [
                     {
-                        "name": "holdout",
-                        "imageX": 10,
-                        "imageY": 10,
-                        "pitchX": 10,
-                        "pitchY": 10,
+                        "name": f"holdout-{index}",
+                        "imageX": x,
+                        "imageY": y,
+                        "pitchX": x,
+                        "pitchY": y,
                         "independentHoldout": True,
                     }
+                    for index, (x, y) in enumerate(((10, 10), (90, 10), (10, 60), (90, 60)))
                 ],
             },
         )
@@ -731,7 +734,7 @@ def test_tracker_associate_reuses_previous_track_id_by_iou_without_silent_cut_re
     previous = [
         {
             "frameId": 0,
-            "trackId": "botsort_baseline:stable-7",
+            "trackId": "iou_fallback:stable-7",
             "bbox": (11.0, 21.0, 31.0, 81.0),
             "kind": "player",
             "observationSource": "observed",
@@ -739,12 +742,14 @@ def test_tracker_associate_reuses_previous_track_id_by_iou_without_silent_cut_re
             "silentlyReconnected": False,
         }
     ]
-    adapter = TrackerAdapter()
+    from backend.app.workbench.perception import IouAssociationFallback
+
+    adapter = IouAssociationFallback()
     continuous = adapter.associate([detection], previous_tracks=previous)
-    assert continuous[0]["trackId"] == "botsort_baseline:stable-7"
+    assert continuous[0]["trackId"] == "iou_fallback:stable-7"
     assert continuous[0]["silentlyReconnected"] is False
     cut = adapter.associate([detection], cut_detected=True, previous_tracks=previous)
-    assert cut[0]["trackId"] != "botsort_baseline:stable-7"
+    assert cut[0]["trackId"] != "iou_fallback:stable-7"
     assert cut[0]["reset"] is True
     assert cut[0]["silentlyReconnected"] is False
 
@@ -866,14 +871,14 @@ def test_production_app_registers_leftover_posts_only_under_dev_prefix(tmp_path:
     from backend.app.main import create_app
 
     app = create_app(storage_root=tmp_path, run_jobs_inline=True)
-    leftover_posts = {
-        route.path
+    support_posts = {
+        route.path: route
         for route in app.routes
         if getattr(route, "methods", None) and "POST" in route.methods
         and (route.path == "/api/support/bundle" or route.path.endswith("/support/bundle"))
     }
-    assert "/api/support/bundle" not in leftover_posts
-    assert "/api/workbench/dev/support/bundle" in leftover_posts
+    assert support_posts["/api/support/bundle"].endpoint.__module__ == "backend.app.main"
+    assert support_posts["/api/workbench/dev/support/bundle"].endpoint.__module__.endswith("leftover_routes")
 
     client = TestClient(app, base_url="http://127.0.0.1")
     public = client.post("/api/support/bundle", json={"consented": True})

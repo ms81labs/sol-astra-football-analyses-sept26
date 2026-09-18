@@ -18,13 +18,18 @@ def _optional_artifact(storage: Storage, match_id: str, artifact_name: str) -> d
 
 def build_match_bundle(storage: Storage, match_id: str) -> dict[str, Any]:
     match = storage.get_match(match_id)
-    frames = storage.load_frames(match_id)
-    summary, assignments, formation_timeline, shots = storage.load_analytics(match_id)
-    events = storage.load_events(match_id)
+    with storage.generation_snapshot(match_id) as generation:
+        frames = storage.load_frames(match_id, generation_id=generation.generationId)
+        summary, assignments, formation_timeline, shots = storage.load_analytics(
+            match_id, generation_id=generation.generationId
+        )
+        events = storage.load_events(match_id, generation_id=generation.generationId)
     accepted_match_state = _optional_artifact(storage, match_id, "accepted_match_state")
     ball_truth_layers = _optional_artifact(storage, match_id, "ball_truth_layers")
     ball_pipeline_trace = _optional_artifact(storage, match_id, "ball_pipeline_trace")
     source_clock = _optional_artifact(storage, match_id, "source_clock")
+    four_rates = _optional_artifact(storage, match_id, "four_rates")
+    decode_anchors = _optional_artifact(storage, match_id, "decode_anchors")
     proof_runtime_options = _optional_artifact(storage, match_id, "proof_runtime_options")
     recovery_debug = _optional_artifact(storage, match_id, "recovery_debug")
 
@@ -76,6 +81,8 @@ def build_match_bundle(storage: Storage, match_id: str) -> dict[str, Any]:
         "ballTruthLayers": ball_truth_layers,
         "ballPipelineTrace": ball_pipeline_trace,
         "sourceClock": source_clock,
+        "fourRates": four_rates,
+        "decodeAnchors": decode_anchors,
         "proofRuntimeOptions": proof_runtime_options,
         "recoveryDebug": recovery_debug,
         "benchmark": benchmark,

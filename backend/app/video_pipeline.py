@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from dataclasses import asdict
+import importlib.metadata
 from pathlib import Path
 
 from .schemas import MatchConfig
-from .workbench.cache import cache_identity, recompute_plan
+from .domain_types import Interval
+from .workbench.cache import DetectionIdentity, TrackingIdentity, recompute_plan
 from .workbench.geometry import ground_contact_point, project_to_pitch
-from .workbench.media import FrameSource, OpenCvFrameSource, SamplingAudit, decode_memory_policy, four_rates_receipt, vid_stride_policy
-from .workbench.perception import Detection, DetectorAdapter, PreprocessorAdapter, TrackerAdapter
+from .workbench.media import FrameSource, OpenCvFrameSource, decode_memory_policy, vid_stride_policy
+from .workbench.hashing import HashCache, stream_sha256
 
 # Exposed at module level so tests can patch this name directly.
 from backend.run_guerilla import TARGET_FPS, process_video as _process_video_impl
@@ -43,8 +44,11 @@ def process_video_input(
     job_id: str | None = None,
     primary_acquisition_mode: str = "anchored_player_ranked_context_960",
     frame_source: FrameSource | None = None,
+    hash_cache: HashCache | None = None,
 ) -> dict[str, object]:
-    adapter = frame_source or OpenCvFrameSource()
+    if hash_cache is None and video_path.parent.name == "uploads":
+        hash_cache = HashCache(video_path.parent.parent)
+    adapter = frame_source or OpenCvFrameSource(hash_cache=hash_cache)
     if config.autoHomography:
         # Auto-detect: backend tries pitch_detector.py first, fallback to manual
         homography_points = None
@@ -81,9 +85,38 @@ def process_video_input(
     if not result:
         raise RuntimeError("Video pipeline did not return any tracking rows.")
     payload = result if isinstance(result, dict) else {"rows": result, "trackColors": {}}
+    validate_producer_receipt(payload)
     source_clock = _probe_source_clock(Path(video_path), adapter)
     payload["sourceClock"] = source_clock
-    payload.update(_sampling_and_cache(source_clock, adapter))
+    identities = _layered_identities(
+        payload,
+        source_clock=source_clock,
+        adapter=adapter,
+        model_path=primary_model_path or model_path,
+        hash_cache=hash_cache,
+    )
+    payload["detectionIdentity"] = identities["detectionIdentity"]
+    payload["trackingIdentity"] = identities["trackingIdentity"]
+    payload["policy"] = declared_sampling_policy(source_clock, adapter)
+    payload.setdefault(
+        "hardware",
+        {"declaredBackend": payload["policy"]["requestedBackend"], "observedDevice": None},
+    )
+    payload.setdefault("exportFpsEqualsInferenceFps", False)
+    payload.setdefault("vidStridePolicy", vid_stride_policy())
+    payload.setdefault(
+        "projectionPolicy",
+        {"playerAnchor": "ground_contact", "boxCentreIsFoot": False, "aerialBallMeasuredGroundLocation": False},
+    )
+    payload.setdefault(
+        "decodeMemoryPolicy",
+        decode_memory_policy(
+            mode="offline",
+            hardware_decode_ok=False,
+            cuda_visible=False,
+            video_engine_capability=False,
+        ),
+    )
     rows = payload.get("rows")
     if isinstance(rows, list):
         payload["rows"] = project_detected_rows(rows)
@@ -91,8 +124,7 @@ def process_video_input(
     return payload
 
 
-def _sampling_and_cache(source_clock: dict[str, object], adapter: FrameSource) -> dict[str, object]:
-    source_sha = str(source_clock.get("sourceSha256") or "")
+def declared_sampling_policy(source_clock: dict[str, object], adapter: FrameSource) -> dict[str, object]:
     nominal = source_clock.get("nominalFps")
     try:
         nominal_fps = float(nominal) if nominal not in {None, ""} else None
@@ -101,52 +133,85 @@ def _sampling_and_cache(source_clock: dict[str, object], adapter: FrameSource) -
     interval = 1
     if nominal_fps and nominal_fps > TARGET_FPS:
         interval = int(nominal_fps / TARGET_FPS)
-    audit = SamplingAudit(
-        source_sha256=source_sha,
-        declared_target_fps=float(TARGET_FPS),
-        nominal_fps=nominal_fps,
-        frame_interval=interval,
-        selected_backend=f"{getattr(adapter, 'name', 'opencv')}+ultralytics_track",
-        temporal_policy="source_global_grid",
-    )
-    rates = four_rates_receipt(audit)
-    identity = cache_identity(
-        source_sha256=source_sha or "0" * 64,
-        interval_start=0.0,
-        interval_end=0.0,
-        decoder_version=str(getattr(adapter, "name", "opencv")),
-        model_hash="unspecified",
-        temporal_policy=audit.temporal_policy,
-        output_schema="evidence_v1",
-    )
     return {
-        "sampling": audit.receipt().model_dump(mode="json"),
-        "fourRates": asdict(rates),
-        "cacheIdentity": identity,
-        "exportFpsEqualsInferenceFps": False,
-        "vidStridePolicy": vid_stride_policy(),
-        "projectionPolicy": {
-            "playerAnchor": "ground_contact",
-            "boxCentreIsFoot": False,
-            "aerialBallMeasuredGroundLocation": False,
+        "targetFps": float(TARGET_FPS),
+        "frameInterval": interval,
+        "temporalPolicy": "source_global_grid",
+        "requestedBackend": f"{getattr(adapter, 'name', 'opencv')}+ultralytics_track",
+    }
+
+
+def validate_producer_receipt(payload: dict[str, object]) -> None:
+    rates = payload.get("fourRates")
+    required = (
+        "decodeCount",
+        "detectorPrimaryCount",
+        "detectorRecoveryCount",
+        "trackerUpdateCount",
+        "exportCount",
+    )
+    if not isinstance(rates, dict) or any(type(rates.get(key)) is not int for key in required):
+        raise RuntimeError("producer fourRates receipt is missing integer invocation counts")
+
+
+def _layered_identities(
+    payload: dict[str, object],
+    *,
+    source_clock: dict[str, object],
+    adapter: FrameSource,
+    model_path: str | None,
+    hash_cache: HashCache | None,
+) -> dict[str, object]:
+    weights = Path(model_path) if model_path else None
+    weights_sha = None
+    if weights is not None and weights.is_file():
+        weights_sha = (hash_cache.identity(weights) if hash_cache else stream_sha256(weights)).sha256
+    anchors = payload.get("decodeAnchors")
+    start = anchors.get("beginning") if isinstance(anchors, dict) else None
+    end = anchors.get("end") if isinstance(anchors, dict) else None
+    interval = None
+    if isinstance(start, (int, float)) and not isinstance(start, bool):
+        interval = Interval(
+            start=float(start),
+            end=float(end) if isinstance(end, (int, float)) and not isinstance(end, bool) else None,
+        )
+    versions: list[str] = []
+    runtime_known = True
+    for package in ("ultralytics", "torch"):
+        try:
+            versions.append(f"{package}-{importlib.metadata.version(package)}")
+        except importlib.metadata.PackageNotFoundError:
+            runtime_known = False
+    decoder_build = getattr(adapter, "runtime_build", None)
+    if decoder_build is None and getattr(adapter, "name", None) == "opencv":
+        try:
+            decoder_build = f"opencv-{adapter._cv().__version__}"  # type: ignore[attr-defined]
+        except (AttributeError, ImportError):
+            runtime_known = False
+    if not isinstance(decoder_build, str) or not decoder_build:
+        runtime_known = False
+    identity = DetectionIdentity(
+        source_sha256=str(source_clock.get("sourceSha256") or "") or None,
+        stream_index=0,
+        interval=interval,
+        weights_sha256=weights_sha,
+        preprocessing_id="bgr24-source-grid-v1",
+        class_map_id="coco-football-v1",
+        precision=str(payload.get("precision") or "") or None,
+        runtime_build=(f"{decoder_build}|{'|'.join(versions)}" if runtime_known else None),
+    )
+    tracking = TrackingIdentity(detection=identity, tracker_config_id="botsort.yaml")
+    return {
+        "detectionIdentity": {
+            "digest": identity.digest(),
+            "reusable": identity.reusable,
+            "components": identity.components(),
         },
-        "decodeMemoryPolicy": decode_memory_policy(
-            mode="offline",
-            hardware_decode_ok=False,
-            cuda_visible=False,
-            video_engine_capability=False,
-        ),
-        "preprocessor": PreprocessorAdapter().transform(
-            pixels=b"",
-            width=0,
-            height=0,
-            colour_order="bgr",
-        ),
-        "detector": DetectorAdapter().detect(
-            {"colourOrder": "bgr"},
-            requested_backend="cpu",
-            video_engine_capability=False,
-        ),
+        "trackingIdentity": {
+            "digest": tracking.digest(),
+            "reusable": tracking.reusable,
+            "components": tracking.components(),
+        },
     }
 
 
@@ -189,23 +254,27 @@ def associate_projected_rows(
     cut_detected: bool = False,
     broadcast_replay: bool = False,
 ) -> list[dict]:
-    detections: list[Detection] = []
+    tracks: list[dict] = []
     for row in rows:
         box = _bbox_from_row(row)
         if box is None:
             continue
         raw_kind = str(row.get("kind") or row.get("Entity_Type") or "other").lower()
         kind = "player" if raw_kind in {"player", "person"} else ("ball" if raw_kind == "ball" else "other")
-        detections.append(
-            Detection(
-                frameId=int(row.get("Frame_ID") or 0),
-                bbox=box,
-                score=float(row.get("Conf") or 0.0),
-                kind=kind,  # type: ignore[arg-type]
-                stratum="near",
-            )
+        identity = row.get("Track_ID", row.get("trackId"))
+        tracks.append(
+            {
+                "frameId": int(row.get("Frame_ID") or 0),
+                "trackId": "unassigned" if identity is None or int(identity) < 0 else str(identity),
+                "bbox": box,
+                "kind": kind,
+                "observationSource": row.get("observationSource", "observed"),
+                "reset": bool(cut_detected or broadcast_replay),
+                "silentlyReconnected": False,
+                "productionPath": "botsort",
+            }
         )
-    return TrackerAdapter().associate(detections, cut_detected=cut_detected, broadcast_replay=broadcast_replay)
+    return tracks
 
 
 IMAGE_SPACE_SAFE_CHANGES = {"report", "calibration", "team_mapping", "track_edit", "ownership"}

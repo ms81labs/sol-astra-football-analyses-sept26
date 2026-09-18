@@ -2,16 +2,20 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
+import math
 import os
 import re
+import time
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
 
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
+from fastapi.routing import APIRoute
 from pydantic import ValidationError
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import Headers
@@ -28,7 +32,20 @@ from .export_flatteners import (
     render_csv,
 )
 from .jobs import JobDispatchError, JobRunner
+from .workbench.errors import (
+    BudgetExhausted,
+    CorrectionApplicationError,
+    DomainError,
+    IdempotencyConflict,
+    NotOwner,
+    ReconciliationRequired,
+    RetryBudgetExhausted,
+    RouteRetired,
+    StaleRevision,
+    StaleTransition,
+)
 from .llm import run_analysis
+from .provider_gateway import ProviderBudgetLedger, ProviderDenied, ProviderGateway
 from .report_export import build_match_report_export
 from .settings import ProcessingSettings, SettingsError, canonicalize_origin
 from .trust_crops import compute_trust_crops
@@ -67,6 +84,7 @@ from .workbench.access import (
     stale_permissions,
     untrusted_model_output,
     upload_quota,
+    verify_hosted_token,
 )
 from .workbench.challengers import (
     gstreamer_adapter,
@@ -165,6 +183,7 @@ from .workbench.identity import (
     promote_identity,
     reconnect_across_cut,
 )
+from .workbench.executables import resolve_trusted_executable
 from .workbench.milestones import milestone_plan, owners, progress_signal
 from .workbench.native import (
     cuda_visibility_is_not_video_capability,
@@ -182,8 +201,9 @@ from .workbench.perception import (
     Detection,
     DetectorAdapter,
     IdentityRepair,
+    IouAssociationFallback,
     Label,
-    PreprocessorAdapter,
+    PreprocessPlan,
     TrackerAdapter,
     merge_tiled_detections,
     preview_identity_change,
@@ -254,6 +274,7 @@ from .workbench.xt import xt_deferred_plan
 
 
 STORAGE_ROOT_ENV = "GUERILLA_STORAGE_ROOT"
+LOGGER = logging.getLogger(__name__)
 _IDEMPOTENCY_KEY = re.compile(r"[A-Za-z0-9._:-]{1,128}\Z")
 _DISPATCH_FAILED = "Job dispatch failed before processing started."
 _DISPATCH_UNCERTAIN = "Job dispatch outcome is uncertain; automatic retry is disabled."
@@ -358,23 +379,23 @@ def _four_rates_view() -> dict:
 
 def _unpromoted_receipt() -> dict:
     return promotion_receipt(
-        source_sha256="0" * 64,
-        weights="unpromoted",
-        configuration="evidence_v1",
-        hardware="cpu",
+        source_sha256=None,
+        weights=None,
+        configuration=None,
+        hardware=None,
         native_builds=[],
-        selected_backend="opencv+ultralytics_track",
-        frame_count=0,
-        call_count=0,
-        cold_timing_ms=0.0,
-        warm_timing_ms=0.0,
-        peak_memory_bytes=0,
-        transferred_bytes=0,
+        selected_backend=None,
+        frame_count=None,
+        call_count=None,
+        cold_timing_ms=None,
+        warm_timing_ms=None,
+        peak_memory_bytes=None,
+        transferred_bytes=None,
         output_quality="unproven",
         accepted_coverage=0.0,
         failure_cases=["labels_incomplete"],
         allocated_spend=0.0,
-        fallback_event="cpu_local",
+        fallback_event=None,
     )
 
 
@@ -505,6 +526,70 @@ class BrowserOriginMiddleware:
         await self.app(scope, receive, send)
 
 
+class HostedAuthMiddleware:
+    """Authenticate once at the ASGI boundary; downstream headers are never identity."""
+
+    def __init__(self, app: ASGIApp, *, secret: str, storage: Storage) -> None:
+        self.app = app
+        self.secret = secret
+        self.storage = storage
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        path = scope.get("path", "")
+        if scope["type"] not in {"http", "websocket"} or not path.startswith(("/api", "/ws")):
+            await self.app(scope, receive, send)
+            return
+        if scope["type"] == "http" and scope.get("method") == "OPTIONS":
+            await self.app(scope, receive, send)
+            return
+        authorization = Headers(scope=scope).get("authorization", "")
+        token = authorization[7:] if authorization.startswith("Bearer ") else ""
+        tenant = verify_hosted_token(self.secret, token)
+        if tenant is None:
+            if scope["type"] == "websocket":
+                await WebSocket(scope, receive, send).close(code=1008)
+            else:
+                await JSONResponse({"detail": "Authentication required"}, status_code=401)(scope, receive, send)
+            return
+        scope.setdefault("state", {})["tenant"] = tenant
+
+        internal_or_unscoped = (
+            "/api/workbench",
+            "/api/bundles",
+            "/api/aggregate",
+            "/api/search",
+            "/api/library",
+            "/api/dossier",
+            "/api/capabilities",
+            "/api/flags",
+        )
+        if path.startswith(internal_or_unscoped):
+            if scope["type"] == "websocket":
+                await WebSocket(scope, receive, send).close(code=1008)
+            else:
+                await JSONResponse({"detail": "Route is not available at the hosted boundary"}, status_code=403)(scope, receive, send)
+            return
+
+        match = None
+        parts = path.strip("/").split("/")
+        try:
+            if len(parts) >= 3 and parts[:2] == ["api", "matches"]:
+                match = self.storage.get_match(parts[2])
+            elif len(parts) >= 3 and parts[:2] == ["api", "jobs"]:
+                match = self.storage.get_match(self.storage.get_job(parts[2]).matchId)
+            elif len(parts) >= 3 and parts[:2] == ["ws", "jobs"]:
+                match = self.storage.get_match(self.storage.get_job(parts[2]).matchId)
+        except KeyError:
+            pass
+        if match is not None and match.config.rights.audience != tenant:
+            if scope["type"] == "websocket":
+                await WebSocket(scope, receive, send).close(code=1008)
+            else:
+                await JSONResponse({"detail": "Object access denied"}, status_code=403)(scope, receive, send)
+            return
+        await self.app(scope, receive, send)
+
+
 def _default_storage_root() -> Path:
     data_home = os.environ.get("XDG_DATA_HOME")
     base = Path(data_home).expanduser() if data_home else Path.home() / ".local" / "share"
@@ -518,6 +603,37 @@ def _resolve_storage_root(storage_root: Path | str | None) -> Path:
     if configured_root and configured_root.strip():
         return Path(configured_root).expanduser()
     return _default_storage_root()
+
+
+def _retire_default_frontend_routes(app: FastAPI) -> None:
+    """Keep unsupported compatibility paths explicit without running dev handlers."""
+
+    existing = {
+        (route.path, method)
+        for route in app.routes
+        if isinstance(route, APIRoute) and not route.path.startswith("/api/workbench/dev/")
+        for method in route.methods
+    }
+    for route in list(app.routes):
+        if not isinstance(route, APIRoute) or not route.path.startswith("/api/workbench/dev/"):
+            continue
+        path = "/api/" + route.path.removeprefix("/api/workbench/dev/")
+        methods = {method for method in route.methods if (path, method) not in existing}
+        if not methods:
+            continue
+        def retired_endpoint(replacement: str):
+            async def retired() -> None:
+                raise RouteRetired(replacement)
+
+            return retired
+
+        app.add_api_route(
+            path,
+            retired_endpoint(route.path),
+            methods=methods,
+            name=f"retired_{route.name}",
+            include_in_schema=False,
+        )
 
 
 def build_match_bundle(storage: Storage, match_id: str) -> dict[str, object]:
@@ -635,13 +751,15 @@ def _dashboard_metric_measured(summary: dict, metric: str) -> bool:
 
 
 def _dashboard_average(summaries: list[dict], *, field: str, metric: str, digits: int = 1) -> float | None:
-    values = [
-        float(value)
-        for summary in summaries
-        if _dashboard_metric_measured(summary, metric)
-        for value in [summary.get(field)]
-        if value is not None
-    ]
+    values: list[float] = []
+    for summary in summaries:
+        record = next(
+            (item for item in summary.get("metricAvailability") or [] if item.get("metric") == metric),
+            None,
+        )
+        value = summary.get(field) if record is None else record.get("value")
+        if value is not None and (record is None or record.get("availability") in {"available", "experimental"}):
+            values.append(float(value))
     if not values:
         return None
     return round(sum(values) / len(values), digits)
@@ -661,18 +779,71 @@ def create_app(
     settings: ProcessingSettings | None = None,
 ) -> FastAPI:
     settings = settings or ProcessingSettings.from_env()
+    settings.validate_deployment()
     storage = Storage(_resolve_storage_root(storage_root))
     runner = JobRunner(storage.storage_root, run_jobs_inline=run_jobs_inline, settings=settings, ledger=storage.job_ledger)
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
+        reclaimed = runner.ledger.reclaim_expired(now=time.time())
+        if reclaimed:
+            LOGGER.warning("reclaimed %d expired job lease(s)", len(reclaimed))
         yield
         storage.close()
 
     app = FastAPI(title="Guerilla Analytics API", version="0.1.0", lifespan=lifespan)
     app.state.storage = storage
     app.state.runner = runner
-    app.include_router(create_workbench_router(storage.storage_root, ledger=storage.job_ledger))
+    provider_gateway = ProviderGateway(
+        storage,
+        settings,
+        adapter_factory=lambda: run_analysis,
+        budget_ledger=ProviderBudgetLedger(
+            storage.storage_root / "provider-budget.sqlite3",
+            settings.provider_budget_limit,
+        ),
+    )
+    app.state.provider_gateway = provider_gateway
+
+    @app.exception_handler(DomainError)
+    async def domain_error(_request: Request, exc: DomainError) -> JSONResponse:
+        if isinstance(exc, IdempotencyConflict):
+            return JSONResponse(
+                status_code=409,
+                content={"error": "IDEMPOTENCY_CONFLICT", "requestId": exc.request_id},
+            )
+        if isinstance(exc, StaleRevision):
+            return JSONResponse(
+                status_code=409,
+                content={"error": "STALE_REVISION", "expected": exc.expected, "actual": exc.actual},
+            )
+        if isinstance(exc, RouteRetired):
+            return JSONResponse(
+                status_code=410,
+                content={"error": "ROUTE_RETIRED", "replacement": exc.replacement},
+            )
+        if isinstance(
+            exc,
+            (BudgetExhausted, NotOwner, ReconciliationRequired, RetryBudgetExhausted, StaleTransition),
+        ):
+            error_code = {
+                BudgetExhausted: "BUDGET_EXHAUSTED",
+                NotOwner: "NOT_OWNER",
+                ReconciliationRequired: "RECONCILIATION_REQUIRED",
+                RetryBudgetExhausted: "RETRY_BUDGET_EXHAUSTED",
+                StaleTransition: "STALE_TRANSITION",
+            }[type(exc)]
+            content: dict[str, object] = {"error": error_code}
+            if isinstance(exc, StaleTransition):
+                content.update(expected=exc.expected, actual=exc.actual)
+            return JSONResponse(status_code=409, content=content)
+        if isinstance(exc, CorrectionApplicationError):
+            return JSONResponse(
+                status_code=500,
+                content={"error": "CORRECTION_APPLICATION_FAILED", "commandId": exc.command_id},
+            )
+        return JSONResponse(status_code=400, content={"error": "DOMAIN_ERROR"})
+    app.include_router(create_workbench_router(storage))
     from .workbench.leftover_http import LeftoverHttpGate
     from .workbench.leftover_get_routes import attach_leftover_get_routes
     from .workbench.leftover_routes import attach_leftover_post_routes
@@ -689,15 +860,26 @@ def create_app(
     )
     app.add_middleware(BrowserOriginMiddleware, trusted_origins=settings.trusted_frontend_origins)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1"], www_redirect=False)
+    if settings.deployment_mode == "hosted":
+        app.add_middleware(HostedAuthMiddleware, secret=settings.auth_secret or "", storage=storage)
 
     @app.post("/api/matches", status_code=202)
     async def create_match(
+        request: Request,
         name: str = Form(...),
         inputMode: str = Form(...),
         config: str = Form("{}"),
+        budget: float = Form(0.0),
         file: UploadFile = File(...),
         idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     ) -> dict:
+        if not math.isfinite(budget) or budget < 0:
+            raise HTTPException(status_code=422, detail="budget must be finite and non-negative")
+        if runner.settings.processing_backend == "daytona" and budget <= 0:
+            raise HTTPException(
+                status_code=422,
+                detail="Daytona processing requires a positive authorised budget",
+            )
         if idempotency_key is not None and _IDEMPOTENCY_KEY.fullmatch(idempotency_key) is None:
             raise HTTPException(status_code=400, detail="Invalid Idempotency-Key")
         admission_token = idempotency_key or uuid.uuid4().hex
@@ -722,6 +904,10 @@ def create_app(
             config_model = MatchConfig.model_validate_json(config)
         except Exception as exc:  # pragma: no cover - FastAPI validation path
             raise HTTPException(status_code=400, detail=f"Invalid config payload: {exc}") from exc
+        if settings.deployment_mode == "hosted":
+            config_model = config_model.model_copy(
+                update={"rights": config_model.rights.model_copy(update={"audience": request.state.tenant})}
+            )
 
         if (
             inputMode == "video"
@@ -772,8 +958,13 @@ def create_app(
             return response(job, outcome="reused", reused=True)
 
         try:
-            runner.admit(job.id, match_id=match.id, source_sha256=storage.source_sha256(match.id), budget=0.0)
-        except ValueError:
+            runner.admit(
+                job.id,
+                match_id=match.id,
+                source_sha256=storage.source_sha256(match.id),
+                budget=budget,
+            )
+        except IdempotencyConflict:
             pass
 
         dispatch_outcome = "started"
@@ -961,6 +1152,34 @@ def create_app(
         runner.ledger.request_cancel(job_id)
         return attach_durable_job_view(job.model_dump(mode="json"), runner.ledger)
 
+    @app.post("/api/jobs/{job_id}/retry")
+    def retry_job(
+        job_id: str,
+        authorization: str | None = Header(default=None),
+        x_object_scope: str | None = Header(default=None),
+        x_deployment_boundary: str | None = Header(default=None),
+        x_tenant_id: str | None = Header(default=None),
+    ) -> dict:
+        try:
+            job = storage.get_job(job_id)
+            match = storage.get_match(job.matchId)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Job not found") from exc
+        decision = object_access_decision(
+            object_id=match.id,
+            object_tenant=match.config.rights.audience,
+            authorization=authorization,
+            object_scope=x_object_scope,
+            deployment_boundary=x_deployment_boundary,
+            client_tenant=x_tenant_id,
+        )
+        if not decision["allowed"]:
+            raise HTTPException(status_code=403, detail=decision)
+        runner.retry(job_id)
+        job = storage.reset_job_for_retry(job_id)
+        runner.start(job_id)
+        return attach_durable_job_view(job.model_dump(mode="json"), runner.ledger)
+
     @app.post("/api/jobs/{job_id}/timeout")
     def timeout_job(
         job_id: str,
@@ -985,7 +1204,7 @@ def create_app(
         if not decision["allowed"]:
             raise HTTPException(status_code=403, detail=decision)
         try:
-            runner.ledger.timeout_before_response(job_id)
+            runner.ledger.timeout_before_response(job_id, owner_id=f"job:{job_id}")
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Job not found") from exc
         return attach_durable_job_view(job.model_dump(mode="json"), runner.ledger)
@@ -1014,7 +1233,7 @@ def create_app(
         if not decision["allowed"]:
             raise HTTPException(status_code=403, detail=decision)
         try:
-            runner.ledger.lost_connection(job_id)
+            runner.ledger.lost_connection(job_id, owner_id=f"job:{job_id}")
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Job not found") from exc
         return attach_durable_job_view(job.model_dump(mode="json"), runner.ledger)
@@ -1150,8 +1369,11 @@ def create_app(
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.get("/api/matches")
-    def list_matches() -> list[dict]:
-        return [match.model_dump(mode="json") for match in storage.list_matches()]
+    def list_matches(request: Request) -> list[dict]:
+        matches = storage.list_matches()
+        if settings.deployment_mode == "hosted":
+            matches = [match for match in matches if match.config.rights.audience == request.state.tenant]
+        return [match.model_dump(mode="json") for match in matches]
 
     @app.get("/api/matches/{match_id}")
     def get_match(match: MatchRecord = Depends(require_match)) -> dict:
@@ -1161,9 +1383,29 @@ def create_app(
     def post_match_job(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
         body = payload or {}
         request_id = str(body.get("requestId") or uuid.uuid4().hex)
-        budget = float(body.get("budget") or 0.0)
         try:
-            job, created = storage.ensure_job(match.id, request_id, created_status="queued", budget=budget)
+            budget = float(body.get("budget") or 0.0)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail="budget must be numeric") from exc
+        if not math.isfinite(budget) or budget < 0:
+            raise HTTPException(status_code=422, detail="budget must be finite and non-negative")
+        if runner.settings.processing_backend == "daytona" and budget <= 0:
+            raise HTTPException(
+                status_code=422,
+                detail="Daytona processing requires a positive authorised budget",
+            )
+        try:
+            job, created = storage.ensure_job(
+                match.id,
+                request_id,
+                created_status="queued",
+                budget=budget,
+                authorised_location=(
+                    "daytona"
+                    if runner.settings.processing_backend == "daytona"
+                    else "local"
+                ),
+            )
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         try:
@@ -1400,6 +1642,11 @@ def create_app(
         body = payload or {}
         return storage.recompute_for_match(match.id, str(body.get("change") or "report"))
 
+    @app.post("/api/matches/{match_id}/recompute/execute")
+    def post_match_recompute_execute(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+        body = payload or {}
+        return storage.execute_recompute(match.id, str(body.get("change") or "report")).model_dump(mode="json")
+
     @app.get("/api/matches/{match_id}/promotion")
     def get_match_promotion(match: MatchRecord = Depends(require_match)) -> dict:
         return storage.promotion_receipt_for_match(match.id)
@@ -1571,43 +1818,21 @@ def create_app(
     @app.post("/api/matches/{match_id}/analysis/{analysis_type}")
     def analyze_match(analysis_type: str, match: MatchRecord = Depends(require_match), body: dict | None = None) -> dict:
         match_id = match.id
-        with storage.config_update_lock:
-            try:
-                snapshot = storage.get_match(match_id)
-                frames = storage.load_frames(match_id)
-            except (KeyError, FileNotFoundError) as exc:
-                raise HTTPException(status_code=404, detail="Frames not ready") from exc
-
-            body = body or {}
-            provider = body.get("provider") or snapshot.config.llmProvider
-            current_frame_index = body.get("currentFrameIndex")
-            summary = None
-            formation_timeline = None
-            events = None
-            shots = None
-            if analysis_type in {"tactical_report", "drills"}:
-                try:
-                    summary, _, formation_timeline, shots = storage.load_analytics(match_id)
-                except FileNotFoundError:
-                    summary = None
-                    formation_timeline = None
-                    shots = None
-                try:
-                    events = storage.load_events(match_id)
-                except FileNotFoundError:
-                    events = None
+        body = body or {}
+        if analysis_type in {"offside", "spacing"}:
+            return storage.incident_geometry_for_match(match_id)
+        snapshot = storage.get_match(match_id)
         try:
-            result = run_analysis(
+            result = provider_gateway.execute(
+                match_id,
                 analysis_type,
-                frames,
-                provider=provider,
-                attack_direction=snapshot.config.attackDirection,
-                current_frame_index=current_frame_index,
-                summary=summary,
-                events=events,
-                formation_timeline=formation_timeline,
-                shots=shots,
+                requested_provider=body.get("provider"),
+                body=body,
             )
+        except ProviderDenied as exc:
+            raise HTTPException(status_code=403, detail={"reasonCodes": exc.reason_codes}) from exc
+        except (KeyError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=404, detail="Frames not ready") from exc
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -1621,10 +1846,25 @@ def create_app(
     @app.get("/api/matches/{match_id}/report/html")
     def get_match_report_html(match: MatchRecord = Depends(require_match)) -> HTMLResponse:
         try:
-            summary, _, formation_timeline, shots = storage.load_analytics(match.id)
-            events = storage.load_events(match.id)
-        except FileNotFoundError as exc:
-            raise HTTPException(status_code=404, detail="Analytics not ready") from exc
+            with storage.generation_snapshot(match.id) as generation:
+                try:
+                    summary, _, formation_timeline, shots = storage.load_analytics(
+                        match.id, generation_id=generation.generationId
+                    )
+                    generation_id = generation.generationId
+                except FileNotFoundError:
+                    summary, _, formation_timeline, shots = storage.load_analytics(match.id)
+                    generation_id = None
+        except FileNotFoundError:
+            try:
+                summary, _, formation_timeline, shots = storage.load_analytics(match.id)
+                generation_id = None
+            except FileNotFoundError as exc:
+                raise HTTPException(status_code=404, detail="Analytics not ready") from exc
+        try:
+            events = storage.load_events(match.id, generation_id=generation_id)
+        except FileNotFoundError:
+            events = []  # Historical analytics generations predate the accepted-events artifact.
 
         try:
             tactical_report = storage.load_analysis_artifact(match.id, "tactical_report")
@@ -1718,7 +1958,12 @@ def create_app(
                 if payload != last_payload:
                     await websocket.send_json(payload)
                     last_payload = payload
-                if payload["status"] in {"completed", "complete", "failed"} or payload.get("ledgerStatus") in {"complete", "failed"}:
+                ledger_status = payload.get("ledgerStatus")
+                if (
+                    ledger_status in {"complete", "failed", "cancelled"}
+                    or ledger_status is None
+                    and payload["status"] in {"completed", "complete", "failed", "cancelled"}
+                ):
                     await websocket.close()
                     return
                 try:
@@ -1873,8 +2118,8 @@ def create_app(
         summaries = [m["summary"] for m in all_matches]
         measured_possession = [s["possession"] for s in summaries if s.get("possession") is not None]
         avg_pos = sum(measured_possession) / len(measured_possession) if measured_possession else None
-        avg_my_xg = _dashboard_average(summaries, field="myTeamXg", metric="experimental_shot_quality", digits=2)
-        avg_enemy_xg = _dashboard_average(summaries, field="enemyXg", metric="experimental_shot_quality", digits=2)
+        avg_my_xg = _dashboard_average(summaries, field="myTeamXg", metric="my_team_experimental_shot_quality_sum", digits=2)
+        avg_enemy_xg = _dashboard_average(summaries, field="enemyXg", metric="enemy_experimental_shot_quality_sum", digits=2)
         avg_xg_diff = None if avg_my_xg is None or avg_enemy_xg is None else round(avg_my_xg - avg_enemy_xg, 2)
         avg_my_sprints = _dashboard_average(summaries, field="myTeamSprints", metric="my_team_sprints")
         avg_enemy_sprints = _dashboard_average(summaries, field="enemySprints", metric="enemy_sprints")
@@ -2085,6 +2330,8 @@ def create_app(
             ]
         }
 
+    if settings.deployment_mode == "local":
+        _retire_default_frontend_routes(app)
     return app
 
 

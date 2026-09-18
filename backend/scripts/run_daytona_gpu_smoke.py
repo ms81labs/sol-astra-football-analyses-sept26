@@ -126,7 +126,10 @@ def validate_worker_environment(repo_root: Path) -> DaytonaPolicy:
     if request.to_mapping() != _FIXTURE or fixture != canonical_json_bytes(_FIXTURE):
         raise SmokeError("smoke fixture is not the exact canonical bounded fixture")
     try:
-        runtime = [line for line in (repo_root / "backend/requirements-runtime.txt").read_text(encoding="utf-8").splitlines() if line.startswith("daytona==")]
+        runtime_path = repo_root / "backend/requirements/api.in"
+        if not runtime_path.exists():
+            runtime_path = repo_root / "backend/requirements-runtime.txt"
+        runtime = [line for line in runtime_path.read_text(encoding="utf-8").splitlines() if line.startswith("daytona==")]
     except OSError:
         raise SmokeError("Daytona SDK policy mismatch") from None
     if runtime != [f"daytona=={policy.sdk_version}"]:

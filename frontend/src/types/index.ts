@@ -122,6 +122,9 @@ export interface MatchStats {
         evidenceIds?: string[];
         reviewStatus?: string;
         denominator?: string | null;
+        teamScope?: 'my_team' | 'enemy' | null;
+        deprecated?: boolean;
+        pitchDimensions?: { lengthM: number; widthM: number } | null;
     }>;
 }
 
@@ -248,6 +251,7 @@ export interface AnalyticsPayload {
 }
 
 export interface BackendEvent {
+    eventId?: string | null;
     type: string;
     frameId: number;
     timestamp: number;

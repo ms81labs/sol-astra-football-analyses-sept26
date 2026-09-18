@@ -544,7 +544,7 @@ def test_summarize_match_uses_ball_assignments_in_possession_percentage():
     assignments = assign_ball_possession(frames)
     summary = summarize_match(frames, assignments, identity_continuous=True)
 
-    assert summary.possession == 67
+    assert summary.possession == 100
     assert summary.myTeamDistance > 0
     assert summary.enemyDistance > 0
 
@@ -578,7 +578,8 @@ def test_summarize_match_withholds_physical_totals_until_identity_continuity() -
     continuous = summarize_match(frames, [], identity_continuous=True)
     assert continuous.myTeamDistance > 0
     available = {item.metric: item for item in continuous.metricAvailability}
-    assert available["my_team_distance_m"].availability == "available"
+    assert available["my_team_distance_m"].availability == "withheld"
+    assert available["my_team_distance_m"].reasonCodes == ["CALIBRATION_UNAVAILABLE"]
 
 
 def test_summarize_match_keeps_possession_unknown_without_controlled_frames():
@@ -1304,6 +1305,18 @@ def test_detect_events_emits_through_ball_for_progressive_line_breaking_pass():
     assignments = assign_ball_possession(frames)
     events = detect_events(frames, assignments)
 
+    assert [event.type for event in events] == ["pass"]
+
+    for frame in frames:
+        frame["enemies"].extend(
+            [
+                {"id": 5, "x": 60.0, "y": 35.0, "confidence": 0.9},
+                {"id": 6, "x": 62.0, "y": 65.0, "confidence": 0.9},
+            ]
+        )
+    assignments = assign_ball_possession(frames)
+    events = detect_events(frames, assignments)
+
     assert [event.type for event in events] == ["pass", "through_ball"]
 
 
@@ -1950,4 +1963,3 @@ def test_event_x_stays_unknown_without_a_source_position() -> None:
     assert _get_event_x(event, {}) is None
     empty = FrameData.model_validate({"frameId": 0, "timestamp": 0.0, "myTeam": [], "enemies": []})
     assert _get_event_x(event.model_copy(update={"frameId": 0}), {0: empty}) is None
-

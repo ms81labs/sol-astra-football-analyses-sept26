@@ -48,12 +48,19 @@ _REMOTE_RESULT_FILENAMES = (
     "tactical_report.json",
     "drills.json",
     "frames.json",
+    "current_generation.json",
     "input_video_identity.json",
     "ownership_publication.json",
     "raw_rows.json",
     "recovery_debug.json",
     "recovery_profile_matrix.json",
 )
+
+
+class JobCancellationRequested(RuntimeError):
+    pass
+
+
 _COPY_CHUNK_BYTES = 64 * 1024
 _UPLOAD_CHUNK_BYTES = 1024 * 1024
 
@@ -261,6 +268,9 @@ class Storage:
     def __init__(self, storage_root: Path):
         self.storage_root = Path(storage_root)
         self.storage_root.mkdir(parents=True, exist_ok=True)
+        from .workbench.hashing import HashCache
+
+        self.hash_cache = HashCache(self.storage_root)
         self.db_path = self.storage_root / "guerilla.sqlite3"
         # ponytail: per-instance only; use a cross-process lock if multiple Storage instances mutate these files.
         self._annotation_issue_lock = threading.Lock()
@@ -268,10 +278,33 @@ class Storage:
         self._review_bundle_lock = threading.Lock()
         # ponytail: per-instance config serialization; use per-match cross-process locks for multiple API workers.
         self.config_update_lock = threading.Lock()
+        self._remote_cost_unsettled = False
         self._initialize()
         from .workbench.jobs import DurableJobLedger
 
         self.job_ledger = DurableJobLedger(db_path=self.db_path)
+        self._recover_pending_reviews()
+
+    def _recover_pending_reviews(self) -> None:
+        matches = self.storage_root / "matches"
+        if not matches.exists():
+            return
+        directories = [
+            directory
+            for directory in matches.iterdir()
+            if directory.is_dir() and (directory / "corrections.json").is_file()
+            and any(
+                item.get("applyState") in {"committed", "applying"}
+                for item in (self._read_json(directory / "corrections.json").get("items") or [])
+            )
+        ]
+        if not directories:
+            return
+        from .review_service import ReviewService
+
+        service = ReviewService(self)
+        for directory in directories:
+            service.apply_pending(directory.name)
 
     def close(self) -> None:
         try:
@@ -457,6 +490,15 @@ class Storage:
             for descriptor, _identity in snapshots.values():
                 os.close(descriptor)
 
+    @contextmanager
+    def remote_cost_unsettled(self) -> Iterator[None]:
+        previous = self._remote_cost_unsettled
+        self._remote_cost_unsettled = True
+        try:
+            yield
+        finally:
+            self._remote_cost_unsettled = previous
+
     def save_upload(self, filename: str, payload: bytes) -> Path:
         return self.save_upload_stream(filename, BytesIO(payload))
 
@@ -553,6 +595,7 @@ class Storage:
         created_status: str = "queued",
         budget: float = 0.0,
         namespace: str = "production",
+        authorised_location: str = "local",
     ) -> tuple[JobRecord, bool]:
         self.get_match(match_id)
         try:
@@ -573,7 +616,13 @@ class Storage:
                 """,
                 (job_id, match_id, created_status, 0.0, "Queued", None, log_path, now, now),
             )
-        self._admit_durable_job(match_id, job_id, budget=budget, namespace=namespace)
+        self._admit_durable_job(
+            match_id,
+            job_id,
+            budget=budget,
+            namespace=namespace,
+            authorised_location=authorised_location,
+        )
         return self.get_job(job_id), True
 
     def _admit_durable_job(
@@ -583,16 +632,17 @@ class Storage:
         *,
         budget: float = 0.0,
         namespace: str = "production",
+        authorised_location: str = "local",
     ) -> None:
         from .workbench.jobs import JobRequest
 
-        if job_id in self.job_ledger.requests:
+        if self.job_ledger.has_request(job_id):
             return
         try:
             sha = self.source_sha256(match_id)
         except Exception:
             sha = "0" * 64
-        self.job_ledger.submit(
+        self.job_ledger.admit(
             JobRequest(
                 requestId=job_id,
                 matchId=match_id,
@@ -604,9 +654,12 @@ class Storage:
                 modelHash="unspecified",
                 outputSchema="evidence_v1",
                 budget=float(budget),
-                authorisedLocation="local",
+                authorisedLocation=authorised_location,  # type: ignore[arg-type]
                 namespace=namespace,  # type: ignore[arg-type]
-            )
+            ),
+            mode="submit",
+            owner_id=f"job:{job_id}",
+            lease_seconds=60.0,
         )
 
     def source_sha256(self, match_id: str) -> str:
@@ -827,8 +880,18 @@ class Storage:
         message: str | None = None,
         error: str | None = None,
         remote_run_id: str | None = None,
+        actual_cost: float | None = 0.0,
+        ledger_outcome_unknown: bool = False,
     ) -> JobRecord:
         now = _utcnow().isoformat()
+        ledger = getattr(self, "job_ledger", None)
+        if (
+            ledger is not None
+            and ledger.has_request(job_id)
+            and ledger.cancel_requested(job_id)
+            and status != "cancelled"
+        ):
+            raise JobCancellationRequested(job_id)
         with self._connect() as connection:
             row = connection.execute(
                 "SELECT started_at, completed_at, runpod_run_id FROM jobs WHERE id = ?",
@@ -842,11 +905,51 @@ class Storage:
             persisted_remote_run_id = remote_run_id if remote_run_id is not None else row["runpod_run_id"]
             if status == "processing" and started_at is None:
                 started_at = now
-            if status in {"completed", "failed"}:
+            if status in {"completed", "failed", "cancelled"}:
                 if started_at is None:
                     started_at = now
                 completed_at = now
 
+        mapped = {
+            "completed": "complete",
+            "complete": "complete",
+            "failed": "failed",
+            "cancelled": "cancelled",
+        }.get(status)
+        if ledger is not None and ledger.has_request(job_id):
+            attempt = ledger.latest_attempt(job_id)
+            if status == "processing":
+                if attempt.status == "submitted":
+                    ledger.transition(
+                        attempt.attemptId,
+                        expected_revision=attempt.revision,
+                        owner_id=f"job:{job_id}",
+                        status="running",
+                    )
+                else:
+                    ledger.heartbeat(
+                        attempt.attemptId,
+                        owner_id=f"job:{job_id}",
+                        lease_seconds=60.0,
+                    )
+            elif ledger_outcome_unknown or (self._remote_cost_unsettled and mapped is not None):
+                ledger.transition(
+                    attempt.attemptId,
+                    expected_revision=attempt.revision,
+                    owner_id=f"job:{job_id}",
+                    status="outcome_unknown",
+                    cleanupResult="unknown",
+                    error="provider_cost_unsettled",
+                )
+            elif mapped:
+                ledger.transition(
+                    attempt.attemptId,
+                    expected_revision=attempt.revision,
+                    owner_id=f"job:{job_id}",
+                    status=mapped,
+                    actualCost=actual_cost,
+                )
+        with self._connect() as connection:
             connection.execute(
                 """
                 UPDATE jobs
@@ -855,15 +958,23 @@ class Storage:
                 """,
                 (status, progress, message, error, persisted_remote_run_id, started_at, completed_at, now, job_id),
             )
-        record = self.get_job(job_id)
-        ledger = getattr(self, "job_ledger", None)
-        mapped = {"completed": "complete", "complete": "complete", "failed": "failed"}.get(status)
-        if ledger is not None and mapped and job_id in getattr(ledger, "requests", {}):
-            try:
-                ledger.transition(job_id, mapped)
-            except Exception:
-                pass
-        return record
+        return self.get_job(job_id)
+
+    def reset_job_for_retry(self, job_id: str) -> JobRecord:
+        now = _utcnow().isoformat()
+        with self._connect() as connection:
+            updated = connection.execute(
+                """
+                UPDATE jobs
+                SET status='queued', progress=0, message='Queued', error=NULL,
+                    started_at=NULL, completed_at=NULL, updated_at=?
+                WHERE id=?
+                """,
+                (now, job_id),
+            )
+        if updated.rowcount != 1:
+            raise KeyError(job_id)
+        return self.get_job(job_id)
 
     def update_match_status(
         self,
@@ -960,7 +1071,13 @@ class Storage:
         return [self.get_match(row["id"]) for row in rows]
 
     def save_frames(self, match_id: str, frames: Iterable[FrameData]) -> None:
-        self._write_json_array(self._match_dir(match_id) / "frames.json", (frame.model_dump(mode="json") for frame in frames))
+        if (self._match_dir(match_id) / "current_generation.json").exists():
+            self._publish_replacement(match_id, frames=list(frames))
+            return
+        self._write_json_array(
+            self._match_dir(match_id) / "frames.json",
+            (frame.model_dump(mode="json") for frame in frames),
+        )
 
     def save_raw_rows(self, match_id: str, rows: Iterable[dict]) -> None:
         self._write_json_array(self._match_dir(match_id) / "raw_rows.json", rows)
@@ -989,6 +1106,15 @@ class Storage:
         summary = self._video_ball_signal_summary(match_id, summary)
         if not any(assignment.team in {"my_team", "enemy"} for assignment in assignments):
             summary = summary.model_copy(update={"possession": None})
+        if (self._match_dir(match_id) / "current_generation.json").exists():
+            self._publish_replacement(
+                match_id,
+                summary=summary,
+                assignments=assignments,
+                formation_timeline=formation_timeline,
+                shots=shots,
+            )
+            return
         self._write_json(
             self._match_dir(match_id) / "analytics.json",
             {
@@ -1005,15 +1131,395 @@ class Storage:
             )
 
     def save_events(self, match_id: str, events: list[DetectedEvent]) -> None:
+        if (self._match_dir(match_id) / "current_generation.json").exists():
+            self._publish_replacement(match_id, events=events)
+            return
         self._write_json(self._match_dir(match_id) / "events.json", [event.model_dump(mode="json") for event in events])
+
+    def _publish_replacement(
+        self,
+        match_id: str,
+        *,
+        frames: list[FrameData] | None = None,
+        summary: MatchSummary | None = None,
+        assignments: list[BallOwnership] | None = None,
+        formation_timeline: list[FormationSegment] | None = None,
+        shots: list[ShotAnalytics] | None = None,
+        events: list[DetectedEvent] | None = None,
+    ) -> None:
+        with self._generation_lock(match_id):
+            ref = self._current_generation_unlocked(match_id)
+            root = self._match_dir(match_id) / "generations" / ref.generationId
+            analytics = self._read_json(root / "analytics.json")
+            self._publish_generation_unlocked(
+                match_id,
+                frames=frames if frames is not None else [FrameData.model_validate(item) for item in self._read_json(root / "frames.json")],
+                summary=summary if summary is not None else MatchSummary.model_validate(analytics["summary"]),
+                assignments=assignments if assignments is not None else [
+                    BallOwnership.model_validate(item) for item in analytics.get("ballAssignments") or []
+                ],
+                formation_timeline=formation_timeline if formation_timeline is not None else [
+                    FormationSegment.model_validate(item) for item in analytics.get("formationTimeline") or []
+                ],
+                shots=shots if shots is not None else [ShotAnalytics.model_validate(item) for item in analytics.get("shots") or []],
+                events=events if events is not None else [DetectedEvent.model_validate(item) for item in self._read_json(root / "events.json")],
+                correction_head=ref.correctionHead,
+            )
+
+    @contextmanager
+    def _generation_lock(self, match_id: str) -> Iterator[None]:
+        path = self._match_dir(match_id) / ".generation.lock"
+        with path.open("a+b") as handle:
+            try:
+                import fcntl
+            except ImportError:
+                with self._annotation_issue_lock:
+                    yield
+                return
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+    def current_generation(self, match_id: str):
+        with self._generation_lock(match_id):
+            return self._current_generation_unlocked(match_id)
+
+    @contextmanager
+    def generation_snapshot(self, match_id: str):
+        with self._generation_lock(match_id):
+            yield self._current_generation_unlocked(match_id)
+
+    def _current_generation_unlocked(self, match_id: str):
+        from .workbench.contracts import GenerationManifest, GenerationRef
+
+        match_dir = self._match_dir(match_id)
+        generations = match_dir / "generations"
+        generations.mkdir(parents=True, exist_ok=True)
+        pointer_path = match_dir / "current_generation.json"
+        pointer = self._read_json(pointer_path) if pointer_path.exists() else None
+        complete = self._complete_generations(match_id)
+        requested = str((pointer or {}).get("generationId") or "")
+        recovery_required = bool(requested and requested not in complete)
+
+        if requested in complete:
+            manifest = complete[requested]
+        elif complete:
+            manifest = max(complete.values(), key=lambda item: item.publishedAt)
+        else:
+            manifest = self._import_legacy_generation(match_id)
+
+        ref = GenerationRef(
+            generationId=manifest.generationId,
+            publishedAt=manifest.publishedAt,
+            correctionHead=manifest.correctionHead,
+            calibrationRevision=manifest.calibrationRevision,
+            recoveryRequired=recovery_required,
+            migrated=manifest.generationId.startswith("gen_legacy_"),
+        )
+        self._write_json(
+            pointer_path,
+            {
+                "generationId": ref.generationId,
+                "publishedAt": ref.publishedAt,
+                "correctionHead": ref.correctionHead,
+                "calibrationRevision": ref.calibrationRevision,
+            },
+        )
+        protected = {ref.generationId}
+        if (match_dir / "corrections.json").is_file():
+            protected.update(
+                item.appliedGeneration
+                for item in self._load_correction_log(match_id).history(match_id)
+                if item.applyState == "applying" and item.appliedGeneration
+            )
+        for child in generations.iterdir():
+            if child.is_dir() and child.name.startswith("gen_") and child.name not in protected:
+                shutil.rmtree(child)
+        return ref
+
+    def _complete_generations(self, match_id: str) -> dict[str, object]:
+        from .workbench.contracts import GenerationManifest
+
+        root = self._match_dir(match_id) / "generations"
+        complete: dict[str, GenerationManifest] = {}
+        if not root.exists():
+            return complete
+        for directory in root.iterdir():
+            manifest_path = directory / "manifest.json"
+            if not directory.is_dir() or not directory.name.startswith("gen_") or not manifest_path.is_file():
+                continue
+            try:
+                manifest = GenerationManifest.model_validate(self._read_json(manifest_path))
+            except (OSError, ValueError, ValidationError):
+                continue
+            if manifest.generationId != directory.name:
+                continue
+            if all(
+                (directory / name).is_file() and self._sha256_file(directory / name) == digest
+                for name, digest in manifest.files.items()
+            ):
+                complete[directory.name] = manifest
+        return complete
+
+    def _import_legacy_generation(self, match_id: str):
+        from .workbench.contracts import GenerationManifest
+
+        match_dir = self._match_dir(match_id)
+        legacy_paths = {name: match_dir / name for name in ("frames.json", "events.json", "analytics.json")}
+        if not all(path.is_file() for path in legacy_paths.values()):
+            raise FileNotFoundError(f"No complete generation exists for {match_id}")
+        analytics = self._read_json(legacy_paths["analytics.json"])
+        payloads = {
+            "frames.json": self._read_json(legacy_paths["frames.json"]),
+            "events.json": self._read_json(legacy_paths["events.json"]),
+            "analytics.json": analytics,
+            "shots.json": list(analytics.get("shots") or []),
+            "summary.json": dict(analytics.get("summary") or {}),
+        }
+        digest = hashlib.sha256(
+            b"".join(json.dumps(payloads[name], sort_keys=True, separators=(",", ":")).encode() for name in sorted(payloads))
+        ).hexdigest()
+        generation_id = f"gen_legacy_{digest[:16]}"
+        generation_dir = match_dir / "generations" / generation_id
+        generation_dir.mkdir(parents=True, exist_ok=True)
+        for name, payload in payloads.items():
+            self._write_json(generation_dir / name, payload)
+        try:
+            raw_digest = self._sha256_file(match_dir / "raw_rows.json")
+        except FileNotFoundError:
+            raw_digest = self._sha256_file(generation_dir / "frames.json")
+        corrections = self.list_corrections(match_id)
+        published_at = _utcnow().isoformat().replace("+00:00", "Z")
+        identity_digests: dict[str, str | None] = {"detection": None, "tracking": None}
+        for layer in identity_digests:
+            try:
+                stored_identity = self.load_analysis_artifact(match_id, f"{layer}_identity")
+            except FileNotFoundError:
+                continue
+            digest = stored_identity.get("digest")
+            if stored_identity.get("reusable") is True and isinstance(digest, str):
+                identity_digests[layer] = digest
+        manifest = GenerationManifest(
+            generationId=generation_id,
+            matchId=match_id,
+            observationDigest=raw_digest,
+            correctionHead=str(corrections[-1]["correctionId"]) if corrections else "none",
+            algorithmVersions={"legacy_import": "1"},
+            files={name: self._sha256_file(generation_dir / name) for name in payloads},
+            publishedAt=published_at,
+        )
+        self._write_json(generation_dir / "manifest.json", manifest.model_dump(mode="json"))
+        return manifest
+
+    def publish_generation(self, match_id: str, **payload):
+        with self._generation_lock(match_id):
+            return self._publish_generation_unlocked(match_id, **payload)
+
+    def _generation_layer_identities(
+        self,
+        match_id: str,
+        *,
+        calibration_revision: str | None,
+        correction_head: str,
+    ) -> dict[str, dict]:
+        from .workbench.cache import (
+            DetectionIdentity,
+            ProjectionIdentity,
+            ReportIdentity,
+            ReviewedIdentity,
+            TrackingIdentity,
+        )
+
+        try:
+            detection_payload = self.load_analysis_artifact(match_id, "detection_identity")
+            tracking_payload = self.load_analysis_artifact(match_id, "tracking_identity")
+            tracking_components = tracking_payload["components"]
+            detection = DetectionIdentity(**tracking_components["detection"])
+            tracking = TrackingIdentity(detection, tracking_components["tracker_config_id"])
+        except (FileNotFoundError, KeyError, TypeError, ValueError):
+            return {}
+        projection = ProjectionIdentity(tracking, calibration_revision)
+        reviewed = ReviewedIdentity(projection, correction_head)
+        report = ReportIdentity(reviewed, "match-report-v1")
+        layers = {
+            "detection": detection_payload,
+            "tracking": tracking_payload,
+            "projection": {
+                "digest": projection.digest(),
+                "reusable": projection.reusable,
+                "components": projection.components(),
+            },
+            "reviewed": {
+                "digest": reviewed.digest(),
+                "reusable": reviewed.reusable,
+                "components": reviewed.components(),
+            },
+            "report": {
+                "digest": report.digest(),
+                "reusable": report.reusable,
+                "components": report.components(),
+            },
+        }
+        for name in ("projection", "reviewed", "report"):
+            self._write_json(self._match_dir(match_id) / f"{name}_identity.json", layers[name])
+        return layers
+
+    def _publish_generation_unlocked(
+        self,
+        match_id: str,
+        *,
+        frames: list[FrameData],
+        summary: MatchSummary,
+        assignments: list[BallOwnership],
+        formation_timeline: list[FormationSegment],
+        shots: list[ShotAnalytics],
+        events: list[DetectedEvent],
+        correction_head: str,
+        stale: list[str] | None = None,
+        orphaned_decisions: list[str] | None = None,
+        calibration_revision: str | None = None,
+    ):
+        from .workbench.contracts import GenerationManifest, GenerationRef
+        from .workbench.events import with_stable_event_id
+
+        summary = self._video_ball_signal_summary(match_id, summary)
+        if not any(assignment.team in {"my_team", "enemy"} for assignment in assignments):
+            summary = summary.model_copy(update={"possession": None})
+        events = [with_stable_event_id(event) for event in events]
+        generation_id = f"gen_{uuid.uuid4().hex}"
+        generation_dir = self._match_dir(match_id) / "generations" / generation_id
+        generation_dir.mkdir(parents=True, exist_ok=False)
+        analytics = {
+            "summary": summary.model_dump(mode="json"),
+            "ballAssignments": [assignment.model_dump(mode="json") for assignment in assignments],
+            "formationTimeline": [segment.model_dump(mode="json") for segment in formation_timeline],
+            "shots": [shot.model_dump(mode="json") for shot in shots],
+        }
+        payloads = {
+            "frames.json": [frame.model_dump(mode="json") for frame in frames],
+            "events.json": [event.model_dump(mode="json") for event in events],
+            "analytics.json": analytics,
+            "shots.json": analytics["shots"],
+            "summary.json": analytics["summary"],
+        }
+        for name, payload in payloads.items():
+            self._write_json(generation_dir / name, payload)
+            if name == "events.json":
+                self._review_test_fault("during_generation_write")
+        try:
+            observation_digest = self._sha256_file(self._match_dir(match_id) / "raw_rows.json")
+        except FileNotFoundError:
+            observation_digest = self._sha256_file(generation_dir / "frames.json")
+        published_at = _utcnow().isoformat().replace("+00:00", "Z")
+        layered = self._generation_layer_identities(
+            match_id,
+            calibration_revision=calibration_revision,
+            correction_head=correction_head,
+        )
+        identity_digests = {
+            layer: payload.get("digest") if payload.get("reusable") is True else None
+            for layer, payload in layered.items()
+        }
+        manifest = GenerationManifest(
+            generationId=generation_id,
+            matchId=match_id,
+            observationDigest=observation_digest,
+            detectionIdentity=identity_digests.get("detection"),
+            trackingIdentity=identity_digests.get("tracking"),
+            projectionIdentity=identity_digests.get("projection"),
+            reviewedIdentity=identity_digests.get("reviewed"),
+            reportIdentity=identity_digests.get("report"),
+            calibrationRevision=calibration_revision,
+            correctionHead=correction_head,
+            algorithmVersions={"review_materialisation": "1"},
+            files={name: self._sha256_file(generation_dir / name) for name in payloads},
+            stale=list(stale or []),
+            orphanedDecisions=list(orphaned_decisions or []),
+            publishedAt=published_at,
+        )
+        self._write_json(generation_dir / "manifest.json", manifest.model_dump(mode="json"))
+        directory_fd = os.open(generation_dir, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+        ref = GenerationRef(
+            generationId=generation_id,
+            publishedAt=published_at,
+            correctionHead=correction_head,
+            calibrationRevision=calibration_revision,
+        )
+        with self._connect() as connection:
+            previous_summary = connection.execute(
+                "SELECT analytics_summary_json FROM matches WHERE id = ?",
+                (match_id,),
+            ).fetchone()
+            connection.execute(
+                "UPDATE matches SET analytics_summary_json = ? WHERE id = ?",
+                (summary.model_dump_json(), match_id),
+            )
+        self._review_test_fault("before_pointer_publish")
+        try:
+            self._write_json(
+                self._match_dir(match_id) / "current_generation.json",
+                {
+                    "generationId": ref.generationId,
+                    "publishedAt": ref.publishedAt,
+                    "correctionHead": ref.correctionHead,
+                    "calibrationRevision": ref.calibrationRevision,
+                },
+            )
+        except BaseException:
+            with self._connect() as connection:
+                connection.execute(
+                    "UPDATE matches SET analytics_summary_json = ? WHERE id = ?",
+                    (previous_summary["analytics_summary_json"] if previous_summary is not None else None, match_id),
+                )
+            raise
+        return ref
+
+    @staticmethod
+    def _review_test_fault(point: str) -> None:
+        if os.environ.get("GA_TEST_FAULTS") == "1" and os.environ.get("GA_TEST_FAULT_POINT") == point:
+            os._exit(1)
+
+    @staticmethod
+    def _sha256_file(path: Path) -> str:
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(_COPY_CHUNK_BYTES), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    def _generation_payload_path(
+        self,
+        match_id: str,
+        filename: str,
+        generation_id: str | None = None,
+    ) -> Path:
+        match_dir = self._match_dir(match_id)
+        if generation_id is not None:
+            return match_dir / "generations" / generation_id / filename
+        pointer = match_dir / "current_generation.json"
+        legacy_complete = all((match_dir / name).exists() for name in ("frames.json", "events.json", "analytics.json"))
+        if legacy_complete and not pointer.exists():
+            try:
+                self.get_match(match_id)
+            except KeyError:
+                return match_dir / filename
+        if pointer.exists() or legacy_complete:
+            ref = self.current_generation(match_id)
+            return match_dir / "generations" / ref.generationId / filename
+        return match_dir / filename
 
     def save_analysis_artifact(self, match_id: str, analysis_type: str, payload: dict) -> None:
         path = self._match_dir(match_id) / f"{analysis_type}.json"
         if analysis_type.endswith(".receipt") or analysis_type in {"worker_progress", "remote_worker_progress"}:
             self._write_json(path, payload)
             return
-        previous = path.read_bytes() if path.exists() else b""
-        previous_digest = hashlib.sha256(previous).hexdigest() if previous else "0" * 64
+        previous_digest = self.hash_cache.identity(path).sha256 if path.exists() else "0" * 64
         encoded = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
         from .workbench.artifacts import ArtifactStore, write_alongside
 
@@ -1038,8 +1544,8 @@ class Storage:
             handle.write(json.dumps(payload, separators=(",", ":")))
             handle.write("\n")
 
-    def load_frames(self, match_id: str) -> list[FrameData]:
-        payload = self._read_json(self._match_dir(match_id) / "frames.json")
+    def load_frames(self, match_id: str, *, generation_id: str | None = None) -> list[FrameData]:
+        payload = self._read_json(self._generation_payload_path(match_id, "frames.json", generation_id))
         return [FrameData.model_validate(item) for item in payload]
 
     def load_frames_page(
@@ -1070,11 +1576,12 @@ class Storage:
     ) -> dict:
         from .workbench.evidence import query_match_evidence
 
-        frames = self.load_frames(match_id)
-        try:
-            events = self.load_events(match_id)
-        except FileNotFoundError:
-            events = []
+        with self.generation_snapshot(match_id) as generation:
+            frames = self.load_frames(match_id, generation_id=generation.generationId)
+            try:
+                events = self.load_events(match_id, generation_id=generation.generationId)
+            except FileNotFoundError:
+                events = []
         page = query_match_evidence(
             frames,
             events,
@@ -1113,65 +1620,34 @@ class Storage:
         expected_version: int | None = None,
         crash_before_commit: bool = False,
     ):
-        from .workbench.review import new_correction
+        from .review_service import ReviewService
 
         payload = dict(payload or {})
         if kind in {"event_accept", "event_reject"}:
             payload["previous"] = self._event_review_snapshot(match_id, payload)
-        with self._annotation_issue_lock:
-            log = self._load_correction_log(match_id)
-            saved = log.submit(
-                new_correction(match_id, kind, payload, author=author),  # type: ignore[arg-type]
-                crash_before_commit=crash_before_commit,
-                expected_version=expected_version,
-            )
-            self._save_correction_log(match_id, log)
-        if saved.saveState == "saved":
-            self._apply_saved_correction(match_id, saved)
-        return saved
+        try:
+            base_generation = self.current_generation(match_id).generationId
+        except FileNotFoundError:
+            base_generation = None
+        return ReviewService(self).submit(
+            match_id,
+            kind=kind,
+            payload=payload,
+            author=author,
+            expected_version=expected_version,
+            base_generation=base_generation,
+            crash_before_commit=crash_before_commit,
+        )
 
     def recover_correction(self, match_id: str, correction_id: str):
-        with self._annotation_issue_lock:
-            log = self._load_correction_log(match_id)
-            saved = log.recover(correction_id)
-            if saved.matchId != match_id:
-                raise KeyError(correction_id)
-            self._save_correction_log(match_id, log)
-        if saved.saveState == "saved":
-            self._apply_saved_correction(match_id, saved)
-        return saved
+        from .review_service import ReviewService
+
+        return ReviewService(self).recover(match_id, correction_id)
 
     def undo_correction(self, match_id: str, correction_id: str, *, author: str = "analyst"):
-        with self._annotation_issue_lock:
-            log = self._load_correction_log(match_id)
-            original = next((item for item in log.history(match_id) if item.correctionId == correction_id), None)
-            saved = log.undo(correction_id, author=author)
-            self._save_correction_log(match_id, log)
-        if original is not None and original.kind == "track_split":
-            payload = dict(original.payload or {})
-            new_track_id = payload.get("newTrackId")
-            source = payload.get("trackId")
-            if new_track_id is not None and source not in {None, ""}:
-                self._apply_identity_edit(
-                    match_id,
-                    kind="track_split",
-                    payload={
-                        "trackId": str(new_track_id),
-                        "atFrame": int(payload.get("atFrame") or 0),
-                        "newTrackId": int(source),
-                    },
-                )
-        elif original is not None and original.kind in {"event_accept", "event_reject"}:
-            self._restore_event_review(match_id, list((original.payload or {}).get("previous") or []))
-        elif original is not None and original.kind == "team_mapping":
-            self._apply_team_mapping(match_id, dict(original.payload or {}))
-        elif original is not None and original.kind == "track_join":
-            self._apply_identity_edit(match_id, kind="track_join_undo", payload=dict(original.payload or {}))
-        elif original is not None and original.kind == "identity_validate":
-            self._recompute_identity_continuity(match_id, identity_continuous=False)
-        elif original is not None and original.kind == "calibration":
-            self._restore_calibration_evaluation(match_id, dict((original.payload or {}).get("previous") or {}))
-        return saved
+        from .review_service import ReviewService
+
+        return ReviewService(self).undo(match_id, correction_id, author=author)
 
     def list_corrections(self, match_id: str, *, state: str | None = None) -> list[dict]:
         log = self._load_correction_log(match_id)
@@ -1268,17 +1744,19 @@ class Storage:
             return
         self.save_events(match_id, restore_event_review(events, previous))
 
-    def query_match_events(self, match_id: str, query_text: str) -> dict:
+    def query_match_events(self, match_id: str, query_text: str, *, include_unknown: bool = False) -> dict:
         from .workbench.assistance import events_as_query_rows, execute_typed_query, parse_typed_query
 
         try:
             events = self.load_events(match_id)
         except FileNotFoundError:
             events = []
-        query = parse_typed_query(query_text)
+        query = parse_typed_query(query_text, include_unknown=include_unknown)
         hits = execute_typed_query(events_as_query_rows(events, match_id=match_id), query, match_id=match_id)
         return {
             "query": query.model_dump(mode="json"),
+            "interpreted": query.interpreted,
+            "unsupportedTerms": query.unsupportedTerms,
             "results": [hit.model_dump(mode="json") for hit in hits],
         }
 
@@ -1293,12 +1771,13 @@ class Storage:
         from .workbench.evidence import records_from_match, summarize_legacy_match
         from .workbench.reports import assemble_report
 
-        summary, _, _, _ = self.load_analytics(match_id)
-        try:
-            events = self.load_events(match_id)
-        except FileNotFoundError:
-            events = []
-        frames = self.load_frames(match_id)
+        with self.generation_snapshot(match_id) as generation:
+            summary, _, _, _ = self.load_analytics(match_id, generation_id=generation.generationId)
+            try:
+                events = self.load_events(match_id, generation_id=generation.generationId)
+            except FileNotFoundError:
+                events = []
+            frames = self.load_frames(match_id, generation_id=generation.generationId)
         records = records_from_match(frames, events)
         known = {record.evidenceId for record in records}
         controlled = sum(
@@ -1483,6 +1962,7 @@ class Storage:
 
         match = self.get_match(match_id)
         config = match.config
+        calibration = self.calibration_revision(match_id)
         return assess_match_setup(
             camera_profile=config.cameraProfile,
             pitch_length_m=config.pitchLengthM,
@@ -1490,7 +1970,7 @@ class Storage:
             periods=[period.model_dump(mode="json") for period in config.periods],
             home_team=config.homeTeam,
             away_team=config.awayTeam,
-            calibration_committed=config.calibrationCommitted,
+            calibration_committed=bool(calibration and calibration.accepted and calibration.measured),
         )
 
     def four_rates_for_match(self, match_id: str) -> dict:
@@ -1519,11 +1999,14 @@ class Storage:
     def match_metrics_for_match(self, match_id: str) -> dict:
         from .workbench.evidence import summarize_legacy_match
 
-        summary, _, _, _ = self.load_analytics(match_id)
-        try:
-            frames = self.load_frames(match_id)
-        except FileNotFoundError:
-            frames = []
+        with self.generation_snapshot(match_id) as generation:
+            summary, _, _, _ = self.load_analytics(match_id, generation_id=generation.generationId)
+            try:
+                frames = self.load_frames(match_id, generation_id=generation.generationId)
+            except FileNotFoundError:
+                frames = []
+        if summary.metricAvailability:
+            return {"metrics": [item.model_dump(mode="json") for item in summary.metricAvailability]}
         controlled = sum(
             1
             for frame in frames
@@ -1631,12 +2114,9 @@ class Storage:
         from .workbench.geometry import preview_landmark_fit
 
         match = self.get_match(match_id)
-        try:
-            stored = self.load_analysis_artifact(match_id, "calibration_profile")
-        except FileNotFoundError:
-            stored = None
-        if stored and stored.get("committed"):
-            evaluation = dict(stored.get("evaluation") or {})
+        revision = self.calibration_revision(match_id)
+        if revision is not None and revision.accepted:
+            evaluation = dict(revision.evaluation)
             return {
                 "preview": False,
                 "committed": True,
@@ -1644,7 +2124,7 @@ class Storage:
                 "accepted": bool(evaluation.get("accepted", True)),
                 "measured": True,
                 "visionRerun": False,
-                "residualP95M": evaluation.get("p95M", stored.get("profile", {}).get("residualP95M") if isinstance(stored.get("profile"), dict) else None),
+                "residualP95M": evaluation.get("p95M", revision.profile.get("residualP95M")),
                 "rebuild": list(REBUILD_FOR["calibration"]),
                 "reasonCodes": [],
             }
@@ -1655,72 +2135,96 @@ class Storage:
         preview["certified"] = False
         preview["rebuild"] = list(REBUILD_FOR["calibration"])
         preview["reasonCodes"] = ["LANDMARK_RESIDUAL_UNMEASURED"]
-        preview["committed"] = bool(match.config.calibrationCommitted)
+        preview["committed"] = False
         return preview
 
     def commit_calibration_for_match(self, match_id: str, payload: dict) -> dict:
         from .workbench.geometry import CalibrationProfile, commit_calibration
+        from .workbench.review import correction_api_payload
 
         match = self.get_match(match_id)
         profile = CalibrationProfile.model_validate(payload)
         result = commit_calibration(profile)
         if result.get("committed"):
-            self.save_analysis_artifact(match_id, "calibration_profile", result)
-            self.update_match_config(
+            previous_revision = self.calibration_revision(match_id)
+            revision = self._new_calibration_revision(
                 match_id,
-                match.config.model_copy(update={"calibrationCommitted": True}),
+                profile=result["profile"],
+                evaluation={**dict(result["evaluation"]), "measured": True},
             )
+            try:
+                self.current_generation(match_id)
+            except FileNotFoundError:
+                self._save_calibration_revision(match_id, revision)
+            else:
+                saved = self.submit_correction(
+                    match_id,
+                    kind="calibration",
+                    payload={
+                        "revision": revision,
+                        "previousRevision": (
+                            None
+                            if previous_revision is None
+                            else previous_revision.model_dump(mode="json")
+                        ),
+                    },
+                )
+                result["correction"] = correction_api_payload(saved)
         return result
 
-    def recompute_for_match(self, match_id: str, change: str) -> dict:
-        from .video_pipeline import IMAGE_SPACE_SAFE_CHANGES, reprocess_for_change
-        from .workbench.cache import cache_identity
+    def plan_recompute(self, match_id: str, change: str):
+        from .video_pipeline import IMAGE_SPACE_SAFE_CHANGES
+        from .workbench.cache import REBUILD_FOR, RecomputePlan
 
         self.get_match(match_id)
+        rebuild = list(REBUILD_FOR.get(change, []))
+        return RecomputePlan(
+            change=change,
+            rebuild=rebuild,
+            requires=["observations"] if change in IMAGE_SPACE_SAFE_CHANGES else ["sealed_worker"],
+            visionRequired=change not in IMAGE_SPACE_SAFE_CHANGES,
+        )
+
+    def recompute_for_match(self, match_id: str, change: str) -> dict:
+        """Compatibility entry point: recompute is now explicitly plan-only."""
+        return self.plan_recompute(match_id, change).model_dump(mode="json")
+
+    def execute_recompute(self, match_id: str, change: str):
+        from .review_service import ReviewService
+        from .video_pipeline import IMAGE_SPACE_SAFE_CHANGES
+        from .workbench.cache import RecomputeReceipt, RecomputeRefusal
+
+        match = self.get_match(match_id)
+        plan = self.plan_recompute(match_id, change)
         if change not in IMAGE_SPACE_SAFE_CHANGES:
-            return {
-                "visionInvoked": False,
-                "admitted": False,
-                "reused": False,
-                "rebuild": [],
-                "reasonCodes": ["VISION_REQUIRES_SEALED_WORKER"],
-            }
-        sha = self.source_sha256(match_id)
-        previous = cache_identity(
-            source_sha256=sha,
-            interval_start=0.0,
-            interval_end=0.0,
-            decoder_version="opencv",
-            model_hash="weights-v1",
-            temporal_policy="source_global_grid",
-            output_schema="evidence_v1",
-            namespace="production",
-        )
-        current = cache_identity(
-            source_sha256=sha,
-            interval_start=0.0,
-            interval_end=0.0,
-            decoder_version="opencv",
-            model_hash="weights-v1",
-            temporal_policy="source_global_grid",
-            output_schema="evidence_v1",
-            namespace="production",
-            calibration_id=None if change == "report" else "preview",
-        )
+            return RecomputeRefusal(reasonCodes=["VISION_REQUIRES_SEALED_WORKER"])
 
-        def vision() -> dict:
-            raise RuntimeError("image-space-safe recompute must not invoke vision")
+        observation_path = self._match_dir(match_id) / "raw_rows.json"
+        if match.inputMode != "video":
+            review_base = self._match_dir(match_id) / "review_base_frames.json"
+            observation_path = review_base if review_base.is_file() else self.get_match_input_path(match_id)
+        if not observation_path.is_file():
+            return RecomputeRefusal(reasonCodes=["CACHE_MISS"])
 
-        result = dict(
-            reprocess_for_change(
-                change=change,
-                previous_identity=previous,
-                current_identity=current,
-                vision=vision,
-            )
+        current = self.current_generation(match_id)
+        manifest_path = self._match_dir(match_id) / "generations" / current.generationId / "manifest.json"
+        artifacts = {"observations": self._sha256_file(observation_path)}
+        if manifest_path.is_file():
+            artifacts["generation"] = self._sha256_file(manifest_path)
+        calibration = self.calibration_revision(match_id)
+        if calibration is not None:
+            artifacts["calibration"] = hashlib.sha256(
+                json.dumps(calibration.model_dump(mode="json"), sort_keys=True, separators=(",", ":")).encode()
+            ).hexdigest()
+
+        output = ReviewService(self).rebuild_generation(match_id, reason=change)
+        return RecomputeReceipt(
+            change=change,
+            inputArtifacts=artifacts,
+            outputGeneration=output.generationId,
+            rebuilt=["frames", "assignments", "events", "formation_timeline", "shots", "summary"],
+            detectorCalls=0,
         )
-        result["admitted"] = True
-        return result
 
     def promotion_receipt_for_match(self, match_id: str) -> dict:
         from .workbench.receipts import promotion_receipt
@@ -1729,25 +2233,25 @@ class Storage:
         try:
             frame_count = len(self.load_frames(match_id))
         except FileNotFoundError:
-            frame_count = 0
+            frame_count = None
         return promotion_receipt(
             source_sha256=sha,
-            weights="unpromoted",
+            weights=None,
             configuration="evidence_v1",
-            hardware="cpu",
+            hardware=None,
             native_builds=[],
-            selected_backend="opencv+ultralytics_track",
+            selected_backend=None,
             frame_count=frame_count,
-            call_count=0,
-            cold_timing_ms=0.0,
-            warm_timing_ms=0.0,
-            peak_memory_bytes=0,
-            transferred_bytes=0,
+            call_count=None,
+            cold_timing_ms=None,
+            warm_timing_ms=None,
+            peak_memory_bytes=None,
+            transferred_bytes=None,
             output_quality="unproven",
             accepted_coverage=0.0,
             failure_cases=["labels_incomplete"],
             allocated_spend=0.0,
-            fallback_event="cpu_local",
+            fallback_event=None,
         )
 
     def assistance_fallback_for_match(self, match_id: str) -> dict:
@@ -1798,26 +2302,24 @@ class Storage:
         return {"items": items, "reviewFirst": True, "accepted": False, "measured": False}
 
     def _stored_identity_continuous(self, match_id: str) -> bool:
-        try:
-            summary, _, _, _ = self.load_analytics(match_id)
-        except FileNotFoundError:
-            return False
-        physical = next(
-            (item for item in summary.metricAvailability if item.metric == "my_team_distance_m"),
-            None,
-        )
-        return bool(
-            physical is not None
-            and physical.availability == "available"
-            and "IDENTITY_DISCONTINUITY" not in (physical.reasonCodes or [])
-        )
+        history = self._load_correction_log(match_id).history(match_id)
+        applied = [item for item in history if item.applyState in {"applied", "applying"}]
+        undone = {
+            str(item.payload.get("of"))
+            for item in applied
+            if item.kind == "undo" and item.payload.get("of")
+        }
+        identity_changes = [
+            item
+            for item in applied
+            if item.kind in {"identity_validate", "track_split", "track_join"}
+            and item.correctionId not in undone
+        ]
+        return bool(identity_changes and identity_changes[-1].kind == "identity_validate")
 
     def _stored_calibration_accepted(self, match_id: str) -> bool:
-        try:
-            payload = self.load_analysis_artifact(match_id, "calibration_evaluation")
-        except FileNotFoundError:
-            return False
-        return bool(payload.get("accepted")) and payload.get("measured") is True
+        revision = self.calibration_revision(match_id)
+        return bool(revision and revision.accepted and revision.measured)
 
     def heatmap_for_match(self, match_id: str) -> dict:
         from .workbench.quantities import heatmap_availability
@@ -1979,6 +2481,7 @@ class Storage:
         except FileNotFoundError:
             events = []
         match = self.get_match(match_id)
+        calibration = self.calibration_revision(match_id)
         self.save_analytics(
             match_id,
             summarize_match(
@@ -1988,6 +2491,17 @@ class Storage:
                 events,
                 attack_direction=match.config.attackDirection,
                 identity_continuous=identity_continuous,
+                calibration_accepted=bool(calibration and calibration.accepted and calibration.measured),
+                pitch_length_m=(
+                    calibration.pitchLengthM
+                    if calibration is not None
+                    else match.config.pitchLengthM or 105.0
+                ),
+                pitch_width_m=(
+                    calibration.pitchWidthM
+                    if calibration is not None
+                    else match.config.pitchWidthM or 68.0
+                ),
             ),
             assignments,
             timeline,
@@ -2212,13 +2726,20 @@ class Storage:
                     original,
                     destination,
                     original_sha256=sha,
+                    hash_cache=self.hash_cache,
                 )
             )
             receipt["ranFfmpeg"] = True
             return receipt
         except (FileNotFoundError, ValueError, OSError, Exception):
             receipt = dict(
-                derive_proxy_assets(original, original_sha256=sha, original_pts=pts, time_base=(1, 90000))
+                derive_proxy_assets(
+                    original,
+                    original_sha256=sha,
+                    original_pts=pts,
+                    time_base=(1, 90000),
+                    hash_cache=self.hash_cache,
+                )
             )
             receipt["ranFfmpeg"] = False
             return receipt
@@ -2290,7 +2811,12 @@ class Storage:
         points = [{"x": float(point.x), "y": float(point.y)} for point in match.config.manualHomographyPoints]
         if len(points) != 4:
             points = [{"x": 0.0, "y": 0.0}, {"x": 1.0, "y": 0.0}, {"x": 1.0, "y": 1.0}, {"x": 0.0, "y": 1.0}]
-        profile = from_legacy_four_points(points, calibration_id=match_id)
+        profile = from_legacy_four_points(
+            points,
+            calibration_id=match_id,
+            pitch_length_m=match.config.pitchLengthM or 105.0,
+            pitch_width_m=match.config.pitchWidthM or 68.0,
+        )
         delta_m = 0.0
         if frames and not identity_gap and not calibration_missing and not cuts:
             delta_m = path_distance_m(frames, profile)
@@ -2337,33 +2863,19 @@ class Storage:
         return change_history(self.list_corrections(match_id))
 
     def cache_identity_for_match(self, match_id: str) -> dict:
-        from .workbench.cache import cache_compatible, cache_identity
-
-        sha = self.source_sha256(match_id)
-        production = cache_identity(
-            source_sha256=sha,
-            interval_start=0.0,
-            interval_end=0.0,
-            decoder_version="opencv",
-            model_hash="weights-v1",
-            temporal_policy="source_global_grid",
-            output_schema="evidence_v1",
-            namespace="production",
-        )
-        development = cache_identity(
-            source_sha256=sha,
-            interval_start=0.0,
-            interval_end=0.0,
-            decoder_version="opencv",
-            model_hash="weights-v1",
-            temporal_policy="source_global_grid",
-            output_schema="evidence_v1",
-            namespace="development",
-        )
+        self.get_match(match_id)
+        layers = {}
+        for layer in ("detection", "tracking"):
+            try:
+                layers[layer] = self.load_analysis_artifact(match_id, f"{layer}_identity")
+            except FileNotFoundError:
+                layers[layer] = {"digest": None, "reusable": False}
         return {
             "namespace": "production",
-            "identity": production,
-            "compatibleWithDevelopment": cache_compatible(production, development),
+            "identity": layers["tracking"]["digest"],
+            "reusable": layers["tracking"]["reusable"],
+            "layers": layers,
+            "compatibleWithDevelopment": False,
         }
 
     def migrate_legacy_for_match(self, match_id: str) -> dict:
@@ -2398,14 +2910,50 @@ class Storage:
         return interrupted_upload(self.storage_root / "uploads" / "interrupted.bin")
 
     def calibration_for_match(self, match_id: str, payload: dict | None = None) -> dict:
-        from .workbench.geometry import Landmark, evaluate_landmarks, from_legacy_four_points, withhold_if_invalid
+        from .workbench.geometry import (
+            Landmark,
+            evaluate_landmarks,
+            from_legacy_four_points,
+            validate_fit_points,
+            withhold_if_invalid,
+        )
         from .workbench.review import correction_api_payload
 
         match = self.get_match(match_id)
         points = [{"x": float(point.x), "y": float(point.y)} for point in match.config.manualHomographyPoints]
         if len(points) != 4:
-            points = [{"x": 0.0, "y": 0.0}, {"x": 1.0, "y": 0.0}, {"x": 1.0, "y": 1.0}, {"x": 0.0, "y": 1.0}]
-        profile = from_legacy_four_points(points, calibration_id=match_id)
+            return {
+                "availability": "calibration_unavailable",
+                "reasonCodes": ["MANUAL_POINTS_MISSING"],
+                "committed": False,
+                "measured": False,
+                "visionRerun": False,
+                "correction": None,
+            }
+        try:
+            source_clock = self.load_analysis_artifact(match_id, "source_clock")
+        except FileNotFoundError:
+            source_clock = {}
+        point_errors = validate_fit_points(
+            points,
+            width=source_clock.get("width") if isinstance(source_clock, dict) else None,
+            height=source_clock.get("height") if isinstance(source_clock, dict) else None,
+        )
+        if point_errors:
+            return {
+                "availability": "calibration_unavailable",
+                "reasonCodes": point_errors,
+                "committed": False,
+                "measured": False,
+                "visionRerun": False,
+                "correction": None,
+            }
+        profile = from_legacy_four_points(
+            points,
+            calibration_id=match_id,
+            pitch_length_m=match.config.pitchLengthM or 105.0,
+            pitch_width_m=match.config.pitchWidthM or 68.0,
+        )
         body = dict(payload or {})
         holdout: list = []
         for item in body.get("landmarks") or []:
@@ -2422,6 +2970,7 @@ class Storage:
                 )
             )
         stored = self._load_calibration_evaluation(match_id)
+        previous_revision = self.calibration_revision(match_id)
         committed = False
         correction = None
         measured = False
@@ -2429,29 +2978,43 @@ class Storage:
         if holdout:
             profile = profile.model_copy(update={"landmarks": list(profile.landmarks) + holdout})
             measured_evaluation = evaluate_landmarks(profile, max_p95_m=3.0)
-            saved = self.submit_correction(
-                match_id,
-                kind="calibration",
-                payload={
-                    "evaluation": {**measured_evaluation, "measured": True},
-                    "previous": stored,
-                },
-                author=str(body.get("author") or "analyst"),
-                crash_before_commit=bool(body.get("crashBeforeCommit")),
-            )
-            correction = correction_api_payload(saved)
-            committed = saved.saveState == "saved"
-            if committed:
-                evaluation = measured_evaluation
-                measured = True
-                residual = measured_evaluation.get("p95M")
-                stored = {**measured_evaluation, "measured": True}
+            evaluation = measured_evaluation
+            measured = True
+            residual = measured_evaluation.get("p95M")
+            if measured_evaluation.get("accepted"):
+                revision = self._new_calibration_revision(
+                    match_id,
+                    profile=profile.model_dump(mode="json"),
+                    evaluation={**measured_evaluation, "measured": True},
+                )
+                saved = self.submit_correction(
+                    match_id,
+                    kind="calibration",
+                    payload={
+                        "revision": revision,
+                        "previousRevision": (
+                            None
+                            if previous_revision is None
+                            else previous_revision.model_dump(mode="json")
+                        ),
+                    },
+                    author=str(body.get("author") or "analyst"),
+                    crash_before_commit=bool(body.get("crashBeforeCommit")),
+                )
+                correction = correction_api_payload(saved)
+                committed = saved.saveState == "saved"
+                if committed:
+                    stored = {**measured_evaluation, "measured": True}
+                else:
+                    evaluation = {
+                        "accepted": False,
+                        "reasonCodes": ["CALIBRATION_UNAVAILABLE"],
+                        "holdoutCount": len(holdout),
+                    }
+                    measured = False
+                    residual = None
             else:
-                evaluation = {
-                    "accepted": False,
-                    "reasonCodes": ["CALIBRATION_UNAVAILABLE"],
-                    "holdoutCount": len(holdout),
-                }
+                committed = False
         elif stored:
             evaluation = {
                 "accepted": bool(stored.get("accepted")),
@@ -2465,9 +3028,9 @@ class Storage:
         else:
             evaluation = evaluate_landmarks(profile, max_p95_m=3.0)
         withheld = withhold_if_invalid(profile, "team_width_m")
-        if stored.get("accepted") and stored.get("measured") is True:
+        if not holdout and stored.get("accepted") and stored.get("measured") is True:
             withheld = {"metric": "team_width_m", "availability": "available", "reasonCodes": [], "value": "computed"}
-        elif stored or committed is False:
+        elif evaluation.get("accepted") is not True:
             withheld = {"metric": "team_width_m", "availability": "withheld", "reasonCodes": list(evaluation.get("reasonCodes") or ["CALIBRATION_UNAVAILABLE"]), "value": None}
         return {
             **profile.model_dump(mode="json"),
@@ -2482,6 +3045,9 @@ class Storage:
         }
 
     def _load_calibration_evaluation(self, match_id: str) -> dict:
+        revision = self.calibration_revision(match_id)
+        if revision is not None:
+            return dict(revision.evaluation)
         try:
             payload = self.load_analysis_artifact(match_id, "calibration_evaluation")
         except FileNotFoundError:
@@ -2499,12 +3065,99 @@ class Storage:
     def _restore_calibration_evaluation(self, match_id: str, previous: dict) -> None:
         self._save_calibration_evaluation(match_id, previous)
 
+    def calibration_revision(self, match_id: str):
+        from .workbench.contracts import CalibrationRevision
+
+        try:
+            return CalibrationRevision.model_validate(
+                self.load_analysis_artifact(match_id, "calibration_revision")
+            )
+        except FileNotFoundError:
+            pass
+        try:
+            legacy_profile = self.load_analysis_artifact(match_id, "calibration_profile")
+        except FileNotFoundError:
+            legacy_profile = {}
+        try:
+            legacy_evaluation = self.load_analysis_artifact(match_id, "calibration_evaluation")
+        except FileNotFoundError:
+            legacy_evaluation = {}
+        if not legacy_profile and not legacy_evaluation:
+            return None
+        profile = dict(legacy_profile.get("profile") or legacy_profile)
+        evaluation = dict(legacy_evaluation or legacy_profile.get("evaluation") or {})
+        match = self.get_match(match_id)
+        accepted = bool(evaluation.get("accepted")) and evaluation.get("measured") is True
+        digest = hashlib.sha256(
+            json.dumps(
+                {"profile": profile, "evaluation": evaluation, "source": self.source_sha256(match_id)},
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
+        return CalibrationRevision(
+            revisionId=f"cal_{digest[:16]}",
+            profile=profile,
+            evaluation=evaluation,
+            accepted=accepted,
+            measured=evaluation.get("measured") is True,
+            sourceSha256=self.source_sha256(match_id),
+            validInterval={"start": 0.0, "end": None},
+            createdAt=_utcnow().isoformat(),
+            pitchLengthM=float(profile.get("pitchLengthM") or match.config.pitchLengthM or 105.0),
+            pitchWidthM=float(profile.get("pitchWidthM") or match.config.pitchWidthM or 68.0),
+            migrated=True,
+        )
+
+    def _save_calibration_revision(self, match_id: str, revision: dict) -> None:
+        from .workbench.contracts import CalibrationRevision
+
+        canonical = CalibrationRevision.model_validate(revision)
+        self.save_analysis_artifact(match_id, "calibration_revision", canonical.model_dump(mode="json"))
+
+    def _new_calibration_revision(self, match_id: str, *, profile: dict, evaluation: dict) -> dict:
+        match = self.get_match(match_id)
+        source_sha = self.source_sha256(match_id)
+        identity = hashlib.sha256(
+            json.dumps(
+                {"profile": profile, "evaluation": evaluation, "source": source_sha},
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
+        return {
+            "revisionId": f"cal_{identity[:16]}",
+            "profile": profile,
+            "evaluation": evaluation,
+            "accepted": bool(evaluation.get("accepted")) and evaluation.get("measured") is True,
+            "measured": evaluation.get("measured") is True,
+            "sourceSha256": source_sha,
+            "validInterval": {"start": 0.0, "end": None},
+            "createdAt": _utcnow().isoformat(),
+            "fitPointSpace": "source_pixels",
+            "pitchLengthM": float(profile.get("pitchLengthM") or match.config.pitchLengthM or 105.0),
+            "pitchWidthM": float(profile.get("pitchWidthM") or match.config.pitchWidthM or 68.0),
+            "migrated": False,
+        }
+
+    def _restore_calibration_revision(self, match_id: str, revision: dict | None) -> None:
+        path = self._match_dir(match_id) / "calibration_revision.json"
+        if revision is None:
+            path.unlink(missing_ok=True)
+            return
+        self._save_calibration_revision(match_id, revision)
+
     def load_raw_rows(self, match_id: str) -> list[dict]:
         payload = self._read_json(self._match_dir(match_id) / "raw_rows.json")
         return [dict(item) for item in payload]
 
-    def load_analytics(self, match_id: str) -> tuple[MatchSummary, list[BallOwnership], list[FormationSegment], list[ShotAnalytics]]:
-        payload = self._read_json(self._match_dir(match_id) / "analytics.json")
+    def load_analytics(
+        self,
+        match_id: str,
+        *,
+        generation_id: str | None = None,
+    ) -> tuple[MatchSummary, list[BallOwnership], list[FormationSegment], list[ShotAnalytics]]:
+        payload = self._read_json(self._generation_payload_path(match_id, "analytics.json", generation_id))
         summary = self._video_ball_signal_summary(match_id, MatchSummary.model_validate(payload["summary"]))
         assignments = [BallOwnership.model_validate(item) for item in payload["ballAssignments"]]
         if not any(assignment.team in {"my_team", "enemy"} for assignment in assignments):
@@ -2513,8 +3166,8 @@ class Storage:
         shots = [ShotAnalytics.model_validate(item) for item in payload.get("shots", [])]
         return summary, assignments, formation_timeline, shots
 
-    def load_events(self, match_id: str) -> list[DetectedEvent]:
-        payload = self._read_json(self._match_dir(match_id) / "events.json")
+    def load_events(self, match_id: str, *, generation_id: str | None = None) -> list[DetectedEvent]:
+        payload = self._read_json(self._generation_payload_path(match_id, "events.json", generation_id))
         return [DetectedEvent.model_validate(item) for item in payload]
 
     def load_analysis_artifact(self, match_id: str, analysis_type: str) -> dict:

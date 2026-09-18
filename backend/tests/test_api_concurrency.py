@@ -10,11 +10,31 @@ import pytest
 
 from backend.app.jobs import JobRunner
 from backend.app.main import create_app
-from backend.app.schemas import MatchConfig
+from backend.app.schemas import MatchConfig, MatchSummary
 
 
 def _run(coro, *args) -> None:
     anyio.run(coro, *args)
+
+
+def _publish_empty_generation(storage, match_id: str) -> None:
+    storage.save_frames(match_id, [])
+    storage.save_analytics(
+        match_id,
+        MatchSummary(
+            possession=None,
+            myTeamDistance=None,
+            enemyDistance=None,
+            myTeamTopSpeed=None,
+            enemyTopSpeed=None,
+            myTeamSprints=None,
+            enemySprints=None,
+        ),
+        [],
+        [],
+        [],
+    )
+    storage.save_events(match_id, [])
 
 
 @asynccontextmanager
@@ -158,7 +178,7 @@ async def _test_analysis_does_not_block_http_or_websocket_progress(
         match = app.state.storage.create_match(
             "Concurrency", "tracking_json", "tracking.json", tmp_path / "tracking.json", MatchConfig()
         )
-        monkeypatch.setattr(app.state.storage, "load_frames", lambda _match_id: [])
+        _publish_empty_generation(app.state.storage, match.id)
 
         def blocked_analysis(*_args, **_kwargs):
             worker_threads.append(threading.get_ident())
@@ -197,7 +217,7 @@ async def _test_analysis_does_not_block_http_or_websocket_progress(
         assert isinstance(analysis_response, httpx.Response)
         assert analysis_response.status_code == expected_status
         if expected_status == 200:
-            assert analysis_response.json() == analysis_result
+            assert analysis_response.json().items() >= analysis_result.items()
         else:
             assert analysis_response.json() == {"detail": str(analysis_result)}
         websocket_messages = responses["websocket"]

@@ -23,7 +23,7 @@ from backend.release.daytona_policy import (
 ROOT = Path(__file__).resolve().parents[2]
 POLICY_PATH = ROOT / "backend/release/daytona-v7.3.json"
 SCHEMA_PATH = ROOT / "backend/release/daytona_execution_schema.json"
-RUNTIME_REQUIREMENTS_PATH = ROOT / "backend/requirements-runtime.txt"
+RUNTIME_REQUIREMENTS_PATH = ROOT / "backend/requirements/api.in"
 
 EXPECTED_POLICY = {
     "schemaVersion": 1,

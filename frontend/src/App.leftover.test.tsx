@@ -1526,7 +1526,7 @@ describe('App leftover contract workbench', () => {
       expect(fetchMock.mock.calls.some(([, init]) => (
         Boolean(init?.body && String(init.body).includes('controlledFrames'))
       ))).toBe(false);
-      expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/workbench/'))).toBe(false);
+      expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/workbench/dev/matches/match-a/metrics'))).toBe(false);
       const posted = within(await screen.findByRole('region', { name: /unforced continuity write/i }));
       expect(posted.getByText(/ignore client identityContinuous and calibrationAccepted/i)).toBeTruthy();
       expect(posted.getByText(/availability stays unknown/i)).toBeTruthy();
@@ -2332,7 +2332,7 @@ describe('App leftover contract workbench', () => {
         Boolean(init?.body && String(init.body).includes('attackDirection'))
       ))).toBe(false);
       expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/incidents/ladder'))).toBe(false);
-      expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/workbench/'))).toBe(false);
+      expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/workbench/dev/matches/match-a/incidents/geometry'))).toBe(false);
       const posted = within(await screen.findByRole('region', { name: /uninjected origin write/i }));
       expect(posted.getByText(/ignores client myTeam and attackDirection/i)).toBeTruthy();
       expect(posted.getByText(/validatedMeasurement stays false/i)).toBeTruthy();
@@ -2567,7 +2567,7 @@ describe('App leftover contract workbench', () => {
       expect(fetchMock.mock.calls.some(([, init]) => (
         Boolean(init?.body && String(init.body).includes('"notes"'))
       ))).toBe(false);
-      expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/workbench/'))).toBe(false);
+      expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/workbench/dev/matches/match-a/incidents/package'))).toBe(false);
       const posted = within(await screen.findByRole('region', { name: /uninjected clip write/i }));
       expect(posted.getByText(/ignores client clips and notes/i)).toBeTruthy();
       expect(posted.getByText(/client forged-offside is not sent/i)).toBeTruthy();

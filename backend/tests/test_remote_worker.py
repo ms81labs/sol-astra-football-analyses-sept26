@@ -241,7 +241,7 @@ def test_run_remote_job_persists_sandbox_imports_processor_and_writes_neutral_ar
     monkeypatch.setattr(
         remote_worker,
         "execute_daytona_job",
-        lambda request, *, client_factory, progress_callback: result,
+        lambda request, *, client_factory, progress_callback, poll_wait: result,
     )
     monkeypatch.setattr(
         remote_worker,
@@ -511,8 +511,9 @@ def test_remote_import_rolls_back_every_owned_video_output(
         "four_rates.json",
         "tactical_report.json",
         "drills.json",
-        "frames.json",
-        "input_video_identity.json",
+            "frames.json",
+            "current_generation.json",
+            "input_video_identity.json",
         "ownership_publication.json",
         "raw_rows.json",
         "recovery_debug.json",
@@ -1195,7 +1196,7 @@ def test_run_remote_stream_import_consumes_validated_eof_inside_rollback(tmp_pat
     if failure == "analytics":
         monkeypatch.setattr(processor, "_compute_outputs_and_match_state", fail)
     elif failure == "persistence":
-        monkeypatch.setattr(Storage, "save_events", fail)
+        monkeypatch.setattr(Storage, "publish_generation", fail)
     elif failure == "early_exit":
         def early_exit(actual_storage, actual_job, source):
             actual_storage.save_raw_rows(match.id, [next(source.rows)])

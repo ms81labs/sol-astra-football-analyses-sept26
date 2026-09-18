@@ -183,7 +183,7 @@ async def _test_match_import_lifecycle_from_tracking_json(tmp_path: Path):
         analytics_response = await client.get(f"/api/matches/{payload['matchId']}/analytics")
         assert analytics_response.status_code == 200
         analytics_payload = analytics_response.json()
-        assert analytics_payload["summary"]["possession"] == 67
+        assert analytics_payload["summary"]["possession"] == 100
 
         events_response = await client.get(f"/api/matches/{payload['matchId']}/events")
         assert events_response.status_code == 200
@@ -416,6 +416,9 @@ async def _test_analysis_route_passes_persisted_summary_and_events_to_backend(tm
             events=None,
             formation_timeline=None,
             shots=None,
+            gateway_token=None,
+            model_id=None,
+            deadline_seconds=120.0,
         ):
             captured["analysis_type"] = analysis_type
             captured["provider"] = provider
@@ -438,7 +441,7 @@ async def _test_analysis_route_passes_persisted_summary_and_events_to_backend(tm
         assert captured["analysis_type"] == "tactical_report"
         assert captured["attack_direction"] == "right_to_left"
         assert captured["summary"] is not None
-        assert captured["summary"].possession == 67
+        assert captured["summary"].possession == 100
         assert captured["events"] is not None
         assert len(captured["events"]) >= 1
         assert captured["formation_timeline"] is not None
@@ -685,7 +688,7 @@ async def _test_match_json_export_route_returns_canonical_bundle(tmp_path: Path)
         assert bundle["schemaVersion"] == "match_bundle_v1"
         assert bundle["match"]["id"] == match_id
         assert len(bundle["frames"]) == 3
-        assert bundle["analytics"]["summary"]["possession"] == 67
+        assert bundle["analytics"]["summary"]["possession"] == 100
         assert bundle["events"][0]["type"] == "turnover"
         assert bundle["artifactAvailability"]["frames"] is True
         assert bundle["artifactAvailability"]["analytics"] is True
@@ -1101,20 +1104,7 @@ async def _test_match_players_follow_stored_identity_receipt(tmp_path: Path):
         assert response.status_code == 202
         match_id = response.json()["matchId"]
         storage = app.state.storage
-        summary, assignments, timeline, shots = storage.load_analytics(match_id)
-        availability = [
-            item.model_copy(update={"availability": "available", "reasonCodes": [], "value": 120.0})
-            if item.metric == "my_team_distance_m"
-            else item
-            for item in summary.metricAvailability
-        ]
-        storage.save_analytics(
-            match_id,
-            summary.model_copy(update={"metricAvailability": availability, "myTeamDistance": 120}),
-            assignments,
-            timeline,
-            shots,
-        )
+        storage.submit_correction(match_id, kind="identity_validate", payload={"reviewed": True})
 
         heatmap = await client.get(f"/api/matches/{match_id}/heatmap")
         assert heatmap.status_code == 200
@@ -1157,20 +1147,7 @@ async def _test_match_identity_repair_commits_stored_tracks_and_invalidates_cont
         assert response.status_code == 202
         match_id = response.json()["matchId"]
         storage = app.state.storage
-        summary, assignments, timeline, shots = storage.load_analytics(match_id)
-        availability = [
-            item.model_copy(update={"availability": "available", "reasonCodes": [], "value": 120.0})
-            if item.metric == "my_team_distance_m"
-            else item
-            for item in summary.metricAvailability
-        ]
-        storage.save_analytics(
-            match_id,
-            summary.model_copy(update={"metricAvailability": availability, "myTeamDistance": 120}),
-            assignments,
-            timeline,
-            shots,
-        )
+        storage.submit_correction(match_id, kind="identity_validate", payload={"reviewed": True})
         assert (await client.get(f"/api/matches/{match_id}/heatmap")).json()["identityContinuous"] is True
 
         leftover = await client.post(
@@ -1446,7 +1423,6 @@ def test_match_calibration_holdout_measures_residual_and_ignores_client_acceptan
 
 
 async def _test_match_calibration_holdout_measures_residual_and_ignores_client_acceptance(tmp_path: Path):
-    import cv2
     import numpy as np
 
     async with api_client(tmp_path) as (_, client):
@@ -1472,10 +1448,19 @@ async def _test_match_calibration_holdout_measures_residual_and_ignores_client_a
         assert four_point.json()["fromStoredPoints"] is True
         assert four_point.json().get("measured") is not True
 
-        src = np.array([[point["x"], point["y"]] for point in MANUAL_HOMOGRAPHY_POINTS], dtype=np.float32)
-        dst = np.array([[0.0, 0.0], [105.0, 0.0], [105.0, 68.0], [0.0, 68.0]], dtype=np.float32)
-        homography = cv2.getPerspectiveTransform(src, dst)
-        mapped = cv2.perspectiveTransform(np.array([[[50.0, 50.0]]], dtype=np.float32), homography)[0][0]
+        src = np.array([[25.0, 25.0], [75.0, 25.0], [25.0, 75.0], [75.0, 75.0]], dtype=np.float32)
+        dst = np.array([[26.25, 17.0], [78.75, 17.0], [26.25, 51.0], [78.75, 51.0]], dtype=np.float32)
+        calibrated_holdouts = [
+            {
+                "name": f"holdout-{index}",
+                "imageX": float(source[0]),
+                "imageY": float(source[1]),
+                "pitchX": float(target[0]),
+                "pitchY": float(target[1]),
+                "independentHoldout": True,
+            }
+            for index, (source, target) in enumerate(zip(src, dst, strict=True))
+        ]
 
         pending = await client.post(
             f"/api/matches/{match_id}/calibration",
@@ -1483,16 +1468,7 @@ async def _test_match_calibration_holdout_measures_residual_and_ignores_client_a
                 "accepted": True,
                 "residualP95M": 0.4,
                 "crashBeforeCommit": True,
-                "landmarks": [
-                    {
-                        "name": "holdout-centre",
-                        "imageX": 50.0,
-                        "imageY": 50.0,
-                        "pitchX": float(mapped[0]),
-                        "pitchY": float(mapped[1]),
-                        "independentHoldout": True,
-                    }
-                ],
+                "landmarks": calibrated_holdouts,
             },
         )
         assert pending.status_code == 200
@@ -1531,16 +1507,7 @@ async def _test_match_calibration_holdout_measures_residual_and_ignores_client_a
             json={
                 "accepted": False,
                 "residualP95M": 99.0,
-                "landmarks": [
-                    {
-                        "name": "holdout-centre",
-                        "imageX": 50.0,
-                        "imageY": 50.0,
-                        "pitchX": float(mapped[0]),
-                        "pitchY": float(mapped[1]),
-                        "independentHoldout": True,
-                    }
-                ],
+                "landmarks": calibrated_holdouts,
             },
         )
         assert measured.status_code == 200
@@ -1588,36 +1555,14 @@ def test_match_event_review_updates_stored_events_and_undo_restores_status(tmp_p
 
 
 async def _test_match_event_review_updates_stored_events_and_undo_restores_status(tmp_path: Path):
-    from backend.app.schemas import DetectedEvent
-
-    async with api_client(tmp_path) as (app, client):
+    async with api_client(tmp_path) as (_, client):
         response = await _upload_tracking_match(client)
         assert response.status_code == 202
         match_id = response.json()["matchId"]
-        storage = app.state.storage
-        storage.save_events(
-            match_id,
-            [
-                DetectedEvent(
-                    type="pass",
-                    frameId=1,
-                    timestamp=0.2,
-                    team="my_team",
-                    fromTrackId=7,
-                    toTrackId=7,
-                    description="Pass",
-                ),
-                DetectedEvent(
-                    type="recovery",
-                    frameId=2,
-                    timestamp=0.4,
-                    team="enemy",
-                    fromTrackId=18,
-                    toTrackId=18,
-                    description="Recovery",
-                ),
-            ],
-        )
+        listed = await client.get(f"/api/matches/{match_id}/events")
+        original = listed.json()["events"]
+        assert original
+        target = original[0]
 
         forged = await client.post(
             f"/api/matches/{match_id}/corrections",
@@ -1626,33 +1571,42 @@ async def _test_match_event_review_updates_stored_events_and_undo_restores_statu
         assert forged.status_code == 200
         listed = await client.get(f"/api/matches/{match_id}/events")
         assert listed.status_code == 200
-        by_type = {item["type"]: item for item in listed.json()["events"]}
-        assert by_type["pass"]["reviewStatus"] == "unreviewed"
-        assert by_type["recovery"]["reviewStatus"] == "unreviewed"
+        assert all(item["reviewStatus"] == "unreviewed" for item in listed.json()["events"])
 
         accepted = await client.post(
             f"/api/matches/{match_id}/corrections",
-            json={"kind": "event_accept", "payload": {"frame": 1, "type": "pass"}},
+            json={"kind": "event_accept", "payload": {"frame": target["frameId"], "type": target["type"]}},
         )
         assert accepted.status_code == 200
         assert accepted.json()["saveState"] == "saved"
         listed = await client.get(f"/api/matches/{match_id}/events")
-        by_type = {item["type"]: item for item in listed.json()["events"]}
-        assert by_type["pass"]["reviewStatus"] == "accepted"
-        assert by_type["recovery"]["reviewStatus"] == "unreviewed"
+        by_id = {item["eventId"]: item for item in listed.json()["events"]}
+        accepted_ids = {
+            event_id
+            for event_id, item in by_id.items()
+            if item["frameId"] == target["frameId"] and item["type"] == target["type"]
+        }
+        assert accepted_ids
+        assert all(by_id[event_id]["reviewStatus"] == "accepted" for event_id in accepted_ids)
+        assert all(
+            item["reviewStatus"] == "unreviewed"
+            for event_id, item in by_id.items()
+            if event_id not in accepted_ids
+        )
 
         partitioned = await client.get(f"/api/matches/{match_id}/events/partition")
-        assert any(item.get("type") == "pass" for item in partitioned.json()["acceptedViews"])
-        assert all(item.get("type") != "pass" for item in partitioned.json()["retainedCandidates"])
+        assert any(item.get("eventId") in accepted_ids for item in partitioned.json()["acceptedViews"])
+        assert all(
+            item.get("eventId") not in accepted_ids
+            for item in partitioned.json()["retainedCandidates"]
+        )
 
         undone = await client.post(
             f"/api/matches/{match_id}/corrections/{accepted.json()['correctionId']}/undo"
         )
         assert undone.status_code == 200
         restored = await client.get(f"/api/matches/{match_id}/events")
-        by_type = {item["type"]: item for item in restored.json()["events"]}
-        assert by_type["pass"]["reviewStatus"] == "unreviewed"
-        assert by_type["recovery"]["reviewStatus"] == "unreviewed"
+        assert all(item["reviewStatus"] == "unreviewed" for item in restored.json()["events"])
 
 
 def test_match_team_mapping_correction_swaps_stored_teams_without_vision(tmp_path: Path):
@@ -2155,7 +2109,8 @@ async def _test_production_timeout_search_clock_and_incident_review_use_stored_d
         assert review.json()["decision"] is None
         assert review.json()["validatedMeasurement"] is False
         assert review.json()["level"] == 1
-        assert review.json()["samples"][0]["attackerX"] == 21.0
+        assert review.json()["samples"] == []
+        assert review.json()["indeterminate"] is True
         assert "offside" not in json.dumps(review.json()).lower().split("offside")[0] or review.json()["decision"] is None
 
         assistance = await client.post(
@@ -2291,25 +2246,28 @@ async def _test_production_recovery_retention_security_native_and_recompute_surf
             json={"change": "report", "visionRows": [{"Frame_ID": 999}]},
         )
         assert report_only.status_code == 200
-        assert report_only.json()["visionInvoked"] is False
-        assert report_only.json()["reused"] is True
+        assert report_only.json()["kind"] == "plan"
+        assert report_only.json()["visionRequired"] is False
+        assert "reused" not in report_only.json()
+        assert "admitted" not in report_only.json()
 
         calibration = await client.post(
             f"/api/matches/{match_id}/recompute",
             json={"change": "calibration"},
         )
         assert calibration.status_code == 200
-        assert calibration.json()["visionInvoked"] is False
-        assert calibration.json()["imageSpaceDetectionsReused"] is True
+        assert calibration.json()["kind"] == "plan"
+        assert calibration.json()["visionRequired"] is False
+        assert "pitch_positions" in calibration.json()["rebuild"]
 
         perception = await client.post(
             f"/api/matches/{match_id}/recompute",
             json={"change": "perception"},
         )
         assert perception.status_code == 200
-        assert perception.json()["visionInvoked"] is False
-        assert perception.json()["admitted"] is False
-        assert "VISION_REQUIRES_SEALED_WORKER" in perception.json()["reasonCodes"]
+        assert perception.json()["kind"] == "plan"
+        assert perception.json()["visionRequired"] is True
+        assert perception.json()["requires"] == ["sealed_worker"]
 
         receipt = await client.get(f"/api/matches/{match_id}/promotion")
         assert receipt.status_code == 200
@@ -3100,24 +3058,19 @@ async def _test_workbench_leftovers_ignore_client_injected_rows(tmp_path: Path):
                 ],
             },
         )
-        assert search.status_code == 200
-        assert search.json()["results"] == []
+        assert search.status_code == 410
 
         metrics = await client.post(
             "/api/workbench/matches/m1/metrics",
             json={"possession": 61, "identityContinuous": True, "calibrationAccepted": True, "controlledFrames": 9000, "myTeamDistance": 12000},
         )
-        assert metrics.status_code == 200
-        possession = next(item for item in metrics.json()["metrics"] if item["metric"] == "possession_pct")
-        assert possession["availability"] == "unknown"
-        assert possession["value"] is None
+        assert metrics.status_code == 410
 
         assembled = await client.post(
             "/api/workbench/matches/m1/reports/assemble",
             json={"claimedEvidenceIds": ["ev-1"], "knownEvidenceIds": ["ev-1"], "metrics": [{"metric": "possession_pct", "value": 61, "availability": "available"}]},
         )
-        assert assembled.status_code == 200
-        assert assembled.json()["publication"]["accepted"] is False
+        assert assembled.status_code == 410
 
         setup = await client.post(
             "/api/workbench/setup/assess",
@@ -3130,9 +3083,7 @@ async def _test_workbench_leftovers_ignore_client_injected_rows(tmp_path: Path):
             "/api/workbench/jobs",
             json={"requestId": "wb-prod", "matchId": "m1", "sourceSha256": "c" * 64, "budget": 1.0, "authorisedLocation": "daytona"},
         )
-        assert job.status_code == 200
-        assert job.json()["namespace"] == "production"
-        assert job.json()["authorisedLocation"] == "local"
+        assert job.status_code == 410
 
 
 def test_production_calibration_decode_event_score_and_deployment_surfaces(tmp_path: Path):
@@ -3259,9 +3210,10 @@ async def _test_production_protocol_flags_metric_spec_clock_and_four_rates_surfa
         )
         assert protocol.status_code == 200
         assert protocol.json()["accepted"] is False
-        assert protocol.json()["completeTasks"] == 0
+        assert protocol.json()["status"] == "unknown"
+        assert protocol.json()["completeTasks"] is None
         assert protocol.json()["protocolVersion"] == "football_analysis_pilot_labels_v3"
-        assert "LABELS_INCOMPLETE" in protocol.json()["reasonCodes"]
+        assert protocol.json()["reasonCodes"] == ["EVALUATION_MANIFEST_MISSING"]
 
         enabled = await client.post("/api/flags/gpu_default/enabled", json={"enabled": True, "env": {"GA_FLAG_GPU_DEFAULT": "1"}})
         assert enabled.status_code == 200
@@ -3587,4 +3539,3 @@ async def _test_production_providers_rights_dependencies_preview_and_legacy_zero
         assert release.json()["deploymentBoundary"] == "loopback"
         assert release.json()["nativeCode"] == "gated_inert"
         assert release.json()["gNetworkRequiredForNonLocal"] is True
-

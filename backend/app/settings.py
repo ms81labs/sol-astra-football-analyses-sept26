@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import math
 import os
 import re
 from dataclasses import dataclass, field
 from ipaddress import IPv6Address
+from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
 
@@ -15,12 +17,14 @@ from backend.release.daytona_policy import (
 
 
 ProcessingBackend = Literal["local", "daytona"]
+DeploymentMode = Literal["local", "hosted"]
 DEFAULT_MAX_UPLOAD_BYTES = 8 * 1024**3
 DEFAULT_TRUSTED_FRONTEND_ORIGINS = (
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://[::1]:5173",
 )
+DEFAULT_TRUSTED_BIN_DIRS = ("/usr/bin", "/usr/local/bin", "/opt/homebrew/bin")
 
 
 class SettingsError(ValueError):
@@ -57,6 +61,21 @@ class ProcessingSettings:
     daytona_policy: DaytonaPolicy | None = None
     max_upload_bytes: int = DEFAULT_MAX_UPLOAD_BYTES
     trusted_frontend_origins: tuple[str, ...] = DEFAULT_TRUSTED_FRONTEND_ORIGINS
+    cloud_provider_enabled: bool = False
+    cloud_provider_api_key: str | None = field(default=None, repr=False)
+    allowed_model_ids: tuple[str, ...] = ()
+    cloud_model_id: str = "anthropic/claude-3.5-haiku"
+    provider_deadline_seconds: float = 30.0
+    provider_call_reservation: float = 0.0
+    provider_budget_limit: float = 0.0
+    trusted_bin_dirs: tuple[str, ...] = DEFAULT_TRUSTED_BIN_DIRS
+    ffmpeg_sha256: str | None = None
+    ffprobe_sha256: str | None = None
+    deployment_mode: DeploymentMode = "local"
+    auth_backend: Literal["hmac"] | None = None
+    auth_secret: str | None = field(default=None, repr=False)
+    bind_host: str = "127.0.0.1"
+    tls_terminated: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.trusted_frontend_origins, tuple) or not self.trusted_frontend_origins:
@@ -73,6 +92,26 @@ class ProcessingSettings:
             "daytona",
         }:
             raise SettingsError("processing_backend must be exactly 'local' or 'daytona'")
+        if (
+            not math.isfinite(self.provider_deadline_seconds)
+            or self.provider_deadline_seconds <= 0
+            or not math.isfinite(self.provider_call_reservation)
+            or self.provider_call_reservation < 0
+            or not math.isfinite(self.provider_budget_limit)
+            or self.provider_budget_limit < 0
+        ):
+            raise SettingsError("provider deadline must be positive and budget values nonnegative")
+        if self.cloud_provider_enabled and (
+            self.provider_call_reservation <= 0
+            or self.provider_budget_limit < self.provider_call_reservation
+        ):
+            raise SettingsError(
+                "enabled cloud provider requires a positive per-call reservation within its budget limit"
+            )
+        if not all(Path(directory).is_absolute() for directory in self.trusted_bin_dirs):
+            raise SettingsError("trusted_bin_dirs must contain absolute paths")
+        if self.deployment_mode not in {"local", "hosted"}:
+            raise SettingsError("deployment_mode must be exactly 'local' or 'hosted'")
         if self.processing_backend == "local":
             if self.daytona_api_key is not None or self.daytona_policy is not None:
                 raise SettingsError("local processing cannot include Daytona configuration")
@@ -92,11 +131,24 @@ class ProcessingSettings:
             "remoteEnabled": self.remote_enabled,
         }
 
+    def validate_deployment(self) -> None:
+        if self.deployment_mode != "hosted":
+            return
+        if self.auth_backend != "hmac" or not self.auth_secret:
+            raise SettingsError("hosted deployment requires an authentication backend and secret")
+        if os.environ.get("GA_FLAG_LEFTOVER_HTTP") == "1":
+            raise SettingsError("hosted deployment requires leftover HTTP routes to be disabled")
+        if self.bind_host not in {"127.0.0.1", "localhost", "::1"} and not self.tls_terminated:
+            raise SettingsError("hosted deployment on a non-loopback bind requires TLS termination")
+
     @classmethod
     def from_env(cls) -> "ProcessingSettings":
         raw_origins = os.environ.get("TRUSTED_FRONTEND_ORIGINS")
         trusted_frontend_origins = (
             DEFAULT_TRUSTED_FRONTEND_ORIGINS if raw_origins is None else tuple(raw_origins.split(","))
+        )
+        trusted_bin_dirs = DEFAULT_TRUSTED_BIN_DIRS + tuple(
+            item for item in os.environ.get("GA_TRUSTED_BIN_DIRS", "").split(os.pathsep) if item
         )
         raw_max_upload_bytes = os.environ.get("MATCH_UPLOAD_MAX_BYTES")
         try:
@@ -109,12 +161,34 @@ class ProcessingSettings:
             raise SettingsError("MATCH_UPLOAD_MAX_BYTES must be a positive integer") from None
         if max_upload_bytes <= 0:
             raise SettingsError("MATCH_UPLOAD_MAX_BYTES must be a positive integer")
+        try:
+            provider_call_reservation = float(os.environ.get("GA_PROVIDER_CALL_RESERVATION", "0"))
+            provider_budget_limit = float(os.environ.get("GA_PROVIDER_BUDGET_LIMIT", "0"))
+        except ValueError:
+            raise SettingsError("provider budget environment values must be numbers") from None
 
         backend = os.environ.get("PROCESSING_BACKEND", "local")
         if backend not in {"local", "daytona"}:
             raise SettingsError("PROCESSING_BACKEND must be exactly 'local' or 'daytona'")
         if backend == "local":
-            return cls(max_upload_bytes=max_upload_bytes, trusted_frontend_origins=trusted_frontend_origins)
+            return cls(
+                max_upload_bytes=max_upload_bytes,
+                trusted_frontend_origins=trusted_frontend_origins,
+                cloud_provider_enabled=os.environ.get("GA_CLOUD_PROVIDER_ENABLED") == "1",
+                cloud_provider_api_key=os.environ.get("OPENROUTER_API_KEY"),
+                allowed_model_ids=tuple(filter(None, os.environ.get("GA_ALLOWED_MODEL_IDS", "").split(","))),
+                cloud_model_id=os.environ.get("OPENROUTER_MODEL", "anthropic/claude-3.5-haiku"),
+                provider_call_reservation=provider_call_reservation,
+                provider_budget_limit=provider_budget_limit,
+                trusted_bin_dirs=trusted_bin_dirs,
+                ffmpeg_sha256=os.environ.get("GA_FFMPEG_SHA256"),
+                ffprobe_sha256=os.environ.get("GA_FFPROBE_SHA256"),
+                deployment_mode=os.environ.get("GA_DEPLOYMENT_MODE", "local"),
+                auth_backend=os.environ.get("GA_AUTH_BACKEND"),
+                auth_secret=os.environ.get("GA_AUTH_SECRET"),
+                bind_host=os.environ.get("GA_BIND_HOST", "127.0.0.1"),
+                tls_terminated=os.environ.get("GA_TLS_TERMINATED") == "1",
+            )
 
         api_key = os.environ.get("DAYTONA_API_KEY")
         if api_key is None or not api_key.strip():
@@ -129,4 +203,12 @@ class ProcessingSettings:
             daytona_policy=policy,
             max_upload_bytes=max_upload_bytes,
             trusted_frontend_origins=trusted_frontend_origins,
+            trusted_bin_dirs=trusted_bin_dirs,
+            ffmpeg_sha256=os.environ.get("GA_FFMPEG_SHA256"),
+            ffprobe_sha256=os.environ.get("GA_FFPROBE_SHA256"),
+            deployment_mode=os.environ.get("GA_DEPLOYMENT_MODE", "local"),
+            auth_backend=os.environ.get("GA_AUTH_BACKEND"),
+            auth_secret=os.environ.get("GA_AUTH_SECRET"),
+            bind_host=os.environ.get("GA_BIND_HOST", "127.0.0.1"),
+            tls_terminated=os.environ.get("GA_TLS_TERMINATED") == "1",
         )

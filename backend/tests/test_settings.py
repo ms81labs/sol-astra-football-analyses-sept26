@@ -16,6 +16,9 @@ DAYTONA_ENV_KEYS = (
     "DAYTONA_POLICY_PATH",
     "MATCH_UPLOAD_MAX_BYTES",
     "TRUSTED_FRONTEND_ORIGINS",
+    "GA_CLOUD_PROVIDER_ENABLED",
+    "GA_PROVIDER_CALL_RESERVATION",
+    "GA_PROVIDER_BUDGET_LIMIT",
 )
 
 
@@ -49,6 +52,18 @@ def test_upload_limit_loads_from_environment(monkeypatch: pytest.MonkeyPatch) ->
     monkeypatch.setenv("MATCH_UPLOAD_MAX_BYTES", "123456")
 
     assert ProcessingSettings.from_env().max_upload_bytes == 123456
+
+
+def test_cloud_provider_requires_and_loads_meaningful_budget(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GA_CLOUD_PROVIDER_ENABLED", "1")
+    with pytest.raises(SettingsError, match="positive per-call reservation"):
+        ProcessingSettings.from_env()
+
+    monkeypatch.setenv("GA_PROVIDER_CALL_RESERVATION", "0.25")
+    monkeypatch.setenv("GA_PROVIDER_BUDGET_LIMIT", "1")
+    settings = ProcessingSettings.from_env()
+    assert settings.provider_call_reservation == 0.25
+    assert settings.provider_budget_limit == 1.0
 
 
 def test_frontend_origins_default_and_canonical_environment(monkeypatch):

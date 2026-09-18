@@ -49,13 +49,8 @@ def test_workbench_corrections_search_jobs_and_unknown_metrics(tmp_path: Path) -
                 "/api/workbench/matches/m1/corrections",
                 json={"kind": "team_mapping", "payload": {"cluster": 2}, "crashBeforeCommit": True},
             )
-            assert created.status_code == 200
-            assert created.json()["saveState"] == "pending"
-            recovered = await client.post(
-                f"/api/workbench/matches/m1/corrections/{created.json()['correctionId']}/recover"
-            )
-            assert recovered.json()["saveState"] == "saved"
-            assert recovered.json()["rebuild"] == ["team_state", "events", "metrics", "report"]
+            assert created.status_code == 410
+            assert created.json()["error"] == "ROUTE_RETIRED"
             search = await client.post(
                 "/api/workbench/search",
                 json={
@@ -67,27 +62,24 @@ def test_workbench_corrections_search_jobs_and_unknown_metrics(tmp_path: Path) -
                     ],
                 },
             )
-            assert search.json()["query"]["unanswerable"] is False
-            assert search.json()["results"] == []
+            assert search.status_code == 410
             assistance = await client.post(
                 "/api/workbench/assistance/report",
                 json={"metrics": [{"availability": "unknown", "reasonCodes": ["ZERO_DENOMINATOR"]}], "claimedEvidenceIds": ["nope"]},
             )
-            assert assistance.json()["route"] == "rejected"
+            assert assistance.status_code == 410
             job = await client.post(
                 "/api/workbench/jobs",
                 json={"requestId": "r1", "matchId": "m1", "sourceSha256": "c" * 64, "budget": 1.0},
             )
-            assert job.json()["status"] == "submitted"
+            assert job.status_code == 410
             timeout = await client.post("/api/workbench/jobs/r1/timeout")
-            assert timeout.json()["status"] == "outcome_unknown"
+            assert timeout.status_code == 410
             metrics = await client.post(
                 "/api/workbench/matches/m1/metrics",
                 json={"possession": None, "controlledFrames": 0, "myTeamDistance": 0},
             )
-            possession = next(item for item in metrics.json()["metrics"] if item["metric"] == "possession_pct")
-            assert possession["availability"] == "unknown"
-            assert possession["value"] is None
+            assert metrics.status_code == 410
             interval = await client.post(
                 "/api/workbench/playlists/export-interval",
                 json={"timestampStart": 3.0, "timestampEnd": 5.0, "sourceFps": 25},
@@ -103,17 +95,14 @@ def test_workbench_corrections_search_jobs_and_unknown_metrics(tmp_path: Path) -
                     ],
                 },
             )
-            assert queries.status_code == 200
-            assert queries.json()["results"] == []
+            assert queries.status_code == 410
             report = await client.post(
                 "/api/workbench/matches/m1/reports",
                 json={"metrics": [{"availability": "unknown", "reasonCodes": ["ZERO_DENOMINATOR"], "metric": "possession_pct"}]},
             )
-            assert report.status_code == 200
-            assert report.json()["route"] == "template"
+            assert report.status_code == 410
             pending = await client.get("/api/workbench/matches/m1/corrections?state=pending")
-            assert pending.status_code == 200
-            assert pending.json()["items"] == []
+            assert pending.status_code == 410
             dictionary = await client.get("/api/workbench/metrics/dictionary")
             assert dictionary.status_code == 200
             assert dictionary.json()["metrics"]["experimental_shot_quality"]["publishedLabel"] == "experimental_shot_quality"
@@ -124,18 +113,13 @@ def test_workbench_corrections_search_jobs_and_unknown_metrics(tmp_path: Path) -
             assert geometry.json()["validatedMeasurement"] is False
             assert geometry.json()["decision"] is None
             job_status = await client.get("/api/workbench/jobs/r1")
-            assert job_status.status_code == 200
-            assert job_status.json()["status"] == "outcome_unknown"
-            assert job_status.json()["cacheIdentity"]
-            assert job_status.json()["terminated"] is False
+            assert job_status.status_code == 410
             cost = await client.get("/api/workbench/jobs/r1/cost")
-            assert cost.status_code == 200
-            assert "p50Reserved" in cost.json()
+            assert cost.status_code == 410
             flags = await client.get("/api/workbench/flags")
             assert flags.json()["native_code"] is False
             evidence = await client.get("/api/workbench/matches/m1/evidence?intervalStart=0&intervalEnd=30")
-            assert evidence.status_code == 200
-            assert evidence.json()["intervalEndpoint"] == "half_open"
+            assert evidence.status_code == 410
             ownership = await client.post(
                 "/api/workbench/matches/m1/ownership",
                 json={"ballVisible": True, "nearestTeam": "my_team", "nearestDistance": 2.0, "persistenceFrames": 1},
@@ -156,7 +140,7 @@ def test_workbench_corrections_search_jobs_and_unknown_metrics(tmp_path: Path) -
                 "/api/workbench/matches/m1/reports/assemble",
                 json={"metrics": [{"metric": "possession_pct", "availability": "unknown", "value": None}], "claimedEvidenceIds": ["missing"], "knownEvidenceIds": []},
             )
-            assert assembled.json()["publication"]["accepted"] is False
+            assert assembled.status_code == 410
             estimate = await client.post(
                 "/api/workbench/cost/estimate",
                 json={"allocatedCompute": 2.0, "reviewLabour": 10.0, "fixedShare": 5.0, "exportFps": 5.0},
@@ -198,7 +182,7 @@ def test_workbench_corrections_search_jobs_and_unknown_metrics(tmp_path: Path) -
             )
             assert players.json()["intervalLimited"] is True
             rates = await client.get("/api/workbench/jobs/r1/rates")
-            assert rates.json()["exportFpsEqualsInferenceFps"] is False
+            assert rates.status_code == 410
             setup = await client.post(
                 "/api/workbench/setup/assess",
                 json={"cameraProfile": "handheld_low_angle", "pitchLengthM": None, "rights": {"cloudPermission": False}},
@@ -234,8 +218,7 @@ def test_workbench_corrections_search_jobs_and_unknown_metrics(tmp_path: Path) -
                 "/api/workbench/matches/m1/jobs",
                 json={"requestId": "r-nested", "matchId": "m1", "sourceSha256": "d" * 64, "budget": 0.5},
             )
-            assert nested_job.status_code == 200
-            assert nested_job.json()["status"] == "submitted"
+            assert nested_job.status_code == 410
             measures = await client.get("/api/workbench/evaluation/measures")
             assert measures.json()["trackevalIsGroundTruth"] is False
             assert measures.json()["annotationServiceHealthSatisfiesLabelGate"] is False
@@ -261,11 +244,7 @@ def test_workbench_concurrent_requests_do_not_change_factual_measurements(tmp_pa
                 )
 
             first, second = await anyio.gather(post_search("a"), post_search("b"))
-            assert first.status_code == 200 and second.status_code == 200
-            assert first.json()["results"] == []
-            assert second.json()["results"] == []
-            assert first.json()["query"]["unanswerable"] is False
-            assert second.json()["query"]["unanswerable"] is False
+            assert first.status_code == 410 and second.status_code == 410
             hostile = await client.get("/api/workbench/dossier", headers={"host": "evil.example"})
             assert hostile.status_code == 400
 
@@ -283,9 +262,9 @@ def test_workbench_concurrent_requests_do_not_change_factual_measurements(tmp_pa
                     json={"kind": "event_accept", "payload": {"eventId": "e1"}, "expectedVersion": 0},
                 ),
             )
-            assert first_edit.json()["saveState"] == "saved"
-            assert stale.json()["saveState"] == "conflicted"
-            assert duplicate.json()["saveState"] == "conflicted"
+            assert first_edit.status_code == 410
+            assert stale.status_code == 410
+            assert duplicate.status_code == 410
             lane = await client.get("/api/workbench/research/lane")
             assert lane.status_code == 200
             assert lane.json()["autonomousProductionChanges"] is False
@@ -303,13 +282,12 @@ def test_hosted_job_reads_require_signed_scoped_access(tmp_path: Path) -> None:
                 "/api/workbench/jobs",
                 json={"requestId": "r-signed", "matchId": "m1", "sourceSha256": "e" * 64, "budget": 1.0},
             )
-            assert created.status_code == 200
+            assert created.status_code == 410
             hosted = await client.get(
                 "/api/workbench/jobs/r-signed",
                 headers={"x-deployment-boundary": "hosted"},
             )
-            assert hosted.status_code == 403
-            assert "UNSIGNED_OR_UNSCOPED_JOB_ACCESS" in hosted.json()["detail"]["reasonCodes"]
+            assert hosted.status_code == 410
             wrong_scope = await client.get(
                 "/api/workbench/jobs/r-signed",
                 headers={
@@ -318,7 +296,7 @@ def test_hosted_job_reads_require_signed_scoped_access(tmp_path: Path) -> None:
                     "x-deployment-boundary": "hosted",
                 },
             )
-            assert wrong_scope.status_code == 403
+            assert wrong_scope.status_code == 410
             admitted = await client.get(
                 "/api/workbench/jobs/r-signed",
                 headers={
@@ -327,8 +305,8 @@ def test_hosted_job_reads_require_signed_scoped_access(tmp_path: Path) -> None:
                     "x-deployment-boundary": "hosted",
                 },
             )
-            assert admitted.status_code == 403
+            assert admitted.status_code == 410
             local = await client.get("/api/workbench/jobs/r-signed")
-            assert local.status_code == 200
+            assert local.status_code == 410
 
     _run(body)

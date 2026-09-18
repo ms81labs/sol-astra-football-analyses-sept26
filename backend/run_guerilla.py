@@ -285,6 +285,8 @@ def build_tracking_row(
     proposal_window_kind=None,
     proposal_seed_mode=None,
     proposal_inference_mode=None,
+    pts=None,
+    time_base=None,
 ):
     source_x1, source_y1, source_x2, source_y2 = source_box
     row = {
@@ -300,6 +302,8 @@ def build_tracking_row(
         "Source_X2": round(float(source_x2), 2),
         "Source_Y2": round(float(source_y2), 2),
     }
+    if pts is not None and time_base is not None:
+        row.update({"PTS": int(pts), "TimeBaseNum": int(time_base[0]), "TimeBaseDen": int(time_base[1])})
     if proposal_seed_center is not None:
         row["ProposalSeedX"] = round(float(proposal_seed_center[0]), 2)
         row["ProposalSeedY"] = round(float(proposal_seed_center[1]), 2)
@@ -3578,19 +3582,31 @@ def collect_primary_player_windows(
             fps = None
     frame_count = 0
     last_sample_presentation_time = None
+    grid_origin_presentation_time = None
+    last_sample_pts = None
+    grid_origin_pts = None
     for decoded in iter_bgr_frames(Path(video_path), frame_source, cv2_module=cv2):
         frame = pixels_from_decoded_frame(decoded)
         if frame is None:
             frame_count += 1
             continue
+        presentation = presentation_seconds_or_none(decoded)
+        if grid_origin_presentation_time is None and presentation is not None:
+            grid_origin_presentation_time = presentation
+        if grid_origin_pts is None and decoded.pts is not None:
+            grid_origin_pts = decoded.pts
         if should_sample_on_source_grid(
             decoded,
             frame_count=frame_count,
             frame_interval=frame_interval,
             last_sample_presentation_time=last_sample_presentation_time,
             fps=fps,
+            grid_origin_presentation_time=grid_origin_presentation_time,
+            last_sample_pts=last_sample_pts,
+            grid_origin_pts=grid_origin_pts,
         ):
-            last_sample_presentation_time = presentation_seconds_or_none(decoded)
+            last_sample_presentation_time = presentation
+            last_sample_pts = decoded.pts
             result = model.predict(
                 frame,
                 imgsz=imgsz,
@@ -4624,6 +4640,8 @@ def _ball_candidate_rows_for_frame(
     frame_shape=None,
     detector_profile=DETECTOR_PROFILE_COCO_TRACKING_FULL,
     return_diagnostics=False,
+    pts=None,
+    time_base=None,
 ):
     candidate_rows = []
     raw_ball_box_count = 0
@@ -4725,6 +4743,8 @@ def _ball_candidate_rows_for_frame(
             proposal_window_kind=proposal_window_kind,
             proposal_seed_mode=proposal_seed_mode,
             proposal_inference_mode=proposal_inference_mode,
+            pts=pts,
+            time_base=time_base,
         )
         if reopen_reasons:
             candidate_row["TouchlineRawCandidateReopened"] = True
@@ -4763,6 +4783,8 @@ def _ball_candidate_rows_for_frame(
                 proposal_window_kind=proposal_window_kind,
                 proposal_seed_mode=proposal_seed_mode,
                 proposal_inference_mode=proposal_inference_mode,
+                pts=pts,
+                time_base=time_base,
             )
             rescued_row["PitchPolygonRescueMode"] = rescue_mode
             if rescue_mode == "primary_boundary":
@@ -4968,6 +4990,9 @@ def recover_ball_rows(
     recovered_rows = []
     frame_count = 0
     last_sample_presentation_time = None
+    grid_origin_presentation_time = None
+    last_sample_pts = None
+    grid_origin_pts = None
     direct_seed_retry_frames = set()
     direct_seed_retry_detected_frames = set()
     direct_seed_multi_scale_retry_frames = set()
@@ -5106,19 +5131,27 @@ def recover_ball_rows(
         if frame is None:
             frame_count += 1
             continue
+        presentation = presentation_seconds_or_none(decoded)
+        if grid_origin_presentation_time is None and presentation is not None:
+            grid_origin_presentation_time = presentation
+        if grid_origin_pts is None and decoded.pts is not None:
+            grid_origin_pts = decoded.pts
         if should_sample_on_source_grid(
             decoded,
             frame_count=frame_count,
             frame_interval=frame_interval,
             last_sample_presentation_time=last_sample_presentation_time,
             fps=sample_fps,
+            grid_origin_presentation_time=grid_origin_presentation_time,
+            last_sample_pts=last_sample_pts,
+            grid_origin_pts=grid_origin_pts,
         ):
-            last_sample_presentation_time = presentation_seconds_or_none(decoded)
-            timestamp = round(
+            last_sample_presentation_time = presentation
+            last_sample_pts = decoded.pts
+            timestamp = (
                 last_sample_presentation_time
                 if last_sample_presentation_time is not None
-                else decoded.presentation_time_seconds,
-                2,
+                else frame_count / (sample_fps or 1.0)
             )
             if calibrations:
                 while calibration_index + 1 < len(calibrations) and calibrations[calibration_index + 1][0] <= frame_count:
@@ -5228,6 +5261,8 @@ def recover_ball_rows(
                         frame_shape=frame.shape,
                         detector_profile=detector_profile,
                         return_diagnostics=True,
+                        pts=decoded.pts,
+                        time_base=decoded.time_base,
                     )
                     attempt_diagnostics["elapsedSeconds"] = round(time.monotonic() - attempt_started_at, 6)
                     attempt_diagnostics["hadRawBallDetection"] = attempt_diagnostics["rawClass32BoxCount"] > 0
@@ -7763,6 +7798,19 @@ def _utc_now_iso():
     return datetime.now(timezone.utc).isoformat()
 
 
+class _CountingPredictor:
+    def __init__(self, model, on_predict):
+        self._model = model
+        self._on_predict = on_predict
+
+    def predict(self, *args, **kwargs):
+        self._on_predict()
+        return self._model.predict(*args, **kwargs)
+
+    def __getattr__(self, name):
+        return getattr(self._model, name)
+
+
 def process_video(
     video_path,
     output_parquet=None,
@@ -8040,6 +8088,10 @@ def process_video(
     except Exception as e:
         print(f"Error loading model '{resolved_primary_model_path}': {e}")
         return empty_result() if return_rows or not output_parquet else []
+    try:
+        observed_precision = str(next(primary_model.model.parameters()).dtype).removeprefix("torch.")
+    except (AttributeError, StopIteration, TypeError):
+        observed_precision = None
     complete_phase("modelLoadSeconds", model_load_started_at)
     emit_worker_heartbeat("modelLoad", "completed")
     
@@ -8083,6 +8135,11 @@ def process_video(
     frame_count = 0
     last_homography_recalc = 0
     last_export_presentation_time = None
+    grid_origin_presentation_time = None
+    grid_origin_pts = None
+    last_export_pts = None
+    exported_presentation_times = []
+    observed_device = None
     recalc_interval = HOMOGRAPHY_RECALC_FRAMES
     
     print("\nStarting BoT-SORT/YOLO Video Processing...")
@@ -8121,6 +8178,7 @@ def process_video(
                     result.presentation_time_seconds = decoded.presentation_time_seconds
                     result.source_frame_index = decoded.source_frame_index
                     result.pts = decoded.pts
+                    result.time_base = decoded.time_base
                     result.presentation_clock = getattr(decoded, "presentation_clock", "decoder_pts")
                 except Exception:
                     pass
@@ -8133,6 +8191,9 @@ def process_video(
         sampling_audit.record_primary_inference()
         sampling_audit.record_tracker_update()
         frame_image = getattr(r, "orig_img", None)
+        tensor = getattr(getattr(r, "boxes", None), "data", None)
+        if observed_device is None and getattr(tensor, "device", None) is not None:
+            observed_device = str(tensor.device)
         
         # Periodic homography recalculation to handle camera sway
         if frame_count - last_homography_recalc >= recalc_interval:
@@ -8149,12 +8210,24 @@ def process_video(
                         pass  # Keep current H
         
         presentation = None if getattr(r, "presentation_clock", "decoder_pts") == "missing" else getattr(r, "presentation_time_seconds", None)
+        if grid_origin_presentation_time is None and presentation is not None:
+            grid_origin_presentation_time = presentation
+        pts = getattr(r, "pts", None)
+        time_base = getattr(r, "time_base", None)
+        if grid_origin_pts is None and pts is not None:
+            grid_origin_pts = pts
         if should_export_on_source_grid(
             presentation,
             frame_count=frame_count,
             frame_interval=frame_interval,
             last_export_presentation_time=last_export_presentation_time,
             grid_step_seconds=frame_interval / fps if fps else 0.0,
+            grid_origin_presentation_time=grid_origin_presentation_time,
+            pts=pts,
+            time_base=time_base,
+            last_export_pts=last_export_pts,
+            grid_origin_pts=grid_origin_pts,
+            target_fps=(fps / frame_interval) if fps and frame_interval else None,
         ):
             sampling_audit.record_export_sample()
             timestamp = export_timestamp_seconds(
@@ -8163,6 +8236,8 @@ def process_video(
                 fps=fps,
             )
             last_export_presentation_time = presentation if presentation is not None else timestamp
+            last_export_pts = pts
+            exported_presentation_times.append(timestamp)
             
             boxes = r.boxes
             if boxes is not None:
@@ -8226,6 +8301,8 @@ def process_video(
                             pitch_y=py,
                             detection_conf=conf,
                             source_box=(x1, y1, x2, y2),
+                            pts=pts,
+                            time_base=time_base,
                         )
                     )
         processed_source_frames = frame_count + 1
@@ -8260,7 +8337,10 @@ def process_video(
     filtered_probe_observed_ball_rows = []
     probe_observed_pass_started_at = time.monotonic()
     emit_worker_heartbeat("probeObservedPass", "started")
-    probe_model = auxiliary_ball_model or primary_model
+    probe_model = _CountingPredictor(
+        auxiliary_ball_model or primary_model,
+        sampling_audit.record_recovery_inference,
+    )
     probe_detector_profile = resolved_auxiliary_ball_model_profile or resolved_primary_detector_profile
     probe_recovery_settings = detector_probe_recovery_settings(probe_detector_profile)
     probe_crop_windows = None
@@ -8336,7 +8416,6 @@ def process_video(
     recovery_selection_started_at = time.monotonic()
     emit_worker_heartbeat("recoverySelection", "started")
     if needs_primary_recovery or needs_supplemental_recovery:
-        sampling_audit.record_recovery_inference()
         recovery_debug["recoveryAttempted"] = True
         recovery_results = run_ball_recovery_experiment(
             video_path,
@@ -8799,12 +8878,18 @@ def process_video(
             "notes": list(rates.notes),
         },
         "decodeAnchors": {
-            "beginning": getattr(first_decoded, "presentation_time_seconds", None),
-            "middle": last_export_presentation_time,
-            "end": last_export_presentation_time,
+            "beginning": exported_presentation_times[0] if exported_presentation_times else None,
+            "middle": (
+                exported_presentation_times[len(exported_presentation_times) // 2]
+                if len(exported_presentation_times) >= 3
+                else None
+            ),
+            "end": exported_presentation_times[-1] if len(exported_presentation_times) >= 2 else None,
             "source": "production_decode",
             "discontinuities": [],
         },
+        "hardware": {"declaredBackend": "auto", "observedDevice": observed_device},
+        "precision": observed_precision,
     }
 
 if __name__ == "__main__":

@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from backend.app import llm
 from backend.app.main import create_app
 from backend.app.report_export import render_match_report_html
-from backend.app.schemas import MatchConfig
+from backend.app.schemas import FrameData, MatchConfig, MatchSummary
 
 
 @pytest.fixture
@@ -24,6 +24,26 @@ def make_match(storage, input_mode='video'):
     path = storage.save_upload('input.json', b'[]')
     match = storage.create_match('Test', input_mode, 'input.json', path, MatchConfig())
     return storage.update_match_status(match.id, status='ready')
+
+
+def publish_minimal_generation(storage, match_id, frames):
+    storage.save_frames(match_id, frames)
+    storage.save_analytics(
+        match_id,
+        MatchSummary(
+            possession=None,
+            myTeamDistance=None,
+            enemyDistance=None,
+            myTeamTopSpeed=None,
+            enemyTopSpeed=None,
+            myTeamSprints=None,
+            enemySprints=None,
+        ),
+        [],
+        [],
+        [],
+    )
+    storage.save_events(match_id, [])
 
 
 @pytest.mark.parametrize('payload', [
@@ -159,7 +179,7 @@ def test_provider_output_is_validated(provider, payload, monkeypatch):
         def post(self, *args, **kwargs): return response
     monkeypatch.setattr('httpx.Client', Client)
     with pytest.raises(ValueError):
-        llm.run_analysis('tactical_report', [], provider=provider)
+        llm._run_analysis_unguarded('tactical_report', [], provider=provider)
 
 
 def test_legacy_provider_track_ids_are_escaped_in_html():
@@ -176,20 +196,18 @@ def test_legacy_provider_track_ids_are_escaped_in_html():
 @pytest.mark.parametrize('analysis_type,payload', [
     ('tactical_report', REPORT),
     ('drills', {'drills': [{'name': 'Rondo', 'objective': 'Pass', 'setup': 'Circle', 'duration': '10m'}], 'focus_area': 'Possession'}),
-    ('offside', {'offside': False, 'offside_x': 80, 'explanation': 'Onside'}),
-    ('spacing', {'width': 45, 'too_wide': False, 'explanation': 'Compact'}),
 ])
 def test_valid_provider_payloads_keep_the_public_shape(analysis_type, payload, monkeypatch):
     response = SimpleNamespace(raise_for_status=lambda: None, json=lambda: {'response': json.dumps(payload)})
     monkeypatch.setattr('requests.post', lambda *args, **kwargs: response)
     from backend.app.schemas import FrameData
-    assert llm.run_analysis(analysis_type, [FrameData(frameId=0, timestamp=0)], current_frame_index=0) == payload
+    assert llm._run_analysis_unguarded(analysis_type, [FrameData(frameId=0, timestamp=0)], current_frame_index=0) == payload
 
 
 def test_invalid_provider_result_does_not_replace_saved_report(api, monkeypatch):
     storage, client, _ = api
     match = make_match(storage)
-    storage.save_frames(match.id, [])
+    publish_minimal_generation(storage, match.id, [])
     storage.save_analysis_artifact(match.id, 'tactical_report', REPORT)
     invalid = {**REPORT, 'player_focus': {'topCreator': {'trackId': '<img src=x>', 'team': 'my_team'}}}
     response = SimpleNamespace(raise_for_status=lambda: None, json=lambda: {'response': json.dumps(invalid)})
@@ -280,10 +298,9 @@ def test_concurrent_config_update_waits_for_failed_reprocess_rollback(api, monke
 def test_late_analysis_cannot_republish_after_config_change(api, monkeypatch):
     from concurrent.futures import ThreadPoolExecutor
     import threading
-    from backend.app.schemas import FrameData
     storage, client, _ = api
     match = make_match(storage, 'tracking_json')
-    storage.save_frames(match.id, [FrameData(frameId=0,timestamp=0)])
+    publish_minimal_generation(storage, match.id, [FrameData(frameId=0,timestamp=0)])
     started, release = threading.Event(), threading.Event()
     def slow_analysis(*args, **kwargs):
         started.set()
@@ -302,10 +319,8 @@ def test_late_analysis_cannot_republish_after_config_change(api, monkeypatch):
     assert not (storage.storage_root/'matches'/match.id/'tactical_report.json').exists()
 
 
-def test_provider_context_has_direction_without_rotating_display_coordinates():
-    from backend.app.schemas import FrameData, PlayerData
-    frame=FrameData(frameId=0,timestamp=0,myTeam=[PlayerData(id=1,x=10,y=50)])
-    prompt=llm.build_prompt('offside',[frame],current_frame=frame,attack_direction='right_to_left')
-    assert 'right_to_left' in prompt
-    assert '"x": 10.0' in prompt
-    assert 'decreasing x' in prompt
+@pytest.mark.parametrize('analysis_type', ['offside', 'spacing'])
+def test_provider_cannot_generate_geometry(analysis_type):
+    from backend.app.schemas import FrameData
+    with pytest.raises(ValueError, match='Unsupported analysis type'):
+        llm.build_prompt(analysis_type, [FrameData(frameId=0, timestamp=0)])

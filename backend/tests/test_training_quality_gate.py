@@ -7,8 +7,25 @@ from pathlib import Path
 import backend.app.training_quality_gate as training_quality_gate
 
 
+def test_missing_results_csv_returns_a_blocking_zero_fitness_summary() -> None:
+    summary = training_quality_gate._validation_metric_summary(None)
+
+    assert summary["fitness"] == 0.0
+    assert summary["allZero"] is True
+
+
 def _write_json(path: Path, payload: dict[str, object]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    if path.name == "training_run_summary.json":
+        manifest = path.parent / "dataset-manifest.json"
+        config = path.parent / "training-config.json"
+        manifest.write_text('{"version":1}\n', encoding="utf-8")
+        config.write_text('{"epochs":1}\n', encoding="utf-8")
+        payload = {
+            "datasetManifestPath": manifest.name,
+            "trainingConfigPath": config.name,
+            **payload,
+        }
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
@@ -50,11 +67,11 @@ def _write_dataset(
         labels_dir.mkdir(parents=True, exist_ok=True)
         for index in range(positive_count):
             stem = f"{split_name}-positive-{index}"
-            (images_dir / f"{stem}.jpg").write_bytes(b"image")
+            (images_dir / f"{stem}.jpg").write_bytes(stem.encode())
             (labels_dir / f"{stem}.txt").write_text("0 0.5 0.5 0.2 0.2\n", encoding="utf-8")
         for index in range(empty_count):
             stem = f"{split_name}-empty-{index}"
-            (images_dir / f"{stem}.jpg").write_bytes(b"image")
+            (images_dir / f"{stem}.jpg").write_bytes(stem.encode())
             (labels_dir / f"{stem}.txt").write_text("", encoding="utf-8")
     dataset_yaml = export_root / "dataset.yaml"
     dataset_yaml.write_text(

@@ -15,6 +15,7 @@ def test_run_job_happy_path_updates_job_completed(tmp_path):
         mock_storage = MagicMock()
         mock_storage_cls.return_value = mock_storage
         mock_storage.get_job.return_value = mock_job
+        mock_storage.job_ledger.cancel_requested.return_value = False
 
         run_job(tmp_path, "job-ok-001")
 
@@ -33,6 +34,7 @@ def test_run_job_failure_updates_job_and_match_failed(tmp_path):
         mock_storage = MagicMock()
         mock_storage_cls.return_value = mock_storage
         mock_storage.get_job.return_value = mock_job
+        mock_storage.job_ledger.cancel_requested.return_value = False
         mock_process.side_effect = ValueError("detector unavailable")
 
         run_job(tmp_path, "job-fail-002")
@@ -64,6 +66,7 @@ def test_run_job_failure_preserves_homography_message(tmp_path):
         mock_storage = MagicMock()
         mock_storage_cls.return_value = mock_storage
         mock_storage.get_job.return_value = mock_job
+        mock_storage.job_ledger.cancel_requested.return_value = False
         mock_process.side_effect = RuntimeError(message)
 
         run_job(tmp_path, "job-homography-001")

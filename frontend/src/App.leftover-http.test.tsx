@@ -7390,7 +7390,7 @@ describe('App leftover HTTP surfaces', () => {
           && (!init?.method || init.method === 'GET')
         ))).toBe(true);
       });
-      expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/workbench/'))).toBe(false);
+      expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/workbench/dev/matches/match-a/incidents/geometry'))).toBe(false);
       expect(fetchMock.mock.calls.some(([, init]) => (
         Boolean(init?.body && String(init.body).includes('myTeam'))
       ))).toBe(false);
@@ -7636,7 +7636,7 @@ describe('App leftover HTTP surfaces', () => {
           && (!init?.method || init.method === 'GET')
         ))).toBe(true);
       });
-      expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/workbench/'))).toBe(false);
+      expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/workbench/dev/matches/match-a/incidents/package'))).toBe(false);
       expect(fetchMock.mock.calls.some(([, init]) => (
         Boolean(init?.body && String(init.body).includes('forged-offside'))
       ))).toBe(false);

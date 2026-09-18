@@ -638,10 +638,15 @@ def _assess_truth_gates(
 
 def _artifact_paths(storage: Storage, match_id: str) -> dict[str, Path]:
     match_dir = storage._match_dir(match_id)
+    try:
+        ref = storage.current_generation(match_id)
+        derived_dir = match_dir / "generations" / ref.generationId
+    except (FileNotFoundError, KeyError):
+        derived_dir = match_dir
     return {
-        "frames": match_dir / "frames.json",
-        "analytics": match_dir / "analytics.json",
-        "events": match_dir / "events.json",
+        "frames": derived_dir / "frames.json",
+        "analytics": derived_dir / "analytics.json",
+        "events": derived_dir / "events.json",
         "rawRows": match_dir / "raw_rows.json",
     }
 

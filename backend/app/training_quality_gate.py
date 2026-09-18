@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import csv
 from datetime import datetime, timezone
+import hashlib
 import json
 from pathlib import Path
 from typing import Callable
+
+import yaml
 
 
 def _utc_now_iso() -> str:
@@ -33,15 +36,21 @@ def _load_json(path: Path) -> dict[str, object]:
     return payload if isinstance(payload, dict) else {}
 
 
-def _parse_dataset_yaml(dataset_yaml_path: Path) -> dict[str, str]:
-    parsed: dict[str, str] = {}
-    for raw_line in dataset_yaml_path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
-        if not line or line.startswith("#") or ":" not in line:
-            continue
-        key, raw_value = line.split(":", 1)
-        parsed[key.strip()] = raw_value.strip()
+def _parse_dataset_yaml(dataset_yaml_path: Path) -> dict[str, object]:
+    parsed = yaml.safe_load(dataset_yaml_path.read_text(encoding="utf-8"))
+    if not isinstance(parsed, dict):
+        raise ValueError("dataset YAML must contain a mapping")
     return parsed
+
+
+def _sha256(path: Path | None) -> str | None:
+    if path is None or not path.is_file():
+        return None
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        while chunk := handle.read(1 << 20):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _resolve_split_dir(dataset_yaml_path: Path, dataset_root: Path, raw_value: str) -> Path:
@@ -169,20 +178,83 @@ def _run_local_positive_sanity(
     return len(positive_image_paths), detected_count
 
 
-def _validation_metric_summary(results_csv_path: Path | None) -> tuple[float, float, float, bool]:
+def _validation_metric_summary(
+    results_csv_path: Path | None,
+    *,
+    best_epoch: int | None = None,
+) -> dict[str, object]:
     if results_csv_path is None or not results_csv_path.exists():
-        return 0.0, 0.0, 0.0, True
+        return {
+            "epoch": None,
+            "precision": 0.0,
+            "recall": 0.0,
+            "map50": 0.0,
+            "map50_95": 0.0,
+            "fitness": 0.0,
+            "allZero": True,
+            "checkpointMatched": best_epoch is None,
+            "diagnostics": {"maxPrecision": 0.0, "maxRecall": 0.0, "maxMap50": 0.0, "maxMap50_95": 0.0},
+        }
     with results_csv_path.open("r", encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle)
-        metric_rows = list(reader)
+        metric_rows = [{str(key).strip(): value for key, value in row.items()} for row in reader]
     if not metric_rows:
-        return 0.0, 0.0, 0.0, True
+        return _validation_metric_summary(None, best_epoch=best_epoch)
     max_precision = max(_safe_float(row.get("metrics/precision(B)"), 0.0) for row in metric_rows)
     max_recall = max(_safe_float(row.get("metrics/recall(B)"), 0.0) for row in metric_rows)
     max_map50 = max(_safe_float(row.get("metrics/mAP50(B)"), 0.0) for row in metric_rows)
     max_map50_95 = max(_safe_float(row.get("metrics/mAP50-95(B)"), 0.0) for row in metric_rows)
-    all_zero = max(max_precision, max_recall, max_map50, max_map50_95) <= 0.0
-    return max_precision, max_recall, max_map50, all_zero
+    def fitness(row: dict[str, object]) -> float:
+        explicit = str(row.get("fitness") or "").strip()
+        if explicit:
+            return _safe_float(explicit, float("-inf"))
+        return 0.1 * _safe_float(row.get("metrics/mAP50(B)")) + 0.9 * _safe_float(
+            row.get("metrics/mAP50-95(B)")
+        )
+
+    checkpoint = next(
+        (row for row in metric_rows if best_epoch is not None and int(_safe_float(row.get("epoch"))) == best_epoch),
+        None,
+    )
+    if checkpoint is None and best_epoch is not None:
+        return {
+            "epoch": None,
+            "precision": 0.0,
+            "recall": 0.0,
+            "map50": 0.0,
+            "map50_95": 0.0,
+            "fitness": 0.0,
+            "allZero": True,
+            "checkpointMatched": False,
+            "diagnostics": {
+                "maxPrecision": max_precision,
+                "maxRecall": max_recall,
+                "maxMap50": max_map50,
+                "maxMap50_95": max_map50_95,
+            },
+        }
+    if checkpoint is None:
+        checkpoint = max(metric_rows, key=fitness)
+    precision = _safe_float(checkpoint.get("metrics/precision(B)"), 0.0)
+    recall = _safe_float(checkpoint.get("metrics/recall(B)"), 0.0)
+    map50 = _safe_float(checkpoint.get("metrics/mAP50(B)"), 0.0)
+    map50_95 = _safe_float(checkpoint.get("metrics/mAP50-95(B)"), 0.0)
+    return {
+        "epoch": int(_safe_float(checkpoint.get("epoch"), 0.0)),
+        "precision": precision,
+        "recall": recall,
+        "map50": map50,
+        "map50_95": map50_95,
+        "fitness": fitness(checkpoint),
+        "allZero": max(precision, recall, map50, map50_95) <= 0.0,
+        "checkpointMatched": True,
+        "diagnostics": {
+            "maxPrecision": max_precision,
+            "maxRecall": max_recall,
+            "maxMap50": max_map50,
+            "maxMap50_95": max_map50_95,
+        },
+    }
 
 
 def _training_quality_gate_primary_blocker(
@@ -194,7 +266,14 @@ def _training_quality_gate_primary_blocker(
     proposal_window_validation_positive_image_count: int,
     proposal_window_sanity_detected_image_count: int,
     local_positive_sanity_detected_image_count: int,
+    train_val_overlap_count: int = 0,
+    provenance_hashes_present: bool = True,
+    checkpoint_matched: bool = True,
 ) -> str | None:
+    if train_val_overlap_count:
+        return "train_val_image_overlap"
+    if not checkpoint_matched:
+        return "checkpoint_epoch_missing"
     if validation_image_count <= 0:
         return "validation_split_empty"
     if validation_positive_label_image_count <= 0:
@@ -207,6 +286,8 @@ def _training_quality_gate_primary_blocker(
         return "proposal_window_sanity_zero_detections"
     if local_positive_sanity_detected_image_count <= 0:
         return "local_positive_sanity_zero_detections"
+    if not provenance_hashes_present:
+        return "provenance_hash_missing"
     return None
 
 
@@ -280,15 +361,15 @@ def run_training_quality_gate(
             training_summary = loaded
 
     parsed_dataset = _parse_dataset_yaml(dataset_yaml_path)
-    dataset_root = Path(parsed_dataset.get("path") or dataset_yaml_path.parent)
+    dataset_root = Path(str(parsed_dataset.get("path") or dataset_yaml_path.parent))
     if not dataset_root.is_absolute():
         dataset_root = (dataset_yaml_path.parent / dataset_root).resolve()
-    train_images_dir = _resolve_split_dir(dataset_yaml_path, dataset_root, parsed_dataset.get("train", "images/train"))
-    val_images_dir = _resolve_split_dir(dataset_yaml_path, dataset_root, parsed_dataset.get("val", "images/val"))
+    train_images_dir = _resolve_split_dir(dataset_yaml_path, dataset_root, str(parsed_dataset.get("train", "images/train")))
+    val_images_dir = _resolve_split_dir(dataset_yaml_path, dataset_root, str(parsed_dataset.get("val", "images/val")))
     train_labels_dir = Path(str(train_images_dir).replace("/images/", "/labels/"))
     val_labels_dir = Path(str(val_images_dir).replace("/images/", "/labels/"))
 
-    _train_image_paths, _train_positive_count, _train_empty_count = _split_image_and_label_counts(
+    train_image_paths, _train_positive_count, _train_empty_count = _split_image_and_label_counts(
         images_dir=train_images_dir,
         labels_dir=train_labels_dir,
     )
@@ -300,12 +381,31 @@ def run_training_quality_gate(
     )
     validation_image_count = len(val_image_paths)
     validation_informative = validation_image_count > 0 and validation_positive_label_image_count > 0
+    train_hashes = {_sha256(path) for path in train_image_paths}
+    val_hashes = {_sha256(path) for path in val_image_paths}
+    train_val_overlap = sorted((train_hashes & val_hashes) - {None})
 
-    best_weights_path = Path(str(training_summary.get("bestWeightsPath") or candidate_root / "weights" / "best.pt"))
-    results_csv_path = Path(str(training_summary.get("resultsCsvPath") or candidate_root / "results.csv"))
-    max_validation_precision, max_validation_recall, max_validation_map50, all_validation_metrics_zero = (
-        _validation_metric_summary(results_csv_path)
+    def candidate_path(value: object, default: Path | None = None) -> Path | None:
+        if value is None:
+            return default
+        path = Path(str(value))
+        return path if path.is_absolute() else candidate_root / path
+
+    best_weights_path = candidate_path(training_summary.get("bestWeightsPath"), candidate_root / "weights" / "best.pt")
+    results_csv_path = candidate_path(training_summary.get("resultsCsvPath"), candidate_root / "results.csv")
+    dataset_manifest_path = candidate_path(training_summary.get("datasetManifestPath"))
+    training_config_path = candidate_path(training_summary.get("trainingConfigPath"))
+    raw_best_epoch = training_summary.get("bestEpoch")
+    checkpoint_metrics = _validation_metric_summary(
+        results_csv_path,
+        best_epoch=int(raw_best_epoch) if isinstance(raw_best_epoch, (int, float)) else None,
     )
+    provenance_hashes = {
+        "datasetConfigSha256": _sha256(dataset_yaml_path),
+        "datasetManifestSha256": _sha256(dataset_manifest_path),
+        "trainingConfigSha256": _sha256(training_config_path),
+        "bestWeightsSha256": _sha256(best_weights_path),
+    }
 
     positive_image_paths = _positive_label_image_paths(
         train_images_dir=train_images_dir,
@@ -358,11 +458,14 @@ def run_training_quality_gate(
     primary_blocker = _training_quality_gate_primary_blocker(
         validation_image_count=validation_image_count,
         validation_positive_label_image_count=validation_positive_label_image_count,
-        all_validation_metrics_zero=all_validation_metrics_zero,
+        all_validation_metrics_zero=bool(checkpoint_metrics["allZero"]),
         proposal_window_sanity_required=proposal_window_sanity_required,
         proposal_window_validation_positive_image_count=proposal_window_positive_image_count,
         proposal_window_sanity_detected_image_count=proposal_window_sanity_detected_image_count,
         local_positive_sanity_detected_image_count=local_positive_sanity_detected_image_count,
+        train_val_overlap_count=len(train_val_overlap),
+        provenance_hashes_present=all(provenance_hashes.values()),
+        checkpoint_matched=bool(checkpoint_metrics["checkpointMatched"]),
     )
     training_quality_gate_passed = primary_blocker is None
     summary = {
@@ -374,9 +477,23 @@ def run_training_quality_gate(
         "validationPositiveLabelImageCount": validation_positive_label_image_count,
         "validationEmptyLabelImageCount": validation_empty_label_image_count,
         "validationInformative": validation_informative,
-        "maxValidationPrecision": round(max_validation_precision, 8),
-        "maxValidationRecall": round(max_validation_recall, 8),
-        "maxValidationMap50": round(max_validation_map50, 8),
+        "checkpointEpoch": checkpoint_metrics["epoch"],
+        "checkpointEpochMatched": checkpoint_metrics["checkpointMatched"],
+        "checkpointFitness": round(float(checkpoint_metrics["fitness"]), 8),
+        "checkpointValidationMetrics": {
+            key: round(float(checkpoint_metrics[key]), 8)
+            for key in ("precision", "recall", "map50", "map50_95")
+        },
+        "trainingProgressDiagnostics": {
+            key: round(float(value), 8)
+            for key, value in dict(checkpoint_metrics["diagnostics"]).items()
+        },
+        "maxValidationPrecision": round(float(checkpoint_metrics["precision"]), 8),
+        "maxValidationRecall": round(float(checkpoint_metrics["recall"]), 8),
+        "maxValidationMap50": round(float(checkpoint_metrics["map50"]), 8),
+        "trainValOverlapCount": len(train_val_overlap),
+        "trainValOverlapSha256": train_val_overlap,
+        **provenance_hashes,
         "localPositiveSanityImageCount": local_positive_sanity_image_count,
         "localPositiveSanityDetectedImageCount": local_positive_sanity_detected_image_count,
         "proposalWindowValidationImageCount": validation_image_count if proposal_window_sanity_required else 0,
