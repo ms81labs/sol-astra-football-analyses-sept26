@@ -641,7 +641,7 @@ def _artifact_paths(storage: Storage, match_id: str) -> dict[str, Path]:
     try:
         ref = storage.current_generation(match_id)
         derived_dir = match_dir / "generations" / ref.generationId
-    except FileNotFoundError:
+    except (FileNotFoundError, KeyError):
         derived_dir = match_dir
     return {
         "frames": derived_dir / "frames.json",

@@ -1071,11 +1071,13 @@ class Storage:
         return [self.get_match(row["id"]) for row in rows]
 
     def save_frames(self, match_id: str, frames: Iterable[FrameData]) -> None:
-        materialized = list(frames)
         if (self._match_dir(match_id) / "current_generation.json").exists():
-            self._publish_replacement(match_id, frames=materialized)
+            self._publish_replacement(match_id, frames=list(frames))
             return
-        self._write_json_array(self._match_dir(match_id) / "frames.json", (frame.model_dump(mode="json") for frame in materialized))
+        self._write_json_array(
+            self._match_dir(match_id) / "frames.json",
+            (frame.model_dump(mode="json") for frame in frames),
+        )
 
     def save_raw_rows(self, match_id: str, rows: Iterable[dict]) -> None:
         self._write_json_array(self._match_dir(match_id) / "raw_rows.json", rows)
@@ -1501,7 +1503,13 @@ class Storage:
         if generation_id is not None:
             return match_dir / "generations" / generation_id / filename
         pointer = match_dir / "current_generation.json"
-        if pointer.exists() or all((match_dir / name).exists() for name in ("frames.json", "events.json", "analytics.json")):
+        legacy_complete = all((match_dir / name).exists() for name in ("frames.json", "events.json", "analytics.json"))
+        if legacy_complete and not pointer.exists():
+            try:
+                self.get_match(match_id)
+            except KeyError:
+                return match_dir / filename
+        if pointer.exists() or legacy_complete:
             ref = self.current_generation(match_id)
             return match_dir / "generations" / ref.generationId / filename
         return match_dir / filename
