@@ -10,6 +10,7 @@ import os
 from pathlib import Path, PurePosixPath
 import stat
 import tempfile
+import time
 from typing import BinaryIO, Callable, Iterator
 
 from .daytona import (
@@ -41,6 +42,7 @@ from .remote_contracts import (
 )
 from .settings import ProcessingSettings
 from .storage import Storage
+from .workbench.jobs import maintain_job_lease
 from backend.release.preflight import build_validated_tar_context, validate_release_preflight
 
 
@@ -653,20 +655,20 @@ def _persist_remote_progress(
     return callback
 
 
-def run_remote_job(
-    storage_root: Path,
+def _run_remote_job(
+    storage: Storage,
     job_id: str,
     settings: ProcessingSettings | None = None,
     *,
     client_factory: DaytonaClientFactory | None = None,
 ) -> None:
-    storage = Storage(storage_root)
     result = None
     execution = None
     staging_owner = None
     bundle_owner = None
     staging_cleaned = False
     bundle_cleaned = False
+    cancelled = False
     match_id = storage.get_job(job_id).matchId
     try:
         storage.save_analysis_artifact(match_id, "remote_worker_progress", {})
@@ -699,6 +701,13 @@ def run_remote_job(
             "daytona-bundle-",
         )
         kwargs = {"progress_callback": _persist_remote_progress(storage, job_id, match_id)}
+
+        def poll_wait() -> None:
+            if storage.job_ledger.cancel_requested(job_id):
+                raise RuntimeError("job cancellation requested")
+            time.sleep(2)
+
+        kwargs["poll_wait"] = poll_wait
         if client_factory is not None:
             kwargs["client_factory"] = client_factory
         result = execute_daytona_job(execution, **kwargs)
@@ -728,7 +737,7 @@ def run_remote_job(
         )
         progress = _load_progress(result, job_id=job_id, match_id=match_id)
         storage.save_analysis_artifact(match_id, "remote_worker_progress", progress)
-        with storage.remote_result_import(match_id):
+        with storage.remote_cost_unsettled(), storage.remote_result_import(match_id):
             payload = _load_processor_result_source(result, job_id=job_id, match_id=match_id)
             if isinstance(payload, ProcessorResultStream):
                 with payload:
@@ -746,6 +755,7 @@ def run_remote_job(
                 progress=1.0,
                 message="Processing complete",
                 remote_run_id=result.sandbox_id,
+                ledger_outcome_unknown=True,
             )
         try:
             storage.save_analysis_artifact(
@@ -762,32 +772,36 @@ def run_remote_job(
         except Exception:
             pass
     except Exception as exc:
-        message = _failure_message(exc)
-        run_id = getattr(result, "sandbox_id", None)
-        storage.update_job(
-            job_id,
-            status="failed",
-            progress=1.0,
-            message=message,
-            error=message,
-            remote_run_id=run_id if isinstance(run_id, str) else None,
-        )
-        storage.update_match_status(match_id, status="failed")
-        try:
-            storage.save_analysis_artifact(
-                match_id,
-                "remote_transport_debug",
-                {
-                    "requestedTransport": "daytona",
-                    "resolvedTransport": "daytona",
-                    "initialRunId": run_id if isinstance(run_id, str) else None,
-                    "runtimeOutcome": "failed",
-                    "workerProgress": {},
-                    "finalErrorMessage": message,
-                },
+        if storage.job_ledger.cancel_requested(job_id):
+            cancelled = True
+        else:
+            message = _failure_message(exc)
+            run_id = getattr(result, "sandbox_id", None)
+            storage.update_job(
+                job_id,
+                status="failed",
+                progress=1.0,
+                message=message,
+                error=message,
+                remote_run_id=run_id if isinstance(run_id, str) else None,
+                ledger_outcome_unknown=True,
             )
-        except Exception:
-            pass
+            storage.update_match_status(match_id, status="failed")
+            try:
+                storage.save_analysis_artifact(
+                    match_id,
+                    "remote_transport_debug",
+                    {
+                        "requestedTransport": "daytona",
+                        "resolvedTransport": "daytona",
+                        "initialRunId": run_id if isinstance(run_id, str) else None,
+                        "runtimeOutcome": "failed",
+                        "workerProgress": {},
+                        "finalErrorMessage": message,
+                    },
+                )
+            except Exception:
+                pass
     finally:
         cleanup_failed = False
         if staging_owner is not None and not staging_cleaned:
@@ -802,15 +816,59 @@ def run_remote_job(
                 cleanup_failed = True
         if cleanup_failed:
             message = "Daytona staging cleanup could not be confirmed"
+            if not cancelled:
+                storage.update_job(
+                    job_id,
+                    status="failed",
+                    progress=1.0,
+                    message=message,
+                    error=message,
+                    remote_run_id=getattr(result, "sandbox_id", None),
+                    ledger_outcome_unknown=True,
+                )
+                storage.update_match_status(match_id, status="failed")
+        if cancelled:
             storage.update_job(
                 job_id,
-                status="failed",
+                status="cancelled",
                 progress=1.0,
-                message=message,
-                error=message,
-                remote_run_id=getattr(result, "sandbox_id", None),
+                message="Cancelled",
+                ledger_outcome_unknown=True,
             )
-            storage.update_match_status(match_id, status="failed")
+            storage.job_ledger.confirm_termination(
+                job_id,
+                owner_id=f"job:{job_id}",
+                cost_known=False,
+            )
+            storage.job_ledger.confirm_cleanup(
+                job_id,
+                owner_id=f"job:{job_id}",
+                ok=not cleanup_failed,
+            )
+
+
+def run_remote_job(
+    storage_root: Path,
+    job_id: str,
+    settings: ProcessingSettings | None = None,
+    *,
+    client_factory: DaytonaClientFactory | None = None,
+) -> None:
+    storage = Storage(storage_root)
+    try:
+        with maintain_job_lease(
+            storage.job_ledger,
+            job_id,
+            owner_id=f"job:{job_id}",
+        ):
+            _run_remote_job(
+                storage,
+                job_id,
+                settings=settings,
+                client_factory=client_factory,
+            )
+    finally:
+        storage.close()
 
 
 def main() -> None:

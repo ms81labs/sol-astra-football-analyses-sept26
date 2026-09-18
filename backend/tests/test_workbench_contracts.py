@@ -487,17 +487,23 @@ def test_durable_jobs_timeout_cancel_and_refuse_blind_retry() -> None:
     first = ledger.submit(request)
     duplicate = ledger.submit(request)
     assert duplicate.attemptId == first.attemptId
-    unknown = ledger.timeout_before_response("req-1")
+    unknown = ledger.timeout_before_response("req-1", owner_id="legacy")
     assert unknown.status == "outcome_unknown"
     with pytest.raises(RuntimeError, match="reconcile"):
         ledger.retry("req-1")
-    ledger.transition("req-1", "failed", error="reconciled_missing")
+    ledger.reconcile_attempt(
+        unknown.attemptId,
+        provider_outcome="not_found",
+        settled_cost=0.0,
+    )
     second = ledger.retry("req-1")
     assert second.attemptId != first.attemptId
     ledger.cancel("req-1")
     assert ledger.receipt("req-1").status == "cancelling"
     assert ledger.invalidate_for("calibration") == ["pitch_positions", "physical_metrics", "tactical_metrics", "report"]
-    failed_cleanup = ledger.confirm_cleanup("req-1", ok=False)
+    failed_cleanup = ledger.confirm_cleanup(
+        "req-1", owner_id=f"job:{request.requestId}", ok=False
+    )
     assert failed_cleanup.cleanupResult == "failed"
 
 
@@ -519,6 +525,7 @@ def test_durable_jobs_quarantine_partial_output_and_cap_retries() -> None:
     ledger.submit(request)
     quarantined = ledger.import_attempt(
         "req-q",
+        owner_id="legacy",
         sha256="deadbeef",
         expected_sha256="cafebabe",
         schema_ok=True,
@@ -526,13 +533,25 @@ def test_durable_jobs_quarantine_partial_output_and_cap_retries() -> None:
     )
     assert quarantined.status == "failed"
     assert quarantined.error == "quarantined_partial_or_corrupt"
-    ledger.retry("req-q")
-    ledger.transition("req-q", "failed", error="reconciled")
-    ledger.retry("req-q")
-    ledger.transition("req-q", "failed", error="reconciled")
+    attempt = ledger.retry("req-q")
+    ledger.transition(
+        attempt.attemptId,
+        expected_revision=attempt.revision,
+        owner_id=f"job:{request.requestId}",
+        status="failed",
+        error="reconciled",
+    )
+    attempt = ledger.retry("req-q")
+    ledger.transition(
+        attempt.attemptId,
+        expected_revision=attempt.revision,
+        owner_id=f"job:{request.requestId}",
+        status="failed",
+        error="reconciled",
+    )
     with pytest.raises(RuntimeError, match="retry budget"):
         ledger.retry("req-q")
-    exhausted = ledger.disk_exhaustion("req-q")
+    exhausted = ledger.disk_exhaustion("req-q", owner_id=f"job:{request.requestId}")
     assert exhausted.error == "disk_exhaustion"
     assert exhausted.status == "failed"
 
@@ -2425,14 +2444,35 @@ def test_retries_cannot_exceed_declared_spend() -> None:
         budget=1.25,
         authorisedLocation="local",
     )
-    ledger.submit(request)
-    ledger.transition("spend-1", "failed", error="worker")
-    ledger.retry("spend-1")
-    ledger.transition("spend-1", "failed", error="worker")
-    assert ledger.cost_summary()["reservedTotal"] == 1.25
+    attempt = ledger.submit(request)
+    ledger.transition(
+        attempt.attemptId,
+        expected_revision=attempt.revision,
+        owner_id="legacy",
+        status="failed",
+        error="worker",
+    )
+    attempt = ledger.retry("spend-1")
+    ledger.transition(
+        attempt.attemptId,
+        expected_revision=attempt.revision,
+        owner_id=f"job:{request.requestId}",
+        status="failed",
+        error="worker",
+    )
+    summary = ledger.cost_summary()
+    assert summary["reservedTotal"] <= request.budget
+    assert summary["actualTotal"] <= request.budget
     with pytest.raises(RuntimeError, match="retry budget exhausted"):
         while True:
-            ledger.transition("spend-1", "failed", error="worker")
+            attempt = ledger.latest_attempt("spend-1")
+            ledger.transition(
+                attempt.attemptId,
+                expected_revision=attempt.revision,
+                owner_id=attempt.ownerId or "legacy",
+                status="failed",
+                error="worker",
+            )
             ledger.retry("spend-1")
             if len(ledger.attempts["spend-1"]) > MAX_ATTEMPTS + 2:
                 break
@@ -2914,4 +2954,3 @@ def test_frontend_types_are_compatible_with_backend_schemas() -> None:
     availability_fields = list(MetricAvailabilityRecord.model_fields)
     missing_availability = [name for name in availability_fields if name not in types_text]
     assert missing_availability == [], f"metricAvailability missing backend fields: {missing_availability}"
-

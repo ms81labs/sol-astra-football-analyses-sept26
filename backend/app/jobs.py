@@ -6,6 +6,7 @@ import sys
 from pathlib import Path
 
 from .settings import ProcessingSettings
+from .workbench.errors import BudgetExhausted
 from .workbench.jobs import DurableJobLedger, JobAttempt, JobRequest
 from .workbench.contracts import JobPhase
 
@@ -47,7 +48,9 @@ class JobRunner:
         namespace: str = "production",
     ) -> JobAttempt:
         location = "daytona" if self.settings.processing_backend == "daytona" else "local"
-        return self.ledger.submit(
+        if location == "daytona" and budget <= 0:
+            raise BudgetExhausted("paid remote execution requires a positive authorised budget")
+        return self.ledger.admit(
             JobRequest(
                 requestId=job_id,
                 matchId=match_id,
@@ -61,17 +64,25 @@ class JobRunner:
                 budget=budget,
                 authorisedLocation=location,
                 namespace=namespace,  # type: ignore[arg-type]
-            )
+            ),
+            mode="submit",
+            owner_id=f"job:{job_id}",
+            lease_seconds=60.0,
         )
 
     def receipt(self, job_id: str) -> JobPhase:
         return self.ledger.receipt(job_id)
 
     def retry(self, job_id: str) -> JobAttempt:
-        return self.ledger.retry(job_id)
+        return self.ledger.admit(
+            self.ledger.request(job_id),
+            mode="retry",
+            owner_id=f"job:{job_id}",
+            lease_seconds=60.0,
+        )
 
     def _ensure_admitted(self, job_id: str) -> None:
-        if job_id not in self.ledger.requests:
+        if not self.ledger.has_request(job_id):
             self.admit(job_id, match_id="unknown", source_sha256="0" * 64, namespace="development")
 
     def start(self, job_id: str) -> None:
@@ -80,9 +91,16 @@ class JobRunner:
             self._dispatch(job_id)
         except JobDispatchError as exc:
             if exc.child_may_have_started:
-                self.ledger.lost_connection(job_id)
+                self.ledger.lost_connection(job_id, owner_id=f"job:{job_id}")
             else:
-                self.ledger.transition(job_id, "failed", error="dispatch_failed")
+                attempt = self.ledger.latest_attempt(job_id)
+                self.ledger.transition(
+                    attempt.attemptId,
+                    expected_revision=attempt.revision,
+                    owner_id=f"job:{job_id}",
+                    status="failed",
+                    error="dispatch_failed",
+                )
             raise
 
     def _dispatch(self, job_id: str) -> None:

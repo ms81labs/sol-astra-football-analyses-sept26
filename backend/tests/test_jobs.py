@@ -6,7 +6,9 @@ import pytest
 
 import backend.app.jobs as jobs_module
 from backend.app.jobs import JobRunner
+from backend.app.schemas import MatchConfig
 from backend.app.settings import ProcessingSettings
+from backend.app.storage import Storage
 from backend.release.daytona_policy import load_daytona_policy
 
 
@@ -78,12 +80,15 @@ def test_job_runner_selected_daytona_runs_remote_worker_inline(tmp_path: Path) -
         daytona_api_key=secret,
         daytona_policy=load_daytona_policy(),
     )
+    runner = JobRunner(tmp_path, run_jobs_inline=True, settings=settings)
+    runner.admit(
+        "job-daytona-inline",
+        match_id="match",
+        source_sha256="a" * 64,
+        budget=1.0,
+    )
     with patch("backend.app.remote_worker.run_remote_job") as mock_remote:
-        JobRunner(
-            tmp_path,
-            run_jobs_inline=True,
-            settings=settings,
-        ).start("job-daytona-inline")
+        runner.start("job-daytona-inline")
 
     mock_remote.assert_called_once_with(tmp_path, "job-daytona-inline", settings=settings)
 
@@ -103,8 +108,15 @@ def test_job_runner_selected_daytona_spawns_clean_remote_worker(
         daytona_api_key=secret,
         daytona_policy=load_daytona_policy(),
     )
+    runner = JobRunner(tmp_path, settings=settings)
+    runner.admit(
+        "job-daytona-spawned",
+        match_id="match",
+        source_sha256="a" * 64,
+        budget=1.0,
+    )
     with patch("backend.app.jobs.subprocess.Popen") as mock_popen:
-        JobRunner(tmp_path, settings=settings).start("job-daytona-spawned")
+        runner.start("job-daytona-spawned")
 
     command = mock_popen.call_args.args[0]
     assert command[0:3] == [jobs_module.sys.executable, "-m", "backend.app.remote_worker"]
@@ -115,6 +127,48 @@ def test_job_runner_selected_daytona_spawns_clean_remote_worker(
     assert env["UNRELATED_PARENT_SETTING"] == "preserved"
     assert not any(key.startswith("RUNPOD_") for key in env)
     assert {key for key in env if key.startswith("DAYTONA_")} == {"DAYTONA_API_KEY"}
+
+
+def test_job_runner_rejects_unbudgeted_daytona_dispatch(tmp_path: Path) -> None:
+    settings = ProcessingSettings(
+        processing_backend="daytona",
+        daytona_api_key="configured-secret",
+        daytona_policy=load_daytona_policy(),
+    )
+    with pytest.raises(RuntimeError, match="positive authorised budget"):
+        JobRunner(tmp_path, settings=settings).start("unbudgeted-daytona")
+
+
+def test_storage_and_runner_share_daytona_admission_payload(tmp_path: Path) -> None:
+    settings = ProcessingSettings(
+        processing_backend="daytona",
+        daytona_api_key="configured-secret",
+        daytona_policy=load_daytona_policy(),
+    )
+    storage = Storage(tmp_path)
+    match = storage.create_match(
+        "daytona",
+        "tracking_json",
+        "tracking.json",
+        tmp_path / "tracking.json",
+        MatchConfig(),
+    )
+    storage.ensure_job(
+        match.id,
+        "daytona-job",
+        budget=1.0,
+        authorised_location="daytona",
+    )
+    runner = JobRunner(tmp_path, settings=settings, ledger=storage.job_ledger)
+
+    replay = runner.admit(
+        "daytona-job",
+        match_id=match.id,
+        source_sha256=storage.source_sha256(match.id),
+        budget=1.0,
+    )
+
+    assert replay.attemptId == storage.job_ledger.latest_attempt("daytona-job").attemptId
 
 
 def test_job_runner_rejects_bypassed_unknown_backend_without_dispatch(tmp_path: Path) -> None:
@@ -177,6 +231,32 @@ def test_job_runner_uncertain_dispatch_records_outcome_unknown_and_blocks_retry(
     assert receipt.cleanupResult == "unknown"
     with pytest.raises(RuntimeError, match="reconcile"):
         runner.retry("job-inline-failure")
+
+
+def test_local_worker_confirms_requested_cancellation(tmp_path: Path) -> None:
+    storage = Storage(tmp_path)
+    match = storage.create_match(
+        "cancel",
+        "tracking_json",
+        "tracking.json",
+        tmp_path / "tracking.json",
+        MatchConfig(),
+    )
+    job, _ = storage.ensure_job(match.id, "cancel-job")
+    storage.job_ledger.request_cancel(job.id)
+    storage.close()
+
+    with patch("backend.app.worker.process_match") as process_match:
+        from backend.app.worker import run_job as run_worker_job
+
+        run_worker_job(tmp_path, job.id)
+
+    process_match.assert_not_called()
+    restarted = Storage(tmp_path)
+    receipt = restarted.job_ledger.receipt(job.id)
+    assert restarted.get_job(job.id).status == "cancelled"
+    assert receipt.status == "cancelled"
+    assert receipt.cleanupResult == "confirmed"
 
 
 def test_jobs_module_has_no_runpod_dispatch_surface() -> None:

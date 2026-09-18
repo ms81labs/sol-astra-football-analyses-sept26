@@ -127,14 +127,23 @@ def test_ffmpeg_frame_source_decodes_the_path_instead_of_injected_frames(tmp_pat
     assert frames[0].presentation_time_seconds == pytest.approx(0.04)
 
 
-def test_durable_job_ledger_survives_process_restart_and_reconciles_outcome_unknown(tmp_path: Path) -> None:
+def test_durable_job_ledger_survives_restart_until_explicit_lease_reclaim(tmp_path: Path) -> None:
     db_path = tmp_path / "jobs.sqlite3"
     first = DurableJobLedger(db_path=db_path)
-    first.submit(_request())
-    first.transition("job-restart", "running", selectedBackend="local")
+    attempt = first.submit(_request())
+    first.transition(
+        attempt.attemptId,
+        expected_revision=attempt.revision,
+        owner_id="legacy",
+        status="running",
+        selectedBackend="local",
+    )
     del first
 
     restarted = DurableJobLedger(db_path=db_path)
+    receipt = restarted.receipt("job-restart")
+    assert receipt.status == "running"
+    restarted.reclaim_expired(now=float("inf"))
     receipt = restarted.receipt("job-restart")
     assert receipt.status == "outcome_unknown"
     assert receipt.attemptId

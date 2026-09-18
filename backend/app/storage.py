@@ -55,6 +55,12 @@ _REMOTE_RESULT_FILENAMES = (
     "recovery_debug.json",
     "recovery_profile_matrix.json",
 )
+
+
+class JobCancellationRequested(RuntimeError):
+    pass
+
+
 _COPY_CHUNK_BYTES = 64 * 1024
 _UPLOAD_CHUNK_BYTES = 1024 * 1024
 
@@ -269,6 +275,7 @@ class Storage:
         self._review_bundle_lock = threading.Lock()
         # ponytail: per-instance config serialization; use per-match cross-process locks for multiple API workers.
         self.config_update_lock = threading.Lock()
+        self._remote_cost_unsettled = False
         self._initialize()
         from .workbench.jobs import DurableJobLedger
 
@@ -480,6 +487,15 @@ class Storage:
             for descriptor, _identity in snapshots.values():
                 os.close(descriptor)
 
+    @contextmanager
+    def remote_cost_unsettled(self) -> Iterator[None]:
+        previous = self._remote_cost_unsettled
+        self._remote_cost_unsettled = True
+        try:
+            yield
+        finally:
+            self._remote_cost_unsettled = previous
+
     def save_upload(self, filename: str, payload: bytes) -> Path:
         return self.save_upload_stream(filename, BytesIO(payload))
 
@@ -576,6 +592,7 @@ class Storage:
         created_status: str = "queued",
         budget: float = 0.0,
         namespace: str = "production",
+        authorised_location: str = "local",
     ) -> tuple[JobRecord, bool]:
         self.get_match(match_id)
         try:
@@ -596,7 +613,13 @@ class Storage:
                 """,
                 (job_id, match_id, created_status, 0.0, "Queued", None, log_path, now, now),
             )
-        self._admit_durable_job(match_id, job_id, budget=budget, namespace=namespace)
+        self._admit_durable_job(
+            match_id,
+            job_id,
+            budget=budget,
+            namespace=namespace,
+            authorised_location=authorised_location,
+        )
         return self.get_job(job_id), True
 
     def _admit_durable_job(
@@ -606,16 +629,17 @@ class Storage:
         *,
         budget: float = 0.0,
         namespace: str = "production",
+        authorised_location: str = "local",
     ) -> None:
         from .workbench.jobs import JobRequest
 
-        if job_id in self.job_ledger.requests:
+        if self.job_ledger.has_request(job_id):
             return
         try:
             sha = self.source_sha256(match_id)
         except Exception:
             sha = "0" * 64
-        self.job_ledger.submit(
+        self.job_ledger.admit(
             JobRequest(
                 requestId=job_id,
                 matchId=match_id,
@@ -627,9 +651,12 @@ class Storage:
                 modelHash="unspecified",
                 outputSchema="evidence_v1",
                 budget=float(budget),
-                authorisedLocation="local",
+                authorisedLocation=authorised_location,  # type: ignore[arg-type]
                 namespace=namespace,  # type: ignore[arg-type]
-            )
+            ),
+            mode="submit",
+            owner_id=f"job:{job_id}",
+            lease_seconds=60.0,
         )
 
     def source_sha256(self, match_id: str) -> str:
@@ -850,8 +877,18 @@ class Storage:
         message: str | None = None,
         error: str | None = None,
         remote_run_id: str | None = None,
+        actual_cost: float | None = 0.0,
+        ledger_outcome_unknown: bool = False,
     ) -> JobRecord:
         now = _utcnow().isoformat()
+        ledger = getattr(self, "job_ledger", None)
+        if (
+            ledger is not None
+            and ledger.has_request(job_id)
+            and ledger.cancel_requested(job_id)
+            and status != "cancelled"
+        ):
+            raise JobCancellationRequested(job_id)
         with self._connect() as connection:
             row = connection.execute(
                 "SELECT started_at, completed_at, runpod_run_id FROM jobs WHERE id = ?",
@@ -865,11 +902,51 @@ class Storage:
             persisted_remote_run_id = remote_run_id if remote_run_id is not None else row["runpod_run_id"]
             if status == "processing" and started_at is None:
                 started_at = now
-            if status in {"completed", "failed"}:
+            if status in {"completed", "failed", "cancelled"}:
                 if started_at is None:
                     started_at = now
                 completed_at = now
 
+        mapped = {
+            "completed": "complete",
+            "complete": "complete",
+            "failed": "failed",
+            "cancelled": "cancelled",
+        }.get(status)
+        if ledger is not None and ledger.has_request(job_id):
+            attempt = ledger.latest_attempt(job_id)
+            if status == "processing":
+                if attempt.status == "submitted":
+                    ledger.transition(
+                        attempt.attemptId,
+                        expected_revision=attempt.revision,
+                        owner_id=f"job:{job_id}",
+                        status="running",
+                    )
+                else:
+                    ledger.heartbeat(
+                        attempt.attemptId,
+                        owner_id=f"job:{job_id}",
+                        lease_seconds=60.0,
+                    )
+            elif ledger_outcome_unknown or (self._remote_cost_unsettled and mapped is not None):
+                ledger.transition(
+                    attempt.attemptId,
+                    expected_revision=attempt.revision,
+                    owner_id=f"job:{job_id}",
+                    status="outcome_unknown",
+                    cleanupResult="unknown",
+                    error="provider_cost_unsettled",
+                )
+            elif mapped:
+                ledger.transition(
+                    attempt.attemptId,
+                    expected_revision=attempt.revision,
+                    owner_id=f"job:{job_id}",
+                    status=mapped,
+                    actualCost=actual_cost,
+                )
+        with self._connect() as connection:
             connection.execute(
                 """
                 UPDATE jobs
@@ -878,15 +955,23 @@ class Storage:
                 """,
                 (status, progress, message, error, persisted_remote_run_id, started_at, completed_at, now, job_id),
             )
-        record = self.get_job(job_id)
-        ledger = getattr(self, "job_ledger", None)
-        mapped = {"completed": "complete", "complete": "complete", "failed": "failed"}.get(status)
-        if ledger is not None and mapped and job_id in getattr(ledger, "requests", {}):
-            try:
-                ledger.transition(job_id, mapped)
-            except Exception:
-                pass
-        return record
+        return self.get_job(job_id)
+
+    def reset_job_for_retry(self, job_id: str) -> JobRecord:
+        now = _utcnow().isoformat()
+        with self._connect() as connection:
+            updated = connection.execute(
+                """
+                UPDATE jobs
+                SET status='queued', progress=0, message='Queued', error=NULL,
+                    started_at=NULL, completed_at=NULL, updated_at=?
+                WHERE id=?
+                """,
+                (now, job_id),
+            )
+        if updated.rowcount != 1:
+            raise KeyError(job_id)
+        return self.get_job(job_id)
 
     def update_match_status(
         self,

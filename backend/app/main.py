@@ -2,8 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
+import math
 import os
 import re
+import time
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -28,7 +31,18 @@ from .export_flatteners import (
     render_csv,
 )
 from .jobs import JobDispatchError, JobRunner
-from .workbench.errors import CorrectionApplicationError, DomainError, IdempotencyConflict, RouteRetired, StaleRevision
+from .workbench.errors import (
+    BudgetExhausted,
+    CorrectionApplicationError,
+    DomainError,
+    IdempotencyConflict,
+    NotOwner,
+    ReconciliationRequired,
+    RetryBudgetExhausted,
+    RouteRetired,
+    StaleRevision,
+    StaleTransition,
+)
 from .llm import run_analysis
 from .provider_gateway import ProviderDenied, ProviderGateway
 from .report_export import build_match_report_export
@@ -256,6 +270,7 @@ from .workbench.xt import xt_deferred_plan
 
 
 STORAGE_ROOT_ENV = "GUERILLA_STORAGE_ROOT"
+LOGGER = logging.getLogger(__name__)
 _IDEMPOTENCY_KEY = re.compile(r"[A-Za-z0-9._:-]{1,128}\Z")
 _DISPATCH_FAILED = "Job dispatch failed before processing started."
 _DISPATCH_UNCERTAIN = "Job dispatch outcome is uncertain; automatic retry is disabled."
@@ -670,6 +685,9 @@ def create_app(
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI):
+        reclaimed = runner.ledger.reclaim_expired(now=time.time())
+        if reclaimed:
+            LOGGER.warning("reclaimed %d expired job lease(s)", len(reclaimed))
         yield
         storage.close()
 
@@ -696,6 +714,21 @@ def create_app(
                 status_code=410,
                 content={"error": "ROUTE_RETIRED", "replacement": exc.replacement},
             )
+        if isinstance(
+            exc,
+            (BudgetExhausted, NotOwner, ReconciliationRequired, RetryBudgetExhausted, StaleTransition),
+        ):
+            error_code = {
+                BudgetExhausted: "BUDGET_EXHAUSTED",
+                NotOwner: "NOT_OWNER",
+                ReconciliationRequired: "RECONCILIATION_REQUIRED",
+                RetryBudgetExhausted: "RETRY_BUDGET_EXHAUSTED",
+                StaleTransition: "STALE_TRANSITION",
+            }[type(exc)]
+            content: dict[str, object] = {"error": error_code}
+            if isinstance(exc, StaleTransition):
+                content.update(expected=exc.expected, actual=exc.actual)
+            return JSONResponse(status_code=409, content=content)
         if isinstance(exc, CorrectionApplicationError):
             return JSONResponse(
                 status_code=500,
@@ -725,9 +758,17 @@ def create_app(
         name: str = Form(...),
         inputMode: str = Form(...),
         config: str = Form("{}"),
+        budget: float = Form(0.0),
         file: UploadFile = File(...),
         idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     ) -> dict:
+        if not math.isfinite(budget) or budget < 0:
+            raise HTTPException(status_code=422, detail="budget must be finite and non-negative")
+        if runner.settings.processing_backend == "daytona" and budget <= 0:
+            raise HTTPException(
+                status_code=422,
+                detail="Daytona processing requires a positive authorised budget",
+            )
         if idempotency_key is not None and _IDEMPOTENCY_KEY.fullmatch(idempotency_key) is None:
             raise HTTPException(status_code=400, detail="Invalid Idempotency-Key")
         admission_token = idempotency_key or uuid.uuid4().hex
@@ -802,8 +843,13 @@ def create_app(
             return response(job, outcome="reused", reused=True)
 
         try:
-            runner.admit(job.id, match_id=match.id, source_sha256=storage.source_sha256(match.id), budget=0.0)
-        except ValueError:
+            runner.admit(
+                job.id,
+                match_id=match.id,
+                source_sha256=storage.source_sha256(match.id),
+                budget=budget,
+            )
+        except IdempotencyConflict:
             pass
 
         dispatch_outcome = "started"
@@ -991,6 +1037,34 @@ def create_app(
         runner.ledger.request_cancel(job_id)
         return attach_durable_job_view(job.model_dump(mode="json"), runner.ledger)
 
+    @app.post("/api/jobs/{job_id}/retry")
+    def retry_job(
+        job_id: str,
+        authorization: str | None = Header(default=None),
+        x_object_scope: str | None = Header(default=None),
+        x_deployment_boundary: str | None = Header(default=None),
+        x_tenant_id: str | None = Header(default=None),
+    ) -> dict:
+        try:
+            job = storage.get_job(job_id)
+            match = storage.get_match(job.matchId)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="Job not found") from exc
+        decision = object_access_decision(
+            object_id=match.id,
+            object_tenant=match.config.rights.audience,
+            authorization=authorization,
+            object_scope=x_object_scope,
+            deployment_boundary=x_deployment_boundary,
+            client_tenant=x_tenant_id,
+        )
+        if not decision["allowed"]:
+            raise HTTPException(status_code=403, detail=decision)
+        runner.retry(job_id)
+        job = storage.reset_job_for_retry(job_id)
+        runner.start(job_id)
+        return attach_durable_job_view(job.model_dump(mode="json"), runner.ledger)
+
     @app.post("/api/jobs/{job_id}/timeout")
     def timeout_job(
         job_id: str,
@@ -1015,7 +1089,7 @@ def create_app(
         if not decision["allowed"]:
             raise HTTPException(status_code=403, detail=decision)
         try:
-            runner.ledger.timeout_before_response(job_id)
+            runner.ledger.timeout_before_response(job_id, owner_id=f"job:{job_id}")
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Job not found") from exc
         return attach_durable_job_view(job.model_dump(mode="json"), runner.ledger)
@@ -1044,7 +1118,7 @@ def create_app(
         if not decision["allowed"]:
             raise HTTPException(status_code=403, detail=decision)
         try:
-            runner.ledger.lost_connection(job_id)
+            runner.ledger.lost_connection(job_id, owner_id=f"job:{job_id}")
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Job not found") from exc
         return attach_durable_job_view(job.model_dump(mode="json"), runner.ledger)
@@ -1191,9 +1265,29 @@ def create_app(
     def post_match_job(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
         body = payload or {}
         request_id = str(body.get("requestId") or uuid.uuid4().hex)
-        budget = float(body.get("budget") or 0.0)
         try:
-            job, created = storage.ensure_job(match.id, request_id, created_status="queued", budget=budget)
+            budget = float(body.get("budget") or 0.0)
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail="budget must be numeric") from exc
+        if not math.isfinite(budget) or budget < 0:
+            raise HTTPException(status_code=422, detail="budget must be finite and non-negative")
+        if runner.settings.processing_backend == "daytona" and budget <= 0:
+            raise HTTPException(
+                status_code=422,
+                detail="Daytona processing requires a positive authorised budget",
+            )
+        try:
+            job, created = storage.ensure_job(
+                match.id,
+                request_id,
+                created_status="queued",
+                budget=budget,
+                authorised_location=(
+                    "daytona"
+                    if runner.settings.processing_backend == "daytona"
+                    else "local"
+                ),
+            )
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         try:
@@ -1727,7 +1821,12 @@ def create_app(
                 if payload != last_payload:
                     await websocket.send_json(payload)
                     last_payload = payload
-                if payload["status"] in {"completed", "complete", "failed"} or payload.get("ledgerStatus") in {"complete", "failed"}:
+                ledger_status = payload.get("ledgerStatus")
+                if (
+                    ledger_status in {"complete", "failed", "cancelled"}
+                    or ledger_status is None
+                    and payload["status"] in {"completed", "complete", "failed", "cancelled"}
+                ):
                     await websocket.close()
                     return
                 try:

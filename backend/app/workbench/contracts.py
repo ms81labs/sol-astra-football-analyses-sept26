@@ -338,6 +338,11 @@ class JobPhase(StrictModel):
     cleanupResult: Literal["confirmed", "failed", "not_required", "unknown"] = "not_required"
     cacheIdentity: str | None = None
     error: str | None = None
+    attemptCount: int = 1
+    reservedTotal: float = 0.0
+    settledTotal: float = 0.0
+    unsettledTotal: float = 0.0
+    actualTotal: float | None = None
 
 
 def utc_now() -> datetime:

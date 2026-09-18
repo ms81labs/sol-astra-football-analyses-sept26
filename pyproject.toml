@@ -34,3 +34,8 @@ backend = [
   "storage/*",
   "storage/**/*",
 ]
+
+[tool.pytest.ini_options]
+markers = [
+  "integration: exercises multiple processes or external process boundaries",
+]
