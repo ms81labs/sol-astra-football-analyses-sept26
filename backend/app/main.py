@@ -377,23 +377,23 @@ def _four_rates_view() -> dict:
 
 def _unpromoted_receipt() -> dict:
     return promotion_receipt(
-        source_sha256="0" * 64,
-        weights="unpromoted",
-        configuration="evidence_v1",
-        hardware="cpu",
+        source_sha256=None,
+        weights=None,
+        configuration=None,
+        hardware=None,
         native_builds=[],
-        selected_backend="opencv+ultralytics_track",
-        frame_count=0,
-        call_count=0,
-        cold_timing_ms=0.0,
-        warm_timing_ms=0.0,
-        peak_memory_bytes=0,
-        transferred_bytes=0,
+        selected_backend=None,
+        frame_count=None,
+        call_count=None,
+        cold_timing_ms=None,
+        warm_timing_ms=None,
+        peak_memory_bytes=None,
+        transferred_bytes=None,
         output_quality="unproven",
         accepted_coverage=0.0,
         failure_cases=["labels_incomplete"],
         allocated_spend=0.0,
-        fallback_event="cpu_local",
+        fallback_event=None,
     )
 
 
@@ -1525,6 +1525,11 @@ def create_app(
     def post_match_recompute(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
         body = payload or {}
         return storage.recompute_for_match(match.id, str(body.get("change") or "report"))
+
+    @app.post("/api/matches/{match_id}/recompute/execute")
+    def post_match_recompute_execute(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+        body = payload or {}
+        return storage.execute_recompute(match.id, str(body.get("change") or "report")).model_dump(mode="json")
 
     @app.get("/api/matches/{match_id}/promotion")
     def get_match_promotion(match: MatchRecord = Depends(require_match)) -> dict:

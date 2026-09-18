@@ -825,7 +825,17 @@ def create_leftover_post_router(storage: Storage) -> APIRouter:
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Match not found") from exc
         del match
-        return storage.query_match_events(match_id, str(body.get("query") or ""))
+        result = storage.query_match_events(
+            match_id,
+            str(body.get("query") or ""),
+            include_unknown=body.get("includeUnknown") is True,
+        )
+        if body.get("strict") is True and result["unsupportedTerms"]:
+            raise HTTPException(
+                status_code=422,
+                detail={"unsupportedTerms": result["unsupportedTerms"], "interpreted": result["interpreted"]},
+            )
+        return result
 
     @router.post("/matches/{match_id}/heatmap")
     def post_match_heatmap(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:

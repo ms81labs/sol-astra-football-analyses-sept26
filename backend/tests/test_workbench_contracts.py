@@ -560,10 +560,11 @@ def test_durable_jobs_quarantine_partial_output_and_cap_retries() -> None:
 
 def test_evaluation_gate_fails_closed_without_independent_labels() -> None:
     current = current_repository_evaluation_gate()
-    assert current.completeTasks == 0
+    assert current.status == "unknown"
+    assert current.completeTasks is None
     assert current.requiredTasks == FROZEN_TASK_COUNT
     assert current.accepted is False
-    assert "LABELS_INCOMPLETE" in current.reasonCodes
+    assert current.reasonCodes == ["EVALUATION_MANIFEST_MISSING"]
     passing = evaluate_protocol_prerequisites(
         complete_tasks=18,
         complete_minutes=30.0,

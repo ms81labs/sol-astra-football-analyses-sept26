@@ -1775,7 +1775,7 @@ def test_persist_video_outputs_preserves_producer_sample_interval_for_sparse_bal
     ]
 
 
-def test_persist_video_outputs_saves_four_rates_projection_and_cache_identity(tmp_path, monkeypatch):
+def test_persist_video_outputs_saves_producer_receipts_and_declared_policy(tmp_path, monkeypatch):
     storage = Storage(tmp_path)
     config = MatchConfig()
     match = storage.create_match(
@@ -1828,8 +1828,9 @@ def test_persist_video_outputs_saves_four_rates_projection_and_cache_identity(tm
                 "boxCentreIsFoot": False,
                 "aerialBallMeasuredGroundLocation": False,
             },
-            "cacheIdentity": "cache-abc",
-            "sampling": {"selectedBackend": "opencv+ultralytics_track", "exportFpsEqualsInferenceFps": False},
+            "samplingReceipt": {"selectedBackend": "opencv+ultralytics_track", "decodeCount": 25},
+            "policy": {"requestedBackend": "opencv+ultralytics_track", "targetFps": 5.0},
+            "hardware": {"declaredBackend": "cpu", "observedDevice": None},
             "vidStridePolicy": {"addsVidStrideAlone": False, "targetFpsEqualsInferenceFps": False},
             "decodeMemoryPolicy": {"retainAllDecodedFrames": False, "gpuResident": False},
         },
@@ -1842,10 +1843,12 @@ def test_persist_video_outputs_saves_four_rates_projection_and_cache_identity(tm
     policy = storage.load_analysis_artifact(match.id, "projection_policy")
     assert policy["boxCentreIsFoot"] is False
     assert policy["playerAnchor"] == "ground_contact"
-    cache = storage.load_analysis_artifact(match.id, "cache_identity")
-    assert cache["cacheIdentity"] == "cache-abc"
-    sampling = storage.load_analysis_artifact(match.id, "sampling")
-    assert sampling["selectedBackend"] == "opencv+ultralytics_track"
+    sampling = storage.load_analysis_artifact(match.id, "sampling_receipt")
+    assert sampling["decodeCount"] == 25
+    declared = storage.load_analysis_artifact(match.id, "sampling_policy")
+    assert declared["requestedBackend"] == "opencv+ultralytics_track"
+    hardware = storage.load_analysis_artifact(match.id, "hardware")
+    assert hardware == {"declaredBackend": "cpu", "observedDevice": None}
     stride = storage.load_analysis_artifact(match.id, "vid_stride_policy")
     assert stride["addsVidStrideAlone"] is False
 
