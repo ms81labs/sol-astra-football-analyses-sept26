@@ -220,7 +220,7 @@ def query_match_evidence(
     )
 
 
-def metric_dictionary() -> dict[str, dict[str, str]]:
+def metric_dictionary() -> dict[str, dict[str, Any]]:
     return {
         "possession_pct": {
             "unit": "percent",
@@ -262,13 +262,30 @@ def metric_dictionary() -> dict[str, dict[str, str]]:
             "publishedLabel": "PPDA",
             "compatibilityFields": "myTeamPpda",
         },
-        "experimental_shot_quality": {
-            "unit": "probability",
+        "my_team_experimental_shot_quality_sum": {
+            "unit": "expected_shots_heuristic",
             "denominator": "labelled_shots",
-            "definition": "Heuristic shot quality. Compatibility field remains `xg`; this is not a calibrated xG model.",
+            "definition": "Sum of heuristic shot quality for my team. This is not a calibrated xG model.",
             "withholdUnless": "",
             "publishedLabel": "experimental_shot_quality",
+            "compatibilityFields": "myTeamXg",
+        },
+        "enemy_experimental_shot_quality_sum": {
+            "unit": "expected_shots_heuristic",
+            "denominator": "labelled_shots",
+            "definition": "Sum of heuristic shot quality for the opposing team. This is not a calibrated xG model.",
+            "withholdUnless": "",
+            "publishedLabel": "experimental_shot_quality",
+            "compatibilityFields": "enemyXg",
+        },
+        "experimental_shot_quality": {
+            "unit": None,
+            "denominator": None,
+            "definition": "Deprecated unscoped compatibility identifier.",
+            "withholdUnless": "team_scope_required",
+            "publishedLabel": "experimental_shot_quality",
             "compatibilityFields": "xg",
+            "deprecated": True,
         },
         EVENT_HEURISTIC_NAME: {
             "unit": "count",
@@ -315,7 +332,7 @@ def evaluate_metric_spec(
         metric=metric,
         definitionVersion=DEFINITION_VERSION,
         value=value,
-        availability="experimental" if metric == "experimental_shot_quality" else "available",
+        availability="experimental" if metric.endswith("_experimental_shot_quality_sum") else "available",
         unit=spec.get("unit"),
         denominator=spec.get("denominator"),
     )
@@ -426,5 +443,5 @@ def rollback_reader(migrated: dict[str, dict[str, Any]]) -> dict[str, Any]:
     return {
         "possession": (migrated.get("possession_pct") or {}).get("value"),
         "myTeamDistance": (migrated.get("my_team_distance_m") or {}).get("value"),
-        "xg": (migrated.get("experimental_shot_quality") or {}).get("value"),
+        "xg": (migrated.get("my_team_experimental_shot_quality_sum") or migrated.get("experimental_shot_quality") or {}).get("value"),
     }

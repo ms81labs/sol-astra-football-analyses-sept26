@@ -2404,7 +2404,14 @@ class Storage:
         match = self.get_match(match_id)
         points = [{"x": float(point.x), "y": float(point.y)} for point in match.config.manualHomographyPoints]
         if len(points) != 4:
-            points = [{"x": 0.0, "y": 0.0}, {"x": 1.0, "y": 0.0}, {"x": 1.0, "y": 1.0}, {"x": 0.0, "y": 1.0}]
+            return {
+                "availability": "calibration_unavailable",
+                "reasonCodes": ["MANUAL_POINTS_MISSING"],
+                "committed": False,
+                "measured": False,
+                "visionRerun": False,
+                "correction": None,
+            }
         profile = from_legacy_four_points(points, calibration_id=match_id)
         body = dict(payload or {})
         holdout: list = []

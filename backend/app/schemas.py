@@ -111,6 +111,8 @@ class MetricAvailabilityRecord(BaseModel):
     unit: str | None = None
     denominator: str | None = None
     publishedLabel: str | None = None
+    teamScope: Literal["my_team", "enemy"] | None = None
+    deprecated: bool = False
 
     def published_value(self) -> float | None:
         if self.availability not in {"available", "experimental"}:

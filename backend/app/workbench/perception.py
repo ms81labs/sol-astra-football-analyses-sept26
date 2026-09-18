@@ -35,10 +35,13 @@ class BenchmarkReceipt(StrictModel):
     precision: float | None
     recall: float | None
     localisationErrorPx: float | None
+    centreOffsetPx: float | None = None
+    meanOneMinusIou: float | None = None
     latencyMs: float | None
     peakMemoryMb: float | None
     falsePositives: int
     falseNegatives: int
+    ignoredOtherClass: int = 0
     failureExamples: list[str] = Field(default_factory=list)
     notes: list[str] = Field(default_factory=list)
     labelsIndependent: bool
@@ -63,18 +66,23 @@ def score_detections(
     configuration: str,
     iou_threshold: float = 0.5,
     labels_independent: bool,
+    count_other_class_as_fp: bool = False,
 ) -> BenchmarkReceipt:
     used_labels: set[int] = set()
     true_positive = 0
-    localisation: list[float] = []
+    centre_offsets: list[float] = []
+    one_minus_iou: list[float] = []
     failures: list[str] = []
+    task_kind = "player" if task == "player_coverage" else "ball"
+    in_task = [detection for detection in detections if detection.kind == task_kind]
+    other = [detection for detection in detections if detection.kind != task_kind]
     if task == "player_coverage":
         eligible = [label for label in labels if label.kind == "player"]
         negatives = [label for label in labels if label.kind == "negative"]
     else:
         eligible = [label for label in labels if label.kind == "ball" and label.visible]
         negatives = [label for label in labels if label.kind == "negative" or (label.kind == "ball" and not label.visible)]
-    for detection in detections:
+    for detection in in_task:
         match_index = None
         best = 0.0
         for index, label in enumerate(eligible):
@@ -87,13 +95,19 @@ def score_detections(
         if match_index is not None and best >= iou_threshold:
             used_labels.add(match_index)
             true_positive += 1
-            localisation.append(1.0 - best)
+            label = eligible[match_index]
+            detection_centre = ((detection.bbox[0] + detection.bbox[2]) / 2, (detection.bbox[1] + detection.bbox[3]) / 2)
+            label_centre = ((label.bbox[0] + label.bbox[2]) / 2, (label.bbox[1] + label.bbox[3]) / 2)
+            centre_offsets.append(
+                ((detection_centre[0] - label_centre[0]) ** 2 + (detection_centre[1] - label_centre[1]) ** 2) ** 0.5
+            )
+            one_minus_iou.append(1.0 - best)
         else:
             failures.append(f"fp:{detection.frameId}:{detection.kind}:{detection.stratum}")
     false_negative = len(eligible) - len(used_labels)
-    false_positive = len(detections) - true_positive
+    false_positive = len(in_task) - true_positive + (len(other) if count_other_class_as_fp else 0)
     for label in negatives:
-        for detection in detections:
+        for detection in in_task:
             if detection.frameId == label.frameId and _iou(detection.bbox, label.bbox) >= iou_threshold:
                 failures.append(f"negative_hit:{label.frameId}:{label.stratum}")
     precision = true_positive / (true_positive + false_positive) if (true_positive + false_positive) else None
@@ -106,11 +120,14 @@ def score_detections(
         configuration=configuration,
         precision=precision,
         recall=recall,
-        localisationErrorPx=(sum(localisation) / len(localisation)) if localisation else None,
+        localisationErrorPx=(sum(centre_offsets) / len(centre_offsets)) if centre_offsets else None,
+        centreOffsetPx=(sum(centre_offsets) / len(centre_offsets)) if centre_offsets else None,
+        meanOneMinusIou=(sum(one_minus_iou) / len(one_minus_iou)) if one_minus_iou else None,
         latencyMs=None,
         peakMemoryMb=None,
         falsePositives=false_positive,
         falseNegatives=false_negative,
+        ignoredOtherClass=len(other),
         failureExamples=failures[:12],
         notes=notes,
         labelsIndependent=labels_independent,
@@ -202,7 +219,12 @@ def merge_tiled_detections(
     kept: list[dict[str, Any]] = []
     for detection in ordered:
         bbox = tuple(float(value) for value in detection["bbox"])
-        if any(_iou(bbox, tuple(float(value) for value in item["bbox"])) >= iou_threshold for item in kept):
+        if any(
+            item.get("frameId") == detection.get("frameId")
+            and item.get("kind") == detection.get("kind")
+            and _iou(bbox, tuple(float(value) for value in item["bbox"])) >= iou_threshold
+            for item in kept
+        ):
             continue
         kept.append({**detection, "bbox": bbox, "sourceCoordinates": True, "deterministic": True})
     return kept

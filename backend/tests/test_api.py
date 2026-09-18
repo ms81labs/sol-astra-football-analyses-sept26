@@ -1446,7 +1446,6 @@ def test_match_calibration_holdout_measures_residual_and_ignores_client_acceptan
 
 
 async def _test_match_calibration_holdout_measures_residual_and_ignores_client_acceptance(tmp_path: Path):
-    import cv2
     import numpy as np
 
     async with api_client(tmp_path) as (_, client):
@@ -1474,8 +1473,17 @@ async def _test_match_calibration_holdout_measures_residual_and_ignores_client_a
 
         src = np.array([[point["x"], point["y"]] for point in MANUAL_HOMOGRAPHY_POINTS], dtype=np.float32)
         dst = np.array([[0.0, 0.0], [105.0, 0.0], [105.0, 68.0], [0.0, 68.0]], dtype=np.float32)
-        homography = cv2.getPerspectiveTransform(src, dst)
-        mapped = cv2.perspectiveTransform(np.array([[[50.0, 50.0]]], dtype=np.float32), homography)[0][0]
+        calibrated_holdouts = [
+            {
+                "name": f"holdout-{index}",
+                "imageX": float(source[0]),
+                "imageY": float(source[1]),
+                "pitchX": float(target[0]),
+                "pitchY": float(target[1]),
+                "independentHoldout": True,
+            }
+            for index, (source, target) in enumerate(zip(src, dst, strict=True))
+        ]
 
         pending = await client.post(
             f"/api/matches/{match_id}/calibration",
@@ -1483,16 +1491,7 @@ async def _test_match_calibration_holdout_measures_residual_and_ignores_client_a
                 "accepted": True,
                 "residualP95M": 0.4,
                 "crashBeforeCommit": True,
-                "landmarks": [
-                    {
-                        "name": "holdout-centre",
-                        "imageX": 50.0,
-                        "imageY": 50.0,
-                        "pitchX": float(mapped[0]),
-                        "pitchY": float(mapped[1]),
-                        "independentHoldout": True,
-                    }
-                ],
+                "landmarks": calibrated_holdouts,
             },
         )
         assert pending.status_code == 200
@@ -1531,16 +1530,7 @@ async def _test_match_calibration_holdout_measures_residual_and_ignores_client_a
             json={
                 "accepted": False,
                 "residualP95M": 99.0,
-                "landmarks": [
-                    {
-                        "name": "holdout-centre",
-                        "imageX": 50.0,
-                        "imageY": 50.0,
-                        "pitchX": float(mapped[0]),
-                        "pitchY": float(mapped[1]),
-                        "independentHoldout": True,
-                    }
-                ],
+                "landmarks": calibrated_holdouts,
             },
         )
         assert measured.status_code == 200
@@ -3587,4 +3577,3 @@ async def _test_production_providers_rights_dependencies_preview_and_legacy_zero
         assert release.json()["deploymentBoundary"] == "loopback"
         assert release.json()["nativeCode"] == "gated_inert"
         assert release.json()["gNetworkRequiredForNonLocal"] is True
-

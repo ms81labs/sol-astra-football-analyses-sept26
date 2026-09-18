@@ -65,6 +65,15 @@ def _format_available_metric(summary: dict, metric: str, legacy_key: str, digits
     return _format_number(value, digits)
 
 
+def _format_metric_record(summary: dict, metric: str, digits: int, *, legacy_key: str) -> str:
+    record = _availability_lookup(summary, metric)
+    if record is None:
+        return _format_measured(summary.get(legacy_key), digits)
+    if record.get("availability") not in {"available", "experimental"} or record.get("value") is None:
+        return "Unavailable"
+    return _format_number(record["value"], digits)
+
+
 def _render_kv_card(label: str, value: str) -> str:
     return (
         '<div class="card stat-card">'
@@ -163,8 +172,8 @@ def render_match_report_html(
     )
     fallback_summary = (
         possession_summary +
-        f"{_format_available_metric(summary, 'experimental_shot_quality', 'myTeamXg', 2)} experimental shot quality for my team and "
-        f"{_format_measured(summary.get('enemyXg'), 2)} experimental shot quality against."
+        f"{_format_metric_record(summary, 'my_team_experimental_shot_quality_sum', 2, legacy_key='myTeamXg')} experimental shot quality for my team and "
+        f"{_format_metric_record(summary, 'enemy_experimental_shot_quality_sum', 2, legacy_key='enemyXg')} experimental shot quality against."
     )
 
     return f"""<!doctype html>
@@ -245,8 +254,8 @@ def render_match_report_html(
         <h2>Match Analytics Snapshot</h2>
         <div class="grid-3">
           {_render_kv_card("Possession", _format_percent(summary.get("possession")))}
-          {_render_kv_card("My Team experimental shot quality", _format_available_metric(summary, "experimental_shot_quality", "myTeamXg", 2))}
-          {_render_kv_card("Enemy experimental shot quality", _format_measured(summary.get("enemyXg"), 2))}
+          {_render_kv_card("My Team experimental shot quality", _format_metric_record(summary, "my_team_experimental_shot_quality_sum", 2, legacy_key="myTeamXg"))}
+          {_render_kv_card("Enemy experimental shot quality", _format_metric_record(summary, "enemy_experimental_shot_quality_sum", 2, legacy_key="enemyXg"))}
           {_render_kv_card("Formation", "Unavailable" if not summary.get("formation") or summary.get("formation") == "-" else str(summary.get("formation")))}
           {_render_kv_card("My Team PPDA", _format_available_metric(summary, "my_team_ppda", "myTeamPpda", 1))}
           {_render_kv_card("Enemy PPDA", _format_available_metric(summary, "enemy_ppda", "enemyPpda", 1))}

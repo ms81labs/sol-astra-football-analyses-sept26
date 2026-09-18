@@ -356,6 +356,11 @@ def _build_match_signals(summary: MatchSummary | None, formation_timeline: list[
         return {}
     my_ppda = _published_metric(summary, "my_team_ppda")
     enemy_ppda = _published_metric(summary, "enemy_ppda")
+    my_shot_quality = _published_metric(summary, "my_team_experimental_shot_quality_sum")
+    enemy_shot_quality = _published_metric(summary, "enemy_experimental_shot_quality_sum")
+    if not summary.metricAvailability:
+        my_shot_quality = summary.myTeamXg
+        enemy_shot_quality = summary.enemyXg
     pressing_edge = None if my_ppda is None or enemy_ppda is None else _round_two(enemy_ppda - my_ppda)
     if not summary.metricAvailability:
         pressing_edge = (
@@ -367,9 +372,11 @@ def _build_match_signals(summary: MatchSummary | None, formation_timeline: list[
         "possession": summary.possession,
         "xgBalance": (
             None
-            if summary.myTeamXg is None or summary.enemyXg is None
-            else _round_two(summary.myTeamXg - summary.enemyXg)
+            if my_shot_quality is None or enemy_shot_quality is None
+            else _round_two(my_shot_quality - enemy_shot_quality)
         ),
+        "myTeamExperimentalShotQualitySum": my_shot_quality,
+        "enemyExperimentalShotQualitySum": enemy_shot_quality,
         "pressingEdge": pressing_edge,
         "shotQualityLabel": "experimental_shot_quality",
         "defensiveLineEdge": (
