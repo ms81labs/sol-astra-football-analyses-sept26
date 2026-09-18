@@ -648,7 +648,12 @@ def test_ci_keeps_canonical_verifier_and_declares_acceptance_lanes() -> None:
         "frontend/package-lock.json",
     ):
         assert dependency_file in workflow
-    assert "pip install -e . -r backend/requirements-dev.txt" in workflow
+    assert workflow.count("pip install --require-hashes -r backend/requirements/dev.lock") == 3
+    assert "pip install --require-hashes -r backend/requirements/cuda-linux.lock" in workflow
+    assert workflow.count("pip install -e . --no-deps") == 2
+    assert workflow.count("pip install -e '.[cv]' --no-deps") == 2
+    assert "pip install -e '.[cv,cuda]' --no-deps" in workflow
+    assert not re.search(r"pip install -e [^\n]+ -r ", workflow)
     assert "pip install -e ./research-addon" in workflow
     assert "opencv-python-headless==4.13.0.92" not in workflow
     assert "opencv-python==4.13.0.92" not in workflow

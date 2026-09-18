@@ -37,7 +37,10 @@ jobs:
           node-version: '22'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-      - run: pip install -e . -r backend/requirements-dev.txt
+      - name: Install backend dependencies
+        run: |
+          pip install --require-hashes -r backend/requirements/dev.lock
+          pip install -e . --no-deps
       - run: pip install -e ./research-addon
       - run: npm ci --prefix frontend
       - name: Verify code-only project
@@ -97,7 +100,8 @@ jobs:
       - name: Install integration profile
         run: |
           pip install --dry-run --require-hashes -r backend/requirements/dev.lock
-          pip install -e '.[cv]' -r backend/requirements/dev.lock
+          pip install --require-hashes -r backend/requirements/dev.lock
+          pip install -e '.[cv]' --no-deps
       - name: Run integration tests
         env:
           GA_VERIFICATION_RUN: '1'
@@ -128,7 +132,8 @@ jobs:
       - name: Install generated-media profile
         run: |
           sudo apt-get update && sudo apt-get install -y ffmpeg
-          pip install -e '.[cv]' -r backend/requirements/dev.lock
+          pip install --require-hashes -r backend/requirements/dev.lock
+          pip install -e '.[cv]' --no-deps
       - name: Run generated-media tests
         env:
           GA_VERIFICATION_RUN: '1'
@@ -160,7 +165,8 @@ jobs:
       - name: Install GPU profile
         run: |
           pip install --dry-run --require-hashes -r backend/requirements/cuda-linux.lock
-          pip install -e '.[cv,cuda]' -r backend/requirements/cuda-linux.lock
+          pip install --require-hashes -r backend/requirements/cuda-linux.lock
+          pip install -e '.[cv,cuda]' --no-deps
       - name: Run GPU and football evaluation acceptance
         env:
           FOOTBALL_EVALUATION_APPROVED: '1'
