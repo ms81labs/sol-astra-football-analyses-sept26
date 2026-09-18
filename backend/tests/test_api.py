@@ -2245,25 +2245,28 @@ async def _test_production_recovery_retention_security_native_and_recompute_surf
             json={"change": "report", "visionRows": [{"Frame_ID": 999}]},
         )
         assert report_only.status_code == 200
-        assert report_only.json()["visionInvoked"] is False
-        assert report_only.json()["reused"] is True
+        assert report_only.json()["kind"] == "plan"
+        assert report_only.json()["visionRequired"] is False
+        assert "reused" not in report_only.json()
+        assert "admitted" not in report_only.json()
 
         calibration = await client.post(
             f"/api/matches/{match_id}/recompute",
             json={"change": "calibration"},
         )
         assert calibration.status_code == 200
-        assert calibration.json()["visionInvoked"] is False
-        assert calibration.json()["imageSpaceDetectionsReused"] is True
+        assert calibration.json()["kind"] == "plan"
+        assert calibration.json()["visionRequired"] is False
+        assert "pitch_positions" in calibration.json()["rebuild"]
 
         perception = await client.post(
             f"/api/matches/{match_id}/recompute",
             json={"change": "perception"},
         )
         assert perception.status_code == 200
-        assert perception.json()["visionInvoked"] is False
-        assert perception.json()["admitted"] is False
-        assert "VISION_REQUIRES_SEALED_WORKER" in perception.json()["reasonCodes"]
+        assert perception.json()["kind"] == "plan"
+        assert perception.json()["visionRequired"] is True
+        assert perception.json()["requires"] == ["sealed_worker"]
 
         receipt = await client.get(f"/api/matches/{match_id}/promotion")
         assert receipt.status_code == 200
@@ -3206,9 +3209,10 @@ async def _test_production_protocol_flags_metric_spec_clock_and_four_rates_surfa
         )
         assert protocol.status_code == 200
         assert protocol.json()["accepted"] is False
-        assert protocol.json()["completeTasks"] == 0
+        assert protocol.json()["status"] == "unknown"
+        assert protocol.json()["completeTasks"] is None
         assert protocol.json()["protocolVersion"] == "football_analysis_pilot_labels_v3"
-        assert "LABELS_INCOMPLETE" in protocol.json()["reasonCodes"]
+        assert protocol.json()["reasonCodes"] == ["EVALUATION_MANIFEST_MISSING"]
 
         enabled = await client.post("/api/flags/gpu_default/enabled", json={"enabled": True, "env": {"GA_FLAG_GPU_DEFAULT": "1"}})
         assert enabled.status_code == 200

@@ -7798,6 +7798,19 @@ def _utc_now_iso():
     return datetime.now(timezone.utc).isoformat()
 
 
+class _CountingPredictor:
+    def __init__(self, model, on_predict):
+        self._model = model
+        self._on_predict = on_predict
+
+    def predict(self, *args, **kwargs):
+        self._on_predict()
+        return self._model.predict(*args, **kwargs)
+
+    def __getattr__(self, name):
+        return getattr(self._model, name)
+
+
 def process_video(
     video_path,
     output_parquet=None,
@@ -8075,6 +8088,10 @@ def process_video(
     except Exception as e:
         print(f"Error loading model '{resolved_primary_model_path}': {e}")
         return empty_result() if return_rows or not output_parquet else []
+    try:
+        observed_precision = str(next(primary_model.model.parameters()).dtype).removeprefix("torch.")
+    except (AttributeError, StopIteration, TypeError):
+        observed_precision = None
     complete_phase("modelLoadSeconds", model_load_started_at)
     emit_worker_heartbeat("modelLoad", "completed")
     
@@ -8122,6 +8139,7 @@ def process_video(
     grid_origin_pts = None
     last_export_pts = None
     exported_presentation_times = []
+    observed_device = None
     recalc_interval = HOMOGRAPHY_RECALC_FRAMES
     
     print("\nStarting BoT-SORT/YOLO Video Processing...")
@@ -8173,6 +8191,9 @@ def process_video(
         sampling_audit.record_primary_inference()
         sampling_audit.record_tracker_update()
         frame_image = getattr(r, "orig_img", None)
+        tensor = getattr(getattr(r, "boxes", None), "data", None)
+        if observed_device is None and getattr(tensor, "device", None) is not None:
+            observed_device = str(tensor.device)
         
         # Periodic homography recalculation to handle camera sway
         if frame_count - last_homography_recalc >= recalc_interval:
@@ -8316,7 +8337,10 @@ def process_video(
     filtered_probe_observed_ball_rows = []
     probe_observed_pass_started_at = time.monotonic()
     emit_worker_heartbeat("probeObservedPass", "started")
-    probe_model = auxiliary_ball_model or primary_model
+    probe_model = _CountingPredictor(
+        auxiliary_ball_model or primary_model,
+        sampling_audit.record_recovery_inference,
+    )
     probe_detector_profile = resolved_auxiliary_ball_model_profile or resolved_primary_detector_profile
     probe_recovery_settings = detector_probe_recovery_settings(probe_detector_profile)
     probe_crop_windows = None
@@ -8392,7 +8416,6 @@ def process_video(
     recovery_selection_started_at = time.monotonic()
     emit_worker_heartbeat("recoverySelection", "started")
     if needs_primary_recovery or needs_supplemental_recovery:
-        sampling_audit.record_recovery_inference()
         recovery_debug["recoveryAttempted"] = True
         recovery_results = run_ball_recovery_experiment(
             video_path,
@@ -8865,6 +8888,8 @@ def process_video(
             "source": "production_decode",
             "discontinuities": [],
         },
+        "hardware": {"declaredBackend": "auto", "observedDevice": observed_device},
+        "precision": observed_precision,
     }
 
 if __name__ == "__main__":

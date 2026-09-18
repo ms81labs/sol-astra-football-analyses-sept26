@@ -7,25 +7,25 @@ from typing import Any
 
 def promotion_receipt(
     *,
-    source_sha256: str,
-    weights: str,
-    configuration: str,
-    hardware: str,
+    source_sha256: str | None,
+    weights: str | None,
+    configuration: str | None,
+    hardware: str | None,
     native_builds: list[str],
-    selected_backend: str,
-    frame_count: int,
-    call_count: int,
-    cold_timing_ms: float,
-    warm_timing_ms: float,
-    peak_memory_bytes: int,
-    transferred_bytes: int,
+    selected_backend: str | None,
+    frame_count: int | None,
+    call_count: int | None,
+    cold_timing_ms: float | None,
+    warm_timing_ms: float | None,
+    peak_memory_bytes: int | None,
+    transferred_bytes: int | None,
     output_quality: str,
     accepted_coverage: float,
     failure_cases: list[str],
     allocated_spend: float,
     fallback_event: str | None,
 ) -> dict[str, Any]:
-    return {
+    receipt = {
         "sourceSha256": source_sha256,
         "weights": weights,
         "configuration": configuration,
@@ -46,3 +46,21 @@ def promotion_receipt(
         "stageBenchmarkIsCompleteMatchAcceptance": False,
         "completeMatchAccepted": False,
     }
+    receipt["notRecorded"] = [
+        key
+        for key in (
+            "sourceSha256",
+            "weights",
+            "configuration",
+            "hardware",
+            "selectedBackend",
+            "frameCount",
+            "callCount",
+            "coldTimingMs",
+            "warmTimingMs",
+            "peakMemoryBytes",
+            "transferredBytes",
+        )
+        if receipt[key] is None
+    ]
+    return receipt
