@@ -113,7 +113,10 @@ class ReviewService:
             log.update(item.correctionId, applyState="applying", attempts=item.attempts + 1)
         self.storage._save_correction_log(match_id, log)
         try:
-            ref = self.rebuild_generation(match_id, reason="correction")
+            ref = self.rebuild_generation(
+                match_id,
+                reason="calibration" if any(item.kind == "calibration" for item in pending) else "correction",
+            )
         except Exception as exc:
             for item in pending:
                 log.update(item.correctionId, applyState="failed", lastError=str(exc))
@@ -133,12 +136,11 @@ class ReviewService:
         return applied
 
     def rebuild_generation(self, match_id: str, *, reason: str):
-        del reason
         current = self.storage.current_generation(match_id)
         commands = self._active_commands(match_id)
         effective_config = self._effective_config(match_id, commands)
         previous_config = self.storage.get_match(match_id).config
-        previous_calibration = self.storage._load_calibration_evaluation(match_id)
+        previous_calibration = self.storage.calibration_revision(match_id)
         try:
             self.storage.update_match_config(match_id, effective_config)
             self._apply_auxiliary_state(match_id, commands)
@@ -162,6 +164,7 @@ class ReviewService:
                 reviewed_events,
                 attack_direction=effective_config.attackDirection,
             )
+            calibration = self.storage.calibration_revision(match_id)
             summary = summarize_match(
                 output["frames"],
                 output["assignments"],
@@ -169,6 +172,17 @@ class ReviewService:
                 reviewed_events,
                 attack_direction=effective_config.attackDirection,
                 identity_continuous=any(command.kind == "identity_validate" for command in commands),
+                calibration_accepted=bool(calibration and calibration.accepted and calibration.measured),
+                pitch_length_m=(
+                    calibration.pitchLengthM
+                    if calibration is not None
+                    else effective_config.pitchLengthM or 105.0
+                ),
+                pitch_width_m=(
+                    calibration.pitchWidthM
+                    if calibration is not None
+                    else effective_config.pitchWidthM or 68.0
+                ),
             )
             head = commands[-1].correctionId if commands else current.correctionHead
             return self.storage.publish_generation(
@@ -180,28 +194,38 @@ class ReviewService:
                 shots=shots,
                 events=events,
                 correction_head=head,
-                stale=["tactical_report", "drills"],
+                stale=(
+                    ["pitch_positions", "physical_metrics", "tactical_metrics", "report"]
+                    if reason == "calibration"
+                    else ["tactical_report", "drills"]
+                ),
                 orphaned_decisions=orphaned_decisions,
+                calibration_revision=None if calibration is None else calibration.revisionId,
             )
         except BaseException:
             self.storage.update_match_config(match_id, previous_config)
-            self.storage._restore_calibration_evaluation(match_id, previous_calibration)
+            self.storage._restore_calibration_revision(
+                match_id,
+                None if previous_calibration is None else previous_calibration.model_dump(mode="json"),
+            )
             raise
 
     def _apply_auxiliary_state(self, match_id: str, commands: list[Correction]) -> None:
         active_calibrations = [command for command in commands if command.kind == "calibration"]
         if active_calibrations:
-            self.storage._save_calibration_evaluation(
-                match_id,
-                dict(active_calibrations[-1].payload.get("evaluation") or {}),
-            )
+            revision = active_calibrations[-1].payload.get("revision")
+            if isinstance(revision, dict):
+                self.storage._save_calibration_revision(match_id, revision)
             return
-        history = self.storage._load_correction_log(match_id).history(match_id)
-        calibration = next((item for item in history if item.kind == "calibration"), None)
-        if calibration is not None:
-            self.storage._restore_calibration_evaluation(
-                match_id,
-                dict(calibration.payload.get("previous") or {}),
+        calibration_history = [
+            command
+            for command in self.storage._load_correction_log(match_id).history(match_id)
+            if command.kind == "calibration"
+        ]
+        if calibration_history:
+            previous = calibration_history[0].payload.get("previousRevision")
+            self.storage._restore_calibration_revision(
+                match_id, previous if isinstance(previous, dict) else None
             )
 
     def _materialize(
@@ -232,6 +256,16 @@ class ReviewService:
             )
             if swaps % 2:
                 frames = apply_team_swap(frames)
+            calibration = self.storage.calibration_revision(match_id)
+            if calibration is not None and calibration.accepted and calibration.measured:
+                from .workbench.geometry import CalibrationProfile, project_tracking_frames
+
+                frames = project_tracking_frames(
+                    frames,
+                    CalibrationProfile.model_validate(calibration.profile),
+                    pitch_length_m=calibration.pitchLengthM,
+                    pitch_width_m=calibration.pitchWidthM,
+                )
         frames = apply_remap(frames, build_identity_remap(commands))
         ball_truth_layers = _load_saved_ball_truth_layers(self.storage, match_id)
         match_state_evidence = _normalize_match_state_evidence(frames, ball_truth_layers=ball_truth_layers)
@@ -266,10 +300,12 @@ class ReviewService:
         match_dir = self.storage._match_dir(match_id)
         base_path = match_dir / "review_base_config.json"
         if base_path.exists():
-            config = MatchConfig.model_validate(self.storage._read_json(base_path))
+            base_config = MatchConfig.model_validate(self.storage._read_json(base_path))
         else:
-            config = self.storage.get_match(match_id).config
-            self.storage._write_json(base_path, config.model_dump(mode="json"))
+            base_config = self.storage.get_match(match_id).config
+            self.storage._write_json(base_path, base_config.model_dump(mode="json"))
+        current_config = self.storage.get_match(match_id).config
+        config = current_config.model_copy(update={"myTeamCluster": base_config.myTeamCluster})
         cluster_ids = sorted(cluster.clusterId for cluster in self.storage.get_match(match_id).teamClusters)
         for command in commands:
             if command.kind != "team_mapping" or command.payload.get("swap") is not True:

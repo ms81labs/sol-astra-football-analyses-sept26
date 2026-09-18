@@ -819,6 +819,38 @@ def _publish_outputs(
         if any(item["applyState"] == "applied" for item in storage.list_corrections(match_id)):
             service.rebuild_generation(match_id, reason="processing")
             return
+        revision = storage.calibration_revision(match_id)
+        calibration_revision = None
+        if revision is not None and revision.accepted and revision.measured:
+            calibration_revision = revision.revisionId
+            if storage.get_match(match_id).inputMode == "tracking_json":
+                from .workbench.geometry import CalibrationProfile, project_tracking_frames
+
+                base_path = storage._match_dir(match_id) / "review_base_frames.json"
+                if not base_path.exists():
+                    storage._write_json(base_path, [frame.model_dump(mode="json") for frame in frames])
+                frames = project_tracking_frames(
+                    frames,
+                    CalibrationProfile.model_validate(revision.profile),
+                    pitch_length_m=revision.pitchLengthM,
+                    pitch_width_m=revision.pitchWidthM,
+                )
+                frames, _, events, assignments, formation_timeline, shots, _ = (
+                    _compute_outputs_and_match_state(
+                        frames,
+                        attack_direction=storage.get_match(match_id).config.attackDirection,
+                    )
+                )
+            summary = summarize_match(
+                frames,
+                assignments,
+                shots,
+                events,
+                attack_direction=storage.get_match(match_id).config.attackDirection,
+                calibration_accepted=True,
+                pitch_length_m=revision.pitchLengthM,
+                pitch_width_m=revision.pitchWidthM,
+            )
         try:
             correction_head = storage.current_generation(match_id).correctionHead
         except FileNotFoundError:
@@ -832,6 +864,7 @@ def _publish_outputs(
             shots=shots,
             events=events,
             correction_head=correction_head,
+            calibration_revision=calibration_revision,
         )
 
 

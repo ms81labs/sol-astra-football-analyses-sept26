@@ -7,9 +7,15 @@ from itertools import chain
 from math import atan2, degrees, pi, sqrt
 
 from .schemas import BallData, BallEstimate, BallOwnership, DetectedEvent, FormationSegment, FrameData, MatchStateFrame, MatchSummary, MetricAvailabilityRecord, PlayerData, ShotAnalytics
+from .workbench.metric_definitions import (
+    METRIC_DEFINITIONS,
+    MIN_VISIBLE_DEFENDERS_FOR_LINE_BREAK,
+    MIN_VISIBLE_PLAYERS_FOR_DEFENSIVE_LINE,
+)
 
 PITCH_LENGTH_M = 105
 PITCH_WIDTH_M = 68
+FORMATION_MAX_GAP_S = 2.0
 MAX_OWNER_DISTANCE = 12.0
 CONTINUITY_DISTANCE = 3.5
 MAX_DEAD_BALL_BRIDGE_SECONDS = 1.0
@@ -248,7 +254,7 @@ def _summarize_defensive_shape(
             continue
 
         players = frame.myTeam if defending_team == "my_team" else frame.enemies
-        if len(players) < 5:
+        if len(players) < MIN_VISIBLE_PLAYERS_FOR_DEFENSIVE_LINE:
             continue
 
         sorted_players = sorted(players, key=lambda player: player.x, reverse=defending_team == "enemy")
@@ -973,14 +979,20 @@ def build_formation_timeline(
             smoothed_formations.append(Counter(window_formations).most_common(1)[0][0])
 
     timeline: list[FormationSegment] = []
+    previous_known_index: int | None = None
     for index, formation in enumerate(smoothed_formations):
         if formation == "-":
             continue
         frame = canonical_frames[index]
-        if timeline and timeline[-1].formation == formation:
+        gap_exceeded = (
+            previous_known_index is not None
+            and frame.timestamp - canonical_frames[previous_known_index].timestamp > FORMATION_MAX_GAP_S
+        )
+        if timeline and timeline[-1].formation == formation and not gap_exceeded:
             timeline[-1] = timeline[-1].model_copy(
                 update={"endFrameId": frame.frameId, "endTimestamp": frame.timestamp}
             )
+            previous_known_index = index
             continue
         timeline.append(
             FormationSegment(
@@ -991,6 +1003,7 @@ def build_formation_timeline(
                 endTimestamp=frame.timestamp,
             )
         )
+        previous_known_index = index
 
     return timeline
 
@@ -1053,13 +1066,33 @@ def summarize_match(
     events: list[DetectedEvent | dict] | None = None,
     *, attack_direction: str = "left_to_right",
     identity_continuous: bool = False,
+    calibration_accepted: bool = False,
+    pitch_length_m: float = PITCH_LENGTH_M,
+    pitch_width_m: float = PITCH_WIDTH_M,
 ) -> MatchSummary:
     canonical_frames = [frame if isinstance(frame, FrameData) else FrameData.model_validate(frame) for frame in frames]
     canonical_events = [event if isinstance(event, DetectedEvent) else DetectedEvent.model_validate(event) for event in (events or [])]
     directional_frames = _oriented_frames(canonical_frames, attack_direction)
     formation_timeline = build_formation_timeline(directional_frames)
-    my_team_ownership = sum(1 for assignment in assignments if assignment.team == "my_team")
-    controlled_frames = sum(1 for assignment in assignments if assignment.team in {"my_team", "enemy"})
+    controlled = [assignment for assignment in assignments if assignment.team in {"my_team", "enemy"}]
+    controlled_frames = len(controlled)
+    eligible_seconds = 0.0
+    requested_seconds = 0.0
+    my_team_seconds = 0.0
+    for current, following in zip(assignments, assignments[1:]):
+        duration = following.timestamp - current.timestamp
+        if duration <= 0:
+            continue
+        requested_seconds += duration
+        if current.team in {"my_team", "enemy"}:
+            eligible_seconds += duration
+            if current.team == "my_team":
+                my_team_seconds += duration
+    equal_duration_assumed = eligible_seconds <= 0 and bool(controlled)
+    if equal_duration_assumed:
+        eligible_seconds = float(controlled_frames)
+        requested_seconds = eligible_seconds
+        my_team_seconds = float(sum(1 for assignment in controlled if assignment.team == "my_team"))
 
     my_team_total_dist = 0.0
     enemy_total_dist = 0.0
@@ -1067,6 +1100,8 @@ def summarize_match(
     enemy_top_speed = 0.0
     my_team_sprints = 0
     enemy_sprints = 0
+    physical_eligible_seconds = 0.0
+    physical_requested_seconds = 0.0
     sprinting = {"my_team": set(), "enemy": set()}
     my_team_pos_sum = {"x": 0.0, "y": 0.0, "count": 0}
     enemy_pos_sum = {"x": 0.0, "y": 0.0, "count": 0}
@@ -1089,6 +1124,13 @@ def summarize_match(
         if dt <= 0:
             sprinting = {"my_team": set(), "enemy": set()}
             continue
+        physical_requested_seconds += dt
+        previous_my_ids = {player.id for player in previous.myTeam}
+        previous_enemy_ids = {player.id for player in previous.enemies}
+        if any(player.id in previous_my_ids for player in frame.myTeam) or any(
+            player.id in previous_enemy_ids for player in frame.enemies
+        ):
+            physical_eligible_seconds += dt
         if not identity_continuous:
             continue
         current_sprints = {"my_team": set(), "enemy": set()}
@@ -1097,8 +1139,8 @@ def summarize_match(
             previous_player = next((player for player in previous.myTeam if player.id == current_player.id), None)
             if previous_player is None:
                 continue
-            dx = (current_player.x - previous_player.x) / 100 * PITCH_LENGTH_M
-            dy = (current_player.y - previous_player.y) / 100 * PITCH_WIDTH_M
+            dx = (current_player.x - previous_player.x) / 100 * pitch_length_m
+            dy = (current_player.y - previous_player.y) / 100 * pitch_width_m
             distance = sqrt(dx * dx + dy * dy)
             speed = (distance / dt) * 3.6
             my_team_total_dist += distance
@@ -1111,8 +1153,8 @@ def summarize_match(
             previous_player = next((player for player in previous.enemies if player.id == current_player.id), None)
             if previous_player is None:
                 continue
-            dx = (current_player.x - previous_player.x) / 100 * PITCH_LENGTH_M
-            dy = (current_player.y - previous_player.y) / 100 * PITCH_WIDTH_M
+            dx = (current_player.x - previous_player.x) / 100 * pitch_length_m
+            dy = (current_player.y - previous_player.y) / 100 * pitch_width_m
             distance = sqrt(dx * dx + dy * dy)
             speed = (distance / dt) * 3.6
             enemy_total_dist += distance
@@ -1160,7 +1202,17 @@ def summarize_match(
         my_team_defensive_line_height, enemy_defensive_line_height
     )
 
-    possession = round((my_team_ownership / controlled_frames) * 100) if controlled_frames else None
+    possession = round((my_team_seconds / eligible_seconds) * 100) if eligible_seconds else None
+    line_break_visibility = {
+        "my_team": bool(directional_frames)
+        and all(len(frame.enemies) >= MIN_VISIBLE_DEFENDERS_FOR_LINE_BREAK for frame in directional_frames),
+        "enemy": bool(directional_frames)
+        and all(len(frame.myTeam) >= MIN_VISIBLE_DEFENDERS_FOR_LINE_BREAK for frame in directional_frames),
+    }
+    line_break_counts = {
+        team: sum(event.type == "through_ball" and event.team == team for event in canonical_events)
+        for team in ("my_team", "enemy")
+    }
     summary = MatchSummary(
         possession=possession,
         myTeamDistance=round(my_team_total_dist) if identity_continuous else None,
@@ -1195,10 +1247,19 @@ def summarize_match(
         update={
             "metricAvailability": _summary_metric_availability(
                 summary,
-                controlled_frames=controlled_frames,
                 my_pressing_actions=my_team_high_press_regains,
                 enemy_pressing_actions=enemy_high_press_regains,
                 identity_continuous=identity_continuous,
+                calibration_accepted=calibration_accepted,
+                eligible_seconds=eligible_seconds,
+                requested_seconds=requested_seconds,
+                physical_eligible_seconds=physical_eligible_seconds,
+                physical_requested_seconds=physical_requested_seconds,
+                equal_duration_assumed=equal_duration_assumed,
+                pitch_length_m=pitch_length_m,
+                pitch_width_m=pitch_width_m,
+                line_break_visibility=line_break_visibility,
+                line_break_counts=line_break_counts,
             )
         }
     )
@@ -1227,20 +1288,41 @@ def _ppda_availability(metric: str, value: float | None, pressing_actions: int |
 def _summary_metric_availability(
     summary: MatchSummary,
     *,
-    controlled_frames: int,
     my_pressing_actions: int | None,
     enemy_pressing_actions: int | None,
     identity_continuous: bool = False,
+    calibration_accepted: bool = False,
+    eligible_seconds: float = 0.0,
+    requested_seconds: float = 0.0,
+    physical_eligible_seconds: float = 0.0,
+    physical_requested_seconds: float = 0.0,
+    equal_duration_assumed: bool = False,
+    pitch_length_m: float = PITCH_LENGTH_M,
+    pitch_width_m: float = PITCH_WIDTH_M,
+    line_break_visibility: dict[str, bool] | None = None,
+    line_break_counts: dict[str, int] | None = None,
 ) -> list[MetricAvailabilityRecord]:
+    possession_definition = METRIC_DEFINITIONS["possession_pct"]
     possession = MetricAvailabilityRecord(
         metric="possession_pct",
+        definitionVersion=possession_definition.version,
         value=None if summary.possession is None else float(summary.possession),
-        availability="available" if controlled_frames and summary.possession is not None else "unknown",
-        reasonCodes=[] if controlled_frames and summary.possession is not None else ["ZERO_DENOMINATOR"],
-        unit="percent",
-        denominator="controlled_possession_frames",
+        availability="available" if eligible_seconds and summary.possession is not None else "unknown",
+        reasonCodes=[
+            *(["EQUAL_DURATION_ASSUMED"] if equal_duration_assumed else []),
+            *(["UNKNOWN_INTERVALS_EXCLUDED"] if requested_seconds > eligible_seconds else []),
+        ] if eligible_seconds and summary.possession is not None else ["ZERO_DENOMINATOR"],
+        unit=possession_definition.unit,
+        denominator=possession_definition.denominator,
+        eligibleSeconds=eligible_seconds,
+        requestedSeconds=requested_seconds,
     )
-    physical_reason = ["CALIBRATION_UNAVAILABLE", "IDENTITY_DISCONTINUITY"]
+    physical_reason = [
+        *([] if calibration_accepted else ["CALIBRATION_UNAVAILABLE"]),
+        *([] if identity_continuous else ["IDENTITY_DISCONTINUITY"]),
+        *([] if physical_eligible_seconds > 0 else ["ZERO_DENOMINATOR"]),
+    ]
+    physical_available = identity_continuous and calibration_accepted and physical_eligible_seconds > 0
     physical_values = {
         "my_team_distance_m": None if summary.myTeamDistance is None else float(summary.myTeamDistance),
         "enemy_distance_m": None if summary.enemyDistance is None else float(summary.enemyDistance),
@@ -1252,11 +1334,19 @@ def _summary_metric_availability(
     physical = [
         MetricAvailabilityRecord(
             metric=name,
-            value=physical_values[name] if identity_continuous else None,
-            availability="available" if identity_continuous else "withheld",
-            reasonCodes=[] if identity_continuous else physical_reason,
-            unit="metres" if "distance" in name else None,
+            definitionVersion=METRIC_DEFINITIONS[
+                "distance_m" if "distance" in name else "speed_kmh" if "speed" in name else "sprints"
+            ].version,
+            value=physical_values[name] if physical_available else None,
+            availability="available" if physical_available else "withheld",
+            reasonCodes=[] if physical_available else physical_reason,
+            unit=METRIC_DEFINITIONS[
+                "distance_m" if "distance" in name else "speed_kmh" if "speed" in name else "sprints"
+            ].unit,
             denominator="identity_continuous_eligible_seconds",
+            eligibleSeconds=physical_eligible_seconds,
+            requestedSeconds=physical_requested_seconds,
+            pitchDimensions={"lengthM": pitch_length_m, "widthM": pitch_width_m},
         )
         for name in physical_values
     ]
@@ -1282,11 +1372,46 @@ def _summary_metric_availability(
             deprecated=True,
         )
     )
+    defensive_definition = METRIC_DEFINITIONS["defensive_line_height"]
+    defensive_line = [
+        MetricAvailabilityRecord(
+            metric=f"{team}_defensive_line_height",
+            definitionVersion=defensive_definition.version,
+            value=None if value is None else float(value),
+            availability="unknown" if value is None else "experimental",
+            reasonCodes=["INSUFFICIENT_TEAM_VISIBILITY"] if value is None else [],
+            unit=defensive_definition.unit,
+            denominator=defensive_definition.denominator,
+            teamScope=team,
+        )
+        for team, value in (
+            ("my_team", summary.myTeamDefensiveLineHeight),
+            ("enemy", summary.enemyDefensiveLineHeight),
+        )
+    ]
+    line_break_definition = METRIC_DEFINITIONS["line_breaking_events"]
+    line_break_visibility = line_break_visibility or {}
+    line_break_counts = line_break_counts or {}
+    line_breaking = [
+        MetricAvailabilityRecord(
+            metric=f"{team}_line_breaking_events",
+            definitionVersion=line_break_definition.version,
+            value=(float(line_break_counts.get(team, 0)) if line_break_visibility.get(team) else None),
+            availability="experimental" if line_break_visibility.get(team) else "unknown",
+            reasonCodes=[] if line_break_visibility.get(team) else ["INSUFFICIENT_TEAM_VISIBILITY"],
+            unit=line_break_definition.unit,
+            denominator=line_break_definition.denominator,
+            teamScope=team,
+        )
+        for team in ("my_team", "enemy")
+    ]
     return [
         possession,
         _ppda_availability("my_team_ppda", summary.myTeamPpda, my_pressing_actions),
         _ppda_availability("enemy_ppda", summary.enemyPpda, enemy_pressing_actions),
         *shot_quality,
+        *defensive_line,
+        *line_breaking,
         *physical,
     ]
 
@@ -1351,7 +1476,8 @@ def detect_events(frames: list[FrameData | dict], assignments: list[BallOwnershi
             if current_segment.start.team in CONTROLLED_TEAMS:
                 opponents = current_frame.enemies if current_segment.start.team == "my_team" else current_frame.myTeam
                 if (
-                    previous_position is not None
+                    len(opponents) >= MIN_VISIBLE_DEFENDERS_FOR_LINE_BREAK
+                    and previous_position is not None
                     and current_position is not None
                     and not _is_attacking_wide(current_segment.start.team, previous_position)
                     and _is_forward_progression(current_segment.start.team, previous_position[0], current_position[0])

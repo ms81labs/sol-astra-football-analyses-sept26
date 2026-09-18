@@ -259,8 +259,8 @@ def render_match_report_html(
           {_render_kv_card("Formation", "Unavailable" if not summary.get("formation") or summary.get("formation") == "-" else str(summary.get("formation")))}
           {_render_kv_card("My Team PPDA", _format_available_metric(summary, "my_team_ppda", "myTeamPpda", 1))}
           {_render_kv_card("Enemy PPDA", _format_available_metric(summary, "enemy_ppda", "enemyPpda", 1))}
-          {_render_kv_card("My Team Defensive Line", _format_measured(summary.get("myTeamDefensiveLineHeight"), 1))}
-          {_render_kv_card("Enemy Defensive Line", _format_measured(summary.get("enemyDefensiveLineHeight"), 1))}
+          {_render_kv_card("My Team Defensive Line", _format_metric_record(summary, "my_team_defensive_line_height", 1, legacy_key="myTeamDefensiveLineHeight"))}
+          {_render_kv_card("Enemy Defensive Line", _format_metric_record(summary, "enemy_defensive_line_height", 1, legacy_key="enemyDefensiveLineHeight"))}
           {_render_kv_card("My Team High Press Regains", _format_measured(summary.get("myTeamHighPressRegains"), 0))}
           {_render_kv_card("Enemy High Press Regains", _format_measured(summary.get("enemyHighPressRegains"), 0))}
           {_render_kv_card("My Team Counterpress Recovery", _format_duration_seconds(summary.get("myTeamCounterpressRecoverySeconds")))}

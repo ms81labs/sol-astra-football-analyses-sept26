@@ -1793,6 +1793,7 @@ class Storage:
 
         match = self.get_match(match_id)
         config = match.config
+        calibration = self.calibration_revision(match_id)
         return assess_match_setup(
             camera_profile=config.cameraProfile,
             pitch_length_m=config.pitchLengthM,
@@ -1800,7 +1801,7 @@ class Storage:
             periods=[period.model_dump(mode="json") for period in config.periods],
             home_team=config.homeTeam,
             away_team=config.awayTeam,
-            calibration_committed=config.calibrationCommitted,
+            calibration_committed=bool(calibration and calibration.accepted and calibration.measured),
         )
 
     def four_rates_for_match(self, match_id: str) -> dict:
@@ -1835,6 +1836,8 @@ class Storage:
                 frames = self.load_frames(match_id, generation_id=generation.generationId)
             except FileNotFoundError:
                 frames = []
+        if summary.metricAvailability:
+            return {"metrics": [item.model_dump(mode="json") for item in summary.metricAvailability]}
         controlled = sum(
             1
             for frame in frames
@@ -1942,12 +1945,9 @@ class Storage:
         from .workbench.geometry import preview_landmark_fit
 
         match = self.get_match(match_id)
-        try:
-            stored = self.load_analysis_artifact(match_id, "calibration_profile")
-        except FileNotFoundError:
-            stored = None
-        if stored and stored.get("committed"):
-            evaluation = dict(stored.get("evaluation") or {})
+        revision = self.calibration_revision(match_id)
+        if revision is not None and revision.accepted:
+            evaluation = dict(revision.evaluation)
             return {
                 "preview": False,
                 "committed": True,
@@ -1955,7 +1955,7 @@ class Storage:
                 "accepted": bool(evaluation.get("accepted", True)),
                 "measured": True,
                 "visionRerun": False,
-                "residualP95M": evaluation.get("p95M", stored.get("profile", {}).get("residualP95M") if isinstance(stored.get("profile"), dict) else None),
+                "residualP95M": evaluation.get("p95M", revision.profile.get("residualP95M")),
                 "rebuild": list(REBUILD_FOR["calibration"]),
                 "reasonCodes": [],
             }
@@ -1966,21 +1966,41 @@ class Storage:
         preview["certified"] = False
         preview["rebuild"] = list(REBUILD_FOR["calibration"])
         preview["reasonCodes"] = ["LANDMARK_RESIDUAL_UNMEASURED"]
-        preview["committed"] = bool(match.config.calibrationCommitted)
+        preview["committed"] = False
         return preview
 
     def commit_calibration_for_match(self, match_id: str, payload: dict) -> dict:
         from .workbench.geometry import CalibrationProfile, commit_calibration
+        from .workbench.review import correction_api_payload
 
         match = self.get_match(match_id)
         profile = CalibrationProfile.model_validate(payload)
         result = commit_calibration(profile)
         if result.get("committed"):
-            self.save_analysis_artifact(match_id, "calibration_profile", result)
-            self.update_match_config(
+            previous_revision = self.calibration_revision(match_id)
+            revision = self._new_calibration_revision(
                 match_id,
-                match.config.model_copy(update={"calibrationCommitted": True}),
+                profile=result["profile"],
+                evaluation={**dict(result["evaluation"]), "measured": True},
             )
+            try:
+                self.current_generation(match_id)
+            except FileNotFoundError:
+                self._save_calibration_revision(match_id, revision)
+            else:
+                saved = self.submit_correction(
+                    match_id,
+                    kind="calibration",
+                    payload={
+                        "revision": revision,
+                        "previousRevision": (
+                            None
+                            if previous_revision is None
+                            else previous_revision.model_dump(mode="json")
+                        ),
+                    },
+                )
+                result["correction"] = correction_api_payload(saved)
         return result
 
     def recompute_for_match(self, match_id: str, change: str) -> dict:
@@ -2109,26 +2129,24 @@ class Storage:
         return {"items": items, "reviewFirst": True, "accepted": False, "measured": False}
 
     def _stored_identity_continuous(self, match_id: str) -> bool:
-        try:
-            summary, _, _, _ = self.load_analytics(match_id)
-        except FileNotFoundError:
-            return False
-        physical = next(
-            (item for item in summary.metricAvailability if item.metric == "my_team_distance_m"),
-            None,
-        )
-        return bool(
-            physical is not None
-            and physical.availability == "available"
-            and "IDENTITY_DISCONTINUITY" not in (physical.reasonCodes or [])
-        )
+        history = self._load_correction_log(match_id).history(match_id)
+        applied = [item for item in history if item.applyState in {"applied", "applying"}]
+        undone = {
+            str(item.payload.get("of"))
+            for item in applied
+            if item.kind == "undo" and item.payload.get("of")
+        }
+        identity_changes = [
+            item
+            for item in applied
+            if item.kind in {"identity_validate", "track_split", "track_join"}
+            and item.correctionId not in undone
+        ]
+        return bool(identity_changes and identity_changes[-1].kind == "identity_validate")
 
     def _stored_calibration_accepted(self, match_id: str) -> bool:
-        try:
-            payload = self.load_analysis_artifact(match_id, "calibration_evaluation")
-        except FileNotFoundError:
-            return False
-        return bool(payload.get("accepted")) and payload.get("measured") is True
+        revision = self.calibration_revision(match_id)
+        return bool(revision and revision.accepted and revision.measured)
 
     def heatmap_for_match(self, match_id: str) -> dict:
         from .workbench.quantities import heatmap_availability
@@ -2290,6 +2308,7 @@ class Storage:
         except FileNotFoundError:
             events = []
         match = self.get_match(match_id)
+        calibration = self.calibration_revision(match_id)
         self.save_analytics(
             match_id,
             summarize_match(
@@ -2299,6 +2318,17 @@ class Storage:
                 events,
                 attack_direction=match.config.attackDirection,
                 identity_continuous=identity_continuous,
+                calibration_accepted=bool(calibration and calibration.accepted and calibration.measured),
+                pitch_length_m=(
+                    calibration.pitchLengthM
+                    if calibration is not None
+                    else match.config.pitchLengthM or 105.0
+                ),
+                pitch_width_m=(
+                    calibration.pitchWidthM
+                    if calibration is not None
+                    else match.config.pitchWidthM or 68.0
+                ),
             ),
             assignments,
             timeline,
@@ -2601,7 +2631,12 @@ class Storage:
         points = [{"x": float(point.x), "y": float(point.y)} for point in match.config.manualHomographyPoints]
         if len(points) != 4:
             points = [{"x": 0.0, "y": 0.0}, {"x": 1.0, "y": 0.0}, {"x": 1.0, "y": 1.0}, {"x": 0.0, "y": 1.0}]
-        profile = from_legacy_four_points(points, calibration_id=match_id)
+        profile = from_legacy_four_points(
+            points,
+            calibration_id=match_id,
+            pitch_length_m=match.config.pitchLengthM or 105.0,
+            pitch_width_m=match.config.pitchWidthM or 68.0,
+        )
         delta_m = 0.0
         if frames and not identity_gap and not calibration_missing and not cuts:
             delta_m = path_distance_m(frames, profile)
@@ -2709,7 +2744,13 @@ class Storage:
         return interrupted_upload(self.storage_root / "uploads" / "interrupted.bin")
 
     def calibration_for_match(self, match_id: str, payload: dict | None = None) -> dict:
-        from .workbench.geometry import Landmark, evaluate_landmarks, from_legacy_four_points, withhold_if_invalid
+        from .workbench.geometry import (
+            Landmark,
+            evaluate_landmarks,
+            from_legacy_four_points,
+            validate_fit_points,
+            withhold_if_invalid,
+        )
         from .workbench.review import correction_api_payload
 
         match = self.get_match(match_id)
@@ -2723,7 +2764,30 @@ class Storage:
                 "visionRerun": False,
                 "correction": None,
             }
-        profile = from_legacy_four_points(points, calibration_id=match_id)
+        try:
+            source_clock = self.load_analysis_artifact(match_id, "source_clock")
+        except FileNotFoundError:
+            source_clock = {}
+        point_errors = validate_fit_points(
+            points,
+            width=source_clock.get("width") if isinstance(source_clock, dict) else None,
+            height=source_clock.get("height") if isinstance(source_clock, dict) else None,
+        )
+        if point_errors:
+            return {
+                "availability": "calibration_unavailable",
+                "reasonCodes": point_errors,
+                "committed": False,
+                "measured": False,
+                "visionRerun": False,
+                "correction": None,
+            }
+        profile = from_legacy_four_points(
+            points,
+            calibration_id=match_id,
+            pitch_length_m=match.config.pitchLengthM or 105.0,
+            pitch_width_m=match.config.pitchWidthM or 68.0,
+        )
         body = dict(payload or {})
         holdout: list = []
         for item in body.get("landmarks") or []:
@@ -2740,6 +2804,7 @@ class Storage:
                 )
             )
         stored = self._load_calibration_evaluation(match_id)
+        previous_revision = self.calibration_revision(match_id)
         committed = False
         correction = None
         measured = False
@@ -2747,29 +2812,43 @@ class Storage:
         if holdout:
             profile = profile.model_copy(update={"landmarks": list(profile.landmarks) + holdout})
             measured_evaluation = evaluate_landmarks(profile, max_p95_m=3.0)
-            saved = self.submit_correction(
-                match_id,
-                kind="calibration",
-                payload={
-                    "evaluation": {**measured_evaluation, "measured": True},
-                    "previous": stored,
-                },
-                author=str(body.get("author") or "analyst"),
-                crash_before_commit=bool(body.get("crashBeforeCommit")),
-            )
-            correction = correction_api_payload(saved)
-            committed = saved.saveState == "saved"
-            if committed:
-                evaluation = measured_evaluation
-                measured = True
-                residual = measured_evaluation.get("p95M")
-                stored = {**measured_evaluation, "measured": True}
+            evaluation = measured_evaluation
+            measured = True
+            residual = measured_evaluation.get("p95M")
+            if measured_evaluation.get("accepted"):
+                revision = self._new_calibration_revision(
+                    match_id,
+                    profile=profile.model_dump(mode="json"),
+                    evaluation={**measured_evaluation, "measured": True},
+                )
+                saved = self.submit_correction(
+                    match_id,
+                    kind="calibration",
+                    payload={
+                        "revision": revision,
+                        "previousRevision": (
+                            None
+                            if previous_revision is None
+                            else previous_revision.model_dump(mode="json")
+                        ),
+                    },
+                    author=str(body.get("author") or "analyst"),
+                    crash_before_commit=bool(body.get("crashBeforeCommit")),
+                )
+                correction = correction_api_payload(saved)
+                committed = saved.saveState == "saved"
+                if committed:
+                    stored = {**measured_evaluation, "measured": True}
+                else:
+                    evaluation = {
+                        "accepted": False,
+                        "reasonCodes": ["CALIBRATION_UNAVAILABLE"],
+                        "holdoutCount": len(holdout),
+                    }
+                    measured = False
+                    residual = None
             else:
-                evaluation = {
-                    "accepted": False,
-                    "reasonCodes": ["CALIBRATION_UNAVAILABLE"],
-                    "holdoutCount": len(holdout),
-                }
+                committed = False
         elif stored:
             evaluation = {
                 "accepted": bool(stored.get("accepted")),
@@ -2783,9 +2862,9 @@ class Storage:
         else:
             evaluation = evaluate_landmarks(profile, max_p95_m=3.0)
         withheld = withhold_if_invalid(profile, "team_width_m")
-        if stored.get("accepted") and stored.get("measured") is True:
+        if not holdout and stored.get("accepted") and stored.get("measured") is True:
             withheld = {"metric": "team_width_m", "availability": "available", "reasonCodes": [], "value": "computed"}
-        elif stored or committed is False:
+        elif evaluation.get("accepted") is not True:
             withheld = {"metric": "team_width_m", "availability": "withheld", "reasonCodes": list(evaluation.get("reasonCodes") or ["CALIBRATION_UNAVAILABLE"]), "value": None}
         return {
             **profile.model_dump(mode="json"),
@@ -2800,6 +2879,9 @@ class Storage:
         }
 
     def _load_calibration_evaluation(self, match_id: str) -> dict:
+        revision = self.calibration_revision(match_id)
+        if revision is not None:
+            return dict(revision.evaluation)
         try:
             payload = self.load_analysis_artifact(match_id, "calibration_evaluation")
         except FileNotFoundError:
@@ -2816,6 +2898,88 @@ class Storage:
 
     def _restore_calibration_evaluation(self, match_id: str, previous: dict) -> None:
         self._save_calibration_evaluation(match_id, previous)
+
+    def calibration_revision(self, match_id: str):
+        from .workbench.contracts import CalibrationRevision
+
+        try:
+            return CalibrationRevision.model_validate(
+                self.load_analysis_artifact(match_id, "calibration_revision")
+            )
+        except FileNotFoundError:
+            pass
+        try:
+            legacy_profile = self.load_analysis_artifact(match_id, "calibration_profile")
+        except FileNotFoundError:
+            legacy_profile = {}
+        try:
+            legacy_evaluation = self.load_analysis_artifact(match_id, "calibration_evaluation")
+        except FileNotFoundError:
+            legacy_evaluation = {}
+        if not legacy_profile and not legacy_evaluation:
+            return None
+        profile = dict(legacy_profile.get("profile") or legacy_profile)
+        evaluation = dict(legacy_evaluation or legacy_profile.get("evaluation") or {})
+        match = self.get_match(match_id)
+        accepted = bool(evaluation.get("accepted")) and evaluation.get("measured") is True
+        digest = hashlib.sha256(
+            json.dumps(
+                {"profile": profile, "evaluation": evaluation, "source": self.source_sha256(match_id)},
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
+        return CalibrationRevision(
+            revisionId=f"cal_{digest[:16]}",
+            profile=profile,
+            evaluation=evaluation,
+            accepted=accepted,
+            measured=evaluation.get("measured") is True,
+            sourceSha256=self.source_sha256(match_id),
+            validInterval={"start": 0.0, "end": None},
+            createdAt=_utcnow().isoformat(),
+            pitchLengthM=float(profile.get("pitchLengthM") or match.config.pitchLengthM or 105.0),
+            pitchWidthM=float(profile.get("pitchWidthM") or match.config.pitchWidthM or 68.0),
+            migrated=True,
+        )
+
+    def _save_calibration_revision(self, match_id: str, revision: dict) -> None:
+        from .workbench.contracts import CalibrationRevision
+
+        canonical = CalibrationRevision.model_validate(revision)
+        self.save_analysis_artifact(match_id, "calibration_revision", canonical.model_dump(mode="json"))
+
+    def _new_calibration_revision(self, match_id: str, *, profile: dict, evaluation: dict) -> dict:
+        match = self.get_match(match_id)
+        source_sha = self.source_sha256(match_id)
+        identity = hashlib.sha256(
+            json.dumps(
+                {"profile": profile, "evaluation": evaluation, "source": source_sha},
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
+        return {
+            "revisionId": f"cal_{identity[:16]}",
+            "profile": profile,
+            "evaluation": evaluation,
+            "accepted": bool(evaluation.get("accepted")) and evaluation.get("measured") is True,
+            "measured": evaluation.get("measured") is True,
+            "sourceSha256": source_sha,
+            "validInterval": {"start": 0.0, "end": None},
+            "createdAt": _utcnow().isoformat(),
+            "fitPointSpace": "source_pixels",
+            "pitchLengthM": float(profile.get("pitchLengthM") or match.config.pitchLengthM or 105.0),
+            "pitchWidthM": float(profile.get("pitchWidthM") or match.config.pitchWidthM or 68.0),
+            "migrated": False,
+        }
+
+    def _restore_calibration_revision(self, match_id: str, revision: dict | None) -> None:
+        path = self._match_dir(match_id) / "calibration_revision.json"
+        if revision is None:
+            path.unlink(missing_ok=True)
+            return
+        self._save_calibration_revision(match_id, revision)
 
     def load_raw_rows(self, match_id: str) -> list[dict]:
         payload = self._read_json(self._match_dir(match_id) / "raw_rows.json")
