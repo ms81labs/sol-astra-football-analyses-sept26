@@ -208,6 +208,9 @@ class GenerationManifest(StrictModel):
     observationDigest: str
     detectionIdentity: str | None = None
     trackingIdentity: str | None = None
+    projectionIdentity: str | None = None
+    reviewedIdentity: str | None = None
+    reportIdentity: str | None = None
     calibrationRevision: str | None = None
     correctionHead: str
     algorithmVersions: dict[str, str]

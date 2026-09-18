@@ -1026,9 +1026,22 @@ def _persist_prepared_video_outputs(
         projection_policy = video_result.get("projectionPolicy")
         if isinstance(projection_policy, dict):
             storage.save_analysis_artifact(match_id, "projection_policy", projection_policy)
-        sampling = video_result.get("sampling")
-        if isinstance(sampling, dict):
-            storage.save_analysis_artifact(match_id, "sampling", sampling)
+        sampling_receipt = video_result.get("samplingReceipt")
+        if isinstance(sampling_receipt, dict):
+            storage.save_analysis_artifact(match_id, "sampling_receipt", sampling_receipt)
+        policy = video_result.get("policy")
+        if isinstance(policy, dict):
+            storage.save_analysis_artifact(match_id, "sampling_policy", policy)
+        hardware = video_result.get("hardware")
+        if isinstance(hardware, dict):
+            storage.save_analysis_artifact(match_id, "hardware", hardware)
+        for key, artifact_name in (
+            ("detectionIdentity", "detection_identity"),
+            ("trackingIdentity", "tracking_identity"),
+        ):
+            identity = video_result.get(key)
+            if isinstance(identity, dict):
+                storage.save_analysis_artifact(match_id, artifact_name, identity)
         vid_stride = video_result.get("vidStridePolicy")
         if isinstance(vid_stride, dict):
             storage.save_analysis_artifact(match_id, "vid_stride_policy", vid_stride)

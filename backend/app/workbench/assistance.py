@@ -32,14 +32,33 @@ ALLOWED_EVENT_FAMILIES = frozenset(
 ALLOWED_TEAMS = frozenset({"my_team", "enemy"})
 
 
+class SuccessorConstraint(StrictModel):
+    kind: str
+    team: Literal["same", "opponent", "my_team", "enemy"] | None = None
+    period: int | None = None
+    withinSeconds: float | None = None
+
+
 class TypedQuery(StrictModel):
     team: Literal["my_team", "enemy"] | None = None
     period: int | None = None
     eventFamily: str
-    successorEvent: str | None = None
-    maxGapSeconds: float | None = None
+    successor: SuccessorConstraint | None = None
+    timeStartSeconds: float | None = None
+    timeEndSeconds: float | None = None
+    includeUnknown: bool = False
+    interpreted: dict[str, Any] = Field(default_factory=dict)
+    unsupportedTerms: list[str] = Field(default_factory=list)
     unanswerable: bool = False
     reason: str | None = None
+
+    @property
+    def successorEvent(self) -> str | None:
+        return self.successor.kind if self.successor else None
+
+    @property
+    def maxGapSeconds(self) -> float | None:
+        return self.successor.withinSeconds if self.successor else None
 
 
 class SearchHit(StrictModel):
@@ -73,12 +92,13 @@ _QUERY_RE = re.compile(
     r"(?:(?P<team>our|my team|enemy|opponent) )?"
     r"(?:(?P<period>first-half|second-half|period\s+(?P<period_n>\d+)) )?"
     r"(?P<event>turnovers|turnover|shots|shot|passes|pass|recoveries|recovery)"
-    r"(?: followed by (?:a )?(?P<successor>shot|pass|turnover)(?: within (?P<gap>\d+|ten) seconds)?)?",
+    r"(?: followed by (?:a )?(?:(?P<successor_team>our|my team|enemy|opponent|same) )?"
+    r"(?P<successor>shots|shot|passes|pass|turnovers|turnover)(?: within (?P<gap>\d+|ten) seconds)?)?",
     re.IGNORECASE,
 )
 
 
-def parse_typed_query(text: str) -> TypedQuery:
+def parse_typed_query(text: str, *, include_unknown: bool = False) -> TypedQuery:
     stripped = text.strip()
     if not stripped:
         return TypedQuery(eventFamily="pass", unanswerable=True, reason="empty_query")
@@ -87,7 +107,12 @@ def parse_typed_query(text: str) -> TypedQuery:
         return TypedQuery(eventFamily="pass", unanswerable=True, reason="refused_code_execution")
     match = _QUERY_RE.search(stripped)
     if match is None:
-        return TypedQuery(eventFamily="pass", unanswerable=True, reason="unrecognised_query")
+        return TypedQuery(
+            eventFamily="pass",
+            unsupportedTerms=[token.lower() for token in re.findall(r"[A-Za-z0-9_'-]+", stripped)],
+            unanswerable=True,
+            reason="unrecognised_query",
+        )
     event = _canonical_event(match.group("event"))
     successor = _canonical_event(match.group("successor")) if match.group("successor") else None
     team_token = (match.group("team") or "").lower()
@@ -103,12 +128,40 @@ def parse_typed_query(text: str) -> TypedQuery:
         return TypedQuery(eventFamily=event, unanswerable=True, reason="unknown_event_family")
     if successor and successor not in ALLOWED_EVENT_FAMILIES:
         return TypedQuery(eventFamily=event, unanswerable=True, reason="unknown_successor")
+    successor_team_token = (match.group("successor_team") or "").lower()
+    successor_team = {
+        "our": "my_team",
+        "my team": "my_team",
+        "enemy": "enemy",
+        "opponent": "opponent",
+        "same": "same",
+    }.get(successor_team_token)
+    successor_constraint = (
+        SuccessorConstraint(kind=successor, team=successor_team, period=period, withinSeconds=gap)
+        if successor
+        else None
+    )
+    outside = f"{stripped[:match.start()]} {stripped[match.end():]}"
+    unsupported = [
+        token.lower()
+        for token in re.findall(r"[A-Za-z0-9_'-]+", outside)
+        if token.lower() not in {"show", "find", "list", "me", "all"}
+    ]
+    interpreted = {
+        "team": team,
+        "period": period,
+        "eventFamily": event,
+        "successor": successor_constraint.model_dump(mode="json") if successor_constraint else None,
+        "includeUnknown": include_unknown,
+    }
     return TypedQuery(
         team=team,
         period=period,
         eventFamily=event,
-        successorEvent=successor,
-        maxGapSeconds=gap,
+        successor=successor_constraint,
+        includeUnknown=include_unknown,
+        interpreted=interpreted,
+        unsupportedTerms=unsupported,
     )
 
 
@@ -120,14 +173,19 @@ def execute_typed_query(events: list[dict[str, Any]], query: TypedQuery, *, matc
     for index, event in enumerate(ordered):
         if _is_rejected_event(event):
             continue
-        if str(event.get("type")) != query.eventFamily:
+        if not _matches_explicit(event.get("type"), query.eventFamily, query.includeUnknown, unknown=(None, "", "unknown")):
             continue
-        if query.team and event.get("team") not in {query.team, None}:
+        if query.team and not _matches_explicit(event.get("team"), query.team, query.includeUnknown, unknown=(None, "", "unknown")):
             continue
-        if query.period is not None and int(event.get("period") or 0) not in {0, query.period}:
+        if query.period is not None and not _matches_explicit(event.get("period"), query.period, query.includeUnknown, unknown=(None, 0, "unknown")):
             continue
-        if query.successorEvent:
-            successor = _find_successor(ordered, index, query.successorEvent, query.maxGapSeconds)
+        timestamp = event.get("timestamp")
+        if query.timeStartSeconds is not None and not _at_or_after(timestamp, query.timeStartSeconds, query.includeUnknown):
+            continue
+        if query.timeEndSeconds is not None and not _at_or_before(timestamp, query.timeEndSeconds, query.includeUnknown):
+            continue
+        if query.successor:
+            successor = _find_successor(ordered, index, query.successor, query.includeUnknown)
             if successor is None:
                 continue
         hits.append(
@@ -145,19 +203,47 @@ def execute_typed_query(events: list[dict[str, Any]], query: TypedQuery, *, matc
 def _find_successor(
     events: list[dict[str, Any]],
     index: int,
-    successor: str,
-    max_gap: float | None,
+    constraint: SuccessorConstraint,
+    include_unknown: bool,
 ) -> dict[str, Any] | None:
     start = float(events[index].get("timestamp") or 0.0)
     for candidate in events[index + 1 :]:
         stamp = float(candidate.get("timestamp") or 0.0)
-        if max_gap is not None and stamp - start > max_gap:
+        if constraint.withinSeconds is not None and stamp - start > constraint.withinSeconds:
             return None
-        if str(candidate.get("type")) == successor:
-            if _is_rejected_event(candidate):
-                continue
-            return candidate
+        if not _matches_explicit(candidate.get("type"), constraint.kind, include_unknown, unknown=(None, "", "unknown")):
+            continue
+        if constraint.period is not None and not _matches_explicit(
+            candidate.get("period"), constraint.period, include_unknown, unknown=(None, 0, "unknown")
+        ):
+            continue
+        expected_team = constraint.team
+        if expected_team in {"same", "opponent"}:
+            primary_team = events[index].get("team")
+            if primary_team in ALLOWED_TEAMS:
+                expected_team = primary_team if expected_team == "same" else ("enemy" if primary_team == "my_team" else "my_team")
+            else:
+                expected_team = None
+        if expected_team and not _matches_explicit(
+            candidate.get("team"), expected_team, include_unknown, unknown=(None, "", "unknown")
+        ):
+            continue
+        if _is_rejected_event(candidate):
+            continue
+        return candidate
     return None
+
+
+def _matches_explicit(actual: Any, expected: Any, include_unknown: bool, *, unknown: tuple[Any, ...]) -> bool:
+    return actual == expected or (include_unknown and actual in unknown)
+
+
+def _at_or_after(actual: Any, expected: float, include_unknown: bool) -> bool:
+    return include_unknown if actual is None else float(actual) >= expected
+
+
+def _at_or_before(actual: Any, expected: float, include_unknown: bool) -> bool:
+    return include_unknown if actual is None else float(actual) <= expected
 
 
 def _is_rejected_event(event: dict[str, Any]) -> bool:

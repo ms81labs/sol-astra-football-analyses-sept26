@@ -6,6 +6,19 @@ from backend.app.video_pipeline import process_video_input
 from backend.app.schemas import MatchConfig, HomographyPoint
 
 
+PRODUCER_RECEIPT = {
+    "fourRates": {
+        "decodeCount": 1,
+        "detectorPrimaryCount": 1,
+        "detectorRecoveryCount": 0,
+        "trackerUpdateCount": 1,
+        "exportCount": 1,
+    },
+    "samplingReceipt": {},
+    "decodeAnchors": {"beginning": 0.0, "middle": None, "end": None},
+}
+
+
 def _cfg(points):
     return MatchConfig(
         inputMode="video",
@@ -33,7 +46,7 @@ def test_process_video_input_passes_parsed_points_to_process_video():
     config = _cfg([[0, 0], [100, 0], [100, 100], [0, 100]])
 
     with patch("backend.app.video_pipeline._process_video_impl") as mock_process:
-        mock_process.return_value = {"rows": [], "trackColors": {}}
+        mock_process.return_value = {"rows": [], "trackColors": {}, **PRODUCER_RECEIPT}
 
         result = process_video_input(Path("/fake/video.mp4"), config)
 
@@ -55,7 +68,7 @@ def test_process_video_input_forwards_progress_callback_to_process_video():
         progress_events.append(payload)
 
     with patch("backend.app.video_pipeline._process_video_impl") as mock_process:
-        mock_process.return_value = {"rows": [], "trackColors": {}}
+        mock_process.return_value = {"rows": [], "trackColors": {}, **PRODUCER_RECEIPT}
 
         result = process_video_input(
             Path("/fake/video.mp4"),
@@ -81,7 +94,7 @@ def test_process_video_input_forwards_model_path_to_process_video():
     config = _cfg([[0, 0], [100, 0], [100, 100], [0, 100]])
 
     with patch("backend.app.video_pipeline._process_video_impl") as mock_process:
-        mock_process.return_value = {"rows": [], "trackColors": {}}
+        mock_process.return_value = {"rows": [], "trackColors": {}, **PRODUCER_RECEIPT}
 
         result = process_video_input(
             Path("/fake/video.mp4"),
@@ -101,7 +114,7 @@ def test_process_video_input_forwards_edge_share_repair_profile_to_process_video
     config = _cfg([[0, 0], [100, 0], [100, 100], [0, 100]])
 
     with patch("backend.app.video_pipeline._process_video_impl") as mock_process:
-        mock_process.return_value = {"rows": [], "trackColors": {}}
+        mock_process.return_value = {"rows": [], "trackColors": {}, **PRODUCER_RECEIPT}
 
         result = process_video_input(
             Path("/fake/video.mp4"),
@@ -121,7 +134,7 @@ def test_process_video_input_forwards_baseline_guided_rescue_reference_path_to_p
     config = _cfg([[0, 0], [100, 0], [100, 100], [0, 100]])
 
     with patch("backend.app.video_pipeline._process_video_impl") as mock_process:
-        mock_process.return_value = {"rows": [], "trackColors": {}}
+        mock_process.return_value = {"rows": [], "trackColors": {}, **PRODUCER_RECEIPT}
 
         result = process_video_input(
             Path("/fake/video.mp4"),
@@ -141,7 +154,7 @@ def test_process_video_input_forwards_primary_and_auxiliary_detector_fields_to_p
     config = _cfg([[0, 0], [100, 0], [100, 100], [0, 100]])
 
     with patch("backend.app.video_pipeline._process_video_impl") as mock_process:
-        mock_process.return_value = {"rows": [], "trackColors": {}}
+        mock_process.return_value = {"rows": [], "trackColors": {}, **PRODUCER_RECEIPT}
 
         result = process_video_input(
             Path("/fake/video.mp4"),
@@ -178,7 +191,7 @@ def test_process_video_input_attaches_source_clock_from_frame_source(tmp_path, m
             return SourceClockIdentity(sourceSha256="a" * 64, byteSize=path.stat().st_size, codec="h264")
 
     with patch("backend.app.video_pipeline._process_video_impl") as mock_process:
-        mock_process.return_value = {"rows": [{"Frame_ID": 0}], "trackColors": {}}
+        mock_process.return_value = {"rows": [{"Frame_ID": 0}], "trackColors": {}, **PRODUCER_RECEIPT}
         result = process_video_input(video, config, frame_source=FakeSource())
 
     assert result["rows"] == [{"Frame_ID": 0}]
@@ -202,7 +215,7 @@ def test_process_video_input_forwards_frame_source_to_process_video(tmp_path):
 
     source = FakeSource()
     with patch("backend.app.video_pipeline._process_video_impl") as mock_process:
-        mock_process.return_value = {"rows": [{"Frame_ID": 0}], "trackColors": {}}
+        mock_process.return_value = {"rows": [{"Frame_ID": 0}], "trackColors": {}, **PRODUCER_RECEIPT}
         process_video_input(video, config, frame_source=source)
 
     assert mock_process.call_args.kwargs["frame_source"] is source
@@ -214,7 +227,7 @@ def test_process_video_input_defaults_to_opencv_frame_source(tmp_path):
     config = _cfg([[0, 0], [100, 0], [100, 100], [0, 100]])
 
     with patch("backend.app.video_pipeline._process_video_impl") as mock_process:
-        mock_process.return_value = {"rows": [{"Frame_ID": 0}], "trackColors": {}}
+        mock_process.return_value = {"rows": [{"Frame_ID": 0}], "trackColors": {}, **PRODUCER_RECEIPT}
         process_video_input(video, config)
 
     frame_source = mock_process.call_args.kwargs["frame_source"]
@@ -233,7 +246,7 @@ def test_process_video_input_raises_when_process_video_returns_nothing():
             process_video_input(Path("/fake/video.mp4"), config)
 
 
-def test_process_video_input_attaches_four_rates_and_cache_identity(tmp_path):
+def test_process_video_input_preserves_four_rates_and_separates_policy(tmp_path):
     video = tmp_path / "clip.bin"
     video.write_bytes(b"fixture-bytes")
     config = _cfg([[0, 0], [100, 0], [100, 100], [0, 100]])
@@ -247,13 +260,13 @@ def test_process_video_input_attaches_four_rates_and_cache_identity(tmp_path):
             return SourceClockIdentity(sourceSha256="a" * 64, byteSize=path.stat().st_size, codec="h264")
 
     with patch("backend.app.video_pipeline._process_video_impl") as mock_process:
-        mock_process.return_value = {"rows": [{"Frame_ID": 0}], "trackColors": {}}
+        mock_process.return_value = {"rows": [{"Frame_ID": 0}], "trackColors": {}, **PRODUCER_RECEIPT}
         result = process_video_input(video, config, frame_source=FakeSource())
 
     assert result["exportFpsEqualsInferenceFps"] is False
-    assert result["fourRates"]["exportFpsEqualsInferenceFps"] is False
-    assert result["cacheIdentity"]
-    assert result["sampling"]["selectedBackend"] == "fixture+ultralytics_track"
+    assert result["fourRates"] == PRODUCER_RECEIPT["fourRates"]
+    assert "cacheIdentity" not in result
+    assert result["policy"]["requestedBackend"] == "fixture+ultralytics_track"
     assert result["vidStridePolicy"]["addsVidStrideAlone"] is False
     assert result["vidStridePolicy"]["targetFpsEqualsInferenceFps"] is False
     assert result["projectionPolicy"]["boxCentreIsFoot"] is False

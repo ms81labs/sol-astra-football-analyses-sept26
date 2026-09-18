@@ -1290,6 +1290,15 @@ class Storage:
             raw_digest = self._sha256_file(generation_dir / "frames.json")
         corrections = self.list_corrections(match_id)
         published_at = _utcnow().isoformat().replace("+00:00", "Z")
+        identity_digests: dict[str, str | None] = {"detection": None, "tracking": None}
+        for layer in identity_digests:
+            try:
+                stored_identity = self.load_analysis_artifact(match_id, f"{layer}_identity")
+            except FileNotFoundError:
+                continue
+            digest = stored_identity.get("digest")
+            if stored_identity.get("reusable") is True and isinstance(digest, str):
+                identity_digests[layer] = digest
         manifest = GenerationManifest(
             generationId=generation_id,
             matchId=match_id,
@@ -1305,6 +1314,55 @@ class Storage:
     def publish_generation(self, match_id: str, **payload):
         with self._generation_lock(match_id):
             return self._publish_generation_unlocked(match_id, **payload)
+
+    def _generation_layer_identities(
+        self,
+        match_id: str,
+        *,
+        calibration_revision: str | None,
+        correction_head: str,
+    ) -> dict[str, dict]:
+        from .workbench.cache import (
+            DetectionIdentity,
+            ProjectionIdentity,
+            ReportIdentity,
+            ReviewedIdentity,
+            TrackingIdentity,
+        )
+
+        try:
+            detection_payload = self.load_analysis_artifact(match_id, "detection_identity")
+            tracking_payload = self.load_analysis_artifact(match_id, "tracking_identity")
+            tracking_components = tracking_payload["components"]
+            detection = DetectionIdentity(**tracking_components["detection"])
+            tracking = TrackingIdentity(detection, tracking_components["tracker_config_id"])
+        except (FileNotFoundError, KeyError, TypeError, ValueError):
+            return {}
+        projection = ProjectionIdentity(tracking, calibration_revision)
+        reviewed = ReviewedIdentity(projection, correction_head)
+        report = ReportIdentity(reviewed, "match-report-v1")
+        layers = {
+            "detection": detection_payload,
+            "tracking": tracking_payload,
+            "projection": {
+                "digest": projection.digest(),
+                "reusable": projection.reusable,
+                "components": projection.components(),
+            },
+            "reviewed": {
+                "digest": reviewed.digest(),
+                "reusable": reviewed.reusable,
+                "components": reviewed.components(),
+            },
+            "report": {
+                "digest": report.digest(),
+                "reusable": report.reusable,
+                "components": report.components(),
+            },
+        }
+        for name in ("projection", "reviewed", "report"):
+            self._write_json(self._match_dir(match_id) / f"{name}_identity.json", layers[name])
+        return layers
 
     def _publish_generation_unlocked(
         self,
@@ -1353,10 +1411,24 @@ class Storage:
         except FileNotFoundError:
             observation_digest = self._sha256_file(generation_dir / "frames.json")
         published_at = _utcnow().isoformat().replace("+00:00", "Z")
+        layered = self._generation_layer_identities(
+            match_id,
+            calibration_revision=calibration_revision,
+            correction_head=correction_head,
+        )
+        identity_digests = {
+            layer: payload.get("digest") if payload.get("reusable") is True else None
+            for layer, payload in layered.items()
+        }
         manifest = GenerationManifest(
             generationId=generation_id,
             matchId=match_id,
             observationDigest=observation_digest,
+            detectionIdentity=identity_digests.get("detection"),
+            trackingIdentity=identity_digests.get("tracking"),
+            projectionIdentity=identity_digests.get("projection"),
+            reviewedIdentity=identity_digests.get("reviewed"),
+            reportIdentity=identity_digests.get("report"),
             calibrationRevision=calibration_revision,
             correctionHead=correction_head,
             algorithmVersions={"review_materialisation": "1"},
@@ -1664,17 +1736,19 @@ class Storage:
             return
         self.save_events(match_id, restore_event_review(events, previous))
 
-    def query_match_events(self, match_id: str, query_text: str) -> dict:
+    def query_match_events(self, match_id: str, query_text: str, *, include_unknown: bool = False) -> dict:
         from .workbench.assistance import events_as_query_rows, execute_typed_query, parse_typed_query
 
         try:
             events = self.load_events(match_id)
         except FileNotFoundError:
             events = []
-        query = parse_typed_query(query_text)
+        query = parse_typed_query(query_text, include_unknown=include_unknown)
         hits = execute_typed_query(events_as_query_rows(events, match_id=match_id), query, match_id=match_id)
         return {
             "query": query.model_dump(mode="json"),
+            "interpreted": query.interpreted,
+            "unsupportedTerms": query.unsupportedTerms,
             "results": [hit.model_dump(mode="json") for hit in hits],
         }
 
@@ -2090,55 +2164,59 @@ class Storage:
                 result["correction"] = correction_api_payload(saved)
         return result
 
-    def recompute_for_match(self, match_id: str, change: str) -> dict:
-        from .video_pipeline import IMAGE_SPACE_SAFE_CHANGES, reprocess_for_change
-        from .workbench.cache import cache_identity
+    def plan_recompute(self, match_id: str, change: str):
+        from .video_pipeline import IMAGE_SPACE_SAFE_CHANGES
+        from .workbench.cache import REBUILD_FOR, RecomputePlan
 
         self.get_match(match_id)
+        rebuild = list(REBUILD_FOR.get(change, []))
+        return RecomputePlan(
+            change=change,
+            rebuild=rebuild,
+            requires=["observations"] if change in IMAGE_SPACE_SAFE_CHANGES else ["sealed_worker"],
+            visionRequired=change not in IMAGE_SPACE_SAFE_CHANGES,
+        )
+
+    def recompute_for_match(self, match_id: str, change: str) -> dict:
+        """Compatibility entry point: recompute is now explicitly plan-only."""
+        return self.plan_recompute(match_id, change).model_dump(mode="json")
+
+    def execute_recompute(self, match_id: str, change: str):
+        from .review_service import ReviewService
+        from .video_pipeline import IMAGE_SPACE_SAFE_CHANGES
+        from .workbench.cache import RecomputeReceipt, RecomputeRefusal
+
+        match = self.get_match(match_id)
+        plan = self.plan_recompute(match_id, change)
         if change not in IMAGE_SPACE_SAFE_CHANGES:
-            return {
-                "visionInvoked": False,
-                "admitted": False,
-                "reused": False,
-                "rebuild": [],
-                "reasonCodes": ["VISION_REQUIRES_SEALED_WORKER"],
-            }
-        sha = self.source_sha256(match_id)
-        previous = cache_identity(
-            source_sha256=sha,
-            interval_start=0.0,
-            interval_end=0.0,
-            decoder_version="opencv",
-            model_hash="weights-v1",
-            temporal_policy="source_global_grid",
-            output_schema="evidence_v1",
-            namespace="production",
-        )
-        current = cache_identity(
-            source_sha256=sha,
-            interval_start=0.0,
-            interval_end=0.0,
-            decoder_version="opencv",
-            model_hash="weights-v1",
-            temporal_policy="source_global_grid",
-            output_schema="evidence_v1",
-            namespace="production",
-            calibration_id=None if change == "report" else "preview",
-        )
+            return RecomputeRefusal(reasonCodes=["VISION_REQUIRES_SEALED_WORKER"])
 
-        def vision() -> dict:
-            raise RuntimeError("image-space-safe recompute must not invoke vision")
+        observation_path = self._match_dir(match_id) / "raw_rows.json"
+        if match.inputMode != "video":
+            review_base = self._match_dir(match_id) / "review_base_frames.json"
+            observation_path = review_base if review_base.is_file() else self.get_match_input_path(match_id)
+        if not observation_path.is_file():
+            return RecomputeRefusal(reasonCodes=["CACHE_MISS"])
 
-        result = dict(
-            reprocess_for_change(
-                change=change,
-                previous_identity=previous,
-                current_identity=current,
-                vision=vision,
-            )
+        current = self.current_generation(match_id)
+        manifest_path = self._match_dir(match_id) / "generations" / current.generationId / "manifest.json"
+        artifacts = {"observations": self._sha256_file(observation_path)}
+        if manifest_path.is_file():
+            artifacts["generation"] = self._sha256_file(manifest_path)
+        calibration = self.calibration_revision(match_id)
+        if calibration is not None:
+            artifacts["calibration"] = hashlib.sha256(
+                json.dumps(calibration.model_dump(mode="json"), sort_keys=True, separators=(",", ":")).encode()
+            ).hexdigest()
+
+        output = ReviewService(self).rebuild_generation(match_id, reason=change)
+        return RecomputeReceipt(
+            change=change,
+            inputArtifacts=artifacts,
+            outputGeneration=output.generationId,
+            rebuilt=["frames", "assignments", "events", "formation_timeline", "shots", "summary"],
+            detectorCalls=0,
         )
-        result["admitted"] = True
-        return result
 
     def promotion_receipt_for_match(self, match_id: str) -> dict:
         from .workbench.receipts import promotion_receipt
@@ -2147,25 +2225,25 @@ class Storage:
         try:
             frame_count = len(self.load_frames(match_id))
         except FileNotFoundError:
-            frame_count = 0
+            frame_count = None
         return promotion_receipt(
             source_sha256=sha,
-            weights="unpromoted",
+            weights=None,
             configuration="evidence_v1",
-            hardware="cpu",
+            hardware=None,
             native_builds=[],
-            selected_backend="opencv+ultralytics_track",
+            selected_backend=None,
             frame_count=frame_count,
-            call_count=0,
-            cold_timing_ms=0.0,
-            warm_timing_ms=0.0,
-            peak_memory_bytes=0,
-            transferred_bytes=0,
+            call_count=None,
+            cold_timing_ms=None,
+            warm_timing_ms=None,
+            peak_memory_bytes=None,
+            transferred_bytes=None,
             output_quality="unproven",
             accepted_coverage=0.0,
             failure_cases=["labels_incomplete"],
             allocated_spend=0.0,
-            fallback_event="cpu_local",
+            fallback_event=None,
         )
 
     def assistance_fallback_for_match(self, match_id: str) -> dict:
@@ -2777,33 +2855,19 @@ class Storage:
         return change_history(self.list_corrections(match_id))
 
     def cache_identity_for_match(self, match_id: str) -> dict:
-        from .workbench.cache import cache_compatible, cache_identity
-
-        sha = self.source_sha256(match_id)
-        production = cache_identity(
-            source_sha256=sha,
-            interval_start=0.0,
-            interval_end=0.0,
-            decoder_version="opencv",
-            model_hash="weights-v1",
-            temporal_policy="source_global_grid",
-            output_schema="evidence_v1",
-            namespace="production",
-        )
-        development = cache_identity(
-            source_sha256=sha,
-            interval_start=0.0,
-            interval_end=0.0,
-            decoder_version="opencv",
-            model_hash="weights-v1",
-            temporal_policy="source_global_grid",
-            output_schema="evidence_v1",
-            namespace="development",
-        )
+        self.get_match(match_id)
+        layers = {}
+        for layer in ("detection", "tracking"):
+            try:
+                layers[layer] = self.load_analysis_artifact(match_id, f"{layer}_identity")
+            except FileNotFoundError:
+                layers[layer] = {"digest": None, "reusable": False}
         return {
             "namespace": "production",
-            "identity": production,
-            "compatibleWithDevelopment": cache_compatible(production, development),
+            "identity": layers["tracking"]["digest"],
+            "reusable": layers["tracking"]["reusable"],
+            "layers": layers,
+            "compatibleWithDevelopment": False,
         }
 
     def migrate_legacy_for_match(self, match_id: str) -> dict:
