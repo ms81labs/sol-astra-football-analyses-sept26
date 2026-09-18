@@ -7,6 +7,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from .provider_adapters import execute_cloud, execute_local
+from .provider_gateway import GatewayToken, is_valid_gateway_token
 from .schemas import DetectedEvent, FormationSegment, FrameData, MatchSummary, ShotAnalytics
 
 CREATOR_EVENT_TYPES = {"pass", "cross", "through_ball"}
@@ -471,7 +472,7 @@ def build_prompt(
     raise ValueError(f"Unsupported analysis type: {analysis_type}")
 
 
-def run_analysis(
+def _run_analysis_unguarded(
     analysis_type: str,
     frames: list[FrameData],
     *,
@@ -482,6 +483,8 @@ def run_analysis(
     events: list[DetectedEvent] | None = None,
     formation_timeline: list[FormationSegment] | None = None,
     shots: list[ShotAnalytics] | None = None,
+    model_id: str | None = None,
+    deadline_seconds: float = 120.0,
 ) -> dict:
     current_frame = frames[current_frame_index] if current_frame_index is not None and frames else None
     prompt = build_prompt(
@@ -496,9 +499,47 @@ def run_analysis(
     )
 
     if provider == "local":
-        return execute_local(prompt, analysis_type, _validate_provider_output)
+        return execute_local(prompt, analysis_type, _validate_provider_output, timeout_seconds=deadline_seconds)
 
     if provider == "cloud":
-        return execute_cloud(prompt, analysis_type, _validate_provider_output)
+        return execute_cloud(
+            prompt,
+            analysis_type,
+            _validate_provider_output,
+            timeout_seconds=deadline_seconds,
+            model_id=model_id,
+        )
 
     raise ValueError(f"Unsupported provider: {provider}")
+
+
+def run_analysis(
+    analysis_type: str,
+    frames: list[FrameData],
+    *,
+    gateway_token: GatewayToken | None = None,
+    provider: str = "local",
+    attack_direction: Literal["left_to_right", "right_to_left"] = "left_to_right",
+    current_frame_index: int | None = None,
+    summary: MatchSummary | None = None,
+    events: list[DetectedEvent] | None = None,
+    formation_timeline: list[FormationSegment] | None = None,
+    shots: list[ShotAnalytics] | None = None,
+    model_id: str | None = None,
+    deadline_seconds: float = 120.0,
+) -> dict:
+    if not is_valid_gateway_token(gateway_token):
+        raise PermissionError("provider gateway token required")
+    return _run_analysis_unguarded(
+        analysis_type,
+        frames,
+        provider=provider,
+        attack_direction=attack_direction,
+        current_frame_index=current_frame_index,
+        summary=summary,
+        events=events,
+        formation_timeline=formation_timeline,
+        shots=shots,
+        model_id=model_id,
+        deadline_seconds=deadline_seconds,
+    )

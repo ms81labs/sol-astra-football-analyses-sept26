@@ -8,6 +8,7 @@ from typing import Any, Literal
 from pydantic import Field
 
 from backend.app.ai_policy import ground_output
+from backend.app.provider_gateway import ApprovedEvidencePackage, validate_output
 
 from .contracts import StrictModel
 
@@ -320,12 +321,31 @@ class AssistanceRouter:
                 output=template,
             )
         sanitized = {key: value for key, value in raw.items() if key not in metric_names}
+        validated = validate_output(
+            sanitized,
+            ApprovedEvidencePackage(
+                match_id="assistance",
+                generation_id="current",
+                evidence_ids=frozenset(known),
+                metrics=tuple(metrics),
+                events=tuple(events),
+                digest="",
+            ),
+        )
+        if validated.grounding != "grounded":
+            return AssistanceDisposition(
+                route="template",
+                reasonCodes=list(validated.reason_codes),
+                callsUsed=self.calls,
+                spend=self.spend,
+                output=template,
+            )
         return AssistanceDisposition(
             route="local" if not policy.cloudPermitted else "cloud",
-            reasonCodes=["GROUNDED"] if "evidence" in sanitized else [],
+            reasonCodes=list(validated.reason_codes),
             callsUsed=self.calls,
             spend=self.spend,
-            output=sanitized,
+            output=validated.payload,
         )
 
 

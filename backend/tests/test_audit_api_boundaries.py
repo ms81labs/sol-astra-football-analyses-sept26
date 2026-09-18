@@ -159,7 +159,7 @@ def test_provider_output_is_validated(provider, payload, monkeypatch):
         def post(self, *args, **kwargs): return response
     monkeypatch.setattr('httpx.Client', Client)
     with pytest.raises(ValueError):
-        llm.run_analysis('tactical_report', [], provider=provider)
+        llm._run_analysis_unguarded('tactical_report', [], provider=provider)
 
 
 def test_legacy_provider_track_ids_are_escaped_in_html():
@@ -183,7 +183,7 @@ def test_valid_provider_payloads_keep_the_public_shape(analysis_type, payload, m
     response = SimpleNamespace(raise_for_status=lambda: None, json=lambda: {'response': json.dumps(payload)})
     monkeypatch.setattr('requests.post', lambda *args, **kwargs: response)
     from backend.app.schemas import FrameData
-    assert llm.run_analysis(analysis_type, [FrameData(frameId=0, timestamp=0)], current_frame_index=0) == payload
+    assert llm._run_analysis_unguarded(analysis_type, [FrameData(frameId=0, timestamp=0)], current_frame_index=0) == payload
 
 
 def test_invalid_provider_result_does_not_replace_saved_report(api, monkeypatch):

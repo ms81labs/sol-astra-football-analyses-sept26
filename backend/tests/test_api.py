@@ -416,6 +416,9 @@ async def _test_analysis_route_passes_persisted_summary_and_events_to_backend(tm
             events=None,
             formation_timeline=None,
             shots=None,
+            gateway_token=None,
+            model_id=None,
+            deadline_seconds=120.0,
         ):
             captured["analysis_type"] = analysis_type
             captured["provider"] = provider

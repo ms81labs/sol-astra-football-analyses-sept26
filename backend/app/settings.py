@@ -57,6 +57,12 @@ class ProcessingSettings:
     daytona_policy: DaytonaPolicy | None = None
     max_upload_bytes: int = DEFAULT_MAX_UPLOAD_BYTES
     trusted_frontend_origins: tuple[str, ...] = DEFAULT_TRUSTED_FRONTEND_ORIGINS
+    cloud_provider_enabled: bool = False
+    cloud_provider_api_key: str | None = field(default=None, repr=False)
+    allowed_model_ids: tuple[str, ...] = ()
+    cloud_model_id: str = "anthropic/claude-3.5-haiku"
+    provider_deadline_seconds: float = 30.0
+    provider_call_reservation: float = 0.0
 
     def __post_init__(self) -> None:
         if not isinstance(self.trusted_frontend_origins, tuple) or not self.trusted_frontend_origins:
@@ -73,6 +79,8 @@ class ProcessingSettings:
             "daytona",
         }:
             raise SettingsError("processing_backend must be exactly 'local' or 'daytona'")
+        if self.provider_deadline_seconds <= 0 or self.provider_call_reservation < 0:
+            raise SettingsError("provider deadline must be positive and reservation nonnegative")
         if self.processing_backend == "local":
             if self.daytona_api_key is not None or self.daytona_policy is not None:
                 raise SettingsError("local processing cannot include Daytona configuration")
@@ -114,7 +122,14 @@ class ProcessingSettings:
         if backend not in {"local", "daytona"}:
             raise SettingsError("PROCESSING_BACKEND must be exactly 'local' or 'daytona'")
         if backend == "local":
-            return cls(max_upload_bytes=max_upload_bytes, trusted_frontend_origins=trusted_frontend_origins)
+            return cls(
+                max_upload_bytes=max_upload_bytes,
+                trusted_frontend_origins=trusted_frontend_origins,
+                cloud_provider_enabled=os.environ.get("GA_CLOUD_PROVIDER_ENABLED") == "1",
+                cloud_provider_api_key=os.environ.get("OPENROUTER_API_KEY"),
+                allowed_model_ids=tuple(filter(None, os.environ.get("GA_ALLOWED_MODEL_IDS", "").split(","))),
+                cloud_model_id=os.environ.get("OPENROUTER_MODEL", "anthropic/claude-3.5-haiku"),
+            )
 
         api_key = os.environ.get("DAYTONA_API_KEY")
         if api_key is None or not api_key.strip():
