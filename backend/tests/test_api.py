@@ -1588,36 +1588,14 @@ def test_match_event_review_updates_stored_events_and_undo_restores_status(tmp_p
 
 
 async def _test_match_event_review_updates_stored_events_and_undo_restores_status(tmp_path: Path):
-    from backend.app.schemas import DetectedEvent
-
-    async with api_client(tmp_path) as (app, client):
+    async with api_client(tmp_path) as (_, client):
         response = await _upload_tracking_match(client)
         assert response.status_code == 202
         match_id = response.json()["matchId"]
-        storage = app.state.storage
-        storage.save_events(
-            match_id,
-            [
-                DetectedEvent(
-                    type="pass",
-                    frameId=1,
-                    timestamp=0.2,
-                    team="my_team",
-                    fromTrackId=7,
-                    toTrackId=7,
-                    description="Pass",
-                ),
-                DetectedEvent(
-                    type="recovery",
-                    frameId=2,
-                    timestamp=0.4,
-                    team="enemy",
-                    fromTrackId=18,
-                    toTrackId=18,
-                    description="Recovery",
-                ),
-            ],
-        )
+        listed = await client.get(f"/api/matches/{match_id}/events")
+        original = listed.json()["events"]
+        assert original
+        target = original[0]
 
         forged = await client.post(
             f"/api/matches/{match_id}/corrections",
@@ -1626,33 +1604,42 @@ async def _test_match_event_review_updates_stored_events_and_undo_restores_statu
         assert forged.status_code == 200
         listed = await client.get(f"/api/matches/{match_id}/events")
         assert listed.status_code == 200
-        by_type = {item["type"]: item for item in listed.json()["events"]}
-        assert by_type["pass"]["reviewStatus"] == "unreviewed"
-        assert by_type["recovery"]["reviewStatus"] == "unreviewed"
+        assert all(item["reviewStatus"] == "unreviewed" for item in listed.json()["events"])
 
         accepted = await client.post(
             f"/api/matches/{match_id}/corrections",
-            json={"kind": "event_accept", "payload": {"frame": 1, "type": "pass"}},
+            json={"kind": "event_accept", "payload": {"frame": target["frameId"], "type": target["type"]}},
         )
         assert accepted.status_code == 200
         assert accepted.json()["saveState"] == "saved"
         listed = await client.get(f"/api/matches/{match_id}/events")
-        by_type = {item["type"]: item for item in listed.json()["events"]}
-        assert by_type["pass"]["reviewStatus"] == "accepted"
-        assert by_type["recovery"]["reviewStatus"] == "unreviewed"
+        by_id = {item["eventId"]: item for item in listed.json()["events"]}
+        accepted_ids = {
+            event_id
+            for event_id, item in by_id.items()
+            if item["frameId"] == target["frameId"] and item["type"] == target["type"]
+        }
+        assert accepted_ids
+        assert all(by_id[event_id]["reviewStatus"] == "accepted" for event_id in accepted_ids)
+        assert all(
+            item["reviewStatus"] == "unreviewed"
+            for event_id, item in by_id.items()
+            if event_id not in accepted_ids
+        )
 
         partitioned = await client.get(f"/api/matches/{match_id}/events/partition")
-        assert any(item.get("type") == "pass" for item in partitioned.json()["acceptedViews"])
-        assert all(item.get("type") != "pass" for item in partitioned.json()["retainedCandidates"])
+        assert any(item.get("eventId") in accepted_ids for item in partitioned.json()["acceptedViews"])
+        assert all(
+            item.get("eventId") not in accepted_ids
+            for item in partitioned.json()["retainedCandidates"]
+        )
 
         undone = await client.post(
             f"/api/matches/{match_id}/corrections/{accepted.json()['correctionId']}/undo"
         )
         assert undone.status_code == 200
         restored = await client.get(f"/api/matches/{match_id}/events")
-        by_type = {item["type"]: item for item in restored.json()["events"]}
-        assert by_type["pass"]["reviewStatus"] == "unreviewed"
-        assert by_type["recovery"]["reviewStatus"] == "unreviewed"
+        assert all(item["reviewStatus"] == "unreviewed" for item in restored.json()["events"])
 
 
 def test_match_team_mapping_correction_swaps_stored_teams_without_vision(tmp_path: Path):
@@ -3100,24 +3087,19 @@ async def _test_workbench_leftovers_ignore_client_injected_rows(tmp_path: Path):
                 ],
             },
         )
-        assert search.status_code == 200
-        assert search.json()["results"] == []
+        assert search.status_code == 410
 
         metrics = await client.post(
             "/api/workbench/matches/m1/metrics",
             json={"possession": 61, "identityContinuous": True, "calibrationAccepted": True, "controlledFrames": 9000, "myTeamDistance": 12000},
         )
-        assert metrics.status_code == 200
-        possession = next(item for item in metrics.json()["metrics"] if item["metric"] == "possession_pct")
-        assert possession["availability"] == "unknown"
-        assert possession["value"] is None
+        assert metrics.status_code == 410
 
         assembled = await client.post(
             "/api/workbench/matches/m1/reports/assemble",
             json={"claimedEvidenceIds": ["ev-1"], "knownEvidenceIds": ["ev-1"], "metrics": [{"metric": "possession_pct", "value": 61, "availability": "available"}]},
         )
-        assert assembled.status_code == 200
-        assert assembled.json()["publication"]["accepted"] is False
+        assert assembled.status_code == 410
 
         setup = await client.post(
             "/api/workbench/setup/assess",
@@ -3130,9 +3112,7 @@ async def _test_workbench_leftovers_ignore_client_injected_rows(tmp_path: Path):
             "/api/workbench/jobs",
             json={"requestId": "wb-prod", "matchId": "m1", "sourceSha256": "c" * 64, "budget": 1.0, "authorisedLocation": "daytona"},
         )
-        assert job.status_code == 200
-        assert job.json()["namespace"] == "production"
-        assert job.json()["authorisedLocation"] == "local"
+        assert job.status_code == 410
 
 
 def test_production_calibration_decode_event_score_and_deployment_surfaces(tmp_path: Path):
@@ -3587,4 +3567,3 @@ async def _test_production_providers_rights_dependencies_preview_and_legacy_zero
         assert release.json()["deploymentBoundary"] == "loopback"
         assert release.json()["nativeCode"] == "gated_inert"
         assert release.json()["gNetworkRequiredForNonLocal"] is True
-

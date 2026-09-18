@@ -21,6 +21,7 @@ EditKind = Literal[
     "event_accept",
     "calibration",
     "playlist_item",
+    "undo",
 ]
 SaveState = Literal["saved", "pending", "conflicted"]
 ApplyState = Literal["received", "committed", "applying", "applied", "failed"]
@@ -54,6 +55,7 @@ class Correction(StrictModel):
     attempts: int = 0
     lastError: str | None = None
     migrationNotes: list[str] = Field(default_factory=list)
+    supersededBy: str | None = None
     version: int = 1
 
 
@@ -129,6 +131,15 @@ class CorrectionLog:
 
     def history(self, match_id: str) -> list[Correction]:
         return [item for item in self._items if item.matchId == match_id]
+
+    def update(self, correction_id: str, **changes: Any) -> Correction:
+        with self._lock:
+            for index, item in enumerate(self._items):
+                if item.correctionId == correction_id:
+                    updated = item.model_copy(update=changes)
+                    self._items[index] = updated
+                    return updated
+        raise KeyError(correction_id)
 
     def dump(self) -> dict[str, Any]:
         with self._lock:

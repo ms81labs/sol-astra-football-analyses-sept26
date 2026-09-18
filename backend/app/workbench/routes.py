@@ -4,31 +4,28 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from .admission import admit_camera, admit_media
-from .assistance import AssistancePolicy, AssistanceRouter, execute_typed_query, parse_typed_query
 from .contracts import SourceClockIdentity, jsonable
 from .costs import credit_allocation, match_cost
 from .decisions import architecture_decisions
 from .dossier import build_baseline_dossier
 from .evaluation import evaluation_measures
-from .evidence import EvidenceStore, inspect_metric, metric_dictionary, summarize_legacy_match
+from .evidence import inspect_metric, metric_dictionary
+from .errors import RouteRetired
 from .flags import feature_flags
 from .geometry import review_incident_geometry
 from .identity import player_observations
 from .incidents import level0_incident_package
-from .jobs import DurableJobLedger, JobRequest, signed_scoped_job_access
 from .library import search_match_library
-from .media import FourRatesReceipt
 from .milestones import milestone_plan, owners, progress_signal
 from .ownership import classify_ownership
 from .package import assemble_match_package
 from .privacy import residency_claim
-from .reports import assemble_report
 from .research import execute_track, research_lane
-from .review import CorrectionLog, correction_api_payload, new_correction, playlist_export_interval
+from .review import playlist_export_interval
 from .rights import rights_register
 from .risks import risk_register
 from .rollback import rollback_release
@@ -38,26 +35,6 @@ from .store import WorkbenchStore
 from .targets import metadata_api_targets
 from .training import drill_library
 from .xt import xt_deferred_plan
-
-_correction_log = CorrectionLog()
-_router_assistance = AssistanceRouter(providers_enabled=False)
-_evidence_store = EvidenceStore()
-
-
-def _require_job_access(
-    request_id: str,
-    *,
-    authorization: str | None,
-    job_scope: str | None,
-    deployment_boundary: str | None,
-) -> None:
-    boundary = (deployment_boundary or "loopback").lower()
-    if boundary == "loopback" and not authorization:
-        return
-    access = signed_scoped_job_access(token=authorization, job_id=request_id, token_job_id=job_scope)
-    if not access["admitted"]:
-        raise HTTPException(status_code=403, detail=access)
-
 
 class CorrectionBody(BaseModel):
     kind: str
@@ -129,9 +106,8 @@ class PlayerBody(BaseModel):
     identityContinuous: bool = False
 
 
-def create_workbench_router(storage_root: Path, ledger: DurableJobLedger | None = None) -> APIRouter:
-    store = WorkbenchStore(storage_root)
-    job_ledger = ledger or DurableJobLedger(db_path=Path(storage_root) / "guerilla.sqlite3")
+def create_workbench_router(storage) -> APIRouter:
+    store = WorkbenchStore(storage.storage_root)
     router = APIRouter(prefix="/api/workbench", tags=["workbench"])
 
     @router.get("/dossier")
@@ -150,52 +126,27 @@ def create_workbench_router(storage_root: Path, ledger: DurableJobLedger | None 
 
     @router.post("/matches/{match_id}/corrections")
     def post_correction(match_id: str, body: CorrectionBody) -> dict:
-        correction = new_correction(match_id, body.kind, body.payload, author=body.author)  # type: ignore[arg-type]
-        saved = _correction_log.submit(
-            correction,
-            crash_before_commit=body.crashBeforeCommit,
-            expected_version=body.expectedVersion,
-        )
-        if saved.saveState == "saved":
-            store.append_correction(saved)
-        return correction_api_payload(saved)
+        raise RouteRetired(f"/api/matches/{match_id}/corrections")
 
     @router.post("/matches/{match_id}/corrections/{correction_id}/recover")
     def recover_correction(match_id: str, correction_id: str) -> dict:
-        saved = _correction_log.recover(correction_id)
-        if saved.matchId != match_id:
-            raise HTTPException(status_code=404, detail="Correction not found")
-        store.append_correction(saved)
-        return correction_api_payload(saved)
+        raise RouteRetired(f"/api/matches/{match_id}/corrections/{correction_id}/recover")
 
     @router.post("/matches/{match_id}/corrections/{correction_id}/undo")
     def undo_correction(match_id: str, correction_id: str) -> dict:
-        undone = _correction_log.undo(correction_id, author="analyst")
-        store.append_correction(undone)
-        return correction_api_payload(undone)
+        raise RouteRetired(f"/api/matches/{match_id}/corrections/{correction_id}/undo")
 
     @router.get("/matches/{match_id}/corrections")
     def list_corrections(match_id: str, state: str | None = None) -> dict:
-        items = _correction_log.pending(match_id) if state == "pending" else _correction_log.history(match_id)
-        return {"items": [jsonable(item) for item in items]}
+        raise RouteRetired(f"/api/matches/{match_id}/corrections")
 
     @router.post("/matches/{match_id}/queries")
     def match_queries(match_id: str, body: QueryBody) -> dict:
-        query = parse_typed_query(body.query)
-        hits = execute_typed_query([], query, match_id=match_id)
-        return {"query": jsonable(query), "results": [jsonable(hit) for hit in hits]}
+        raise RouteRetired(f"/api/matches/{match_id}/queries")
 
     @router.post("/matches/{match_id}/reports")
     def match_reports(match_id: str, body: ReportBody) -> dict:
-        del match_id
-        disposition = _router_assistance.run(
-            policy=AssistancePolicy(taskType="report", spendCap=0.0, allowedModelIds=[]),
-            metrics=[],
-            events=[],
-            claimed_evidence_ids=body.claimedEvidenceIds,
-            known_evidence_ids=set(),
-        )
-        return jsonable(disposition)
+        raise RouteRetired(f"/api/matches/{match_id}/reports")
 
     @router.post("/playlists/export-interval")
     def export_interval(payload: dict) -> dict:
@@ -203,75 +154,35 @@ def create_workbench_router(storage_root: Path, ledger: DurableJobLedger | None 
 
     @router.post("/search")
     def typed_search(body: SearchBody) -> dict:
-        query = parse_typed_query(body.query)
-        hits = execute_typed_query([], query, match_id=body.matchId)
-        return {"query": jsonable(query), "results": [jsonable(hit) for hit in hits]}
+        raise RouteRetired(f"/api/matches/{body.matchId}/queries")
 
     @router.post("/assistance/report")
     def assistance_report(body: AssistanceBody) -> dict:
-        disposition = _router_assistance.run(
-            policy=AssistancePolicy(taskType="report", spendCap=0.0, allowedModelIds=[]),
-            metrics=[],
-            events=[],
-            claimed_evidence_ids=body.claimedEvidenceIds,
-            known_evidence_ids=set(),
-        )
-        return jsonable(disposition)
+        raise RouteRetired("/api/matches/{match_id}/reports")
 
     @router.post("/jobs")
     def create_job(body: JobBody) -> dict:
-        request = JobRequest(
-            requestId=body.requestId,
-            matchId=body.matchId,
-            sourceSha256=body.sourceSha256,
-            intervalStart=body.intervalStart,
-            intervalEnd=body.intervalEnd,
-            temporalPolicy=body.temporalPolicy,
-            decoderVersion=body.decoderVersion,
-            modelHash=body.modelHash,
-            outputSchema=body.outputSchema,
-            budget=body.budget,
-            authorisedLocation="local",
-            namespace="production",
-        )
-        attempt = job_ledger.submit(request)
-        return jsonable(job_ledger.receipt(body.requestId)) | {
-            "attemptId": attempt.attemptId,
-            "namespace": "production",
-            "authorisedLocation": "local",
-        }
+        raise RouteRetired(f"/api/matches/{body.matchId}/jobs")
 
     @router.post("/matches/{match_id}/jobs")
     def create_match_job(match_id: str, body: JobBody) -> dict:
-        if body.matchId != match_id:
-            body = body.model_copy(update={"matchId": match_id})
-        return create_job(body)
+        raise RouteRetired(f"/api/matches/{match_id}/jobs")
 
     @router.post("/jobs/{request_id}/timeout")
     def job_timeout(request_id: str) -> dict:
-        job_ledger.timeout_before_response(request_id)
-        return jsonable(job_ledger.receipt(request_id))
+        raise RouteRetired(f"/api/jobs/{request_id}")
 
     @router.post("/jobs/{request_id}/lost-connection")
     def job_lost_connection(request_id: str) -> dict:
-        job_ledger.lost_connection(request_id)
-        return jsonable(job_ledger.receipt(request_id))
+        raise RouteRetired(f"/api/jobs/{request_id}")
 
     @router.post("/jobs/{request_id}/cancel")
     def job_cancel(request_id: str) -> dict:
-        job_ledger.cancel(request_id)
-        return jsonable(job_ledger.receipt(request_id))
+        raise RouteRetired(f"/api/jobs/{request_id}/cancel")
 
     @router.post("/matches/{match_id}/metrics")
     def match_metrics(match_id: str, payload: dict | None = None) -> dict:
-        del match_id, payload
-        metrics = summarize_legacy_match(
-            {},
-            identity_continuous=False,
-            calibration_accepted=False,
-            controlled_frames=0,
-        )
-        return {"metrics": [jsonable(metric) for metric in metrics]}
+        raise RouteRetired(f"/api/matches/{match_id}/metrics")
 
     @router.get("/metrics/dictionary")
     def get_metric_dictionary() -> dict:
@@ -285,14 +196,7 @@ def create_workbench_router(storage_root: Path, ledger: DurableJobLedger | None 
         cursor: str | None = None,
         limit: int = 100,
     ) -> dict:
-        del match_id
-        page = _evidence_store.query(
-            interval_start=intervalStart,
-            interval_end=intervalEnd,
-            cursor=cursor,
-            limit=limit,
-        )
-        return jsonable(page)
+        raise RouteRetired(f"/api/matches/{match_id}/evidence")
 
     @router.post("/matches/{match_id}/incidents/geometry")
     def incident_geometry(match_id: str, payload: dict | None = None) -> dict:
@@ -305,41 +209,12 @@ def create_workbench_router(storage_root: Path, ledger: DurableJobLedger | None 
         )
 
     @router.get("/jobs/{request_id}")
-    def get_job(
-        request_id: str,
-        authorization: str | None = Header(default=None),
-        x_job_scope: str | None = Header(default=None),
-        x_deployment_boundary: str | None = Header(default=None),
-    ) -> dict:
-        _require_job_access(
-            request_id,
-            authorization=authorization,
-            job_scope=x_job_scope,
-            deployment_boundary=x_deployment_boundary,
-        )
-        try:
-            receipt = jsonable(job_ledger.receipt(request_id))
-        except KeyError as exc:
-            raise HTTPException(status_code=404, detail="Job not found") from exc
-        receipt["cancelRequested"] = job_ledger.cancel_requested(request_id)
-        receipt["terminated"] = job_ledger.terminated(request_id)
-        return receipt
+    def get_job(request_id: str) -> dict:
+        raise RouteRetired(f"/api/jobs/{request_id}")
 
     @router.get("/jobs/{request_id}/cost")
-    def job_cost(
-        request_id: str,
-        authorization: str | None = Header(default=None),
-        x_job_scope: str | None = Header(default=None),
-        x_deployment_boundary: str | None = Header(default=None),
-    ) -> dict:
-        _require_job_access(
-            request_id,
-            authorization=authorization,
-            job_scope=x_job_scope,
-            deployment_boundary=x_deployment_boundary,
-        )
-        del request_id
-        return job_ledger.cost_summary()
+    def job_cost(request_id: str) -> dict:
+        raise RouteRetired(f"/api/jobs/{request_id}/cost")
 
     @router.get("/flags")
     def get_flags() -> dict:
@@ -382,15 +257,7 @@ def create_workbench_router(storage_root: Path, ledger: DurableJobLedger | None 
 
     @router.post("/matches/{match_id}/reports/assemble")
     def assemble_match_report(match_id: str, payload: dict | None = None) -> dict:
-        del match_id
-        body = payload or {}
-        return assemble_report(
-            metrics=[],
-            events=[],
-            claimed_evidence_ids=list(body.get("claimedEvidenceIds") or []),
-            known_evidence_ids=set(),
-            narrative=None,
-        )
+        raise RouteRetired(f"/api/matches/{match_id}/reports")
 
     @router.post("/cost/estimate")
     def estimate_cost(payload: dict | None = None) -> dict:
@@ -461,42 +328,8 @@ def create_workbench_router(storage_root: Path, ledger: DurableJobLedger | None 
         return player_observations([], identity_continuous=False)
 
     @router.get("/jobs/{request_id}/rates")
-    def job_rates(
-        request_id: str,
-        authorization: str | None = Header(default=None),
-        x_job_scope: str | None = Header(default=None),
-        x_deployment_boundary: str | None = Header(default=None),
-    ) -> dict:
-        _require_job_access(
-            request_id,
-            authorization=authorization,
-            job_scope=x_job_scope,
-            deployment_boundary=x_deployment_boundary,
-        )
-        try:
-            job_ledger.receipt(request_id)
-        except KeyError as exc:
-            raise HTTPException(status_code=404, detail="Job not found") from exc
-        rates = FourRatesReceipt(
-            decodeCount=0,
-            detectorPrimaryCount=0,
-            detectorRecoveryCount=0,
-            trackerUpdateCount=0,
-            exportCount=0,
-            exportFpsEqualsInferenceFps=False,
-            decodeFpsEqualsExportFps=False,
-            notes=("EXPORT_FPS_IS_NOT_INFERENCE_FPS",),
-        )
-        return {
-            "decodeCount": rates.decodeCount,
-            "detectorPrimaryCount": rates.detectorPrimaryCount,
-            "detectorRecoveryCount": rates.detectorRecoveryCount,
-            "trackerUpdateCount": rates.trackerUpdateCount,
-            "exportCount": rates.exportCount,
-            "exportFpsEqualsInferenceFps": rates.exportFpsEqualsInferenceFps,
-            "decodeFpsEqualsExportFps": rates.decodeFpsEqualsExportFps,
-            "notes": list(rates.notes),
-        }
+    def job_rates(request_id: str) -> dict:
+        raise RouteRetired(f"/api/jobs/{request_id}/rates")
 
     @router.post("/setup/assess")
     def post_setup_assess(payload: dict | None = None) -> dict:

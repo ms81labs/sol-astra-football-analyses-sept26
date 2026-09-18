@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from typing import Any, Literal
 
 from pydantic import Field
@@ -143,6 +144,14 @@ def event_review_status(kind: str) -> str | None:
     return None
 
 
+def with_stable_event_id(event: Any):
+    primary_track = event.fromTrackId if event.fromTrackId is not None else event.toTrackId
+    identity = "|".join(
+        (event.type, str(event.team or ""), f"{round(event.timestamp, 1):.1f}", str(primary_track or ""))
+    )
+    return event.model_copy(update={"eventId": f"ev_{hashlib.sha1(identity.encode()).hexdigest()[:16]}"})
+
+
 def event_matches_review_payload(event: Any, payload: dict[str, Any], *, match_id: str, index: int) -> bool:
     event_id = payload.get("eventId") or payload.get("id")
     frame = payload.get("frame") if payload.get("frame") is not None else payload.get("frameId")
@@ -152,8 +161,9 @@ def event_matches_review_payload(event: Any, payload: dict[str, Any], *, match_i
     timestamp = getattr(event, "timestamp", None)
     synthetic_id = f"{match_id}:{index}"
     evidence_id = f"event:{frame_id}:{event_kind}:{timestamp}"
+    stable_id = getattr(event, "eventId", None)
     if event_id not in {None, ""}:
-        if str(event_id) not in {synthetic_id, evidence_id, str(frame_id)}:
+        if str(event_id) not in {synthetic_id, evidence_id, str(frame_id), stable_id}:
             return False
     elif frame is not None:
         if frame_id != int(frame):

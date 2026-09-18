@@ -4,7 +4,7 @@ import json
 from math import gcd, hypot
 from pathlib import Path
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from .analytics import (
     MAX_OWNER_DISTANCE,
@@ -801,7 +801,47 @@ def reprocess_match_for_change(
     )
 
 
-def reprocess_video_match(storage: Storage, match_id: str, *, config: MatchConfig | None = None) -> None:
+def _publish_outputs(
+    storage: Storage,
+    match_id: str,
+    *,
+    frames: list[FrameData],
+    summary: MatchSummary,
+    assignments: list[BallOwnership],
+    formation_timeline: list[FormationSegment],
+    shots: list[ShotAnalytics],
+    events: list[DetectedEvent],
+) -> None:
+    from .review_service import ReviewService
+
+    service = ReviewService(storage)
+    with service._match_lock(match_id):
+        if any(item["applyState"] == "applied" for item in storage.list_corrections(match_id)):
+            service.rebuild_generation(match_id, reason="processing")
+            return
+        try:
+            correction_head = storage.current_generation(match_id).correctionHead
+        except FileNotFoundError:
+            correction_head = "none"
+        storage.publish_generation(
+            match_id,
+            frames=frames,
+            summary=summary,
+            assignments=assignments,
+            formation_timeline=formation_timeline,
+            shots=shots,
+            events=events,
+            correction_head=correction_head,
+        )
+
+
+def reprocess_video_match(
+    storage: Storage,
+    match_id: str,
+    *,
+    config: MatchConfig | None = None,
+    persist: bool = True,
+) -> dict[str, Any]:
     match = storage.get_match(match_id)
     config = config or match.config
     if config.myTeamCluster != match.config.myTeamCluster:
@@ -848,16 +888,28 @@ def reprocess_video_match(storage: Storage, match_id: str, *, config: MatchConfi
         ball_truth_layers=ball_truth_layers,
         match_state_evidence=match_state_evidence,
     )
-    storage.save_frames(match.id, enriched_frames)
-    storage.save_analytics(match.id, summary, assignments, formation_timeline, shots)
-    storage.save_events(match.id, events)
-    storage.save_analysis_artifact(match.id, "accepted_match_state", accepted_match_state)
-    storage.update_match_status(
-        match.id,
-        status="ready",
-        requires_team_selection=requires_team_selection,
-        team_clusters=match.teamClusters,
-    )
+    if persist:
+        _publish_outputs(
+            storage, match.id, frames=enriched_frames, summary=summary, assignments=assignments,
+            formation_timeline=formation_timeline, shots=shots, events=events,
+        )
+        storage.save_analysis_artifact(match.id, "accepted_match_state", accepted_match_state)
+        storage.update_match_status(
+            match.id,
+            status="ready",
+            requires_team_selection=requires_team_selection,
+            team_clusters=match.teamClusters,
+        )
+    return {
+        "frames": enriched_frames,
+        "summary": summary,
+        "events": events,
+        "assignments": assignments,
+        "formationTimeline": formation_timeline,
+        "shots": shots,
+        "acceptedMatchState": accepted_match_state,
+        "requiresTeamSelection": requires_team_selection,
+    }
 
 
 def _persist_video_outputs(
@@ -1003,7 +1055,10 @@ def _persist_prepared_video_outputs(
         ),
     )
 
-    storage.save_frames(match_id, enriched_frames)
+    _publish_outputs(
+        storage, match_id, frames=enriched_frames, summary=summary, assignments=assignments,
+        formation_timeline=formation_timeline, shots=shots, events=events,
+    )
     if isinstance(video_result, dict) and not isinstance(video_result.get("decodeAnchors"), dict) and enriched_frames:
         times = [float(frame.timestamp) for frame in enriched_frames]
         storage.save_analysis_artifact(
@@ -1017,8 +1072,6 @@ def _persist_prepared_video_outputs(
                 "discontinuities": [],
             },
         )
-    storage.save_analytics(match_id, summary, assignments, formation_timeline, shots)
-    storage.save_events(match_id, events)
     try:
         storage.publish_ownership_events(match_id)
     except Exception:
@@ -1205,9 +1258,10 @@ def process_match(storage: Storage, job_id: str) -> None:
         attack_direction=match.config.attackDirection,
     )
 
-    storage.save_frames(match.id, enriched_frames)
-    storage.save_analytics(match.id, summary, assignments, formation_timeline, shots)
-    storage.save_events(match.id, events)
+    _publish_outputs(
+        storage, match.id, frames=enriched_frames, summary=summary, assignments=assignments,
+        formation_timeline=formation_timeline, shots=shots, events=events,
+    )
     storage.save_analysis_artifact(match.id, "accepted_match_state", accepted_match_state)
     storage.update_match_status(
         match.id,

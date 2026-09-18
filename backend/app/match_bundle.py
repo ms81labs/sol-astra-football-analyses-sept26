@@ -18,9 +18,12 @@ def _optional_artifact(storage: Storage, match_id: str, artifact_name: str) -> d
 
 def build_match_bundle(storage: Storage, match_id: str) -> dict[str, Any]:
     match = storage.get_match(match_id)
-    frames = storage.load_frames(match_id)
-    summary, assignments, formation_timeline, shots = storage.load_analytics(match_id)
-    events = storage.load_events(match_id)
+    with storage.generation_snapshot(match_id) as generation:
+        frames = storage.load_frames(match_id, generation_id=generation.generationId)
+        summary, assignments, formation_timeline, shots = storage.load_analytics(
+            match_id, generation_id=generation.generationId
+        )
+        events = storage.load_events(match_id, generation_id=generation.generationId)
     accepted_match_state = _optional_artifact(storage, match_id, "accepted_match_state")
     ball_truth_layers = _optional_artifact(storage, match_id, "ball_truth_layers")
     ball_pipeline_trace = _optional_artifact(storage, match_id, "ball_pipeline_trace")

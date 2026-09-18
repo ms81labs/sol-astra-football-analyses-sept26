@@ -28,7 +28,7 @@ from .export_flatteners import (
     render_csv,
 )
 from .jobs import JobDispatchError, JobRunner
-from .workbench.errors import DomainError, IdempotencyConflict, RouteRetired, StaleRevision
+from .workbench.errors import CorrectionApplicationError, DomainError, IdempotencyConflict, RouteRetired, StaleRevision
 from .llm import run_analysis
 from .report_export import build_match_report_export
 from .settings import ProcessingSettings, SettingsError, canonicalize_origin
@@ -691,8 +691,13 @@ def create_app(
                 status_code=410,
                 content={"error": "ROUTE_RETIRED", "replacement": exc.replacement},
             )
+        if isinstance(exc, CorrectionApplicationError):
+            return JSONResponse(
+                status_code=500,
+                content={"error": "CORRECTION_APPLICATION_FAILED", "commandId": exc.command_id},
+            )
         return JSONResponse(status_code=400, content={"error": "DOMAIN_ERROR"})
-    app.include_router(create_workbench_router(storage.storage_root, ledger=storage.job_ledger))
+    app.include_router(create_workbench_router(storage))
     from .workbench.leftover_http import LeftoverHttpGate
     from .workbench.leftover_get_routes import attach_leftover_get_routes
     from .workbench.leftover_routes import attach_leftover_post_routes
@@ -1641,8 +1646,11 @@ def create_app(
     @app.get("/api/matches/{match_id}/report/html")
     def get_match_report_html(match: MatchRecord = Depends(require_match)) -> HTMLResponse:
         try:
-            summary, _, formation_timeline, shots = storage.load_analytics(match.id)
-            events = storage.load_events(match.id)
+            with storage.generation_snapshot(match.id) as generation:
+                summary, _, formation_timeline, shots = storage.load_analytics(
+                    match.id, generation_id=generation.generationId
+                )
+                events = storage.load_events(match.id, generation_id=generation.generationId)
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail="Analytics not ready") from exc
 

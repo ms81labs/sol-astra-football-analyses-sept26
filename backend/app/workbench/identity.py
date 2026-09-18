@@ -256,6 +256,35 @@ def apply_team_swap(frames: list[Any]) -> list[Any]:
     return updated
 
 
+def build_identity_remap(commands: list[Any]) -> list[dict[str, Any]]:
+    remap: list[dict[str, Any]] = []
+    for command in commands:
+        kind = str(getattr(command, "kind", ""))
+        payload = dict(getattr(command, "payload", {}) or {})
+        if kind in {"track_split", "track_join"}:
+            remap.append({"kind": kind, **payload})
+    return remap
+
+
+def apply_remap(frames: list[Any], remap: list[dict[str, Any]]) -> list[Any]:
+    updated = list(frames)
+    for command in remap:
+        if command["kind"] == "track_split":
+            updated = apply_track_split(
+                updated,
+                track_id=str(command.get("trackId") or ""),
+                at_frame=int(command.get("atFrame") or 0),
+                new_track_id=int(command["newTrackId"]),
+            )
+        elif command["kind"] == "track_join":
+            updated = apply_track_join(
+                updated,
+                left_track_id=str(command.get("leftTrackId") or ""),
+                right_track_id=str(command.get("rightTrackId") or ""),
+            )
+    return updated
+
+
 def frames_have_identity_overlap(frames: list[Any], left_track_id: str, right_track_id: str) -> bool:
     for frame in frames:
         ids = {

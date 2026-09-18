@@ -22,3 +22,9 @@ class RouteRetired(DomainError):
     def __init__(self, replacement: str):
         super().__init__("route retired")
         self.replacement = replacement
+
+
+class CorrectionApplicationError(DomainError):
+    def __init__(self, command_id: str, message: str):
+        super().__init__(message)
+        self.command_id = command_id

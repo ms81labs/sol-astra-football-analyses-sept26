@@ -549,26 +549,18 @@ def test_workbench_timeout_and_lost_connection_use_storage_sqlite_ledger(tmp_pat
     from fastapi.testclient import TestClient
 
     from backend.app.main import create_app
-    from backend.app.workbench.jobs import DurableJobLedger
-
     app = create_app(storage_root=tmp_path, run_jobs_inline=True)
     with TestClient(app, base_url="http://127.0.0.1") as client:
         created = client.post(
             "/api/workbench/jobs",
             json={"requestId": "shared-timeout", "matchId": "match-a", "sourceSha256": "c" * 64, "budget": 1.0},
         )
-        assert created.status_code == 200
-        assert created.json()["status"] == "submitted"
-        assert "shared-timeout" in app.state.storage.job_ledger.requests
+        assert created.status_code == 410
+        assert "shared-timeout" not in app.state.storage.job_ledger.requests
         timed_out = client.post("/api/workbench/jobs/shared-timeout/timeout")
-        assert timed_out.json()["status"] == "outcome_unknown"
+        assert timed_out.status_code == 410
         lost = client.post("/api/workbench/jobs/shared-timeout/lost-connection")
-        assert lost.status_code == 200
-        assert lost.json()["status"] == "outcome_unknown"
-        assert lost.json()["error"] == "lost_connection"
-        restarted = DurableJobLedger(db_path=app.state.storage.db_path)
-        assert restarted.receipt("shared-timeout").status == "outcome_unknown"
-        assert restarted.receipt("shared-timeout").error == "lost_connection"
+        assert lost.status_code == 410
 
 
 def test_storage_completed_job_marks_ledger_complete_and_websocket_closes(tmp_path: Path) -> None:

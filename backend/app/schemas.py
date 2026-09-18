@@ -177,6 +177,7 @@ class ShotAnalytics(BaseModel):
 
 
 class DetectedEvent(BaseModel):
+    eventId: str | None = None
     type: str
     frameId: int
     timestamp: float

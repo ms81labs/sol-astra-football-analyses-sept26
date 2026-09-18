@@ -99,7 +99,10 @@ def test_remote_stream_persists_the_same_rows_and_frames(tmp_path, selected_clus
     with storage.remote_result_import(match.id), ProcessorResultStream(metadata, len(rows), iter(rows)) as source:
         processor.persist_remote_video_result_stream(storage, job.id, source)
 
-    assert {path.name: json.loads(path.read_text()) for path in match_dir.glob("*.json")} == before
+    after = {path.name: json.loads(path.read_text()) for path in match_dir.glob("*.json")}
+    assert {name: value for name, value in after.items() if name != "current_generation.json"} == {
+        name: value for name, value in before.items() if name != "current_generation.json"
+    }
     assert storage.load_raw_rows(match.id) == rows
     frames = storage.load_frames(match.id)
     assert [frame.frameId for frame in frames] == [0, 1, 2]
@@ -142,7 +145,7 @@ def test_remote_stream_failure_restores_existing_outputs(tmp_path, monkeypatch, 
     if failure == "analytics":
         monkeypatch.setattr(processor, "_compute_outputs_and_match_state", fail)
     elif failure == "persistence":
-        monkeypatch.setattr(storage, "save_events", fail)
+        monkeypatch.setattr(storage, "publish_generation", fail)
     source = ProcessorResultStream({"trackColors": {}, "recoveryDebug": {"new": True}}, 0 if failure == "empty" else 1, rows())
     with pytest.raises(RuntimeError), storage.remote_result_import(match.id), source:
         processor.persist_remote_video_result_stream(storage, job.id, source)

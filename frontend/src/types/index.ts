@@ -248,6 +248,7 @@ export interface AnalyticsPayload {
 }
 
 export interface BackendEvent {
+    eventId?: string | null;
     type: string;
     frameId: number;
     timestamp: number;

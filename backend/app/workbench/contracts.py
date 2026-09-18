@@ -215,6 +215,15 @@ class GenerationManifest(StrictModel):
     publishedAt: str
 
 
+class GenerationRef(StrictModel):
+    generationId: str
+    publishedAt: str
+    correctionHead: str
+    calibrationRevision: str | None = None
+    recoveryRequired: bool = False
+    migrated: bool = False
+
+
 class MetricScope(StrictModel):
     team: Literal["my_team", "enemy"] | None = None
     player: str | None = None

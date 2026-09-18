@@ -48,6 +48,7 @@ _REMOTE_RESULT_FILENAMES = (
     "tactical_report.json",
     "drills.json",
     "frames.json",
+    "current_generation.json",
     "input_video_identity.json",
     "ownership_publication.json",
     "raw_rows.json",
@@ -272,6 +273,28 @@ class Storage:
         from .workbench.jobs import DurableJobLedger
 
         self.job_ledger = DurableJobLedger(db_path=self.db_path)
+        self._recover_pending_reviews()
+
+    def _recover_pending_reviews(self) -> None:
+        matches = self.storage_root / "matches"
+        if not matches.exists():
+            return
+        directories = [
+            directory
+            for directory in matches.iterdir()
+            if directory.is_dir() and (directory / "corrections.json").is_file()
+            and any(
+                item.get("applyState") in {"committed", "applying"}
+                for item in (self._read_json(directory / "corrections.json").get("items") or [])
+            )
+        ]
+        if not directories:
+            return
+        from .review_service import ReviewService
+
+        service = ReviewService(self)
+        for directory in directories:
+            service.apply_pending(directory.name)
 
     def close(self) -> None:
         try:
@@ -960,7 +983,11 @@ class Storage:
         return [self.get_match(row["id"]) for row in rows]
 
     def save_frames(self, match_id: str, frames: Iterable[FrameData]) -> None:
-        self._write_json_array(self._match_dir(match_id) / "frames.json", (frame.model_dump(mode="json") for frame in frames))
+        materialized = list(frames)
+        if (self._match_dir(match_id) / "current_generation.json").exists():
+            self._publish_replacement(match_id, frames=materialized)
+            return
+        self._write_json_array(self._match_dir(match_id) / "frames.json", (frame.model_dump(mode="json") for frame in materialized))
 
     def save_raw_rows(self, match_id: str, rows: Iterable[dict]) -> None:
         self._write_json_array(self._match_dir(match_id) / "raw_rows.json", rows)
@@ -989,6 +1016,15 @@ class Storage:
         summary = self._video_ball_signal_summary(match_id, summary)
         if not any(assignment.team in {"my_team", "enemy"} for assignment in assignments):
             summary = summary.model_copy(update={"possession": None})
+        if (self._match_dir(match_id) / "current_generation.json").exists():
+            self._publish_replacement(
+                match_id,
+                summary=summary,
+                assignments=assignments,
+                formation_timeline=formation_timeline,
+                shots=shots,
+            )
+            return
         self._write_json(
             self._match_dir(match_id) / "analytics.json",
             {
@@ -1005,7 +1041,310 @@ class Storage:
             )
 
     def save_events(self, match_id: str, events: list[DetectedEvent]) -> None:
+        if (self._match_dir(match_id) / "current_generation.json").exists():
+            self._publish_replacement(match_id, events=events)
+            return
         self._write_json(self._match_dir(match_id) / "events.json", [event.model_dump(mode="json") for event in events])
+
+    def _publish_replacement(
+        self,
+        match_id: str,
+        *,
+        frames: list[FrameData] | None = None,
+        summary: MatchSummary | None = None,
+        assignments: list[BallOwnership] | None = None,
+        formation_timeline: list[FormationSegment] | None = None,
+        shots: list[ShotAnalytics] | None = None,
+        events: list[DetectedEvent] | None = None,
+    ) -> None:
+        with self._generation_lock(match_id):
+            ref = self._current_generation_unlocked(match_id)
+            root = self._match_dir(match_id) / "generations" / ref.generationId
+            analytics = self._read_json(root / "analytics.json")
+            self._publish_generation_unlocked(
+                match_id,
+                frames=frames if frames is not None else [FrameData.model_validate(item) for item in self._read_json(root / "frames.json")],
+                summary=summary if summary is not None else MatchSummary.model_validate(analytics["summary"]),
+                assignments=assignments if assignments is not None else [
+                    BallOwnership.model_validate(item) for item in analytics.get("ballAssignments") or []
+                ],
+                formation_timeline=formation_timeline if formation_timeline is not None else [
+                    FormationSegment.model_validate(item) for item in analytics.get("formationTimeline") or []
+                ],
+                shots=shots if shots is not None else [ShotAnalytics.model_validate(item) for item in analytics.get("shots") or []],
+                events=events if events is not None else [DetectedEvent.model_validate(item) for item in self._read_json(root / "events.json")],
+                correction_head=ref.correctionHead,
+            )
+
+    @contextmanager
+    def _generation_lock(self, match_id: str) -> Iterator[None]:
+        path = self._match_dir(match_id) / ".generation.lock"
+        with path.open("a+b") as handle:
+            try:
+                import fcntl
+            except ImportError:
+                with self._annotation_issue_lock:
+                    yield
+                return
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+    def current_generation(self, match_id: str):
+        with self._generation_lock(match_id):
+            return self._current_generation_unlocked(match_id)
+
+    @contextmanager
+    def generation_snapshot(self, match_id: str):
+        with self._generation_lock(match_id):
+            yield self._current_generation_unlocked(match_id)
+
+    def _current_generation_unlocked(self, match_id: str):
+        from .workbench.contracts import GenerationManifest, GenerationRef
+
+        match_dir = self._match_dir(match_id)
+        generations = match_dir / "generations"
+        generations.mkdir(parents=True, exist_ok=True)
+        pointer_path = match_dir / "current_generation.json"
+        pointer = self._read_json(pointer_path) if pointer_path.exists() else None
+        complete = self._complete_generations(match_id)
+        requested = str((pointer or {}).get("generationId") or "")
+        recovery_required = bool(requested and requested not in complete)
+
+        if requested in complete:
+            manifest = complete[requested]
+        elif complete:
+            manifest = max(complete.values(), key=lambda item: item.publishedAt)
+        else:
+            manifest = self._import_legacy_generation(match_id)
+
+        ref = GenerationRef(
+            generationId=manifest.generationId,
+            publishedAt=manifest.publishedAt,
+            correctionHead=manifest.correctionHead,
+            calibrationRevision=manifest.calibrationRevision,
+            recoveryRequired=recovery_required,
+            migrated=manifest.generationId.startswith("gen_legacy_"),
+        )
+        self._write_json(
+            pointer_path,
+            {
+                "generationId": ref.generationId,
+                "publishedAt": ref.publishedAt,
+                "correctionHead": ref.correctionHead,
+                "calibrationRevision": ref.calibrationRevision,
+            },
+        )
+        protected = {ref.generationId}
+        if (match_dir / "corrections.json").is_file():
+            protected.update(
+                item.appliedGeneration
+                for item in self._load_correction_log(match_id).history(match_id)
+                if item.applyState == "applying" and item.appliedGeneration
+            )
+        for child in generations.iterdir():
+            if child.is_dir() and child.name.startswith("gen_") and child.name not in protected:
+                shutil.rmtree(child)
+        return ref
+
+    def _complete_generations(self, match_id: str) -> dict[str, object]:
+        from .workbench.contracts import GenerationManifest
+
+        root = self._match_dir(match_id) / "generations"
+        complete: dict[str, GenerationManifest] = {}
+        if not root.exists():
+            return complete
+        for directory in root.iterdir():
+            manifest_path = directory / "manifest.json"
+            if not directory.is_dir() or not directory.name.startswith("gen_") or not manifest_path.is_file():
+                continue
+            try:
+                manifest = GenerationManifest.model_validate(self._read_json(manifest_path))
+            except (OSError, ValueError, ValidationError):
+                continue
+            if manifest.generationId != directory.name:
+                continue
+            if all(
+                (directory / name).is_file() and self._sha256_file(directory / name) == digest
+                for name, digest in manifest.files.items()
+            ):
+                complete[directory.name] = manifest
+        return complete
+
+    def _import_legacy_generation(self, match_id: str):
+        from .workbench.contracts import GenerationManifest
+
+        match_dir = self._match_dir(match_id)
+        legacy_paths = {name: match_dir / name for name in ("frames.json", "events.json", "analytics.json")}
+        if not all(path.is_file() for path in legacy_paths.values()):
+            raise FileNotFoundError(f"No complete generation exists for {match_id}")
+        analytics = self._read_json(legacy_paths["analytics.json"])
+        payloads = {
+            "frames.json": self._read_json(legacy_paths["frames.json"]),
+            "events.json": self._read_json(legacy_paths["events.json"]),
+            "analytics.json": analytics,
+            "shots.json": list(analytics.get("shots") or []),
+            "summary.json": dict(analytics.get("summary") or {}),
+        }
+        digest = hashlib.sha256(
+            b"".join(json.dumps(payloads[name], sort_keys=True, separators=(",", ":")).encode() for name in sorted(payloads))
+        ).hexdigest()
+        generation_id = f"gen_legacy_{digest[:16]}"
+        generation_dir = match_dir / "generations" / generation_id
+        generation_dir.mkdir(parents=True, exist_ok=True)
+        for name, payload in payloads.items():
+            self._write_json(generation_dir / name, payload)
+        try:
+            raw_digest = self._sha256_file(match_dir / "raw_rows.json")
+        except FileNotFoundError:
+            raw_digest = self._sha256_file(generation_dir / "frames.json")
+        corrections = self.list_corrections(match_id)
+        published_at = _utcnow().isoformat().replace("+00:00", "Z")
+        manifest = GenerationManifest(
+            generationId=generation_id,
+            matchId=match_id,
+            observationDigest=raw_digest,
+            correctionHead=str(corrections[-1]["correctionId"]) if corrections else "none",
+            algorithmVersions={"legacy_import": "1"},
+            files={name: self._sha256_file(generation_dir / name) for name in payloads},
+            publishedAt=published_at,
+        )
+        self._write_json(generation_dir / "manifest.json", manifest.model_dump(mode="json"))
+        return manifest
+
+    def publish_generation(self, match_id: str, **payload):
+        with self._generation_lock(match_id):
+            return self._publish_generation_unlocked(match_id, **payload)
+
+    def _publish_generation_unlocked(
+        self,
+        match_id: str,
+        *,
+        frames: list[FrameData],
+        summary: MatchSummary,
+        assignments: list[BallOwnership],
+        formation_timeline: list[FormationSegment],
+        shots: list[ShotAnalytics],
+        events: list[DetectedEvent],
+        correction_head: str,
+        stale: list[str] | None = None,
+        orphaned_decisions: list[str] | None = None,
+        calibration_revision: str | None = None,
+    ):
+        from .workbench.contracts import GenerationManifest, GenerationRef
+        from .workbench.events import with_stable_event_id
+
+        summary = self._video_ball_signal_summary(match_id, summary)
+        if not any(assignment.team in {"my_team", "enemy"} for assignment in assignments):
+            summary = summary.model_copy(update={"possession": None})
+        events = [with_stable_event_id(event) for event in events]
+        generation_id = f"gen_{uuid.uuid4().hex}"
+        generation_dir = self._match_dir(match_id) / "generations" / generation_id
+        generation_dir.mkdir(parents=True, exist_ok=False)
+        analytics = {
+            "summary": summary.model_dump(mode="json"),
+            "ballAssignments": [assignment.model_dump(mode="json") for assignment in assignments],
+            "formationTimeline": [segment.model_dump(mode="json") for segment in formation_timeline],
+            "shots": [shot.model_dump(mode="json") for shot in shots],
+        }
+        payloads = {
+            "frames.json": [frame.model_dump(mode="json") for frame in frames],
+            "events.json": [event.model_dump(mode="json") for event in events],
+            "analytics.json": analytics,
+            "shots.json": analytics["shots"],
+            "summary.json": analytics["summary"],
+        }
+        for name, payload in payloads.items():
+            self._write_json(generation_dir / name, payload)
+            if name == "events.json":
+                self._review_test_fault("during_generation_write")
+        try:
+            observation_digest = self._sha256_file(self._match_dir(match_id) / "raw_rows.json")
+        except FileNotFoundError:
+            observation_digest = self._sha256_file(generation_dir / "frames.json")
+        published_at = _utcnow().isoformat().replace("+00:00", "Z")
+        manifest = GenerationManifest(
+            generationId=generation_id,
+            matchId=match_id,
+            observationDigest=observation_digest,
+            calibrationRevision=calibration_revision,
+            correctionHead=correction_head,
+            algorithmVersions={"review_materialisation": "1"},
+            files={name: self._sha256_file(generation_dir / name) for name in payloads},
+            stale=list(stale or []),
+            orphanedDecisions=list(orphaned_decisions or []),
+            publishedAt=published_at,
+        )
+        self._write_json(generation_dir / "manifest.json", manifest.model_dump(mode="json"))
+        directory_fd = os.open(generation_dir, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+        ref = GenerationRef(
+            generationId=generation_id,
+            publishedAt=published_at,
+            correctionHead=correction_head,
+            calibrationRevision=calibration_revision,
+        )
+        with self._connect() as connection:
+            previous_summary = connection.execute(
+                "SELECT analytics_summary_json FROM matches WHERE id = ?",
+                (match_id,),
+            ).fetchone()
+            connection.execute(
+                "UPDATE matches SET analytics_summary_json = ? WHERE id = ?",
+                (summary.model_dump_json(), match_id),
+            )
+        self._review_test_fault("before_pointer_publish")
+        try:
+            self._write_json(
+                self._match_dir(match_id) / "current_generation.json",
+                {
+                    "generationId": ref.generationId,
+                    "publishedAt": ref.publishedAt,
+                    "correctionHead": ref.correctionHead,
+                    "calibrationRevision": ref.calibrationRevision,
+                },
+            )
+        except BaseException:
+            with self._connect() as connection:
+                connection.execute(
+                    "UPDATE matches SET analytics_summary_json = ? WHERE id = ?",
+                    (previous_summary["analytics_summary_json"] if previous_summary is not None else None, match_id),
+                )
+            raise
+        return ref
+
+    @staticmethod
+    def _review_test_fault(point: str) -> None:
+        if os.environ.get("GA_TEST_FAULTS") == "1" and os.environ.get("GA_TEST_FAULT_POINT") == point:
+            os._exit(1)
+
+    @staticmethod
+    def _sha256_file(path: Path) -> str:
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(_COPY_CHUNK_BYTES), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    def _generation_payload_path(
+        self,
+        match_id: str,
+        filename: str,
+        generation_id: str | None = None,
+    ) -> Path:
+        match_dir = self._match_dir(match_id)
+        if generation_id is not None:
+            return match_dir / "generations" / generation_id / filename
+        pointer = match_dir / "current_generation.json"
+        if pointer.exists() or all((match_dir / name).exists() for name in ("frames.json", "events.json", "analytics.json")):
+            ref = self.current_generation(match_id)
+            return match_dir / "generations" / ref.generationId / filename
+        return match_dir / filename
 
     def save_analysis_artifact(self, match_id: str, analysis_type: str, payload: dict) -> None:
         path = self._match_dir(match_id) / f"{analysis_type}.json"
@@ -1038,8 +1377,8 @@ class Storage:
             handle.write(json.dumps(payload, separators=(",", ":")))
             handle.write("\n")
 
-    def load_frames(self, match_id: str) -> list[FrameData]:
-        payload = self._read_json(self._match_dir(match_id) / "frames.json")
+    def load_frames(self, match_id: str, *, generation_id: str | None = None) -> list[FrameData]:
+        payload = self._read_json(self._generation_payload_path(match_id, "frames.json", generation_id))
         return [FrameData.model_validate(item) for item in payload]
 
     def load_frames_page(
@@ -1070,11 +1409,12 @@ class Storage:
     ) -> dict:
         from .workbench.evidence import query_match_evidence
 
-        frames = self.load_frames(match_id)
-        try:
-            events = self.load_events(match_id)
-        except FileNotFoundError:
-            events = []
+        with self.generation_snapshot(match_id) as generation:
+            frames = self.load_frames(match_id, generation_id=generation.generationId)
+            try:
+                events = self.load_events(match_id, generation_id=generation.generationId)
+            except FileNotFoundError:
+                events = []
         page = query_match_evidence(
             frames,
             events,
@@ -1113,65 +1453,34 @@ class Storage:
         expected_version: int | None = None,
         crash_before_commit: bool = False,
     ):
-        from .workbench.review import new_correction
+        from .review_service import ReviewService
 
         payload = dict(payload or {})
         if kind in {"event_accept", "event_reject"}:
             payload["previous"] = self._event_review_snapshot(match_id, payload)
-        with self._annotation_issue_lock:
-            log = self._load_correction_log(match_id)
-            saved = log.submit(
-                new_correction(match_id, kind, payload, author=author),  # type: ignore[arg-type]
-                crash_before_commit=crash_before_commit,
-                expected_version=expected_version,
-            )
-            self._save_correction_log(match_id, log)
-        if saved.saveState == "saved":
-            self._apply_saved_correction(match_id, saved)
-        return saved
+        try:
+            base_generation = self.current_generation(match_id).generationId
+        except FileNotFoundError:
+            base_generation = None
+        return ReviewService(self).submit(
+            match_id,
+            kind=kind,
+            payload=payload,
+            author=author,
+            expected_version=expected_version,
+            base_generation=base_generation,
+            crash_before_commit=crash_before_commit,
+        )
 
     def recover_correction(self, match_id: str, correction_id: str):
-        with self._annotation_issue_lock:
-            log = self._load_correction_log(match_id)
-            saved = log.recover(correction_id)
-            if saved.matchId != match_id:
-                raise KeyError(correction_id)
-            self._save_correction_log(match_id, log)
-        if saved.saveState == "saved":
-            self._apply_saved_correction(match_id, saved)
-        return saved
+        from .review_service import ReviewService
+
+        return ReviewService(self).recover(match_id, correction_id)
 
     def undo_correction(self, match_id: str, correction_id: str, *, author: str = "analyst"):
-        with self._annotation_issue_lock:
-            log = self._load_correction_log(match_id)
-            original = next((item for item in log.history(match_id) if item.correctionId == correction_id), None)
-            saved = log.undo(correction_id, author=author)
-            self._save_correction_log(match_id, log)
-        if original is not None and original.kind == "track_split":
-            payload = dict(original.payload or {})
-            new_track_id = payload.get("newTrackId")
-            source = payload.get("trackId")
-            if new_track_id is not None and source not in {None, ""}:
-                self._apply_identity_edit(
-                    match_id,
-                    kind="track_split",
-                    payload={
-                        "trackId": str(new_track_id),
-                        "atFrame": int(payload.get("atFrame") or 0),
-                        "newTrackId": int(source),
-                    },
-                )
-        elif original is not None and original.kind in {"event_accept", "event_reject"}:
-            self._restore_event_review(match_id, list((original.payload or {}).get("previous") or []))
-        elif original is not None and original.kind == "team_mapping":
-            self._apply_team_mapping(match_id, dict(original.payload or {}))
-        elif original is not None and original.kind == "track_join":
-            self._apply_identity_edit(match_id, kind="track_join_undo", payload=dict(original.payload or {}))
-        elif original is not None and original.kind == "identity_validate":
-            self._recompute_identity_continuity(match_id, identity_continuous=False)
-        elif original is not None and original.kind == "calibration":
-            self._restore_calibration_evaluation(match_id, dict((original.payload or {}).get("previous") or {}))
-        return saved
+        from .review_service import ReviewService
+
+        return ReviewService(self).undo(match_id, correction_id, author=author)
 
     def list_corrections(self, match_id: str, *, state: str | None = None) -> list[dict]:
         log = self._load_correction_log(match_id)
@@ -1293,12 +1602,13 @@ class Storage:
         from .workbench.evidence import records_from_match, summarize_legacy_match
         from .workbench.reports import assemble_report
 
-        summary, _, _, _ = self.load_analytics(match_id)
-        try:
-            events = self.load_events(match_id)
-        except FileNotFoundError:
-            events = []
-        frames = self.load_frames(match_id)
+        with self.generation_snapshot(match_id) as generation:
+            summary, _, _, _ = self.load_analytics(match_id, generation_id=generation.generationId)
+            try:
+                events = self.load_events(match_id, generation_id=generation.generationId)
+            except FileNotFoundError:
+                events = []
+            frames = self.load_frames(match_id, generation_id=generation.generationId)
         records = records_from_match(frames, events)
         known = {record.evidenceId for record in records}
         controlled = sum(
@@ -1519,11 +1829,12 @@ class Storage:
     def match_metrics_for_match(self, match_id: str) -> dict:
         from .workbench.evidence import summarize_legacy_match
 
-        summary, _, _, _ = self.load_analytics(match_id)
-        try:
-            frames = self.load_frames(match_id)
-        except FileNotFoundError:
-            frames = []
+        with self.generation_snapshot(match_id) as generation:
+            summary, _, _, _ = self.load_analytics(match_id, generation_id=generation.generationId)
+            try:
+                frames = self.load_frames(match_id, generation_id=generation.generationId)
+            except FileNotFoundError:
+                frames = []
         controlled = sum(
             1
             for frame in frames
@@ -2503,8 +2814,13 @@ class Storage:
         payload = self._read_json(self._match_dir(match_id) / "raw_rows.json")
         return [dict(item) for item in payload]
 
-    def load_analytics(self, match_id: str) -> tuple[MatchSummary, list[BallOwnership], list[FormationSegment], list[ShotAnalytics]]:
-        payload = self._read_json(self._match_dir(match_id) / "analytics.json")
+    def load_analytics(
+        self,
+        match_id: str,
+        *,
+        generation_id: str | None = None,
+    ) -> tuple[MatchSummary, list[BallOwnership], list[FormationSegment], list[ShotAnalytics]]:
+        payload = self._read_json(self._generation_payload_path(match_id, "analytics.json", generation_id))
         summary = self._video_ball_signal_summary(match_id, MatchSummary.model_validate(payload["summary"]))
         assignments = [BallOwnership.model_validate(item) for item in payload["ballAssignments"]]
         if not any(assignment.team in {"my_team", "enemy"} for assignment in assignments):
@@ -2513,8 +2829,8 @@ class Storage:
         shots = [ShotAnalytics.model_validate(item) for item in payload.get("shots", [])]
         return summary, assignments, formation_timeline, shots
 
-    def load_events(self, match_id: str) -> list[DetectedEvent]:
-        payload = self._read_json(self._match_dir(match_id) / "events.json")
+    def load_events(self, match_id: str, *, generation_id: str | None = None) -> list[DetectedEvent]:
+        payload = self._read_json(self._generation_payload_path(match_id, "events.json", generation_id))
         return [DetectedEvent.model_validate(item) for item in payload]
 
     def load_analysis_artifact(self, match_id: str, analysis_type: str) -> dict:
