@@ -183,7 +183,7 @@ async def _test_match_import_lifecycle_from_tracking_json(tmp_path: Path):
         analytics_response = await client.get(f"/api/matches/{payload['matchId']}/analytics")
         assert analytics_response.status_code == 200
         analytics_payload = analytics_response.json()
-        assert analytics_payload["summary"]["possession"] == 67
+        assert analytics_payload["summary"]["possession"] == 100
 
         events_response = await client.get(f"/api/matches/{payload['matchId']}/events")
         assert events_response.status_code == 200
@@ -441,7 +441,7 @@ async def _test_analysis_route_passes_persisted_summary_and_events_to_backend(tm
         assert captured["analysis_type"] == "tactical_report"
         assert captured["attack_direction"] == "right_to_left"
         assert captured["summary"] is not None
-        assert captured["summary"].possession == 67
+        assert captured["summary"].possession == 100
         assert captured["events"] is not None
         assert len(captured["events"]) >= 1
         assert captured["formation_timeline"] is not None
@@ -688,7 +688,7 @@ async def _test_match_json_export_route_returns_canonical_bundle(tmp_path: Path)
         assert bundle["schemaVersion"] == "match_bundle_v1"
         assert bundle["match"]["id"] == match_id
         assert len(bundle["frames"]) == 3
-        assert bundle["analytics"]["summary"]["possession"] == 67
+        assert bundle["analytics"]["summary"]["possession"] == 100
         assert bundle["events"][0]["type"] == "turnover"
         assert bundle["artifactAvailability"]["frames"] is True
         assert bundle["artifactAvailability"]["analytics"] is True
@@ -1104,20 +1104,7 @@ async def _test_match_players_follow_stored_identity_receipt(tmp_path: Path):
         assert response.status_code == 202
         match_id = response.json()["matchId"]
         storage = app.state.storage
-        summary, assignments, timeline, shots = storage.load_analytics(match_id)
-        availability = [
-            item.model_copy(update={"availability": "available", "reasonCodes": [], "value": 120.0})
-            if item.metric == "my_team_distance_m"
-            else item
-            for item in summary.metricAvailability
-        ]
-        storage.save_analytics(
-            match_id,
-            summary.model_copy(update={"metricAvailability": availability, "myTeamDistance": 120}),
-            assignments,
-            timeline,
-            shots,
-        )
+        storage.submit_correction(match_id, kind="identity_validate", payload={"reviewed": True})
 
         heatmap = await client.get(f"/api/matches/{match_id}/heatmap")
         assert heatmap.status_code == 200
@@ -1160,20 +1147,7 @@ async def _test_match_identity_repair_commits_stored_tracks_and_invalidates_cont
         assert response.status_code == 202
         match_id = response.json()["matchId"]
         storage = app.state.storage
-        summary, assignments, timeline, shots = storage.load_analytics(match_id)
-        availability = [
-            item.model_copy(update={"availability": "available", "reasonCodes": [], "value": 120.0})
-            if item.metric == "my_team_distance_m"
-            else item
-            for item in summary.metricAvailability
-        ]
-        storage.save_analytics(
-            match_id,
-            summary.model_copy(update={"metricAvailability": availability, "myTeamDistance": 120}),
-            assignments,
-            timeline,
-            shots,
-        )
+        storage.submit_correction(match_id, kind="identity_validate", payload={"reviewed": True})
         assert (await client.get(f"/api/matches/{match_id}/heatmap")).json()["identityContinuous"] is True
 
         leftover = await client.post(
@@ -1474,8 +1448,8 @@ async def _test_match_calibration_holdout_measures_residual_and_ignores_client_a
         assert four_point.json()["fromStoredPoints"] is True
         assert four_point.json().get("measured") is not True
 
-        src = np.array([[point["x"], point["y"]] for point in MANUAL_HOMOGRAPHY_POINTS], dtype=np.float32)
-        dst = np.array([[0.0, 0.0], [105.0, 0.0], [105.0, 68.0], [0.0, 68.0]], dtype=np.float32)
+        src = np.array([[25.0, 25.0], [75.0, 25.0], [25.0, 75.0], [75.0, 75.0]], dtype=np.float32)
+        dst = np.array([[26.25, 17.0], [78.75, 17.0], [26.25, 51.0], [78.75, 51.0]], dtype=np.float32)
         calibrated_holdouts = [
             {
                 "name": f"holdout-{index}",

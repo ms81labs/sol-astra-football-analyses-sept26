@@ -124,6 +124,7 @@ export interface MatchStats {
         denominator?: string | null;
         teamScope?: 'my_team' | 'enemy' | null;
         deprecated?: boolean;
+        pitchDimensions?: { lengthM: number; widthM: number } | null;
     }>;
 }
 

@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import math
+from dataclasses import replace
 from typing import Any, Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
+from ..domain_types import FiniteFloat, Homography3x3
+from ..schemas import BallData, FrameData, PlayerData
 from .contracts import StrictModel
 
 CameraModel = Literal["planar_homography", "distortion_corrected", "segmented"]
@@ -19,10 +22,10 @@ class CalibrationUnavailable(Exception):
 
 class Landmark(StrictModel):
     name: str
-    imageX: float
-    imageY: float
-    pitchX: float
-    pitchY: float
+    imageX: FiniteFloat
+    imageY: FiniteFloat
+    pitchX: FiniteFloat
+    pitchY: FiniteFloat
     independentHoldout: bool = False
 
 
@@ -31,23 +34,31 @@ class CalibrationProfile(StrictModel):
     schemaVersion: str = "calibration_v2"
     cameraModel: CameraModel
     cameraSide: CameraSide | None = None
-    pitchLengthM: float | None = None
-    pitchWidthM: float | None = None
+    pitchLengthM: FiniteFloat | None = Field(default=None, gt=0)
+    pitchWidthM: FiniteFloat | None = Field(default=None, gt=0)
     validRegion: Literal["full_pitch", "near", "middle", "far", "unknown"] = "unknown"
-    homography: list[list[float]] | None = None
-    distortionK: list[float] = Field(default_factory=list)
+    homography: Homography3x3 | None = None
+    distortionK: list[FiniteFloat] = Field(default_factory=list)
     landmarks: list[Landmark] = Field(default_factory=list)
-    sourceIntervalStart: float = 0.0
-    sourceIntervalEnd: float | None = None
-    residualP95M: float | None = None
-    regionErrorsM: dict[str, float] = Field(default_factory=dict)
+    sourceIntervalStart: FiniteFloat = 0.0
+    sourceIntervalEnd: FiniteFloat | None = None
+    residualP95M: FiniteFloat | None = None
+    regionErrorsM: dict[str, FiniteFloat] = Field(default_factory=dict)
     compatibleWithFourPointV1: bool = True
+
+    @model_validator(mode="after")
+    def ordered_interval(self):
+        if self.sourceIntervalEnd is not None and self.sourceIntervalStart > self.sourceIntervalEnd:
+            raise ValueError("calibration interval start must not exceed end")
+        return self
 
 
 def from_legacy_four_points(
     points: list[dict[str, float]],
     *,
     calibration_id: str,
+    pitch_length_m: float = 105.0,
+    pitch_width_m: float = 68.0,
 ) -> CalibrationProfile:
     if len(points) != 4:
         raise ValueError("legacy calibration must keep exactly four points")
@@ -63,7 +74,12 @@ def from_legacy_four_points(
         for index, (point, pitch) in enumerate(
             zip(
                 points,
-                ((0.0, 0.0), (105.0, 0.0), (105.0, 68.0), (0.0, 68.0)),
+                (
+                    (0.0, 0.0),
+                    (pitch_length_m, 0.0),
+                    (pitch_length_m, pitch_width_m),
+                    (0.0, pitch_width_m),
+                ),
                 strict=True,
             )
         )
@@ -71,15 +87,26 @@ def from_legacy_four_points(
     return CalibrationProfile(
         calibrationId=calibration_id,
         cameraModel="planar_homography",
+        pitchLengthM=pitch_length_m,
+        pitchWidthM=pitch_width_m,
         landmarks=landmarks,
         compatibleWithFourPointV1=True,
         validRegion="unknown",
-        homography=homography_from_four_points(points),
+        homography=homography_from_four_points(
+            points,
+            pitch_length_m=pitch_length_m,
+            pitch_width_m=pitch_width_m,
+        ),
     )
 
 
-def homography_from_four_points(points: list[dict[str, float]]) -> list[list[float]] | None:
-    if len(points) != 4:
+def homography_from_four_points(
+    points: list[dict[str, float]],
+    *,
+    pitch_length_m: float = 105.0,
+    pitch_width_m: float = 68.0,
+) -> list[list[float]] | None:
+    if validate_fit_points(points):
         return None
     try:
         import cv2
@@ -87,9 +114,18 @@ def homography_from_four_points(points: list[dict[str, float]]) -> list[list[flo
     except ImportError:
         return None
     source = np.array([[float(point["x"]), float(point["y"])] for point in points], dtype=np.float32)
-    destination = np.array([[0.0, 0.0], [105.0, 0.0], [105.0, 68.0], [0.0, 68.0]], dtype=np.float32)
+    destination = np.array(
+        [
+            [0.0, 0.0],
+            [pitch_length_m, 0.0],
+            [pitch_length_m, pitch_width_m],
+            [0.0, pitch_width_m],
+        ],
+        dtype=np.float32,
+    )
     matrix = cv2.getPerspectiveTransform(source, destination)
-    return [[float(value) for value in row] for row in matrix.tolist()]
+    result = [[float(value) for value in row] for row in matrix.tolist()]
+    return None if validate_homography(result) else result
 
 
 def evaluate_landmarks(profile: CalibrationProfile, *, max_p95_m: float) -> dict[str, Any]:
@@ -97,10 +133,11 @@ def evaluate_landmarks(profile: CalibrationProfile, *, max_p95_m: float) -> dict
     if transform_errors:
         return {"accepted": False, "reasonCodes": transform_errors, "holdoutCount": 0, "farSideCount": 0}
     holdout = [mark for mark in profile.landmarks if mark.independentHoldout]
-    if len(holdout) < 4:
+    holdout_errors = validate_holdouts(holdout, profile)
+    if holdout_errors:
         return {
             "accepted": False,
-            "reasonCodes": ["CALIBRATION_UNAVAILABLE", "INSUFFICIENT_HOLDOUTS"],
+            "reasonCodes": ["CALIBRATION_UNAVAILABLE", *holdout_errors],
             "holdoutCount": len(holdout),
             "farSideCount": 0,
         }
@@ -108,7 +145,7 @@ def evaluate_landmarks(profile: CalibrationProfile, *, max_p95_m: float) -> dict
         pairs = [
             (mark, math.hypot(projected[0] - mark.pitchX, projected[1] - mark.pitchY))
             for mark in holdout
-            for projected in [_project(profile, mark.imageX, mark.imageY)]
+            for projected in [project_point(profile, mark.imageX, mark.imageY)]
         ]
     except CalibrationUnavailable as exc:
         return {
@@ -152,6 +189,56 @@ def validate_homography(matrix: list[list[float]] | None) -> list[str]:
     except (ImportError, ValueError, TypeError, OverflowError):
         return ["INVALID_TRANSFORM"]
     return []
+
+
+def validate_fit_points(
+    points: list[dict[str, float]],
+    *,
+    width: float | None = None,
+    height: float | None = None,
+) -> list[str]:
+    if len(points) != 4:
+        return ["INVALID_FIT_POINT_COUNT"]
+    pairs = [(float(point["x"]), float(point["y"])) for point in points]
+    if any(not math.isfinite(value) for pair in pairs for value in pair):
+        return ["NONFINITE_FIT_POINT"]
+    if any(
+        x < 0
+        or y < 0
+        or (width is not None and x > width)
+        or (height is not None and y > height)
+        for x, y in pairs
+    ):
+        return ["FIT_POINT_OUTSIDE_SOURCE"]
+    if len(set(pairs)) != 4:
+        return ["DUPLICATE_FIT_POINT"]
+    area = abs(
+        sum(
+            pairs[index][0] * pairs[(index + 1) % 4][1]
+            - pairs[(index + 1) % 4][0] * pairs[index][1]
+            for index in range(4)
+        )
+    ) / 2
+    return ["COLLINEAR_FIT_POINTS"] if area <= 1e-9 else []
+
+
+def validate_holdouts(holdouts: list[Landmark], profile: CalibrationProfile) -> list[str]:
+    if len(holdouts) < 4:
+        return ["INSUFFICIENT_HOLDOUTS"]
+    fit_coordinates = {
+        (mark.imageX, mark.imageY)
+        for mark in profile.landmarks
+        if not mark.independentHoldout
+    }
+    if any((mark.imageX, mark.imageY) in fit_coordinates for mark in holdouts):
+        return ["HOLDOUT_OVERLAPS_FIT_POINT"]
+    length = profile.pitchLengthM or 105.0
+    width = profile.pitchWidthM or 68.0
+    if any(not (0 <= mark.pitchX <= length and 0 <= mark.pitchY <= width) for mark in holdouts):
+        return ["HOLDOUT_OUTSIDE_PITCH"]
+    x_halves = {mark.pitchX >= length / 2 for mark in holdouts}
+    y_halves = {mark.pitchY >= width / 2 for mark in holdouts}
+    return [] if len(x_halves) == len(y_halves) == 2 else ["INSUFFICIENT_HOLDOUT_COVERAGE"]
 
 
 def _far_side_residuals(
@@ -335,8 +422,8 @@ def path_distance_m(frames: list[Any], profile: CalibrationProfile) -> float:
             previous = previous_by_id.get(int(player.id))
             if previous is None:
                 continue
-            x0, y0 = _project(profile, float(previous.x), float(previous.y))
-            x1, y1 = _project(profile, float(player.x), float(player.y))
+            x0, y0 = project_point(profile, float(previous.x), float(previous.y))
+            x1, y1 = project_point(profile, float(player.x), float(player.y))
             total += hypot(x1 - x0, y1 - y0)
     return total
 
@@ -369,7 +456,7 @@ def preview_landmark_fit(*, residual_p95_m: float, max_p95_m: float) -> dict[str
     }
 
 
-def _project(profile: CalibrationProfile, image_x: float, image_y: float) -> tuple[float, float]:
+def project_point(profile: CalibrationProfile, image_x: float, image_y: float) -> tuple[float, float]:
     errors = validate_homography(profile.homography)
     if errors:
         raise CalibrationUnavailable(errors[0])
@@ -383,3 +470,37 @@ def _project(profile: CalibrationProfile, image_x: float, image_y: float) -> tup
     if not math.isfinite(x) or not math.isfinite(y):
         raise CalibrationUnavailable("NONFINITE_PROJECTION")
     return x, y
+
+
+def project_tracking_frames(
+    frames: list[FrameData],
+    profile: CalibrationProfile,
+    *,
+    pitch_length_m: float,
+    pitch_width_m: float,
+) -> list[FrameData]:
+    def coordinates(x: float, y: float) -> tuple[float, float]:
+        pitch_x, pitch_y = project_point(profile, x, y)
+        return pitch_x / pitch_length_m * 100, pitch_y / pitch_width_m * 100
+
+    def player(item: PlayerData) -> PlayerData:
+        x, y = coordinates(item.x, item.y)
+        return replace(item, x=x, y=y)
+
+    projected: list[FrameData] = []
+    for frame in frames:
+        ball = None
+        if frame.ball is not None:
+            x, y = coordinates(frame.ball.x, frame.ball.y)
+            ball = BallData(x=x, y=y, confidence=frame.ball.confidence)
+        projected.append(
+            frame.model_copy(
+                update={
+                    "ball": ball,
+                    "myTeam": [player(item) for item in frame.myTeam],
+                    "enemies": [player(item) for item in frame.enemies],
+                    "unassignedPlayers": [player(item) for item in frame.unassignedPlayers],
+                }
+            )
+        )
+    return projected

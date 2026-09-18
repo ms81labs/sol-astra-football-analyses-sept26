@@ -5,7 +5,9 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator, model_validator
+
+from ..domain_types import FiniteFloat, Homography3x3, Interval as CalibrationInterval
 
 
 Availability = Literal[
@@ -222,6 +224,34 @@ class GenerationRef(StrictModel):
     calibrationRevision: str | None = None
     recoveryRequired: bool = False
     migrated: bool = False
+
+
+class CalibrationRevision(StrictModel):
+    revisionId: str
+    profile: dict[str, Any]
+    evaluation: dict[str, Any]
+    accepted: bool
+    measured: bool
+    sourceSha256: str
+    validInterval: CalibrationInterval
+    createdAt: str
+    fitPointSpace: Literal["source_pixels", "normalized"] = "source_pixels"
+    pitchLengthM: FiniteFloat = Field(gt=0)
+    pitchWidthM: FiniteFloat = Field(gt=0)
+    migrated: bool = False
+
+    @field_validator("profile")
+    @classmethod
+    def valid_profile_homography(cls, profile: dict[str, Any]) -> dict[str, Any]:
+        if profile.get("homography") is not None:
+            TypeAdapter(Homography3x3).validate_python(profile["homography"])
+        return profile
+
+    @model_validator(mode="after")
+    def accepted_is_measured(self):
+        if self.accepted and not self.measured:
+            raise ValueError("accepted calibration must be measured")
+        return self
 
 
 class MetricScope(StrictModel):

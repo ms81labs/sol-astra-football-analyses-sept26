@@ -3,19 +3,27 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from pydantic.dataclasses import dataclass
+
+from .domain_types import FiniteFloat
 
 
 class HomographyPoint(BaseModel):
-    x: float
-    y: float
+    x: FiniteFloat
+    y: FiniteFloat
 
 
 class MatchPeriod(BaseModel):
     name: str
-    startSeconds: float
-    endSeconds: float
+    startSeconds: FiniteFloat
+    endSeconds: FiniteFloat
+
+    @model_validator(mode="after")
+    def ordered(self):
+        if self.startSeconds > self.endSeconds:
+            raise ValueError("period start must not exceed end")
+        return self
 
 
 class SourceRights(BaseModel):
@@ -37,39 +45,48 @@ class MatchConfig(BaseModel):
         "broadcast_cuts_zoom",
         "handheld_low_angle",
     ] = "stitched_panoramic_view"
-    pitchLengthM: float | None = None
-    pitchWidthM: float | None = None
+    pitchLengthM: FiniteFloat | None = Field(default=None, gt=0)
+    pitchWidthM: FiniteFloat | None = Field(default=None, gt=0)
     periods: list[MatchPeriod] = Field(default_factory=list)
     rights: SourceRights = Field(default_factory=SourceRights)
     homeTeam: str = ""
     awayTeam: str = ""
     calibrationCommitted: bool = False
 
+    @model_validator(mode="after")
+    def ordered_periods(self):
+        previous_end: float | None = None
+        for period in self.periods:
+            if previous_end is not None and period.startSeconds < previous_end:
+                raise ValueError("periods must be ordered and non-overlapping")
+            previous_end = period.endSeconds
+        return self
+
 
 class BallData(BaseModel):
-    x: float
-    y: float
-    confidence: float = 0.0
+    x: FiniteFloat
+    y: FiniteFloat
+    confidence: FiniteFloat = 0.0
 
 
 class BallEstimate(BaseModel):
-    x: float
-    y: float
-    confidence: float = 0.0
-    radius: float = 0.0
+    x: FiniteFloat
+    y: FiniteFloat
+    confidence: FiniteFloat = 0.0
+    radius: FiniteFloat = 0.0
 
 
 @dataclass(slots=True)
 class PlayerData:
     id: int
-    x: float
-    y: float
-    confidence: float = 0.0
+    x: FiniteFloat
+    y: FiniteFloat
+    confidence: FiniteFloat = 0.0
 
 
 class FrameData(BaseModel):
     frameId: int
-    timestamp: float
+    timestamp: FiniteFloat
     ball: BallData | None = None
     myTeam: list[PlayerData] = Field(default_factory=list)
     enemies: list[PlayerData] = Field(default_factory=list)
@@ -102,7 +119,7 @@ class MetricAvailabilityRecord(BaseModel):
     metric: str
     definitionVersion: str = "1"
     value: float | None = None
-    availability: str = "unknown"
+    availability: Literal["available", "experimental", "withheld", "unknown"] = "unknown"
     eligibleSeconds: float = 0.0
     requestedSeconds: float = 0.0
     evidenceIds: list[str] = Field(default_factory=list)
@@ -113,6 +130,7 @@ class MetricAvailabilityRecord(BaseModel):
     publishedLabel: str | None = None
     teamScope: Literal["my_team", "enemy"] | None = None
     deprecated: bool = False
+    pitchDimensions: dict[str, float] | None = None
 
     def published_value(self) -> float | None:
         if self.availability not in {"available", "experimental"}:
