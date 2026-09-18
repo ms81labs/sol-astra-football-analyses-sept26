@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
+import sqlite3
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
 from .settings import ProcessingSettings
@@ -59,6 +62,44 @@ class ValidatedOutput:
     payload: dict[str, Any]
     grounding: str
     reason_codes: tuple[str, ...]
+
+
+class ProviderBudgetLedger:
+    def __init__(self, path: Path, limit: float) -> None:
+        self.path = path
+        self.limit = limit
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with sqlite3.connect(path) as connection:
+            connection.execute(
+                "CREATE TABLE IF NOT EXISTS provider_reservations ("
+                "id INTEGER PRIMARY KEY, match_id TEXT NOT NULL, task_type TEXT NOT NULL, amount REAL NOT NULL)"
+            )
+
+    def reserve(self, *, match_id: str, task_type: str, amount: float) -> float | None:
+        if not math.isfinite(amount) or amount <= 0:
+            return None
+        with sqlite3.connect(self.path) as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            spent = float(connection.execute(
+                "SELECT COALESCE(SUM(amount), 0) FROM provider_reservations"
+            ).fetchone()[0])
+            if spent + amount > self.limit:
+                return None
+            connection.execute(
+                "INSERT INTO provider_reservations(match_id, task_type, amount) VALUES (?, ?, ?)",
+                (match_id, task_type, amount),
+            )
+        return amount
+
+    def reservations(self) -> list[dict[str, object]]:
+        with sqlite3.connect(self.path) as connection:
+            rows = connection.execute(
+                "SELECT match_id, task_type, amount FROM provider_reservations ORDER BY id"
+            ).fetchall()
+        return [
+            {"matchId": match_id, "taskType": task_type, "amount": amount}
+            for match_id, task_type, amount in rows
+        ]
 
 
 class ProviderGateway:
@@ -252,6 +293,12 @@ def validate_output(raw: Any, package: ApprovedEvidencePackage) -> ValidatedOutp
         if metric is not None and isinstance(value, (int, float)):
             expected = known_metrics.get(str(metric))
             if expected is None or abs(float(value) - float(expected)) > 1e-6:
+                return ValidatedOutput({}, "ungrounded", ("NUMERIC_CLAIM_MISMATCH",))
+        for metric_name, expected in known_metrics.items():
+            direct_value = node.get(metric_name)
+            if isinstance(direct_value, (int, float)) and (
+                expected is None or abs(float(direct_value) - float(expected)) > 1e-6
+            ):
                 return ValidatedOutput({}, "ungrounded", ("NUMERIC_CLAIM_MISMATCH",))
 
     payload = dict(raw)

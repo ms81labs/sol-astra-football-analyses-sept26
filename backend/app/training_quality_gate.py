@@ -192,13 +192,14 @@ def _validation_metric_summary(
             "map50_95": 0.0,
             "fitness": 0.0,
             "allZero": True,
+            "checkpointMatched": best_epoch is None,
             "diagnostics": {"maxPrecision": 0.0, "maxRecall": 0.0, "maxMap50": 0.0, "maxMap50_95": 0.0},
         }
     with results_csv_path.open("r", encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle)
         metric_rows = [{str(key).strip(): value for key, value in row.items()} for row in reader]
     if not metric_rows:
-        return _validation_metric_summary(None)
+        return _validation_metric_summary(None, best_epoch=best_epoch)
     max_precision = max(_safe_float(row.get("metrics/precision(B)"), 0.0) for row in metric_rows)
     max_recall = max(_safe_float(row.get("metrics/recall(B)"), 0.0) for row in metric_rows)
     max_map50 = max(_safe_float(row.get("metrics/mAP50(B)"), 0.0) for row in metric_rows)
@@ -215,6 +216,23 @@ def _validation_metric_summary(
         (row for row in metric_rows if best_epoch is not None and int(_safe_float(row.get("epoch"))) == best_epoch),
         None,
     )
+    if checkpoint is None and best_epoch is not None:
+        return {
+            "epoch": None,
+            "precision": 0.0,
+            "recall": 0.0,
+            "map50": 0.0,
+            "map50_95": 0.0,
+            "fitness": 0.0,
+            "allZero": True,
+            "checkpointMatched": False,
+            "diagnostics": {
+                "maxPrecision": max_precision,
+                "maxRecall": max_recall,
+                "maxMap50": max_map50,
+                "maxMap50_95": max_map50_95,
+            },
+        }
     if checkpoint is None:
         checkpoint = max(metric_rows, key=fitness)
     precision = _safe_float(checkpoint.get("metrics/precision(B)"), 0.0)
@@ -229,6 +247,7 @@ def _validation_metric_summary(
         "map50_95": map50_95,
         "fitness": fitness(checkpoint),
         "allZero": max(precision, recall, map50, map50_95) <= 0.0,
+        "checkpointMatched": True,
         "diagnostics": {
             "maxPrecision": max_precision,
             "maxRecall": max_recall,
@@ -249,9 +268,12 @@ def _training_quality_gate_primary_blocker(
     local_positive_sanity_detected_image_count: int,
     train_val_overlap_count: int = 0,
     provenance_hashes_present: bool = True,
+    checkpoint_matched: bool = True,
 ) -> str | None:
     if train_val_overlap_count:
         return "train_val_image_overlap"
+    if not checkpoint_matched:
+        return "checkpoint_epoch_missing"
     if validation_image_count <= 0:
         return "validation_split_empty"
     if validation_positive_label_image_count <= 0:
@@ -443,6 +465,7 @@ def run_training_quality_gate(
         local_positive_sanity_detected_image_count=local_positive_sanity_detected_image_count,
         train_val_overlap_count=len(train_val_overlap),
         provenance_hashes_present=all(provenance_hashes.values()),
+        checkpoint_matched=bool(checkpoint_metrics["checkpointMatched"]),
     )
     training_quality_gate_passed = primary_blocker is None
     summary = {
@@ -455,6 +478,7 @@ def run_training_quality_gate(
         "validationEmptyLabelImageCount": validation_empty_label_image_count,
         "validationInformative": validation_informative,
         "checkpointEpoch": checkpoint_metrics["epoch"],
+        "checkpointEpochMatched": checkpoint_metrics["checkpointMatched"],
         "checkpointFitness": round(float(checkpoint_metrics["fitness"]), 8),
         "checkpointValidationMetrics": {
             key: round(float(checkpoint_metrics[key]), 8)

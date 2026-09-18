@@ -119,13 +119,7 @@ def test_t13_authorised_cloud_call_has_budget_reservation(tmp_path: Path, monkey
 
 async def _assert_authorised_cloud_call(tmp_path: Path, monkeypatch) -> None:
     calls: list[dict] = []
-    reservations: list[dict] = []
     evidence_generations: list[str] = []
-
-    class Ledger:
-        def reserve(self, **values):
-            reservations.append(values)
-            return values["amount"]
 
     def adapter(*args, **kwargs):
         calls.append(kwargs)
@@ -138,9 +132,9 @@ async def _assert_authorised_cloud_call(tmp_path: Path, monkeypatch) -> None:
         allowed_model_ids=("test-model",),
         cloud_model_id="test-model",
         provider_call_reservation=0.25,
+        provider_budget_limit=1.0,
     )
     app = create_app(storage_root=tmp_path / "authorised", run_jobs_inline=True, settings=settings)
-    app.state.provider_gateway.budget_ledger = Ledger()
     build_evidence = app.state.provider_gateway.build_evidence
 
     def record_generation(match_id: str, generation_id: str):
@@ -164,7 +158,9 @@ async def _assert_authorised_cloud_call(tmp_path: Path, monkeypatch) -> None:
     assert calls[0]["provider"] == "cloud"
     assert calls[0]["model_id"] == "test-model"
     assert calls[0]["deadline_seconds"] == 30.0
-    assert reservations == [{"match_id": match_id, "task_type": "tactical_report", "amount": 0.25}]
+    assert app.state.provider_gateway.budget_ledger.reservations() == [
+        {"matchId": match_id, "taskType": "tactical_report", "amount": 0.25}
+    ]
     assert evidence_generations == [app.state.storage.current_generation(match_id).generationId]
 
 
@@ -208,6 +204,8 @@ def test_t13_budget_rejection_falls_back_unless_cloud_is_required() -> None:
             cloud_provider_api_key="test-only",
             allowed_model_ids=("test-model",),
             cloud_model_id="test-model",
+            provider_call_reservation=0.25,
+            provider_budget_limit=1.0,
         ),
         adapter_factory=lambda: None,
         budget_ledger=ExhaustedLedger(),
@@ -304,6 +302,18 @@ def test_t14_returned_evidence_and_numbers_are_validated() -> None:
     assert valid.route == "local"
     assert valid.reasonCodes == ["GROUNDED"]
 
+    top_level_mismatch = AssistanceRouter(
+        providers_enabled=True,
+        provider=lambda **_: {"evidence": [], "possession_pct": 99.0},
+    ).run(
+        policy=policy,
+        metrics=metrics,
+        events=events,
+        known_evidence_ids={"event:current"},
+    )
+    assert top_level_mismatch.route == "template"
+    assert top_level_mismatch.reasonCodes == ["NUMERIC_CLAIM_MISMATCH"]
+
 
 def test_b13_direct_llm_execution_requires_gateway_token(monkeypatch) -> None:
     """B13: all provider execution routes through the server-owned gateway."""
@@ -397,6 +407,14 @@ def test_t24_hosted_mode_requires_auth_and_ignores_forged_tenant_headers(
         ).status_code == 403
         assert client.get(
             "/api/capabilities", headers={"Authorization": f"Bearer {club_a}"}
+        ).status_code == 403
+        assert client.get(
+            "/api/workbench/dossier", headers={"Authorization": f"Bearer {club_a}"}
+        ).status_code == 403
+        assert client.post(
+            f"/api/workbench/matches/{match.id}/incidents/geometry",
+            headers={"Authorization": f"Bearer {club_b}"},
+            json={},
         ).status_code == 403
         with pytest.raises(WebSocketDisconnect):
             with client.websocket_connect(f"/ws/jobs/{job_id}"):

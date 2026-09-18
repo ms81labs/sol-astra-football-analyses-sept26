@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import inspect
 import json
 import logging
 import math
@@ -10,7 +9,6 @@ import re
 import time
 import uuid
 from contextlib import asynccontextmanager
-from functools import wraps
 from pathlib import Path
 from typing import Literal
 
@@ -47,7 +45,7 @@ from .workbench.errors import (
     StaleTransition,
 )
 from .llm import run_analysis
-from .provider_gateway import ProviderDenied, ProviderGateway
+from .provider_gateway import ProviderBudgetLedger, ProviderDenied, ProviderGateway
 from .report_export import build_match_report_export
 from .settings import ProcessingSettings, SettingsError, canonicalize_origin
 from .trust_crops import compute_trust_crops
@@ -556,7 +554,7 @@ class HostedAuthMiddleware:
         scope.setdefault("state", {})["tenant"] = tenant
 
         internal_or_unscoped = (
-            "/api/workbench/dev",
+            "/api/workbench",
             "/api/bundles",
             "/api/aggregate",
             "/api/search",
@@ -607,8 +605,8 @@ def _resolve_storage_root(storage_root: Path | str | None) -> Path:
     return _default_storage_root()
 
 
-def _promote_default_frontend_routes(app: FastAPI) -> None:
-    """Expose dev-namespaced implementations through main-owned production aliases."""
+def _retire_default_frontend_routes(app: FastAPI) -> None:
+    """Keep unsupported compatibility paths explicit without running dev handlers."""
 
     existing = {
         (route.path, method)
@@ -623,24 +621,17 @@ def _promote_default_frontend_routes(app: FastAPI) -> None:
         methods = {method for method in route.methods if (path, method) not in existing}
         if not methods:
             continue
-        endpoint = route.endpoint
-        if inspect.iscoroutinefunction(endpoint):
-            @wraps(endpoint)
-            async def promoted(*args, __endpoint=endpoint, **kwargs):
-                return await __endpoint(*args, **kwargs)
-        else:
-            @wraps(endpoint)
-            def promoted(*args, __endpoint=endpoint, **kwargs):
-                return __endpoint(*args, **kwargs)
-        promoted.__module__ = __name__
-        promoted.__signature__ = inspect.signature(endpoint)  # type: ignore[attr-defined]
+        def retired_endpoint(replacement: str):
+            async def retired() -> None:
+                raise RouteRetired(replacement)
+
+            return retired
+
         app.add_api_route(
             path,
-            promoted,
+            retired_endpoint(route.path),
             methods=methods,
-            name=f"production_{route.name}",
-            response_class=route.response_class,
-            status_code=route.status_code,
+            name=f"retired_{route.name}",
             include_in_schema=False,
         )
 
@@ -803,7 +794,15 @@ def create_app(
     app = FastAPI(title="Guerilla Analytics API", version="0.1.0", lifespan=lifespan)
     app.state.storage = storage
     app.state.runner = runner
-    provider_gateway = ProviderGateway(storage, settings, adapter_factory=lambda: run_analysis)
+    provider_gateway = ProviderGateway(
+        storage,
+        settings,
+        adapter_factory=lambda: run_analysis,
+        budget_ledger=ProviderBudgetLedger(
+            storage.storage_root / "provider-budget.sqlite3",
+            settings.provider_budget_limit,
+        ),
+    )
     app.state.provider_gateway = provider_gateway
 
     @app.exception_handler(DomainError)
@@ -2332,7 +2331,7 @@ def create_app(
         }
 
     if settings.deployment_mode == "local":
-        _promote_default_frontend_routes(app)
+        _retire_default_frontend_routes(app)
     return app
 
 

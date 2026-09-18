@@ -360,7 +360,6 @@ class AssistanceRouter:
                 spend=self.spend,
                 output=template,
             )
-        metric_names = {str(item.get("metric")) for item in metrics if item.get("metric")}
         if self.provider is None:
             self.calls += 1
             return AssistanceDisposition(
@@ -406,9 +405,8 @@ class AssistanceRouter:
                 spend=self.spend,
                 output=template,
             )
-        sanitized = {key: value for key, value in raw.items() if key not in metric_names}
         validated = validate_output(
-            sanitized,
+            raw,
             ApprovedEvidencePackage(
                 match_id="assistance",
                 generation_id="current",

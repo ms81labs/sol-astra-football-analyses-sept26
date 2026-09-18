@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import os
 import re
 from dataclasses import dataclass, field
@@ -66,6 +67,7 @@ class ProcessingSettings:
     cloud_model_id: str = "anthropic/claude-3.5-haiku"
     provider_deadline_seconds: float = 30.0
     provider_call_reservation: float = 0.0
+    provider_budget_limit: float = 0.0
     trusted_bin_dirs: tuple[str, ...] = DEFAULT_TRUSTED_BIN_DIRS
     ffmpeg_sha256: str | None = None
     ffprobe_sha256: str | None = None
@@ -90,8 +92,22 @@ class ProcessingSettings:
             "daytona",
         }:
             raise SettingsError("processing_backend must be exactly 'local' or 'daytona'")
-        if self.provider_deadline_seconds <= 0 or self.provider_call_reservation < 0:
-            raise SettingsError("provider deadline must be positive and reservation nonnegative")
+        if (
+            not math.isfinite(self.provider_deadline_seconds)
+            or self.provider_deadline_seconds <= 0
+            or not math.isfinite(self.provider_call_reservation)
+            or self.provider_call_reservation < 0
+            or not math.isfinite(self.provider_budget_limit)
+            or self.provider_budget_limit < 0
+        ):
+            raise SettingsError("provider deadline must be positive and budget values nonnegative")
+        if self.cloud_provider_enabled and (
+            self.provider_call_reservation <= 0
+            or self.provider_budget_limit < self.provider_call_reservation
+        ):
+            raise SettingsError(
+                "enabled cloud provider requires a positive per-call reservation within its budget limit"
+            )
         if not all(Path(directory).is_absolute() for directory in self.trusted_bin_dirs):
             raise SettingsError("trusted_bin_dirs must contain absolute paths")
         if self.deployment_mode not in {"local", "hosted"}:
@@ -145,6 +161,11 @@ class ProcessingSettings:
             raise SettingsError("MATCH_UPLOAD_MAX_BYTES must be a positive integer") from None
         if max_upload_bytes <= 0:
             raise SettingsError("MATCH_UPLOAD_MAX_BYTES must be a positive integer")
+        try:
+            provider_call_reservation = float(os.environ.get("GA_PROVIDER_CALL_RESERVATION", "0"))
+            provider_budget_limit = float(os.environ.get("GA_PROVIDER_BUDGET_LIMIT", "0"))
+        except ValueError:
+            raise SettingsError("provider budget environment values must be numbers") from None
 
         backend = os.environ.get("PROCESSING_BACKEND", "local")
         if backend not in {"local", "daytona"}:
@@ -157,6 +178,8 @@ class ProcessingSettings:
                 cloud_provider_api_key=os.environ.get("OPENROUTER_API_KEY"),
                 allowed_model_ids=tuple(filter(None, os.environ.get("GA_ALLOWED_MODEL_IDS", "").split(","))),
                 cloud_model_id=os.environ.get("OPENROUTER_MODEL", "anthropic/claude-3.5-haiku"),
+                provider_call_reservation=provider_call_reservation,
+                provider_budget_limit=provider_budget_limit,
                 trusted_bin_dirs=trusted_bin_dirs,
                 ffmpeg_sha256=os.environ.get("GA_FFMPEG_SHA256"),
                 ffprobe_sha256=os.environ.get("GA_FFPROBE_SHA256"),

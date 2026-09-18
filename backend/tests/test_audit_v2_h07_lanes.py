@@ -47,6 +47,12 @@ def test_t24_every_frontend_api_path_resolves_with_default_flags(tmp_path: Path,
 
     assert requested
     assert sorted(path for path in requested if not resolves(path)) == []
+    assert not any(
+        route.path.startswith("/api/")
+        and not route.path.startswith("/api/workbench/dev/")
+        and hasattr(route.endpoint, "__wrapped__")
+        for route in routes
+    )
 
 
 def test_t24_h01_h05_regressions_pass_with_default_flag_off() -> None:
@@ -174,3 +180,20 @@ def test_t25_gate_rejects_missing_provenance_hashes(tmp_path: Path) -> None:
 
     assert summary["trainingQualityGatePassed"] is False
     assert summary["trainingQualityGatePrimaryBlocker"] == "provenance_hash_missing"
+
+
+def test_t25_gate_rejects_declared_checkpoint_missing_from_results(tmp_path: Path) -> None:
+    candidate, dataset_yaml = _write_gate_fixture(tmp_path)
+    summary_path = candidate / "training_run_summary.json"
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    summary["bestEpoch"] = 99
+    summary_path.write_text(json.dumps(summary) + "\n", encoding="utf-8")
+
+    result = run_training_quality_gate(
+        candidate_root=candidate,
+        dataset_yaml_path=dataset_yaml,
+        model_factory=lambda _path: _Model(),
+    )
+
+    assert result["trainingQualityGatePassed"] is False
+    assert result["trainingQualityGatePrimaryBlocker"] == "checkpoint_epoch_missing"
