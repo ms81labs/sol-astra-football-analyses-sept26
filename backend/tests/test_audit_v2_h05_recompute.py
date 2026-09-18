@@ -2,9 +2,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import subprocess
+from types import SimpleNamespace
 
 import pytest
+from fastapi.testclient import TestClient
 
+from backend.app.main import create_app
 from backend.app.processor import process_match, reprocess_video_match
 from backend.app.schemas import MatchConfig
 from backend.app.storage import Storage
@@ -17,9 +21,12 @@ from backend.app.workbench.cache import (
     TrackingIdentity,
 )
 from backend.app.domain_types import Interval
+from backend.app.workbench.executables import resolve_trusted_executable
+from backend.app.workbench.media import FfmpegFrameSource
 
 
 FIXTURE = Path(__file__).parent / "fixtures" / "raw_rows_two_teams.json"
+TRACKING_FIXTURE = Path(__file__).parent / "fixtures" / "sample_tracking.json"
 
 
 def _detection(**changes) -> DetectionIdentity:
@@ -263,3 +270,91 @@ def test_t17_recovery_counter_wraps_each_model_invocation() -> None:
     wrapped = _CountingPredictor(Model(), lambda: calls.append(1))
     assert [wrapped.predict(1), wrapped.predict(2), wrapped.predict(3)] == [1, 2, 3]
     assert len(calls) == 3
+
+
+@pytest.mark.real_media
+def test_t17_generated_media_receipts_reach_stored_artifact_and_api_bundle(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ffmpeg = resolve_trusted_executable("ffmpeg")
+    clip = tmp_path / "five-seconds.mp4"
+    subprocess.run(
+        [
+            str(ffmpeg), "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i",
+            "color=c=green:duration=5:size=96x64:rate=3", "-pix_fmt", "yuv420p", "-y", str(clip),
+        ],
+        check=True,
+        timeout=30,
+    )
+
+    class Values(list):
+        def tolist(self):
+            return list(self)
+
+    class Box:
+        cls = [32]
+        conf = [0.9]
+        id = [7]
+        xyxy = [Values([40.0, 25.0, 48.0, 33.0])]
+
+    class PlayerBox:
+        cls = [0]
+        conf = [0.9]
+        id = [8]
+        xyxy = [Values([20.0, 15.0, 35.0, 55.0])]
+
+    class Boxes(list):
+        data = SimpleNamespace(device="cpu")
+
+    class SpyModel:
+        def __init__(self):
+            self.track_calls = 0
+            self.model = SimpleNamespace(
+                parameters=lambda: iter([SimpleNamespace(dtype="float32")])
+            )
+
+        def track(self, **kwargs):
+            self.track_calls += 1
+            return [SimpleNamespace(boxes=Boxes([PlayerBox(), Box()]), orig_img=kwargs["source"])]
+
+        def predict(self, *_args, **_kwargs):
+            return [SimpleNamespace(boxes=Boxes([Box()]))]
+
+    spy = SpyModel()
+    monkeypatch.setattr("backend.run_guerilla.YOLO", lambda _path: spy)
+    result = process_video_input(
+        clip,
+        MatchConfig(
+            manualHomographyPoints=[
+                {"x": 0, "y": 0}, {"x": 95, "y": 0}, {"x": 95, "y": 63}, {"x": 0, "y": 63},
+            ]
+        ),
+        frame_source=FfmpegFrameSource(),
+    )
+
+    rates = result["fourRates"]
+    anchors = result["decodeAnchors"]
+    assert rates["detectorPrimaryCount"] == spy.track_calls
+    assert anchors["beginning"] < anchors["middle"] < anchors["end"]
+
+    storage_root = tmp_path / "storage"
+    storage = Storage(storage_root)
+    monkeypatch.setattr("backend.app.processor.process_video_input", lambda *_args, **_kwargs: result)
+    monkeypatch.setattr("backend.app.processor.materialize_proof_runtime_options", lambda *_args, **_kwargs: {})
+    match = storage.create_match(
+        "receipt bundle", "video", clip.name, clip,
+        MatchConfig(
+            manualHomographyPoints=[
+                {"x": 0, "y": 0}, {"x": 95, "y": 0}, {"x": 95, "y": 63}, {"x": 0, "y": 63},
+            ]
+        ),
+    )
+    process_match(storage, storage.create_job(match.id).id)
+    assert storage.load_analysis_artifact(match.id, "four_rates") == rates
+
+    response = TestClient(create_app(storage_root=storage_root), base_url="http://127.0.0.1").get(
+        f"/api/matches/{match.id}/export/match.json"
+    )
+    assert response.status_code == 200
+    assert response.json()["fourRates"] == rates
+    assert response.json()["decodeAnchors"] == anchors

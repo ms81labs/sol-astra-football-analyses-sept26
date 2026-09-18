@@ -28,6 +28,8 @@ def build_match_bundle(storage: Storage, match_id: str) -> dict[str, Any]:
     ball_truth_layers = _optional_artifact(storage, match_id, "ball_truth_layers")
     ball_pipeline_trace = _optional_artifact(storage, match_id, "ball_pipeline_trace")
     source_clock = _optional_artifact(storage, match_id, "source_clock")
+    four_rates = _optional_artifact(storage, match_id, "four_rates")
+    decode_anchors = _optional_artifact(storage, match_id, "decode_anchors")
     proof_runtime_options = _optional_artifact(storage, match_id, "proof_runtime_options")
     recovery_debug = _optional_artifact(storage, match_id, "recovery_debug")
 
@@ -79,6 +81,8 @@ def build_match_bundle(storage: Storage, match_id: str) -> dict[str, Any]:
         "ballTruthLayers": ball_truth_layers,
         "ballPipelineTrace": ball_pipeline_trace,
         "sourceClock": source_clock,
+        "fourRates": four_rates,
+        "decodeAnchors": decode_anchors,
         "proofRuntimeOptions": proof_runtime_options,
         "recoveryDebug": recovery_debug,
         "benchmark": benchmark,

@@ -136,7 +136,13 @@ def test_acquisition_contract_reaches_local_remote_and_video_execution(monkeypat
     assert kwargs['primary_acquisition_mode']==options.primary_acquisition_mode
     assert gpu_worker._materialize_local_options(options,paths)['primary_acquisition_mode']==options.primary_acquisition_mode
     calls=[]
-    monkeypatch.setattr(video_pipeline,'_process_video_impl',lambda *a,**kw:calls.append(kw) or {'rows':[{}]})
+    monkeypatch.setattr(video_pipeline,'_process_video_impl',lambda *a,**kw:calls.append(kw) or {
+        'rows':[{}],
+        'fourRates': {
+            'decodeCount': 1, 'detectorPrimaryCount': 1, 'detectorRecoveryCount': 0,
+            'trackerUpdateCount': 1, 'exportCount': 1,
+        },
+    })
     video_pipeline.process_video_input(Path('fake'),MatchConfig(autoHomography=True),**kwargs)
     assert calls[0]['primary_acquisition_mode']==options.primary_acquisition_mode
     with pytest.raises(ValueError,match='acquisition'):
