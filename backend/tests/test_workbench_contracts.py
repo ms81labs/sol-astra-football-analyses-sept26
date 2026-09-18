@@ -308,7 +308,7 @@ def test_ffmpeg_probe_and_cpu_fallback_and_cancellation(tmp_path: Path) -> None:
         class Result:
             stdout = """{"streams":[{"codec_type":"video","codec_name":"h264","width":1280,"height":720,"avg_frame_rate":"25/1","r_frame_rate":"30/1","time_base":"1/90000","pix_fmt":"yuv420p","tags":{"rotate":"90"}}],"format":{"duration":"2.0"}}"""
 
-        if command[0] == "ffmpeg":
+        if Path(command[0]).name == "ffmpeg":
             raise AssertionError("export should have been cancelled")
         return Result()
 
@@ -407,9 +407,11 @@ def test_player_and_ball_benchmarks_keep_negatives_and_visibility() -> None:
         "inferred": 1,
         "unknown": 1,
     }
-    adapter = TrackerAdapter()
+    from backend.app.workbench.perception import IouAssociationFallback
+
+    adapter = IouAssociationFallback()
     tracks = adapter.associate(detections[:1])
-    assert tracks[0]["trackId"].startswith("botsort_baseline")
+    assert tracks[0]["trackId"].startswith("iou_fallback")
     repair = IdentityRepair()
     repair.split(tracks[0]["trackId"], 4, author="analyst")
     repair.join("a", "b", author="analyst")
@@ -737,13 +739,13 @@ def test_network_failure_preserves_unknown_metrics_and_budget_variance_alerts() 
 
 
 def test_tracker_resets_across_cuts_and_identity_repairs_preview_before_commit() -> None:
-    from backend.app.workbench.perception import Detection, IdentityRepair, TrackerAdapter, preview_identity_change
+    from backend.app.workbench.perception import Detection, IdentityRepair, IouAssociationFallback, preview_identity_change
 
     detections = [
         Detection(frameId=0, bbox=(10.0, 20.0, 30.0, 80.0), score=0.9, kind="player", stratum="near"),
         Detection(frameId=1, bbox=(12.0, 20.0, 32.0, 80.0), score=0.9, kind="player", stratum="near"),
     ]
-    adapter = TrackerAdapter()
+    adapter = IouAssociationFallback()
     continuous = adapter.associate(detections, cut_detected=False)
     assert all(track["silentlyReconnected"] is False for track in continuous)
     cut = adapter.associate(detections, cut_detected=True, previous_tracks=continuous)
@@ -1297,7 +1299,7 @@ def test_extraction_boundaries_exist_and_native_directory_stays_absent() -> None
     assert media_pkg.FrameSource is not None
     assert vision_pkg.TrackerAdapter is not None
     assert vision_pkg.DetectorAdapter is not None
-    assert vision_pkg.PreprocessorAdapter is not None
+    assert vision_pkg.PreprocessPlan is not None
     assert vision_pkg.ground_contact_point((10.0, 20.0, 30.0, 80.0))["boxCentreIsFoot"] is False
     assert evaluation_pkg.current_repository_evaluation_gate().accepted is False
     assert not (repo / "native").exists()
@@ -2568,9 +2570,9 @@ def test_cross_tenant_cache_and_columnar_store_stay_gated() -> None:
 
 
 def test_preprocessor_and_detector_adapters_keep_source_coordinates_and_fail_closed() -> None:
-    from backend.vision import DetectorAdapter, PreprocessorAdapter
+    from backend.vision import DetectorAdapter, PreprocessPlan
 
-    pre = PreprocessorAdapter()
+    pre = PreprocessPlan()
     frame = pre.transform(
         pixels=bytes([10, 200, 30] * 4),
         width=2,
@@ -2660,7 +2662,7 @@ def test_decode_memory_policy_bounds_queues_and_fails_closed_without_gpu_capabil
     assert offline["reportsMissingSourceEvidence"] is True
     assert offline["gpuResident"] is False
     assert offline["mayDrop"] is False
-    assert "CUDA_VISIBILITY_IS_NOT_VIDEO_CAPABILITY" in offline["reasonCodes"]
+    assert "HW_DECODE_UNAVAILABLE" in offline["reasonCodes"]
     live = decode_memory_policy(mode="live", hardware_decode_ok=False, cuda_visible=False, drop_policy="declared")
     assert live["mayDrop"] is True
     assert live["dropPolicy"] == "declared"
@@ -2805,7 +2807,19 @@ def test_network_allowlist_constrained_decoder_and_egress_stay_fail_closed() -> 
     unsafe = constrained_decoder(argv=["ffmpeg", "-i", "http://evil.test", "-c", "copy", "out.mp4"], network_enabled=True)
     assert unsafe["admitted"] is False
     assert "UNCONSTRAINED_DECODER" in unsafe["reasonCodes"]
-    safe = constrained_decoder(argv=["ffmpeg", "-i", "/tmp/match.mp4", "-c", "copy", "/tmp/out.mp4"], network_enabled=False)
+    from backend.app.workbench.executables import resolve_trusted_executable
+
+    safe = constrained_decoder(
+        argv=[
+            str(resolve_trusted_executable("ffmpeg")),
+            "-i",
+            "/tmp/match.mp4",
+            "-c",
+            "copy",
+            "/tmp/out.mp4",
+        ],
+        network_enabled=False,
+    )
     assert safe["admitted"] is True
 
     open_net = egress_policy(destination="https://attacker.test", authorised_hosts=frozenset())

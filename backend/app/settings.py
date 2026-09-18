@@ -4,6 +4,7 @@ import os
 import re
 from dataclasses import dataclass, field
 from ipaddress import IPv6Address
+from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
 
@@ -21,6 +22,7 @@ DEFAULT_TRUSTED_FRONTEND_ORIGINS = (
     "http://127.0.0.1:5173",
     "http://[::1]:5173",
 )
+DEFAULT_TRUSTED_BIN_DIRS = ("/usr/bin", "/usr/local/bin", "/opt/homebrew/bin")
 
 
 class SettingsError(ValueError):
@@ -63,6 +65,9 @@ class ProcessingSettings:
     cloud_model_id: str = "anthropic/claude-3.5-haiku"
     provider_deadline_seconds: float = 30.0
     provider_call_reservation: float = 0.0
+    trusted_bin_dirs: tuple[str, ...] = DEFAULT_TRUSTED_BIN_DIRS
+    ffmpeg_sha256: str | None = None
+    ffprobe_sha256: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.trusted_frontend_origins, tuple) or not self.trusted_frontend_origins:
@@ -81,6 +86,8 @@ class ProcessingSettings:
             raise SettingsError("processing_backend must be exactly 'local' or 'daytona'")
         if self.provider_deadline_seconds <= 0 or self.provider_call_reservation < 0:
             raise SettingsError("provider deadline must be positive and reservation nonnegative")
+        if not all(Path(directory).is_absolute() for directory in self.trusted_bin_dirs):
+            raise SettingsError("trusted_bin_dirs must contain absolute paths")
         if self.processing_backend == "local":
             if self.daytona_api_key is not None or self.daytona_policy is not None:
                 raise SettingsError("local processing cannot include Daytona configuration")
@@ -106,6 +113,9 @@ class ProcessingSettings:
         trusted_frontend_origins = (
             DEFAULT_TRUSTED_FRONTEND_ORIGINS if raw_origins is None else tuple(raw_origins.split(","))
         )
+        trusted_bin_dirs = DEFAULT_TRUSTED_BIN_DIRS + tuple(
+            item for item in os.environ.get("GA_TRUSTED_BIN_DIRS", "").split(os.pathsep) if item
+        )
         raw_max_upload_bytes = os.environ.get("MATCH_UPLOAD_MAX_BYTES")
         try:
             max_upload_bytes = (
@@ -129,6 +139,9 @@ class ProcessingSettings:
                 cloud_provider_api_key=os.environ.get("OPENROUTER_API_KEY"),
                 allowed_model_ids=tuple(filter(None, os.environ.get("GA_ALLOWED_MODEL_IDS", "").split(","))),
                 cloud_model_id=os.environ.get("OPENROUTER_MODEL", "anthropic/claude-3.5-haiku"),
+                trusted_bin_dirs=trusted_bin_dirs,
+                ffmpeg_sha256=os.environ.get("GA_FFMPEG_SHA256"),
+                ffprobe_sha256=os.environ.get("GA_FFPROBE_SHA256"),
             )
 
         api_key = os.environ.get("DAYTONA_API_KEY")
@@ -144,4 +157,7 @@ class ProcessingSettings:
             daytona_policy=policy,
             max_upload_bytes=max_upload_bytes,
             trusted_frontend_origins=trusted_frontend_origins,
+            trusted_bin_dirs=trusted_bin_dirs,
+            ffmpeg_sha256=os.environ.get("GA_FFMPEG_SHA256"),
+            ffprobe_sha256=os.environ.get("GA_FFPROBE_SHA256"),
         )

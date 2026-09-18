@@ -372,9 +372,12 @@ def test_projected_rows_reset_tracker_identity_across_cuts() -> None:
             "Source_X2": 30.0,
             "Source_Y2": 80.0,
             "Frame_ID": 4,
+            "Track_ID": 12,
         }
     ]
     tracks = associate_projected_rows(rows, cut_detected=True)
     assert tracks
     assert all(track["reset"] is True for track in tracks)
     assert all(track["silentlyReconnected"] is False for track in tracks)
+    assert tracks[0]["trackId"] == "12"
+    assert tracks[0]["productionPath"] == "botsort"

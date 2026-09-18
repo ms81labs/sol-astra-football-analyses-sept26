@@ -181,6 +181,7 @@ from .workbench.identity import (
     promote_identity,
     reconnect_across_cut,
 )
+from .workbench.executables import resolve_trusted_executable
 from .workbench.milestones import milestone_plan, owners, progress_signal
 from .workbench.native import (
     cuda_visibility_is_not_video_capability,
@@ -198,8 +199,9 @@ from .workbench.perception import (
     Detection,
     DetectorAdapter,
     IdentityRepair,
+    IouAssociationFallback,
     Label,
-    PreprocessorAdapter,
+    PreprocessPlan,
     TrackerAdapter,
     merge_tiled_detections,
     preview_identity_change,

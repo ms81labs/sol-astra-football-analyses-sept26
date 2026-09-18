@@ -855,7 +855,10 @@ def create_leftover_get_routers(storage: Storage) -> tuple[APIRouter, APIRouter]
             "publicExposure": public_exposure_gate(security_review_accepted=False, bound=bound),
             "encryption": deployment_encryption(boundary=bound),
             "allowlist": protocol_network_allowlist(url="http://127.0.0.1/"),
-            "decoder": constrained_decoder(argv=["ffmpeg", "-i", "local.mp4"], network_enabled=False),
+            "decoder": constrained_decoder(
+                argv=[str(_main.resolve_trusted_executable("ffmpeg")), "-i", "local.mp4"],
+                network_enabled=False,
+            ),
             "storage": least_privilege_storage(credential_scope="object"),
             "secretsAdmitted": secrets_in_artifacts("cleanupResult=unknown")["admitted"],
             "signedJobAccess": signed_scoped_job_access(token=None, job_id="job-1", token_job_id=None),

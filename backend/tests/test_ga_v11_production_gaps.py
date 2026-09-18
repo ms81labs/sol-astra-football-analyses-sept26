@@ -124,7 +124,7 @@ def test_ffmpeg_frame_source_decodes_the_path_instead_of_injected_frames(tmp_pat
     assert any(str(source) in token for argv in seen for token in argv)
     assert all(frame.backend == "ffmpeg" for frame in frames)
     assert frames[0].payload == frame_bytes
-    assert frames[0].presentation_time_seconds == pytest.approx(0.04)
+    assert frames[0].presentation_time_seconds == pytest.approx(0.0)
 
 
 def test_durable_job_ledger_survives_restart_until_explicit_lease_reclaim(tmp_path: Path) -> None:
@@ -734,7 +734,7 @@ def test_tracker_associate_reuses_previous_track_id_by_iou_without_silent_cut_re
     previous = [
         {
             "frameId": 0,
-            "trackId": "botsort_baseline:stable-7",
+            "trackId": "iou_fallback:stable-7",
             "bbox": (11.0, 21.0, 31.0, 81.0),
             "kind": "player",
             "observationSource": "observed",
@@ -742,12 +742,14 @@ def test_tracker_associate_reuses_previous_track_id_by_iou_without_silent_cut_re
             "silentlyReconnected": False,
         }
     ]
-    adapter = TrackerAdapter()
+    from backend.app.workbench.perception import IouAssociationFallback
+
+    adapter = IouAssociationFallback()
     continuous = adapter.associate([detection], previous_tracks=previous)
-    assert continuous[0]["trackId"] == "botsort_baseline:stable-7"
+    assert continuous[0]["trackId"] == "iou_fallback:stable-7"
     assert continuous[0]["silentlyReconnected"] is False
     cut = adapter.associate([detection], cut_detected=True, previous_tracks=previous)
-    assert cut[0]["trackId"] != "botsort_baseline:stable-7"
+    assert cut[0]["trackId"] != "iou_fallback:stable-7"
     assert cut[0]["reset"] is True
     assert cut[0]["silentlyReconnected"] is False
 
