@@ -2,11 +2,45 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
+import hmac
+import json
+import time
 from typing import Any, Callable
 from urllib.parse import urlparse
 
 SIZE_QUOTA_BYTES = 5_368_709_120
 DURATION_QUOTA_SECONDS = 8_000
+
+
+def mint_hosted_token(secret: str, tenant: str, *, expires_at: int | None = None) -> str:
+    payload = base64.urlsafe_b64encode(
+        json.dumps(
+            {"tenant": tenant, "exp": expires_at or int(time.time()) + 3600},
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).rstrip(b"=")
+    signature = hmac.new(secret.encode(), payload, hashlib.sha256).digest()
+    return f"{payload.decode()}.{base64.urlsafe_b64encode(signature).rstrip(b'=').decode()}"
+
+
+def verify_hosted_token(secret: str, token: str) -> str | None:
+    try:
+        payload_text, signature_text = token.split(".", 1)
+        payload = payload_text.encode()
+        supplied = base64.urlsafe_b64decode(signature_text + "=" * (-len(signature_text) % 4))
+        expected = hmac.new(secret.encode(), payload, hashlib.sha256).digest()
+        if not hmac.compare_digest(supplied, expected):
+            return None
+        claims = json.loads(base64.urlsafe_b64decode(payload_text + "=" * (-len(payload_text) % 4)))
+        tenant = claims.get("tenant")
+        if not isinstance(tenant, str) or not tenant or int(claims.get("exp", 0)) <= int(time.time()):
+            return None
+        return tenant
+    except (ValueError, TypeError, json.JSONDecodeError):
+        return None
 
 
 def authorize_object(
@@ -43,7 +77,7 @@ def object_access_decision(
 ) -> dict[str, Any]:
     del client_tenant
     boundary = (deployment_boundary or "loopback").lower()
-    if boundary == "loopback" and not authorization:
+    if boundary == "loopback":
         session_tenant = object_tenant or "loopback"
         decision = authorize_object(object_id=object_id, session_tenant=session_tenant, object_tenant=object_tenant)
         return {

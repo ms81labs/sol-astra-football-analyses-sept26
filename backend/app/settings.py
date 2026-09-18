@@ -16,6 +16,7 @@ from backend.release.daytona_policy import (
 
 
 ProcessingBackend = Literal["local", "daytona"]
+DeploymentMode = Literal["local", "hosted"]
 DEFAULT_MAX_UPLOAD_BYTES = 8 * 1024**3
 DEFAULT_TRUSTED_FRONTEND_ORIGINS = (
     "http://localhost:5173",
@@ -68,6 +69,11 @@ class ProcessingSettings:
     trusted_bin_dirs: tuple[str, ...] = DEFAULT_TRUSTED_BIN_DIRS
     ffmpeg_sha256: str | None = None
     ffprobe_sha256: str | None = None
+    deployment_mode: DeploymentMode = "local"
+    auth_backend: Literal["hmac"] | None = None
+    auth_secret: str | None = field(default=None, repr=False)
+    bind_host: str = "127.0.0.1"
+    tls_terminated: bool = False
 
     def __post_init__(self) -> None:
         if not isinstance(self.trusted_frontend_origins, tuple) or not self.trusted_frontend_origins:
@@ -88,6 +94,8 @@ class ProcessingSettings:
             raise SettingsError("provider deadline must be positive and reservation nonnegative")
         if not all(Path(directory).is_absolute() for directory in self.trusted_bin_dirs):
             raise SettingsError("trusted_bin_dirs must contain absolute paths")
+        if self.deployment_mode not in {"local", "hosted"}:
+            raise SettingsError("deployment_mode must be exactly 'local' or 'hosted'")
         if self.processing_backend == "local":
             if self.daytona_api_key is not None or self.daytona_policy is not None:
                 raise SettingsError("local processing cannot include Daytona configuration")
@@ -106,6 +114,16 @@ class ProcessingSettings:
             "processingBackend": self.processing_backend,
             "remoteEnabled": self.remote_enabled,
         }
+
+    def validate_deployment(self) -> None:
+        if self.deployment_mode != "hosted":
+            return
+        if self.auth_backend != "hmac" or not self.auth_secret:
+            raise SettingsError("hosted deployment requires an authentication backend and secret")
+        if os.environ.get("GA_FLAG_LEFTOVER_HTTP") == "1":
+            raise SettingsError("hosted deployment requires leftover HTTP routes to be disabled")
+        if self.bind_host not in {"127.0.0.1", "localhost", "::1"} and not self.tls_terminated:
+            raise SettingsError("hosted deployment on a non-loopback bind requires TLS termination")
 
     @classmethod
     def from_env(cls) -> "ProcessingSettings":
@@ -142,6 +160,11 @@ class ProcessingSettings:
                 trusted_bin_dirs=trusted_bin_dirs,
                 ffmpeg_sha256=os.environ.get("GA_FFMPEG_SHA256"),
                 ffprobe_sha256=os.environ.get("GA_FFPROBE_SHA256"),
+                deployment_mode=os.environ.get("GA_DEPLOYMENT_MODE", "local"),
+                auth_backend=os.environ.get("GA_AUTH_BACKEND"),
+                auth_secret=os.environ.get("GA_AUTH_SECRET"),
+                bind_host=os.environ.get("GA_BIND_HOST", "127.0.0.1"),
+                tls_terminated=os.environ.get("GA_TLS_TERMINATED") == "1",
             )
 
         api_key = os.environ.get("DAYTONA_API_KEY")
@@ -160,4 +183,9 @@ class ProcessingSettings:
             trusted_bin_dirs=trusted_bin_dirs,
             ffmpeg_sha256=os.environ.get("GA_FFMPEG_SHA256"),
             ffprobe_sha256=os.environ.get("GA_FFPROBE_SHA256"),
+            deployment_mode=os.environ.get("GA_DEPLOYMENT_MODE", "local"),
+            auth_backend=os.environ.get("GA_AUTH_BACKEND"),
+            auth_secret=os.environ.get("GA_AUTH_SECRET"),
+            bind_host=os.environ.get("GA_BIND_HOST", "127.0.0.1"),
+            tls_terminated=os.environ.get("GA_TLS_TERMINATED") == "1",
         )

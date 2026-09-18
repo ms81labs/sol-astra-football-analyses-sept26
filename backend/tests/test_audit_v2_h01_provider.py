@@ -1,17 +1,26 @@
 from __future__ import annotations
 
 import json
+import inspect
 from contextlib import asynccontextmanager
 from pathlib import Path
+from types import SimpleNamespace
 
 import anyio
 import httpx
 import pytest
+from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
 from backend.app import llm
 from backend.app.main import create_app
-from backend.app.schemas import FrameData
+from backend.app.provider_gateway import ProviderDenied, ProviderGateway
+from backend.app.processor import process_match
+from backend.app.schemas import FrameData, MatchConfig
 from backend.app.settings import ProcessingSettings
+from backend.app.storage import Storage
+from backend.app.workbench.access import mint_hosted_token
+from backend.app.workbench.geometry import review_incident_geometry
 from backend.app.workbench.assistance import AssistancePolicy, AssistanceRouter
 
 
@@ -111,6 +120,7 @@ def test_t13_authorised_cloud_call_has_budget_reservation(tmp_path: Path, monkey
 async def _assert_authorised_cloud_call(tmp_path: Path, monkeypatch) -> None:
     calls: list[dict] = []
     reservations: list[dict] = []
+    evidence_generations: list[str] = []
 
     class Ledger:
         def reserve(self, **values):
@@ -131,6 +141,13 @@ async def _assert_authorised_cloud_call(tmp_path: Path, monkeypatch) -> None:
     )
     app = create_app(storage_root=tmp_path / "authorised", run_jobs_inline=True, settings=settings)
     app.state.provider_gateway.budget_ledger = Ledger()
+    build_evidence = app.state.provider_gateway.build_evidence
+
+    def record_generation(match_id: str, generation_id: str):
+        evidence_generations.append(generation_id)
+        return build_evidence(match_id, generation_id)
+
+    app.state.provider_gateway.build_evidence = record_generation
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app),
         base_url="http://127.0.0.1",
@@ -148,6 +165,7 @@ async def _assert_authorised_cloud_call(tmp_path: Path, monkeypatch) -> None:
     assert calls[0]["model_id"] == "test-model"
     assert calls[0]["deadline_seconds"] == 30.0
     assert reservations == [{"match_id": match_id, "task_type": "tactical_report", "amount": 0.25}]
+    assert evidence_generations == [app.state.storage.current_generation(match_id).generationId]
 
 
 def test_t13_cloud_preference_falls_back_with_policy_reasons(tmp_path: Path, monkeypatch) -> None:
@@ -176,6 +194,49 @@ async def _assert_cloud_fallback(tmp_path: Path, calls: list[str]) -> None:
         "reasonCodes": ["CLOUD_NOT_PERMITTED", "SCOPE_LOCAL_ONLY"],
     }
     assert calls == ["local"]
+
+
+def test_t13_budget_rejection_falls_back_unless_cloud_is_required() -> None:
+    class ExhaustedLedger:
+        def reserve(self, **_values):
+            return None
+
+    gateway = ProviderGateway(
+        None,
+        ProcessingSettings(
+            cloud_provider_enabled=True,
+            cloud_provider_api_key="test-only",
+            allowed_model_ids=("test-model",),
+            cloud_model_id="test-model",
+        ),
+        adapter_factory=lambda: None,
+        budget_ledger=ExhaustedLedger(),
+    )
+    match = SimpleNamespace(
+        id="match-1",
+        config=MatchConfig(
+            llmProvider="cloud",
+            rights={"processingScope": "local_plus_burst", "cloudPermission": True},
+        ),
+    )
+
+    policy = gateway.resolve_policy(
+        match,
+        requested_provider="cloud",
+        task_type="report",
+        generation_id="gen_1",
+        require_provider=False,
+    )
+    assert policy.provider == "local"
+    assert policy.reason_codes == ("BUDGET_EXHAUSTED",)
+    with pytest.raises(ProviderDenied, match="BUDGET_EXHAUSTED"):
+        gateway.resolve_policy(
+            match,
+            requested_provider="cloud",
+            task_type="report",
+            generation_id="gen_1",
+            require_provider=True,
+        )
 
 
 def test_t14_returned_evidence_and_numbers_are_validated() -> None:
@@ -249,3 +310,94 @@ def test_b13_direct_llm_execution_requires_gateway_token(monkeypatch) -> None:
     monkeypatch.setattr(llm, "execute_local", lambda *args, **kwargs: {"ok": True})
     with pytest.raises(PermissionError, match="provider gateway token required"):
         llm.run_analysis("tactical_report", [FrameData(frameId=0, timestamp=0)])
+
+
+def test_b15_geometry_is_provider_free_and_fails_closed_without_prerequisites() -> None:
+    unknown = review_incident_geometry(
+        my_team=[{"x": 70.0}, {"x": 40.0}],
+        enemies=[{"x": 60.0}],
+        ball=None,
+        attack_direction="left_to_right",
+    )
+    reviewed = review_incident_geometry(
+        my_team=[{"x": 70.0}, {"x": 40.0}],
+        enemies=[{"x": 60.0}, {"x": 65.0}],
+        ball={"x": 55.0},
+        attack_direction="left_to_right",
+        calibration_accepted=True,
+        touch_timing_known=True,
+        pitch_length_m=105.0,
+        uncertainty_m=0.4,
+    )
+
+    assert unknown["status"] == "unknown"
+    assert unknown["spacingWidthM"] is None
+    assert reviewed["status"] == "review_only"
+    assert reviewed["spacingWidthM"] == 31.5
+    assert reviewed["attackerBeyondSecondLastDefender"] is True
+    assert reviewed["marginM"] == 10.5
+    assert reviewed["uncertaintyM"] == 0.4
+    assert "isOffside" not in reviewed
+    assert '"offside": boolean' not in inspect.getsource(llm)
+
+
+def test_t24_hosted_mode_requires_auth_and_ignores_forged_tenant_headers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("GA_FLAG_LEFTOVER_HTTP", raising=False)
+    with pytest.raises(ValueError, match="authentication backend"):
+        create_app(
+            storage_root=tmp_path / "invalid",
+            settings=ProcessingSettings(deployment_mode="hosted"),
+        )
+
+    root = tmp_path / "hosted"
+    storage = Storage(root)
+    match = storage.create_match(
+        "club a",
+        "tracking_json",
+        FIXTURE.name,
+        FIXTURE,
+        MatchConfig(rights={"audience": "club-a"}),
+    )
+    job_id = storage.create_job(match.id).id
+    process_match(storage, job_id)
+    storage.close()
+
+    secret = "test-hosted-secret"
+    app = create_app(
+        storage_root=root,
+        settings=ProcessingSettings(
+            deployment_mode="hosted",
+            auth_backend="hmac",
+            auth_secret=secret,
+        ),
+    )
+    club_a = mint_hosted_token(secret, "club-a")
+    club_b = mint_hosted_token(secret, "club-b")
+    with TestClient(app, base_url="http://127.0.0.1") as client:
+        assert client.get(f"/api/matches/{match.id}").status_code == 401
+        denied = client.get(
+            f"/api/matches/{match.id}",
+            headers={"Authorization": f"Bearer {club_b}", "X-Tenant-Id": "club-a"},
+        )
+        assert denied.status_code == 403
+        assert client.get(
+            f"/api/matches/{match.id}", headers={"Authorization": f"Bearer {club_a}"}
+        ).status_code == 200
+        assert client.get(
+            f"/api/matches/{match.id}/export/match.json",
+            headers={"Authorization": f"Bearer {club_b}", "X-Tenant-Id": "club-a"},
+        ).status_code == 403
+        assert client.get(
+            "/api/workbench/dev/security", headers={"Authorization": f"Bearer {club_a}"}
+        ).status_code == 403
+        assert client.get(
+            "/api/bundles", headers={"Authorization": f"Bearer {club_a}"}
+        ).status_code == 403
+        assert client.get(
+            "/api/capabilities", headers={"Authorization": f"Bearer {club_a}"}
+        ).status_code == 403
+        with pytest.raises(WebSocketDisconnect):
+            with client.websocket_connect(f"/ws/jobs/{job_id}"):
+                pass

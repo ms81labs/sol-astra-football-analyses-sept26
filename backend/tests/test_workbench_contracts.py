@@ -891,7 +891,7 @@ def test_incident_geometry_does_not_publish_a_validated_offside_decision() -> No
         attack_direction="left_to_right",
     )
     assert review["decision"] is None
-    assert review["availability"] == "review_only"
+    assert review["availability"] == "unknown"
     assert review["validatedMeasurement"] is False
     assert "IFAB_LAW_11_NOT_APPLIED" in review["reasonCodes"]
     assert review["secondLastOpponentX"] == 12.0

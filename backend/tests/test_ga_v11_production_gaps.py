@@ -871,14 +871,14 @@ def test_production_app_registers_leftover_posts_only_under_dev_prefix(tmp_path:
     from backend.app.main import create_app
 
     app = create_app(storage_root=tmp_path, run_jobs_inline=True)
-    leftover_posts = {
-        route.path
+    support_posts = {
+        route.path: route
         for route in app.routes
         if getattr(route, "methods", None) and "POST" in route.methods
         and (route.path == "/api/support/bundle" or route.path.endswith("/support/bundle"))
     }
-    assert "/api/support/bundle" not in leftover_posts
-    assert "/api/workbench/dev/support/bundle" in leftover_posts
+    assert support_posts["/api/support/bundle"].endpoint.__module__ == "backend.app.main"
+    assert support_posts["/api/workbench/dev/support/bundle"].endpoint.__module__.endswith("leftover_routes")
 
     client = TestClient(app, base_url="http://127.0.0.1")
     public = client.post("/api/support/bundle", json={"consented": True})

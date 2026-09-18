@@ -72,20 +72,8 @@ class _Drills(_ProviderPayload):
     player_focus: _PlayerFocus = Field(default_factory=_PlayerFocus)
 
 
-class _Offside(_ProviderPayload):
-    offside: bool
-    offside_x: float
-    explanation: str
-
-
-class _Spacing(_ProviderPayload):
-    width: float
-    too_wide: bool
-    explanation: str
-
-
 def _validate_provider_output(analysis_type: str, payload: object) -> dict:
-    schema = {"tactical_report": _TacticalReport, "drills": _Drills, "offside": _Offside, "spacing": _Spacing}[analysis_type]
+    schema = {"tactical_report": _TacticalReport, "drills": _Drills}[analysis_type]
     return schema.model_validate(payload).model_dump(mode="json", exclude_unset=True)
 
 
@@ -440,22 +428,6 @@ def build_prompt(
         f"{'decreasing' if attack_direction == 'right_to_left' else 'increasing'} x; "
         "the opponent attacks the opposite direction. Coordinates are the original 0-100 display coordinates. "
     )
-    if analysis_type == "offside" and current_frame:
-        return (
-            direction_context + "You are a football tactician API. Based on this frame data: "
-            f"{json.dumps(current_frame.model_dump(mode='json'))}. "
-            'Determine if any my-team player is behind the last enemy defender. '
-            'Return JSON {"offside": boolean, "offside_x": number, "explanation": string}. '
-            "This is a review prompt only: do not present it as a validated IFAB Law 11 decision; "
-            "involvement, first contact, restarts and eligible body parts are not measured."
-        )
-    if analysis_type == "spacing" and current_frame:
-        return (
-            direction_context + "You are a football tactician API. Based on this frame data: "
-            f"{json.dumps(current_frame.model_dump(mode='json'))}. "
-            'Analyze the horizontal distance between the leftmost and rightmost my-team players. '
-            'Return JSON {"width": number, "too_wide": boolean, "explanation": string}.'
-        )
     if analysis_type == "tactical_report":
         context = _build_match_context(frames, summary, events, formation_timeline, shots)
         context["attackDirection"] = attack_direction

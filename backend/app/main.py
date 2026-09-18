@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import json
 import logging
 import math
@@ -9,12 +10,14 @@ import re
 import time
 import uuid
 from contextlib import asynccontextmanager
+from functools import wraps
 from pathlib import Path
 from typing import Literal
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
+from fastapi.routing import APIRoute
 from pydantic import ValidationError
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import Headers
@@ -83,6 +86,7 @@ from .workbench.access import (
     stale_permissions,
     untrusted_model_output,
     upload_quota,
+    verify_hosted_token,
 )
 from .workbench.challengers import (
     gstreamer_adapter,
@@ -524,6 +528,70 @@ class BrowserOriginMiddleware:
         await self.app(scope, receive, send)
 
 
+class HostedAuthMiddleware:
+    """Authenticate once at the ASGI boundary; downstream headers are never identity."""
+
+    def __init__(self, app: ASGIApp, *, secret: str, storage: Storage) -> None:
+        self.app = app
+        self.secret = secret
+        self.storage = storage
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        path = scope.get("path", "")
+        if scope["type"] not in {"http", "websocket"} or not path.startswith(("/api", "/ws")):
+            await self.app(scope, receive, send)
+            return
+        if scope["type"] == "http" and scope.get("method") == "OPTIONS":
+            await self.app(scope, receive, send)
+            return
+        authorization = Headers(scope=scope).get("authorization", "")
+        token = authorization[7:] if authorization.startswith("Bearer ") else ""
+        tenant = verify_hosted_token(self.secret, token)
+        if tenant is None:
+            if scope["type"] == "websocket":
+                await WebSocket(scope, receive, send).close(code=1008)
+            else:
+                await JSONResponse({"detail": "Authentication required"}, status_code=401)(scope, receive, send)
+            return
+        scope.setdefault("state", {})["tenant"] = tenant
+
+        internal_or_unscoped = (
+            "/api/workbench/dev",
+            "/api/bundles",
+            "/api/aggregate",
+            "/api/search",
+            "/api/library",
+            "/api/dossier",
+            "/api/capabilities",
+            "/api/flags",
+        )
+        if path.startswith(internal_or_unscoped):
+            if scope["type"] == "websocket":
+                await WebSocket(scope, receive, send).close(code=1008)
+            else:
+                await JSONResponse({"detail": "Route is not available at the hosted boundary"}, status_code=403)(scope, receive, send)
+            return
+
+        match = None
+        parts = path.strip("/").split("/")
+        try:
+            if len(parts) >= 3 and parts[:2] == ["api", "matches"]:
+                match = self.storage.get_match(parts[2])
+            elif len(parts) >= 3 and parts[:2] == ["api", "jobs"]:
+                match = self.storage.get_match(self.storage.get_job(parts[2]).matchId)
+            elif len(parts) >= 3 and parts[:2] == ["ws", "jobs"]:
+                match = self.storage.get_match(self.storage.get_job(parts[2]).matchId)
+        except KeyError:
+            pass
+        if match is not None and match.config.rights.audience != tenant:
+            if scope["type"] == "websocket":
+                await WebSocket(scope, receive, send).close(code=1008)
+            else:
+                await JSONResponse({"detail": "Object access denied"}, status_code=403)(scope, receive, send)
+            return
+        await self.app(scope, receive, send)
+
+
 def _default_storage_root() -> Path:
     data_home = os.environ.get("XDG_DATA_HOME")
     base = Path(data_home).expanduser() if data_home else Path.home() / ".local" / "share"
@@ -537,6 +605,44 @@ def _resolve_storage_root(storage_root: Path | str | None) -> Path:
     if configured_root and configured_root.strip():
         return Path(configured_root).expanduser()
     return _default_storage_root()
+
+
+def _promote_default_frontend_routes(app: FastAPI) -> None:
+    """Expose dev-namespaced implementations through main-owned production aliases."""
+
+    existing = {
+        (route.path, method)
+        for route in app.routes
+        if isinstance(route, APIRoute) and not route.path.startswith("/api/workbench/dev/")
+        for method in route.methods
+    }
+    for route in list(app.routes):
+        if not isinstance(route, APIRoute) or not route.path.startswith("/api/workbench/dev/"):
+            continue
+        path = "/api/" + route.path.removeprefix("/api/workbench/dev/")
+        methods = {method for method in route.methods if (path, method) not in existing}
+        if not methods:
+            continue
+        endpoint = route.endpoint
+        if inspect.iscoroutinefunction(endpoint):
+            @wraps(endpoint)
+            async def promoted(*args, __endpoint=endpoint, **kwargs):
+                return await __endpoint(*args, **kwargs)
+        else:
+            @wraps(endpoint)
+            def promoted(*args, __endpoint=endpoint, **kwargs):
+                return __endpoint(*args, **kwargs)
+        promoted.__module__ = __name__
+        promoted.__signature__ = inspect.signature(endpoint)  # type: ignore[attr-defined]
+        app.add_api_route(
+            path,
+            promoted,
+            methods=methods,
+            name=f"production_{route.name}",
+            response_class=route.response_class,
+            status_code=route.status_code,
+            include_in_schema=False,
+        )
 
 
 def build_match_bundle(storage: Storage, match_id: str) -> dict[str, object]:
@@ -682,6 +788,7 @@ def create_app(
     settings: ProcessingSettings | None = None,
 ) -> FastAPI:
     settings = settings or ProcessingSettings.from_env()
+    settings.validate_deployment()
     storage = Storage(_resolve_storage_root(storage_root))
     runner = JobRunner(storage.storage_root, run_jobs_inline=run_jobs_inline, settings=settings, ledger=storage.job_ledger)
 
@@ -754,9 +861,12 @@ def create_app(
     )
     app.add_middleware(BrowserOriginMiddleware, trusted_origins=settings.trusted_frontend_origins)
     app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1"], www_redirect=False)
+    if settings.deployment_mode == "hosted":
+        app.add_middleware(HostedAuthMiddleware, secret=settings.auth_secret or "", storage=storage)
 
     @app.post("/api/matches", status_code=202)
     async def create_match(
+        request: Request,
         name: str = Form(...),
         inputMode: str = Form(...),
         config: str = Form("{}"),
@@ -795,6 +905,10 @@ def create_app(
             config_model = MatchConfig.model_validate_json(config)
         except Exception as exc:  # pragma: no cover - FastAPI validation path
             raise HTTPException(status_code=400, detail=f"Invalid config payload: {exc}") from exc
+        if settings.deployment_mode == "hosted":
+            config_model = config_model.model_copy(
+                update={"rights": config_model.rights.model_copy(update={"audience": request.state.tenant})}
+            )
 
         if (
             inputMode == "video"
@@ -1256,8 +1370,11 @@ def create_app(
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     @app.get("/api/matches")
-    def list_matches() -> list[dict]:
-        return [match.model_dump(mode="json") for match in storage.list_matches()]
+    def list_matches(request: Request) -> list[dict]:
+        matches = storage.list_matches()
+        if settings.deployment_mode == "hosted":
+            matches = [match for match in matches if match.config.rights.audience == request.state.tenant]
+        return [match.model_dump(mode="json") for match in matches]
 
     @app.get("/api/matches/{match_id}")
     def get_match(match: MatchRecord = Depends(require_match)) -> dict:
@@ -1703,6 +1820,8 @@ def create_app(
     def analyze_match(analysis_type: str, match: MatchRecord = Depends(require_match), body: dict | None = None) -> dict:
         match_id = match.id
         body = body or {}
+        if analysis_type in {"offside", "spacing"}:
+            return storage.incident_geometry_for_match(match_id)
         snapshot = storage.get_match(match_id)
         try:
             result = provider_gateway.execute(
@@ -1729,12 +1848,24 @@ def create_app(
     def get_match_report_html(match: MatchRecord = Depends(require_match)) -> HTMLResponse:
         try:
             with storage.generation_snapshot(match.id) as generation:
-                summary, _, formation_timeline, shots = storage.load_analytics(
-                    match.id, generation_id=generation.generationId
-                )
-                events = storage.load_events(match.id, generation_id=generation.generationId)
-        except FileNotFoundError as exc:
-            raise HTTPException(status_code=404, detail="Analytics not ready") from exc
+                try:
+                    summary, _, formation_timeline, shots = storage.load_analytics(
+                        match.id, generation_id=generation.generationId
+                    )
+                    generation_id = generation.generationId
+                except FileNotFoundError:
+                    summary, _, formation_timeline, shots = storage.load_analytics(match.id)
+                    generation_id = None
+        except FileNotFoundError:
+            try:
+                summary, _, formation_timeline, shots = storage.load_analytics(match.id)
+                generation_id = None
+            except FileNotFoundError as exc:
+                raise HTTPException(status_code=404, detail="Analytics not ready") from exc
+        try:
+            events = storage.load_events(match.id, generation_id=generation_id)
+        except FileNotFoundError:
+            events = []  # Historical analytics generations predate the accepted-events artifact.
 
         try:
             tactical_report = storage.load_analysis_artifact(match.id, "tactical_report")
@@ -2200,6 +2331,8 @@ def create_app(
             ]
         }
 
+    if settings.deployment_mode == "local":
+        _promote_default_frontend_routes(app)
     return app
 
 

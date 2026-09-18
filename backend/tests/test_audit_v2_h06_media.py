@@ -7,6 +7,7 @@ import multiprocessing
 import resource
 import shutil
 import subprocess
+import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -22,7 +23,10 @@ from backend.app.workbench.media import (
     DecodedFrame,
     DecoderFailed,
     FfmpegFrameSource,
+    FfmpegProbe,
+    MediaResourceLimit,
     TruncatedStream,
+    _run_bounded_media_process,
     should_export_on_source_grid,
 )
 
@@ -172,7 +176,7 @@ def test_t27_custom_trust_policy_reaches_both_media_guards(tmp_path: Path) -> No
 
 
 @pytest.mark.real_media
-def test_t16_real_ffmpeg_frames_match_ffprobe_integer_pts(tmp_path: Path) -> None:
+def test_t16_t18_real_ffmpeg_frames_match_ffprobe_integer_pts(tmp_path: Path) -> None:
     from backend.app.workbench.executables import resolve_trusted_executable
 
     ffmpeg = resolve_trusted_executable("ffmpeg")
@@ -202,6 +206,44 @@ def test_t16_real_ffmpeg_frames_match_ffprobe_integer_pts(tmp_path: Path) -> Non
 
     assert [frame.pts for frame in frames] == expected_pts
     assert all(frame.presentation_time == Fraction(frame.pts, 30_000) for frame in frames)
+
+
+@pytest.mark.real_media
+def test_t16_real_ffmpeg_reaps_malformed_and_output_capped_children(tmp_path: Path, monkeypatch) -> None:
+    from backend.app.workbench.executables import resolve_trusted_executable
+    import backend.app.workbench.media as media
+
+    ffmpeg = resolve_trusted_executable("ffmpeg")
+    clip = tmp_path / "bounded.mp4"
+    subprocess.run(
+        [
+            str(ffmpeg), "-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i",
+            "testsrc=duration=1:size=32x24:rate=4", "-movflags", "+faststart",
+            "-pix_fmt", "yuv420p", "-y", str(clip),
+        ],
+        check=True,
+        timeout=30,
+    )
+    identity = FfmpegProbe().probe_identity(clip)
+    malformed = tmp_path / "truncated.mp4"
+    payload = clip.read_bytes()
+    malformed.write_bytes(payload[: len(payload) // 2])
+    with pytest.raises((DecoderFailed, TruncatedStream)):
+        list(FfmpegFrameSource().iter_frames(malformed))
+
+    processes = []
+    popen = subprocess.Popen
+
+    def capture(*args, **kwargs):
+        process = popen(*args, **kwargs)
+        processes.append(process)
+        return process
+
+    monkeypatch.setattr(media.subprocess, "Popen", capture)
+    with pytest.raises(MediaResourceLimit, match="output-byte cap"):
+        list(FfmpegFrameSource(identity=identity, max_output_bytes=32 * 24 * 3 + 1).iter_frames(clip))
+    assert len(processes) == 1
+    assert processes[0].poll() is not None
 
 
 class _FakeProcess:
@@ -285,6 +327,82 @@ def test_t16_cancel_terminates_decoder(tmp_path: Path, monkeypatch) -> None:
     with pytest.raises(DecodeCancelled):
         list(source.iter_frames(path, cancel_event=cancelled))
     assert process.poll() is not None
+
+
+def test_t16_decoder_output_cap_terminates_child(tmp_path: Path, monkeypatch) -> None:
+    path, source = _fake_source(tmp_path)
+    source = FfmpegFrameSource(identity=source._identity, max_output_bytes=11)
+    monkeypatch.setattr(
+        "backend.app.workbench.media.subprocess.Popen",
+        lambda *args, **kwargs: pytest.fail("oversized declared frame reached Popen"),
+    )
+
+    with pytest.raises(MediaResourceLimit, match="output-byte cap"):
+        list(source.iter_frames(path))
+
+
+def test_t16_decoder_thread_limit_applies_before_input(tmp_path: Path, monkeypatch) -> None:
+    path, source = _fake_source(tmp_path)
+    commands: list[list[str]] = []
+
+    def popen(command, **_kwargs):
+        commands.append(command)
+        return _FakeProcess(bytes(range(12)), b"")
+
+    monkeypatch.setattr("backend.app.workbench.media.subprocess.Popen", popen)
+
+    assert len(list(source.iter_frames(path))) == 1
+    assert commands[0].index("-threads") < commands[0].index("-i")
+
+
+@pytest.mark.integration
+def test_t16_live_child_output_cap_and_mid_export_cancellation(tmp_path: Path, monkeypatch) -> None:
+    with pytest.raises(MediaResourceLimit, match="captured-output cap"):
+        _run_bounded_media_process(
+            [sys.executable, "-c", "import sys; sys.stdout.buffer.write(b'x' * 2000000)"],
+            timeout=10,
+            output_cap=1024,
+            file_cap=1 << 20,
+        )
+
+    ffmpeg = tmp_path / "ffmpeg"
+    ffmpeg.write_text("#!/bin/sh\nexec sleep 30\n", encoding="utf-8")
+    ffmpeg.chmod(0o755)
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"fixture")
+    settings = SimpleNamespace(
+        trusted_bin_dirs=(str(tmp_path),), ffmpeg_sha256=None, ffprobe_sha256=None
+    )
+    probe = FfmpegProbe(ffmpeg=str(ffmpeg), settings=settings)
+    import backend.app.workbench.media as media
+
+    processes = []
+    popen = subprocess.Popen
+
+    def capture(*args, **kwargs):
+        process = popen(*args, **kwargs)
+        processes.append(process)
+        return process
+
+    monkeypatch.setattr(media.subprocess, "Popen", capture)
+    cancelled = threading.Event()
+    timer = threading.Timer(0.2, cancelled.set)
+    timer.start()
+    started = time.monotonic()
+    try:
+        with pytest.raises(DecodeCancelled):
+            probe.export_clip(
+                source,
+                tmp_path / "cancelled.mp4",
+                start_seconds=0,
+                duration_seconds=1,
+                cancel_event=cancelled,
+            )
+    finally:
+        timer.cancel()
+    assert time.monotonic() - started < 5
+    assert len(processes) == 1
+    assert processes[0].poll() is not None
 
 
 def test_t18_duplicate_decoder_pts_are_flagged(tmp_path: Path, monkeypatch) -> None:

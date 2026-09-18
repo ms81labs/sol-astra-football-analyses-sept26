@@ -295,28 +295,53 @@ def review_incident_geometry(
     enemies: list[dict[str, float | int]],
     ball: dict[str, float] | None,
     attack_direction: Literal["left_to_right", "right_to_left"],
+    calibration_accepted: bool = False,
+    touch_timing_known: bool = False,
+    pitch_length_m: float | None = None,
+    uncertainty_m: float | None = None,
 ) -> dict[str, Any]:
     """Deterministic geometry for review. Never publishes a validated offside decision."""
 
     attacking_increasing_x = attack_direction == "left_to_right"
     opponent_xs = sorted(float(player["x"]) for player in enemies)
-    if len(opponent_xs) >= 2:
-        second_last = opponent_xs[-2] if attacking_increasing_x else opponent_xs[1]
-    else:
-        second_last = opponent_xs[0] if opponent_xs else None
-    most_advanced = None
-    if my_team:
-        xs = [float(player["x"]) for player in my_team]
-        most_advanced = max(xs) if attacking_increasing_x else min(xs)
+    teammate_xs = [float(player["x"]) for player in my_team]
+    reasons: list[str] = []
+    if not calibration_accepted or pitch_length_m is None:
+        reasons.append("CALIBRATION_REQUIRED")
+    if len(opponent_xs) < 2:
+        reasons.append("SECOND_LAST_DEFENDER_UNKNOWN")
+    if ball is None:
+        reasons.append("BALL_POSITION_UNKNOWN")
+    if not touch_timing_known:
+        reasons.append("TOUCH_TIMING_UNKNOWN")
+    if len(teammate_xs) < 2:
+        reasons.append("TEAM_SPACING_UNKNOWN")
+    second_last = (
+        opponent_xs[-2] if attacking_increasing_x else opponent_xs[1]
+    ) if len(opponent_xs) >= 2 else None
+    most_advanced = (
+        max(teammate_xs) if attacking_increasing_x else min(teammate_xs)
+    ) if teammate_xs else None
+    ready = not reasons
+    scale = float(pitch_length_m or 0) / 100.0
+    margin = None
+    if ready and second_last is not None and most_advanced is not None:
+        signed = most_advanced - second_last
+        margin = signed * scale if attacking_increasing_x else -signed * scale
     return {
         "decision": None,
-        "availability": "review_only",
+        "status": "review_only" if ready else "unknown",
+        "availability": "review_only" if ready else "unknown",
         "validatedMeasurement": False,
-        "reasonCodes": ["IFAB_LAW_11_NOT_APPLIED", "INVOLVEMENT_AND_TIMING_UNMEASURED"],
+        "reasonCodes": ["IFAB_LAW_11_NOT_APPLIED", *reasons],
         "attackDirection": attack_direction,
         "secondLastOpponentX": second_last,
         "mostAdvancedTeammateX": most_advanced,
         "ballX": None if ball is None else float(ball["x"]),
+        "spacingWidthM": round((max(teammate_xs) - min(teammate_xs)) * scale, 3) if ready else None,
+        "attackerBeyondSecondLastDefender": margin > 0 if margin is not None else None,
+        "marginM": None if margin is None else round(margin, 3),
+        "uncertaintyM": uncertainty_m if ready else None,
         "limitations": [
             "Position facts are not an offside offence.",
             "Eligible body parts, first contact, restarts and involvement are not measured.",

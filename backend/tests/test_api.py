@@ -2109,7 +2109,8 @@ async def _test_production_timeout_search_clock_and_incident_review_use_stored_d
         assert review.json()["decision"] is None
         assert review.json()["validatedMeasurement"] is False
         assert review.json()["level"] == 1
-        assert review.json()["samples"][0]["attackerX"] == 21.0
+        assert review.json()["samples"] == []
+        assert review.json()["indeterminate"] is True
         assert "offside" not in json.dumps(review.json()).lower().split("offside")[0] or review.json()["decision"] is None
 
         assistance = await client.post(

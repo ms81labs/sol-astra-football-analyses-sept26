@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shlex
 import subprocess
 import threading
 import time
+import tempfile
 from fractions import Fraction
 from abc import ABC, abstractmethod
 from collections import deque
@@ -67,6 +69,31 @@ class DecoderFailed(RuntimeError):
         super().__init__(f"decoder exited with code {code}")
         self.code = code
         self.tail = tail
+
+
+class MediaResourceLimit(RuntimeError):
+    pass
+
+
+def _sandbox_kwargs(cwd: Path, *, max_file_bytes: int) -> dict[str, object]:
+    kwargs: dict[str, object] = {"cwd": cwd}
+    if os.name != "posix":
+        return kwargs
+
+    def limits() -> None:
+        import resource
+
+        for name, value in (
+            ("RLIMIT_AS", 4 * 1024**3),
+            ("RLIMIT_CPU", 300),
+            ("RLIMIT_FSIZE", max_file_bytes),
+        ):
+            limit = getattr(resource, name, None)
+            if limit is not None:
+                resource.setrlimit(limit, (value, value))
+
+    kwargs["preexec_fn"] = limits
+    return kwargs
 
 
 class _ShowinfoParser:
@@ -285,11 +312,17 @@ class FfmpegFrameSource(FrameSource):
         identity: SourceClockIdentity | None = None,
         probe: FfmpegProbe | None = None,
         hash_cache: HashCache | None = None,
+        max_output_bytes: int = 8 * 1024**3,
+        wall_timeout_seconds: float = 300.0,
+        threads: int = 2,
     ):
         self._frames = list(frames or [])
         self._identity = identity
         self._hash_cache = hash_cache
         self._probe = probe or FfmpegProbe(hash_cache=hash_cache)
+        self._max_output_bytes = max_output_bytes
+        self._wall_timeout_seconds = wall_timeout_seconds
+        self._threads = threads
 
     def probe(self, path: Path) -> SourceClockIdentity:
         if self._identity is not None:
@@ -316,11 +349,15 @@ class FfmpegFrameSource(FrameSource):
 
     def _iter_ffmpeg_decode(self, path: Path, *, cancel_event: threading.Event | None) -> Iterator[DecodedFrame]:
         _admit_local_decode_path(path)
+        path = path.resolve()
         identity = self._identity or self.probe(path)
         width = int(identity.width or 0)
         height = int(identity.height or 0)
         if width <= 0 or height <= 0:
             raise RuntimeError("ffmpeg decode requires probed width and height")
+        frame_size = width * height * 3
+        if frame_size > self._max_output_bytes:
+            raise MediaResourceLimit("ffmpeg decode exceeded output-byte cap")
         command = [
             self._probe.ffmpeg,
             "-hide_banner",
@@ -329,6 +366,8 @@ class FfmpegFrameSource(FrameSource):
             "info",
             "-protocol_whitelist",
             "file,pipe",
+            "-threads",
+            str(self._threads),
             "-i",
             str(path),
             "-map",
@@ -346,14 +385,13 @@ class FfmpegFrameSource(FrameSource):
         if not decision["admitted"]:
             raise ValueError("unconstrained decoder")
         _assert_safe_ffmpeg_argv(command, settings=self._probe.settings)
+        scratch = tempfile.TemporaryDirectory(prefix="ga-ffmpeg-decode-")
         process = subprocess.Popen(  # noqa: S603
-            command,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            command, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            **_sandbox_kwargs(Path(scratch.name), max_file_bytes=self._max_output_bytes),
         )
         assert process.stdout is not None
         assert process.stderr is not None
-        frame_size = width * height * 3
         index = 0
         condition = threading.Condition()
         pts_by_index: dict[int, tuple[int, float]] = {}
@@ -391,10 +429,18 @@ class FfmpegFrameSource(FrameSource):
         reader = threading.Thread(target=read_stderr, name="ffmpeg-stderr", daemon=True)
         reader.start()
         watcher_stop = threading.Event()
+        timed_out = False
+        started_at = time.monotonic()
 
         def watch_cancel() -> None:
+            nonlocal timed_out
             while not watcher_stop.wait(0.05):
                 if cancel_event is not None and cancel_event.is_set():
+                    if process.poll() is None:
+                        process.kill()
+                    return
+                if time.monotonic() - started_at > self._wall_timeout_seconds:
+                    timed_out = True
                     if process.poll() is None:
                         process.kill()
                     return
@@ -404,6 +450,7 @@ class FfmpegFrameSource(FrameSource):
         cancelled = False
         completed = False
         seen_pts: set[int] = set()
+        output_bytes = 0
         try:
             while True:
                 if cancel_event is not None and cancel_event.is_set():
@@ -421,6 +468,10 @@ class FfmpegFrameSource(FrameSource):
                         cancelled = True
                     completed = True
                     break
+                output_bytes += len(payload)
+                if output_bytes > self._max_output_bytes:
+                    process.kill()
+                    raise MediaResourceLimit("ffmpeg decode exceeded output-byte cap")
                 deadline = time.monotonic() + 5.0
                 with condition:
                     while index not in pts_by_index and not stderr_done:
@@ -463,10 +514,22 @@ class FfmpegFrameSource(FrameSource):
                 raise DecoderFailed(returncode, tail=list(diagnostics))
             if cancelled:
                 raise DecodeCancelled("ffmpeg decode cancelled")
+            if timed_out:
+                raise MediaResourceLimit("ffmpeg decode exceeded wall-clock timeout")
             if returncode != 0:
                 raise DecoderFailed(returncode, tail=list(diagnostics))
             if not completed:
                 raise TruncatedStream("decoder did not complete cleanly")
+        except TruncatedStream:
+            try:
+                returncode = process.wait(timeout=1)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                returncode = process.wait(timeout=5)
+            reader.join(timeout=5)
+            if returncode != 0:
+                raise DecoderFailed(returncode, tail=list(diagnostics)) from None
+            raise
         finally:
             watcher_stop.set()
             if process.poll() is None:
@@ -479,6 +542,7 @@ class FfmpegFrameSource(FrameSource):
             process.stderr.close()
             reader.join(timeout=5)
             watcher.join(timeout=5)
+            scratch.cleanup()
 
 
 def wrap_decoded_frame(frame: DecodedFrame, *, device: Literal["cpu", "cuda"] = "cpu") -> FrameBuffer:
@@ -538,6 +602,71 @@ def first_bgr_frame(
     return None
 
 
+def _run_bounded_media_process(
+    command: list[str],
+    *,
+    timeout: float,
+    output_cap: int,
+    file_cap: int,
+    cancel_event: threading.Event | None = None,
+) -> subprocess.CompletedProcess[bytes]:
+    """Run a media child with bounded captured output and cooperative cancellation."""
+
+    with tempfile.TemporaryDirectory(prefix="ga-media-child-") as scratch:
+        process = subprocess.Popen(  # noqa: S603
+            command,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            **_sandbox_kwargs(Path(scratch), max_file_bytes=file_cap),
+        )
+        assert process.stdout is not None and process.stderr is not None
+        chunks: dict[str, list[bytes]] = {"stdout": [], "stderr": []}
+        size = 0
+        lock = threading.Lock()
+        overflow = threading.Event()
+
+        def drain(name: str, stream) -> None:
+            nonlocal size
+            while chunk := stream.read(65536):
+                with lock:
+                    size += len(chunk)
+                    if size > output_cap:
+                        overflow.set()
+                        if process.poll() is None:
+                            process.kill()
+                        return
+                    chunks[name].append(chunk)
+
+        readers = [
+            threading.Thread(target=drain, args=(name, stream), daemon=True)
+            for name, stream in (("stdout", process.stdout), ("stderr", process.stderr))
+        ]
+        for reader in readers:
+            reader.start()
+        deadline = time.monotonic() + timeout
+        while process.poll() is None:
+            if cancel_event is not None and cancel_event.wait(0.05):
+                process.kill()
+                process.wait(timeout=5)
+                raise DecodeCancelled("ffmpeg process cancelled")
+            if time.monotonic() >= deadline:
+                process.kill()
+                process.wait(timeout=5)
+                raise MediaResourceLimit("ffmpeg process exceeded wall-clock timeout")
+            time.sleep(0.05)
+        returncode = process.wait(timeout=5)
+        for reader in readers:
+            reader.join(timeout=5)
+        stdout = b"".join(chunks["stdout"])
+        stderr = b"".join(chunks["stderr"])
+        if overflow.is_set():
+            raise MediaResourceLimit("ffmpeg process exceeded captured-output cap")
+        if returncode != 0:
+            raise DecoderFailed(returncode, tail=stderr.decode(errors="replace").splitlines()[-256:])
+        return subprocess.CompletedProcess(command, returncode, stdout, stderr)
+
+
 class FfmpegProbe:
     """GA-16 FFmpeg/ffprobe jobs with safe arguments and cancellation."""
 
@@ -548,15 +677,25 @@ class FfmpegProbe:
         *,
         settings=None,
         hash_cache: HashCache | None = None,
+        max_output_bytes: int = 8 * 1024**3,
+        threads: int = 2,
     ):
         self.settings = settings
         self.hash_cache = hash_cache
         self.ffprobe = str(resolve_trusted_executable("ffprobe", configured=ffprobe, settings=settings))
         self.ffmpeg = str(resolve_trusted_executable("ffmpeg", configured=ffmpeg, settings=settings))
+        self.max_output_bytes = max_output_bytes
+        self.threads = threads
 
     def probe_identity(self, path: Path, *, runner=subprocess.run) -> SourceClockIdentity:
+        _admit_local_decode_path(path)
+        path = path.resolve()
         command = [
             self.ffprobe,
+            "-protocol_whitelist",
+            "file,pipe",
+            "-threads",
+            str(self.threads),
             "-v",
             "error",
             "-print_format",
@@ -566,8 +705,14 @@ class FfmpegProbe:
             str(path),
         ]
         _assert_safe_ffmpeg_argv(command, settings=self.settings)
-        completed = runner(command, check=True, capture_output=True, text=True, timeout=30)
-        payload = json.loads(completed.stdout)
+        if runner is subprocess.run:
+            completed = _run_bounded_media_process(
+                command, timeout=30, output_cap=4 * 1024**2, file_cap=self.max_output_bytes
+            )
+            stdout = completed.stdout.decode("utf-8")
+        else:
+            stdout = runner(command, check=True, capture_output=True, text=True, timeout=30).stdout
+        payload = json.loads(stdout)
         video = next((stream for stream in payload.get("streams", []) if stream.get("codec_type") == "video"), {})
         audio_tracks = sum(1 for stream in payload.get("streams", []) if stream.get("codec_type") == "audio")
         num, den = _parse_rate(video.get("avg_frame_rate") or video.get("r_frame_rate") or "0/1")
@@ -601,9 +746,17 @@ class FfmpegProbe:
         cancel_event: threading.Event | None = None,
         runner=subprocess.run,
     ) -> None:
+        _admit_local_decode_path(source)
+        source = source.resolve()
+        destination = destination.resolve()
         command = [
             self.ffmpeg,
             "-hide_banner",
+            "-nostdin",
+            "-protocol_whitelist",
+            "file,pipe",
+            "-threads",
+            str(self.threads),
             "-y",
             "-ss",
             f"{start_seconds:.3f}",
@@ -621,7 +774,19 @@ class FfmpegProbe:
         _assert_safe_ffmpeg_argv(command, settings=self.settings)
         if cancel_event is not None and cancel_event.is_set():
             raise RuntimeError("ffmpeg export cancelled")
-        runner(command, check=True, capture_output=True, timeout=120)
+        if runner is subprocess.run:
+            _run_bounded_media_process(
+                command,
+                timeout=120,
+                output_cap=4 * 1024**2,
+                file_cap=self.max_output_bytes,
+                cancel_event=cancel_event,
+            )
+        else:
+            runner(command, check=True, capture_output=True, timeout=120)
+        if destination.stat().st_size > self.max_output_bytes:
+            destination.unlink(missing_ok=True)
+            raise MediaResourceLimit("ffmpeg export exceeded output-byte cap")
 
 
 def _assert_safe_ffmpeg_argv(command: list[str], *, settings=None) -> None:

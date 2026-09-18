@@ -118,7 +118,10 @@ class ProviderGateway:
                 amount=self.settings.provider_call_reservation,
             )
             if reserved is None:
-                raise ProviderDenied(["BUDGET_EXHAUSTED"])
+                if require_provider:
+                    raise ProviderDenied(["BUDGET_EXHAUSTED"])
+                policy_reasons.append("BUDGET_EXHAUSTED")
+                requested = "local"
         return ExecutionPolicy(
             match_id=match.id,
             generation_id=generation_id,
@@ -132,13 +135,15 @@ class ProviderGateway:
         )
 
     def build_evidence(self, match_id: str, generation_id: str) -> tuple[ApprovedEvidencePackage, dict[str, Any]]:
-        frames = self.storage.load_frames(match_id)
+        frames = self.storage.load_frames(match_id, generation_id=generation_id)
         try:
-            events = self.storage.load_events(match_id)
+            events = self.storage.load_events(match_id, generation_id=generation_id)
         except FileNotFoundError:
             events = []
         try:
-            summary, _, formation_timeline, shots = self.storage.load_analytics(match_id)
+            summary, _, formation_timeline, shots = self.storage.load_analytics(
+                match_id, generation_id=generation_id
+            )
             metrics = tuple(item.model_dump(mode="json") for item in summary.metricAvailability)
         except FileNotFoundError:
             summary, formation_timeline, shots, metrics = None, None, None, ()
@@ -176,15 +181,16 @@ class ProviderGateway:
         body: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         match = self.storage.get_match(match_id)
-        generation_id = f"legacy:{match.updatedAt.isoformat()}"
-        policy = self.resolve_policy(
-            match,
-            requested_provider=requested_provider,
-            task_type=task_type,
-            generation_id=generation_id,
-            require_provider=bool((body or {}).get("requireProvider")),
-        )
-        package, inputs = self.build_evidence(match_id, generation_id)
+        with self.storage.generation_snapshot(match_id) as generation:
+            generation_id = generation.generationId
+            policy = self.resolve_policy(
+                match,
+                requested_provider=requested_provider,
+                task_type=task_type,
+                generation_id=generation_id,
+                require_provider=bool((body or {}).get("requireProvider")),
+            )
+            package, inputs = self.build_evidence(match_id, generation_id)
         raw = self.adapter_factory()(
             task_type,
             inputs["frames"],
