@@ -4,14 +4,20 @@ from __future__ import annotations
 import atexit
 import os
 import shutil
+import json
+import subprocess
 import sys
 import tempfile
 import types
+from pathlib import Path
 
 import pytest
 
 
-os.environ.setdefault("GA_FLAG_LEFTOVER_HTTP", "1")
+if os.environ.get("GA_TEST_DEFAULT_FLAGS") != "1":
+    os.environ.setdefault("GA_FLAG_LEFTOVER_HTTP", "1")
+_STUBS_KEY = pytest.StashKey[tuple[str, ...]]()
+_ACTIVE_STUBS: list[str] = []
 
 _STORAGE_ROOT_ENV = "GUERILLA_STORAGE_ROOT"
 _ORIGINAL_STORAGE_ROOT_PRESENT = _STORAGE_ROOT_ENV in os.environ
@@ -135,6 +141,47 @@ for _mod_name, _make_stub in [
         __import__(_mod_name)
     except ModuleNotFoundError:
         sys.modules[_mod_name] = _make_stub()
+        _ACTIVE_STUBS.append(_mod_name)
+
+
+def pytest_configure(config) -> None:  # noqa: ANN001
+    config.stash[_STUBS_KEY] = tuple(_ACTIVE_STUBS)
+
+
+def pytest_terminal_summary(terminalreporter, exitstatus, config) -> None:  # noqa: ANN001
+    del exitstatus
+    active = config.stash.get(_STUBS_KEY, ())
+    terminalreporter.write_line(f"stubs_active: {','.join(active) if active else 'none'}")
+    if os.environ.get("GA_VERIFICATION_RUN") != "1":
+        return
+    receipt_path = Path(".verification/receipt.json")
+    try:
+        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        receipt = {}
+    commit = os.environ.get("GITHUB_SHA")
+    if not commit:
+        completed = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        commit = completed.stdout.strip() if completed.returncode == 0 else "unknown"
+    previous_tests = receipt.get("tests") if isinstance(receipt.get("tests"), dict) else {}
+    receipt.update(
+        {
+            "commit": commit,
+            "profile": os.environ.get("GA_VERIFICATION_PROFILE", "local"),
+            "stubsActive": list(active),
+            "tests": {
+                outcome: int(previous_tests.get(outcome, 0)) + len(terminalreporter.stats.get(outcome, ()))
+                for outcome in ("passed", "failed", "skipped")
+            },
+        }
+    )
+    receipt_path.parent.mkdir(parents=True, exist_ok=True)
+    receipt_path.write_text(json.dumps(receipt, indent=2, sort_keys=True), encoding="utf-8")
 
 
 _RUNTIME_BOUNDARY_TEST_MODULES = frozenset(

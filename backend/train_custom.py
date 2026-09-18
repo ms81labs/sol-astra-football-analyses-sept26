@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import csv
 from pathlib import Path
 
 from ultralytics import YOLO
 
 
+DEFAULT_BASE_MODEL = "yolov10n.pt"
 DEFAULT_AUGMENTATION_POLICY = {
     "degrees": 0.0,
     "translate": 0.0,
@@ -20,9 +22,32 @@ DEFAULT_AUGMENTATION_POLICY = {
 }
 
 
+def _best_checkpoint(results_csv_path: Path) -> tuple[int | None, float | None]:
+    if not results_csv_path.is_file():
+        return None, None
+    with results_csv_path.open(newline="", encoding="utf-8") as handle:
+        rows = [{str(key).strip(): value for key, value in row.items()} for row in csv.DictReader(handle)]
+    if not rows:
+        return None, None
+
+    def number(row: dict[str, str | None], key: str) -> float:
+        try:
+            return float(row.get(key) or 0)
+        except ValueError:
+            return 0.0
+
+    def fitness(row: dict[str, str | None]) -> float:
+        return number(row, "fitness") if row.get("fitness") else (
+            0.1 * number(row, "metrics/mAP50(B)") + 0.9 * number(row, "metrics/mAP50-95(B)")
+        )
+
+    best = max(rows, key=fitness)
+    return int(number(best, "epoch")), fitness(best)
+
+
 def fine_tune(
     data_yaml: str = "review/dataset.yaml",
-    model_path: str = "yolov10n.pt",
+    model_path: str = DEFAULT_BASE_MODEL,
     epochs: int = 50,
     *,
     imgsz: int = 640,
@@ -72,6 +97,7 @@ def fine_tune(
     results_csv_path = save_dir / "results.csv"
     results_dict = getattr(results, "results_dict", {})
     metrics = dict(results_dict) if isinstance(results_dict, dict) else {}
+    best_epoch, best_fitness = _best_checkpoint(results_csv_path)
 
     return {
         "saveDir": str(save_dir),
@@ -79,6 +105,8 @@ def fine_tune(
         "lastWeightsPath": str(last_weights_path),
         "resultsCsvPath": str(results_csv_path),
         "metrics": metrics,
+        "bestEpoch": best_epoch,
+        "bestFitness": best_fitness,
         "epochs": int(epochs),
         "imgsz": int(imgsz),
         "batch": int(batch),
@@ -88,11 +116,11 @@ def fine_tune(
     }
 
 
-def main() -> None:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Guerilla Analytics - Fine Tune YOLO")
     parser.add_argument("--data", type=str, default="review/dataset.yaml", help="Path to YOLO dataset YAML")
     parser.add_argument("--epochs", type=int, default=50, help="Number of training epochs")
-    parser.add_argument("--model", type=str, default="yolov8n.pt", help="Base model to start from")
+    parser.add_argument("--model", type=str, default=DEFAULT_BASE_MODEL, help="Base model to start from")
     parser.add_argument("--imgsz", type=int, default=640, help="Training image size")
     parser.add_argument("--batch", type=int, default=16, help="Training batch size")
     parser.add_argument("--device", type=str, default="cpu", help="Training device")
@@ -100,7 +128,11 @@ def main() -> None:
     parser.add_argument("--name", type=str, default="custom_pitch_model", help="Ultralytics run name")
     parser.add_argument("--patience", type=int, default=10, help="Early stopping patience")
     parser.add_argument("--workers", type=int, default=0, help="Data loader workers")
-    args = parser.parse_args()
+    return parser
+
+
+def main() -> None:
+    args = build_parser().parse_args()
 
     result = fine_tune(
         data_yaml=args.data,

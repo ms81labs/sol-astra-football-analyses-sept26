@@ -16,6 +16,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 VERIFY_SCRIPT = REPO_ROOT / "scripts" / "verify.sh"
 CI_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "ci.yml"
 DEV_REQUIREMENTS = REPO_ROOT / "backend" / "requirements-dev.txt"
+DEV_LOCK = REPO_ROOT / "backend" / "requirements" / "dev.lock"
 COMPATIBILITY_REQUIREMENTS = REPO_ROOT / "backend" / "requirements.txt"
 REQUIRED_GATE_COMMANDS = {
     "backend": "python3 -m pytest -q backend/tests",
@@ -66,8 +67,13 @@ def _requirement_names(requirements_path: Path) -> set[str]:
         names: set[str] = set()
         next_stack = (*stack, resolved)
         for raw_line in resolved.read_text(encoding="utf-8").splitlines():
+            raw_line = raw_line.strip()
+            if raw_line.endswith("\\"):
+                raw_line = raw_line[:-1]
             tokens = shlex.split(raw_line, comments=True)
             if not tokens:
+                continue
+            if tokens[0].startswith("--hash="):
                 continue
             include: str | None = None
             if tokens[0] in {"-r", "--requirement"}:
@@ -288,13 +294,18 @@ def test_verifier_sets_safe_opencv_default_without_overriding_caller(
 
 def test_dev_requirements_declare_clean_ci_dependencies() -> None:
     requirements = DEV_REQUIREMENTS.read_text(encoding="utf-8").splitlines()
+    locked = DEV_LOCK.read_text(encoding="utf-8").splitlines()
 
-    assert "opencv-python==4.13.0.92" in requirements
-    assert "pillow==12.1.1" in requirements
-    assert "scipy==1.17.0" in requirements
-    assert "setuptools==68.1.2" in requirements
-    assert "jsonschema==4.10.3" in requirements
-    assert "wheel==0.42.0" in requirements
+    assert requirements[-1] == "-r requirements/dev.lock"
+    for dependency in (
+        "opencv-python==4.13.0.92 \\",
+        "pillow==12.1.1 \\",
+        "scipy==1.17.0 \\",
+        "setuptools==68.1.2 \\",
+        "jsonschema==4.10.3 \\",
+        "wheel==0.42.0 \\",
+    ):
+        assert dependency in locked
 
 
 def test_compatibility_aggregate_uses_only_one_opencv_distribution() -> None:
@@ -619,7 +630,7 @@ def test_verifier_and_ci_do_not_contain_external_mutation_commands() -> None:
         assert forbidden not in combined
 
 
-def test_ci_uses_canonical_verifier_as_its_only_verification_entrypoint() -> None:
+def test_ci_keeps_canonical_verifier_and_declares_acceptance_lanes() -> None:
     workflow = CI_WORKFLOW.read_text(encoding="utf-8")
 
     assert "pull_request:" in workflow
@@ -629,10 +640,10 @@ def test_ci_uses_canonical_verifier_as_its_only_verification_entrypoint() -> Non
     assert "node-version: '22'" in workflow
     for dependency_file in (
         "pyproject.toml",
-        "backend/requirements.txt",
-        "backend/requirements-runtime.txt",
-        "backend/requirements-dev.txt",
-        "backend/requirements-ml.txt",
+        "backend/requirements/api.lock",
+        "backend/requirements/dev.lock",
+        "backend/requirements/cpu-cv-macos.lock",
+        "backend/requirements/cuda-linux.lock",
         "research-addon/pyproject.toml",
         "frontend/package-lock.json",
     ):
@@ -649,7 +660,10 @@ def test_ci_uses_canonical_verifier_as_its_only_verification_entrypoint() -> Non
     assert "VERIFY_DAYTONA: '0'" in workflow
     assert "ALLOW_DAYTONA_MUTATION: '0'" in workflow
     assert "DAYTONA_API_KEY" not in workflow
-    assert "if: failure()" in workflow
-    assert "path: .verification/logs/" in workflow
-    assert "pytest" not in workflow
+    assert "if: always()" in workflow
+    assert ".verification/logs/" in workflow
+    assert 'pytest -m "integration or real_media" backend/tests' in workflow
+    assert "pytest -m real_media backend/tests" in workflow
+    assert workflow.count("set -o pipefail") == 3
+    assert "github.event_name == 'workflow_dispatch'" in workflow
     assert "npm test" not in workflow

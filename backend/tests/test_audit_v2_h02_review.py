@@ -70,6 +70,7 @@ def _team_for_track(storage: Storage, match_id: str, track_id: int) -> str | Non
     return None
 
 
+@pytest.mark.integration
 def test_t02_raw_row_team_swap_survives_rebuild_and_restart(tmp_path: Path) -> None:
     """B04 / T02: corrections must change the effective config before raw-row classification."""
     storage_root = tmp_path / "storage"
@@ -574,6 +575,7 @@ def test_concurrent_storage_instances_do_not_lose_corrections(tmp_path: Path) ->
     assert all(item["applyState"] == "applied" for item in history)
 
 
+@pytest.mark.integration
 @pytest.mark.parametrize(
     "fault_point",
     ["after_log_commit", "during_generation_write", "before_pointer_publish"],

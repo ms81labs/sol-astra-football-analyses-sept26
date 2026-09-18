@@ -7,7 +7,7 @@ A football match-analysis application: upload a match, store and prepare it loca
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install . -r backend/requirements-dev.txt
+python -m pip install -e . -r backend/requirements/dev.lock
 export GUERILLA_STORAGE_ROOT="${HOME}/.local/share/guerilla-analytics"
 python -m uvicorn backend.app.main:app --reload --port 8000
 
@@ -24,11 +24,14 @@ Unsafe HTTP methods and websocket handshakes with an `Origin` must match the bac
 
 Origin-less CLI clients remain usable. Origin/Host checks and CORS are browser boundaries, not authentication: arbitrary non-browser clients can supply their own headers. **G-NETWORK remains required for any non-local deployment**; this configuration does not authorize public or LAN exposure.
 
-Install the optional local computer-vision dependencies only on machines that execute local video jobs:
+Install the optional local computer-vision dependencies only on machines that execute local video jobs. Use the CUDA profile only on Linux GPU workers:
 
 ```bash
-python -m pip install -r backend/requirements-ml.txt
+python -m pip install -e '.[cv]' -r backend/requirements/cpu-cv-macos.lock  # Apple Silicon macOS CPU
+python -m pip install -e '.[cv,cuda]' -r backend/requirements/cuda-linux.lock  # Linux GPU
 ```
+
+The legacy `backend/requirements-*.txt` files are compatibility includes for one release. See `docs/runbooks/dependency-profiles.md` for lock regeneration and API-only installation.
 
 ## Verify
 

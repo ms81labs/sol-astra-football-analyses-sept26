@@ -5,6 +5,8 @@ export QT_QPA_PLATFORM="${QT_QPA_PLATFORM-offscreen}"
 VERIFY_DAYTONA="${VERIFY_DAYTONA-0}"
 ALLOW_DAYTONA_MUTATION="${ALLOW_DAYTONA_MUTATION-0}"
 VERIFY_CODE_ONLY="${VERIFY_CODE_ONLY-0}"
+export GA_VERIFICATION_RUN=1
+export GA_VERIFICATION_PROFILE="$([[ "$VERIFY_CODE_ONLY" == "1" ]] && printf code-only || printf full)"
 for flag in VERIFY_DAYTONA ALLOW_DAYTONA_MUTATION VERIFY_CODE_ONLY; do
     value="${!flag}"
     if [[ "$value" != "0" && "$value" != "1" ]]; then
@@ -122,6 +124,7 @@ run_gate "build" "npm --prefix frontend run build"
 run_gate "backend-startup" "python3 -c 'from backend.app.main import app'"
 if [[ "$VERIFY_CODE_ONLY" == "1" ]]; then
     run_gate "prod-audit" "npm --prefix frontend audit --omit=dev --audit-level=high"
+    python3 -m backend.scripts.write_lane_receipt
     printf '%s\n' "Code-only verification passed; restore documented artifacts before running release gates."
     exit 0
 fi

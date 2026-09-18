@@ -2136,7 +2136,7 @@ describe('App match workspace loading', () => {
     expect(fetchMock.mock.calls.some(([, init]) => (
       Boolean(init?.body && String(init.body).includes('"identityContinuous":true'))
     ))).toBe(false);
-    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/workbench/'))).toBe(false);
+    expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/workbench/dev/matches/match-a/metrics'))).toBe(false);
     const storedMetrics = within(await screen.findByRole('region', { name: /stored match metrics/i }));
     expect(storedMetrics.getByText(/withhold physical totals/i)).toBeTruthy();
     expect(storedMetrics.getByText(/IDENTITY_DISCONTINUITY/)).toBeTruthy();

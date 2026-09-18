@@ -3,6 +3,18 @@ name: CI
 on:
   pull_request:
   push:
+  workflow_dispatch:
+    inputs:
+      gpu_approved:
+        description: Run the source-bound GPU acceptance lane
+        required: true
+        default: false
+        type: boolean
+      football_evaluation_approved:
+        description: Confirm independent labels and evaluation inputs are approved
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -11,49 +23,159 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: pip
           cache-dependency-path: |
             pyproject.toml
-            backend/requirements.txt
-            backend/requirements-runtime.txt
-            backend/requirements-dev.txt
-            backend/requirements-ml.txt
+            backend/requirements/dev.lock
             research-addon/pyproject.toml
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: npm
           cache-dependency-path: frontend/package-lock.json
-
-      - name: Install backend dependencies
-        run: pip install -e . -r backend/requirements-dev.txt
-
-      - name: Install sidecar
-        run: pip install -e ./research-addon
-
-      - name: Install frontend dependencies
-        run: npm ci --prefix frontend
-
+      - run: pip install -e . -r backend/requirements-dev.txt
+      - run: pip install -e ./research-addon
+      - run: npm ci --prefix frontend
       - name: Verify code-only project
         run: scripts/verify.sh
         env:
           VERIFY_CODE_ONLY: '1'
           VERIFY_DAYTONA: '0'
           ALLOW_DAYTONA_MUTATION: '0'
-
-      - name: Upload verification logs
-        if: failure()
+      - name: Upload verification evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: verification-logs
-          path: .verification/logs/
+          name: verify-evidence
+          path: |
+            .verification/logs/
+            .verification/receipt.json
           if-no-files-found: warn
+
+  api-profile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements/api.lock
+      - name: Install and smoke-test API profile
+        run: |
+          pip install --dry-run --require-hashes -r backend/requirements/api.lock
+          pip install --require-hashes -r backend/requirements/api.lock
+          pip install -e . --no-deps
+          python -c "import importlib.util; assert importlib.util.find_spec('ultralytics') is None; from backend.app.main import app"
+
+  macos-profile:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements/cpu-cv-macos.lock
+      - name: Dry-run macOS CPU profile
+        run: pip install --dry-run --require-hashes -r backend/requirements/cpu-cv-macos.lock
+
+  integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements/dev.lock
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install integration profile
+        run: |
+          pip install --dry-run --require-hashes -r backend/requirements/dev.lock
+          pip install -e '.[cv]' -r backend/requirements/dev.lock
+      - name: Run integration tests
+        env:
+          GA_VERIFICATION_RUN: '1'
+          GA_VERIFICATION_PROFILE: cv+dev
+        run: |
+          set -o pipefail
+          mkdir -p .verification/logs
+          pytest -m "integration or real_media" backend/tests 2>&1 | tee .verification/logs/integration.log
+      - name: Upload integration evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-evidence
+          path: |
+            .verification/logs/
+            .verification/receipt.json
+          if-no-files-found: warn
+
+  real-media:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements/dev.lock
+      - name: Install generated-media profile
+        run: |
+          sudo apt-get update && sudo apt-get install -y ffmpeg
+          pip install -e '.[cv]' -r backend/requirements/dev.lock
+      - name: Run generated-media tests
+        env:
+          GA_VERIFICATION_RUN: '1'
+          GA_VERIFICATION_PROFILE: cv+dev-real-media
+        run: |
+          set -o pipefail
+          mkdir -p .verification/logs
+          pytest -m real_media backend/tests 2>&1 | tee .verification/logs/real-media.log
+      - name: Upload real-media evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: real-media-evidence
+          path: |
+            .verification/logs/
+            .verification/receipt.json
+          if-no-files-found: warn
+
+  gpu-acceptance:
+    if: github.event_name == 'workflow_dispatch' && inputs.gpu_approved && inputs.football_evaluation_approved
+    runs-on: [self-hosted, linux, x64, gpu]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements/cuda-linux.lock
+      - name: Install GPU profile
+        run: |
+          pip install --dry-run --require-hashes -r backend/requirements/cuda-linux.lock
+          pip install -e '.[cv,cuda]' -r backend/requirements/cuda-linux.lock
+      - name: Run GPU and football evaluation acceptance
+        env:
+          FOOTBALL_EVALUATION_APPROVED: '1'
+          GA_VERIFICATION_RUN: '1'
+          GA_VERIFICATION_PROFILE: cuda-linux
+        run: |
+          set -o pipefail
+          mkdir -p .verification/logs
+          pytest -q backend/tests/test_gpu_acceptance.py backend/tests/test_gpu_worker.py backend/tests/test_run_guerilla.py backend/tests/test_evaluate_football_analysis_pilot.py 2>&1 | tee .verification/logs/gpu-acceptance.log
+      - name: Upload GPU acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gpu-acceptance-evidence
+          path: |
+            .verification/logs/
+            .verification/receipt.json
+          if-no-files-found: error

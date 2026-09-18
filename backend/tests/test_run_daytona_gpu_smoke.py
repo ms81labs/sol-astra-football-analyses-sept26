@@ -135,13 +135,21 @@ def test_environment_rejects_unhashed_unpinned_duplicate_provider_and_changed_ba
         smoke.validate_worker_environment(tmp_path)
 
 
-def test_worker_requirements_reuse_the_complete_exact_ml_pin_set():
+def test_worker_requirement_pins_remain_aligned_with_cuda_profile():
     direct = (ROOT / "backend/daytona_worker/requirements.txt").read_text()
-    assert direct.startswith((ROOT / "backend/requirements-ml.txt").read_text())
+    profile_pins = {
+        line.split(";", 1)[0].strip()
+        for profile in ("cpu-cv.in", "cuda.in")
+        for line in (ROOT / "backend/requirements" / profile).read_text().splitlines()
+        if line and not line.startswith(("#", "-r"))
+    }
+    # PyYAML supports the local training gate and is not needed in the sealed worker.
+    profile_pins.discard("pyyaml==6.0.3")
     assert "pandas==3.0.1\n" in direct
     assert "boto3==1.34.131\n" in direct
     assert "pydantic==2.13.5\n" in direct
     pins = {line for line in direct.splitlines() if line and not line.startswith("#")}
+    assert profile_pins <= pins
     locked = {
         line.split(" --hash=", 1)[0]
         for line in (ROOT / "backend/daytona_worker/requirements.lock").read_text().splitlines()
