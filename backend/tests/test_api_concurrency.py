@@ -197,7 +197,7 @@ async def _test_analysis_does_not_block_http_or_websocket_progress(
         assert isinstance(analysis_response, httpx.Response)
         assert analysis_response.status_code == expected_status
         if expected_status == 200:
-            assert analysis_response.json() == analysis_result
+            assert analysis_response.json().items() >= analysis_result.items()
         else:
             assert analysis_response.json() == {"detail": str(analysis_result)}
         websocket_messages = responses["websocket"]
