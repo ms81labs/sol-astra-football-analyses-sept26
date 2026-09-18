@@ -200,6 +200,81 @@ class SamplingReceipt(StrictModel):
         return False
 
 
+class GenerationManifest(StrictModel):
+    generationId: str
+    matchId: str
+    observationDigest: str
+    detectionIdentity: str | None = None
+    trackingIdentity: str | None = None
+    calibrationRevision: str | None = None
+    correctionHead: str
+    algorithmVersions: dict[str, str]
+    files: dict[str, str]
+    stale: list[str] = Field(default_factory=list)
+    orphanedDecisions: list[str] = Field(default_factory=list)
+    publishedAt: str
+
+
+class MetricScope(StrictModel):
+    team: Literal["my_team", "enemy"] | None = None
+    player: str | None = None
+    interval: Interval | None = None
+
+
+class CanonicalMetricRecord(StrictModel):
+    metric: str
+    definitionVersion: str
+    scope: MetricScope
+    generationId: str
+    value: float | None
+    unit: str
+    availability: Literal["available", "experimental", "withheld", "unknown"]
+    status: Literal["observed", "estimated", "reviewed"]
+    eligibleSeconds: float | None
+    requestedSeconds: float | None
+    exclusions: list[str] = Field(default_factory=list)
+    algorithmRevision: str
+    calibrationRevision: str | None = None
+    uncertainty: float | None = None
+    reasonCodes: list[str] = Field(default_factory=list)
+
+
+ChargeKind = Literal["reserved", "estimated", "unsettled", "settled", "released"]
+
+
+class JobBudgetSnapshot(StrictModel):
+    requestId: str
+    authorisedBudget: float
+    settledTotal: float
+    reservedTotal: float
+    unsettledTotal: float
+    actualTotal: float | None
+
+
+class EvidenceReference(StrictModel):
+    matchId: str
+    generationId: str
+    evidenceId: str
+
+
+class MeasuredRuntimeReceipt(StrictModel):
+    sourceIdentity: str
+    modelIdentity: str | None
+    runtimeBuild: str
+    decodedFrames: int
+    inferenceCalls: int
+    batchSizes: list[int]
+    recoveryCalls: int
+    trackerUpdates: int
+    exportedSamples: int
+    timestampPolicy: str
+    timeBase: tuple[int, int] | None
+    timingBoundaries: dict[str, float]
+    peakMemoryBytes: int | None
+    transferredBytes: int | None
+    committedGeneration: str | None
+
+
 class JobPhase(StrictModel):
     requestId: str
     attemptId: str
