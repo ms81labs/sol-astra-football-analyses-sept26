@@ -24,9 +24,8 @@ def create_leftover_post_router(storage: Storage) -> APIRouter:
     IdentityRecord = _main.IdentityRecord
     IdentityRepair = _main.IdentityRepair
     OwnershipHysteresis = _main.OwnershipHysteresis
-    PreprocessorAdapter = _main.PreprocessorAdapter
+    PreprocessPlan = _main.PreprocessPlan
     SourceClockIdentity = _main.SourceClockIdentity
-    TrackerAdapter = _main.TrackerAdapter
     _as_bytes = _main._as_bytes
     _as_detection = _main._as_detection
     _as_label = _main._as_label
@@ -396,7 +395,7 @@ def create_leftover_post_router(storage: Storage) -> APIRouter:
     @router.post("/perception/preprocess")
     def post_perception_preprocess(payload: dict | None = None) -> dict:
         body = payload or {}
-        result = PreprocessorAdapter().transform(
+        result = PreprocessPlan().transform(
             pixels=_as_bytes(body.get("pixels") or [10, 200, 30]),
             width=int(body.get("width") or 1),
             height=int(body.get("height") or 1),
@@ -454,7 +453,7 @@ def create_leftover_post_router(storage: Storage) -> APIRouter:
     def post_tracker_associate(payload: dict | None = None) -> dict:
         body = payload or {}
         detections = [_as_detection(item) for item in list(body.get("detections") or [])]
-        tracks = TrackerAdapter().associate(
+        tracks = _main.IouAssociationFallback().associate(
             detections,
             cut_detected=bool(body.get("cutDetected")),
             broadcast_replay=bool(body.get("broadcastReplay")),

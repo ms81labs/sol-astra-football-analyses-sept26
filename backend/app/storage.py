@@ -268,6 +268,9 @@ class Storage:
     def __init__(self, storage_root: Path):
         self.storage_root = Path(storage_root)
         self.storage_root.mkdir(parents=True, exist_ok=True)
+        from .workbench.hashing import HashCache
+
+        self.hash_cache = HashCache(self.storage_root)
         self.db_path = self.storage_root / "guerilla.sqlite3"
         # ponytail: per-instance only; use a cross-process lock if multiple Storage instances mutate these files.
         self._annotation_issue_lock = threading.Lock()
@@ -1436,8 +1439,7 @@ class Storage:
         if analysis_type.endswith(".receipt") or analysis_type in {"worker_progress", "remote_worker_progress"}:
             self._write_json(path, payload)
             return
-        previous = path.read_bytes() if path.exists() else b""
-        previous_digest = hashlib.sha256(previous).hexdigest() if previous else "0" * 64
+        previous_digest = self.hash_cache.identity(path).sha256 if path.exists() else "0" * 64
         encoded = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
         from .workbench.artifacts import ArtifactStore, write_alongside
 
@@ -2638,13 +2640,20 @@ class Storage:
                     original,
                     destination,
                     original_sha256=sha,
+                    hash_cache=self.hash_cache,
                 )
             )
             receipt["ranFfmpeg"] = True
             return receipt
         except (FileNotFoundError, ValueError, OSError, Exception):
             receipt = dict(
-                derive_proxy_assets(original, original_sha256=sha, original_pts=pts, time_base=(1, 90000))
+                derive_proxy_assets(
+                    original,
+                    original_sha256=sha,
+                    original_pts=pts,
+                    time_base=(1, 90000),
+                    hash_cache=self.hash_cache,
+                )
             )
             receipt["ranFfmpeg"] = False
             return receipt

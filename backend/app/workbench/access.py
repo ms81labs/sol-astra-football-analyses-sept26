@@ -150,12 +150,29 @@ def protocol_network_allowlist(*, url: str) -> dict[str, Any]:
     }
 
 
-def constrained_decoder(*, argv: list[str], network_enabled: bool) -> dict[str, Any]:
+def constrained_decoder(*, argv: list[str], network_enabled: bool, settings=None) -> dict[str, Any]:
+    from pathlib import Path
+
+    from .executables import resolve_trusted_executable
+
     joined = " ".join(argv)
     networked = network_enabled or any(
         token.startswith(("http:", "https:", "ftp:", "rtmp:", "rtsp:")) or "://" in token for token in argv
     ) or "http://" in joined or "https://" in joined
-    if not argv or argv[0] not in {"ffmpeg", "ffprobe"} or networked:
+    admitted_binary = False
+    if argv:
+        name = Path(argv[0]).name.removesuffix(".exe")
+        if name in {"ffmpeg", "ffprobe"}:
+            try:
+                expected = resolve_trusted_executable(
+                    name,  # type: ignore[arg-type]
+                    configured=argv[0] if Path(argv[0]).is_absolute() else None,
+                    settings=settings,
+                )
+                admitted_binary = Path(argv[0]) == expected
+            except (FileNotFoundError, OSError, ValueError):
+                admitted_binary = False
+    if not admitted_binary or networked:
         return {"admitted": False, "reasonCodes": ["UNCONSTRAINED_DECODER"]}
     return {"admitted": True, "reasonCodes": []}
 

@@ -38,4 +38,5 @@ backend = [
 [tool.pytest.ini_options]
 markers = [
   "integration: exercises multiple processes or external process boundaries",
+  "real_media: requires local ffmpeg and ffprobe executables",
 ]

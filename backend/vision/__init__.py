@@ -4,7 +4,7 @@ from backend.app.workbench.geometry import CalibrationProfile, ground_contact_po
 from backend.app.workbench.perception import (
     DetectorAdapter,
     IdentityRepair,
-    PreprocessorAdapter,
+    PreprocessPlan,
     TrackerAdapter,
     merge_tiled_detections,
     score_detections_by_stratum,
@@ -15,7 +15,7 @@ __all__ = [
     "CalibrationProfile",
     "DetectorAdapter",
     "IdentityRepair",
-    "PreprocessorAdapter",
+    "PreprocessPlan",
     "TrackerAdapter",
     "ground_contact_point",
     "merge_tiled_detections",

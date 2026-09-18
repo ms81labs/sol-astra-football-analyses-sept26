@@ -7,7 +7,8 @@ from .schemas import MatchConfig
 from .workbench.cache import cache_identity, recompute_plan
 from .workbench.geometry import ground_contact_point, project_to_pitch
 from .workbench.media import FrameSource, OpenCvFrameSource, SamplingAudit, decode_memory_policy, four_rates_receipt, vid_stride_policy
-from .workbench.perception import Detection, DetectorAdapter, PreprocessorAdapter, TrackerAdapter
+from .workbench.hashing import HashCache
+from .workbench.perception import DetectorAdapter
 
 # Exposed at module level so tests can patch this name directly.
 from backend.run_guerilla import TARGET_FPS, process_video as _process_video_impl
@@ -43,8 +44,11 @@ def process_video_input(
     job_id: str | None = None,
     primary_acquisition_mode: str = "anchored_player_ranked_context_960",
     frame_source: FrameSource | None = None,
+    hash_cache: HashCache | None = None,
 ) -> dict[str, object]:
-    adapter = frame_source or OpenCvFrameSource()
+    if hash_cache is None and video_path.parent.name == "uploads":
+        hash_cache = HashCache(video_path.parent.parent)
+    adapter = frame_source or OpenCvFrameSource(hash_cache=hash_cache)
     if config.autoHomography:
         # Auto-detect: backend tries pitch_detector.py first, fallback to manual
         homography_points = None
@@ -136,12 +140,6 @@ def _sampling_and_cache(source_clock: dict[str, object], adapter: FrameSource) -
             cuda_visible=False,
             video_engine_capability=False,
         ),
-        "preprocessor": PreprocessorAdapter().transform(
-            pixels=b"",
-            width=0,
-            height=0,
-            colour_order="bgr",
-        ),
         "detector": DetectorAdapter().detect(
             {"colourOrder": "bgr"},
             requested_backend="cpu",
@@ -189,23 +187,27 @@ def associate_projected_rows(
     cut_detected: bool = False,
     broadcast_replay: bool = False,
 ) -> list[dict]:
-    detections: list[Detection] = []
+    tracks: list[dict] = []
     for row in rows:
         box = _bbox_from_row(row)
         if box is None:
             continue
         raw_kind = str(row.get("kind") or row.get("Entity_Type") or "other").lower()
         kind = "player" if raw_kind in {"player", "person"} else ("ball" if raw_kind == "ball" else "other")
-        detections.append(
-            Detection(
-                frameId=int(row.get("Frame_ID") or 0),
-                bbox=box,
-                score=float(row.get("Conf") or 0.0),
-                kind=kind,  # type: ignore[arg-type]
-                stratum="near",
-            )
+        identity = row.get("Track_ID", row.get("trackId"))
+        tracks.append(
+            {
+                "frameId": int(row.get("Frame_ID") or 0),
+                "trackId": "unassigned" if identity is None or int(identity) < 0 else str(identity),
+                "bbox": box,
+                "kind": kind,
+                "observationSource": row.get("observationSource", "observed"),
+                "reset": bool(cut_detected or broadcast_replay),
+                "silentlyReconnected": False,
+                "productionPath": "botsort",
+            }
         )
-    return TrackerAdapter().associate(detections, cut_detected=cut_detected, broadcast_replay=broadcast_replay)
+    return tracks
 
 
 IMAGE_SPACE_SAFE_CHANGES = {"report", "calibration", "team_mapping", "track_edit", "ownership"}
