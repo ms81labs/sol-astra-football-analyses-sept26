@@ -649,6 +649,7 @@ def test_ci_keeps_canonical_verifier_and_declares_acceptance_lanes() -> None:
     ):
         assert dependency_file in workflow
     assert workflow.count("pip install --require-hashes -r backend/requirements/dev.lock") == 3
+    assert workflow.count("sudo apt-get update && sudo apt-get install -y ffmpeg") == 3
     assert "pip install --require-hashes -r backend/requirements/cuda-linux.lock" in workflow
     assert workflow.count("pip install -e . --no-deps") == 2
     assert workflow.count("pip install -e '.[cv]' --no-deps") == 2
