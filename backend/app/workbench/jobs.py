@@ -11,6 +11,8 @@ from typing import Any, Literal
 
 from pydantic import Field
 
+from .errors import IdempotencyConflict
+
 from .cache import REBUILD_FOR, cache_identity
 from .contracts import JobPhase, StrictModel
 
@@ -199,7 +201,7 @@ class DurableJobLedger:
         existing = self.requests.get(request.requestId)
         if existing is not None:
             if existing != request:
-                raise ValueError("idempotent request payload mismatch")
+                raise IdempotencyConflict(request.requestId)
             latest = self.attempts[request.requestId][-1]
             if latest.status not in {"failed", "cancelled", "outcome_unknown"}:
                 return latest

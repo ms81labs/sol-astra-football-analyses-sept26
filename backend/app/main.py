@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
 
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from pydantic import ValidationError
@@ -28,6 +28,7 @@ from .export_flatteners import (
     render_csv,
 )
 from .jobs import JobDispatchError, JobRunner
+from .workbench.errors import DomainError, IdempotencyConflict, RouteRetired, StaleRevision
 from .llm import run_analysis
 from .report_export import build_match_report_export
 from .settings import ProcessingSettings, SettingsError, canonicalize_origin
@@ -672,6 +673,25 @@ def create_app(
     app = FastAPI(title="Guerilla Analytics API", version="0.1.0", lifespan=lifespan)
     app.state.storage = storage
     app.state.runner = runner
+
+    @app.exception_handler(DomainError)
+    async def domain_error(_request: Request, exc: DomainError) -> JSONResponse:
+        if isinstance(exc, IdempotencyConflict):
+            return JSONResponse(
+                status_code=409,
+                content={"error": "IDEMPOTENCY_CONFLICT", "requestId": exc.request_id},
+            )
+        if isinstance(exc, StaleRevision):
+            return JSONResponse(
+                status_code=409,
+                content={"error": "STALE_REVISION", "expected": exc.expected, "actual": exc.actual},
+            )
+        if isinstance(exc, RouteRetired):
+            return JSONResponse(
+                status_code=410,
+                content={"error": "ROUTE_RETIRED", "replacement": exc.replacement},
+            )
+        return JSONResponse(status_code=400, content={"error": "DOMAIN_ERROR"})
     app.include_router(create_workbench_router(storage.storage_root, ledger=storage.job_ledger))
     from .workbench.leftover_http import LeftoverHttpGate
     from .workbench.leftover_get_routes import attach_leftover_get_routes
