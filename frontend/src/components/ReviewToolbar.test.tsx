@@ -91,6 +91,34 @@ describe('ReviewToolbar', () => {
     expect(onShortcut).toHaveBeenCalledTimes(3);
   });
 
+  it('keeps the global shortcut listener stable while using the latest callback', () => {
+    const addListener = vi.spyOn(window, 'addEventListener');
+    const firstShortcut = vi.fn();
+    const latestShortcut = vi.fn();
+    const { rerender } = render(
+      <ReviewToolbar
+        onCreateNote={vi.fn()}
+        onCreateTaggedMoment={vi.fn()}
+        onShortcut={firstShortcut}
+      />,
+    );
+    const initialKeydownListeners = addListener.mock.calls.filter(([type]) => type === 'keydown').length;
+
+    rerender(
+      <ReviewToolbar
+        onCreateNote={vi.fn()}
+        onCreateTaggedMoment={vi.fn()}
+        onShortcut={latestShortcut}
+      />,
+    );
+
+    expect(addListener.mock.calls.filter(([type]) => type === 'keydown')).toHaveLength(initialKeydownListeners);
+    fireEvent.keyDown(window, { key: 'a' });
+    expect(firstShortcut).not.toHaveBeenCalled();
+    expect(latestShortcut).toHaveBeenCalledWith('accept');
+    addListener.mockRestore();
+  });
+
   it('shows pending, conflicted and unavailable correction save states', () => {
     const { rerender } = render(
       <ReviewToolbar onCreateNote={vi.fn()} onCreateTaggedMoment={vi.fn()} saveState="pending" />,

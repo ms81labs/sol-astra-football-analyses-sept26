@@ -19,6 +19,8 @@ const SAVE_STATE_LABEL: Record<string, string> = {
 
 export default function ReviewToolbar({ onCreateNote, onCreateTaggedMoment, onShortcut, saveState = null }: ReviewToolbarProps) {
     const inputRef = useRef<HTMLInputElement>(null);
+    const shortcutRef = useRef(onShortcut);
+    shortcutRef.current = onShortcut;
     const [isSaving, setIsSaving] = useState(false);
 
     const submit = async (action: (value: string) => Promise<TacticalAnnotation | null>) => {
@@ -46,7 +48,6 @@ export default function ReviewToolbar({ onCreateNote, onCreateTaggedMoment, onSh
     };
 
     useEffect(() => {
-        if (!onShortcut) return undefined;
         const handler = (event: KeyboardEvent) => {
             const target = event.target as HTMLElement | null;
             if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
@@ -55,11 +56,11 @@ export default function ReviewToolbar({ onCreateNote, onCreateTaggedMoment, onSh
             const action = reviewShortcut(event.key);
             if (!action || action === 'save_note') return;
             event.preventDefault();
-            onShortcut(action);
+            shortcutRef.current?.(action);
         };
         window.addEventListener('keydown', handler);
         return () => window.removeEventListener('keydown', handler);
-    }, [onShortcut]);
+    }, []);
 
     return (
         <div className="space-y-2">
