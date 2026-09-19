@@ -1,0 +1,34 @@
+name: C01 source-bound workspace
+
+on:
+  push:
+    branches: [agent/c01-generation-hardening-20260919]
+    paths: [.github/workflows/c01-workspace.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  export-workspace:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Export committed source for isolated local verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/c01-workspace"
+          git bundle create "$RUNNER_TEMP/c01-workspace/repository.bundle" HEAD refs/remotes/origin/main
+          git rev-parse HEAD > "$RUNNER_TEMP/c01-workspace/source-sha.txt"
+          git status --porcelain > "$RUNNER_TEMP/c01-workspace/worktree-status.txt"
+          sha256sum "$RUNNER_TEMP/c01-workspace/repository.bundle" > "$RUNNER_TEMP/c01-workspace/SHA256SUMS.txt"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: c01-source-workspace
+          path: ${{ runner.temp }}/c01-workspace/
+          retention-days: 7
+          if-no-files-found: error
