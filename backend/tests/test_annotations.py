@@ -120,7 +120,7 @@ def test_invalid_existing_records_raise_without_changing_file(
     operation: str,
 ) -> None:
     path = storage.storage_root / "matches" / match_id / f"{kind}s.json"
-    path.parent.mkdir(parents=True)
+    path.parent.mkdir(parents=True, exist_ok=True)  # C01 controls are initialised on admission.
     path.write_bytes(content)
 
     with pytest.raises(expected_error):
@@ -158,7 +158,9 @@ def test_replace_failure_preserves_existing_records_and_removes_temporary_file(
         create(match_id, request)
 
     assert path.read_bytes() == original
-    assert list(path.parent.iterdir()) == [path]
+    assert {entry.name for entry in path.parent.iterdir()} == {
+        path.name, ".review.lock", ".generation.lock", ".generation.lifetime.lock"
+    }
 
 
 @pytest.mark.parametrize("kind", ["annotation", "issue"])
@@ -169,7 +171,7 @@ def test_concurrent_creates_do_not_lose_records(
     kind: str,
 ) -> None:
     path = storage.storage_root / "matches" / match_id / f"{kind}s.json"
-    path.parent.mkdir(parents=True)
+    path.parent.mkdir(parents=True, exist_ok=True)  # C01 controls are initialised on admission.
     path.write_text("[]", encoding="utf-8")
     read_json = storage._read_json
 

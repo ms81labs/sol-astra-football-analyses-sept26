@@ -48,7 +48,6 @@ _REMOTE_RESULT_FILENAMES = (
     "tactical_report.json",
     "drills.json",
     "frames.json",
-    "current_generation.json",
     "input_video_identity.json",
     "ownership_publication.json",
     "raw_rows.json",
@@ -264,6 +263,21 @@ class _ClosingConnection:
         self._connection.close()
 
 
+def _generation_writer(method):
+    from functools import wraps
+
+    @wraps(method)
+    def guarded(self, match_id, *args, **kwargs):
+        self.generations.prepare(match_id)
+        with self.generations.guard(match_id, "review", exclusive=True), self.generations.guard(match_id, "lifetime"):
+            try:
+                self.generations.resolve(match_id)
+            except FileNotFoundError:
+                pass  # Known pre-generation compatibility writer, not GET migration.
+            return method(self, match_id, *args, **kwargs)
+    return guarded
+
+
 class Storage:
     def __init__(self, storage_root: Path):
         self.storage_root = Path(storage_root)
@@ -279,10 +293,14 @@ class Storage:
         # ponytail: per-instance config serialization; use per-match cross-process locks for multiple API workers.
         self.config_update_lock = threading.Lock()
         self._remote_cost_unsettled = False
+        from .generations import GenerationStore
+        self.generations = GenerationStore(self)
+        self._generation_recovery_errors = {}
         self._initialize()
         from .workbench.jobs import DurableJobLedger
 
         self.job_ledger = DurableJobLedger(db_path=self.db_path)
+        self._initialise_generation_stores()
         self._recover_pending_reviews()
 
     def _recover_pending_reviews(self) -> None:
@@ -292,7 +310,7 @@ class Storage:
         directories = [
             directory
             for directory in matches.iterdir()
-            if directory.is_dir() and (directory / "corrections.json").is_file()
+            if directory.name not in self._generation_recovery_errors and directory.is_dir() and (directory / "corrections.json").is_file()
             and any(
                 item.get("applyState") in {"committed", "applying"}
                 for item in (self._read_json(directory / "corrections.json").get("items") or [])
@@ -305,6 +323,26 @@ class Storage:
         service = ReviewService(self)
         for directory in directories:
             service.apply_pending(directory.name)
+
+    def _initialise_generation_stores(self) -> None:
+        from .generations import GenerationRecoveryRequired
+        root = self.storage_root / "matches"
+        for directory in root.iterdir() if root.exists() else ():
+            if not directory.is_dir():
+                continue
+            try:
+                self.recover_generations(directory.name)
+                self._complete_generations(directory.name)
+            except (OSError, GenerationRecoveryRequired) as exc:
+                self._generation_recovery_errors[directory.name] = str(exc)
+
+    def recover_generations(self, match_id: str, *, migrate: bool = True) -> dict:
+        receipt = self.generations.recover(match_id, migrate=migrate)
+        self._generation_recovery_errors.pop(match_id, None)
+        return receipt
+
+    def retain_generations(self, match_id: str, **options) -> dict:
+        return self.generations.retention(match_id, **options)
 
     def close(self) -> None:
         try:
@@ -369,6 +407,9 @@ class Storage:
                 row["name"]
                 for row in connection.execute("PRAGMA table_info(matches)").fetchall()
             }
+            for column in ("analytical_generation_id", "semantic_config_revision"):
+                if column not in match_columns:
+                    connection.execute(f"ALTER TABLE matches ADD COLUMN {column} TEXT")
             if "admission_token" not in match_columns:
                 connection.execute("ALTER TABLE matches ADD COLUMN admission_token TEXT")
             if "analytics_summary_json" not in match_columns:
@@ -397,6 +438,14 @@ class Storage:
 
     @contextmanager
     def remote_result_import(self, match_id: str) -> Iterator[None]:
+        self.generations.prepare(match_id)
+        with self.generations.guard(match_id, "review", exclusive=True), self.generations.guard(match_id, "lifetime"):
+            with self.generations.deferred_publication(match_id):
+                with self._remote_result_import_backups(match_id):
+                    yield
+
+    @contextmanager
+    def _remote_result_import_backups(self, match_id: str) -> Iterator[None]:
         """Restore owned football outputs and match metadata if import fails."""
 
         match_dir = self._match_dir(match_id)
@@ -581,6 +630,7 @@ class Storage:
                     now,
                 ),
             )
+        self.generations.prepare(match_id)
         return self.get_match(match_id)
 
     def create_job(self, match_id: str) -> JobRecord:
@@ -1051,7 +1101,7 @@ class Storage:
             inputMode=row["input_mode"],
             status=row["status"],
             originalFilename=row["original_filename"],
-            config=MatchConfig.model_validate_json(row["config_json"]),
+            config=self.generations.configuration(match_id, MatchConfig.model_validate_json(row["config_json"])),
             createdAt=datetime.fromisoformat(row["created_at"]),
             updatedAt=datetime.fromisoformat(row["updated_at"]),
             requiresTeamSelection=bool(row["requires_team_selection"]),
@@ -1070,6 +1120,7 @@ class Storage:
             rows = connection.execute("SELECT id FROM matches ORDER BY created_at DESC").fetchall()
         return [self.get_match(row["id"]) for row in rows]
 
+    @_generation_writer
     def save_frames(self, match_id: str, frames: Iterable[FrameData]) -> None:
         if (self._match_dir(match_id) / "current_generation.json").exists():
             self._publish_replacement(match_id, frames=list(frames))
@@ -1084,17 +1135,18 @@ class Storage:
 
     def _video_ball_signal_summary(self, match_id: str, summary: MatchSummary) -> MatchSummary:
         # ponytail: promote video trust only after a match-bound independent ball-label receipt exists.
-        try:
-            match = self.get_match(match_id)
-        except KeyError:
-            return summary  # Artifact-only records have no authoritative input mode.
-        if match.inputMode == "video" and summary.ballSignalStatus == "trusted":
+        with self._connect() as connection:
+            row = connection.execute("SELECT input_mode FROM matches WHERE id=?", (match_id,)).fetchone()
+        if row is None:
+            return summary  # Artifact-only record has no authoritative input mode.
+        if row["input_mode"] == "video" and summary.ballSignalStatus == "trusted":
             return summary.model_copy(update={
                 "ballSignalStatus": "untrusted",
                 "ballSignalMessage": "Ball detections have not been independently verified.",
             })
         return summary
 
+    @_generation_writer
     def save_analytics(
         self,
         match_id: str,
@@ -1130,192 +1182,69 @@ class Storage:
                 (summary.model_dump_json(), match_id),
             )
 
+    @_generation_writer
     def save_events(self, match_id: str, events: list[DetectedEvent]) -> None:
         if (self._match_dir(match_id) / "current_generation.json").exists():
             self._publish_replacement(match_id, events=events)
             return
         self._write_json(self._match_dir(match_id) / "events.json", [event.model_dump(mode="json") for event in events])
 
-    def _publish_replacement(
-        self,
-        match_id: str,
-        *,
-        frames: list[FrameData] | None = None,
-        summary: MatchSummary | None = None,
-        assignments: list[BallOwnership] | None = None,
-        formation_timeline: list[FormationSegment] | None = None,
-        shots: list[ShotAnalytics] | None = None,
-        events: list[DetectedEvent] | None = None,
-    ) -> None:
-        with self._generation_lock(match_id):
-            ref = self._current_generation_unlocked(match_id)
-            root = self._match_dir(match_id) / "generations" / ref.generationId
-            analytics = self._read_json(root / "analytics.json")
-            self._publish_generation_unlocked(
-                match_id,
-                frames=frames if frames is not None else [FrameData.model_validate(item) for item in self._read_json(root / "frames.json")],
-                summary=summary if summary is not None else MatchSummary.model_validate(analytics["summary"]),
-                assignments=assignments if assignments is not None else [
-                    BallOwnership.model_validate(item) for item in analytics.get("ballAssignments") or []
-                ],
-                formation_timeline=formation_timeline if formation_timeline is not None else [
-                    FormationSegment.model_validate(item) for item in analytics.get("formationTimeline") or []
-                ],
-                shots=shots if shots is not None else [ShotAnalytics.model_validate(item) for item in analytics.get("shots") or []],
-                events=events if events is not None else [DetectedEvent.model_validate(item) for item in self._read_json(root / "events.json")],
-                correction_head=ref.correctionHead,
-            )
+    def _publish_replacement(self, match_id: str, *, frames=None, summary=None,
+                             assignments=None, formation_timeline=None, shots=None, events=None) -> None:
+        with self.generations.guard(match_id, "review", exclusive=True):
+            with self.generation_snapshot(match_id) as ref:
+                manifest, _ = self.generations.manifest(match_id, ref.generationId)
+                old_summary, old_assignments, old_formations, old_shots = self.load_analytics(match_id)
+                config = manifest.effectiveConfig
+                self.publish_generation(
+                    match_id, frames=frames if frames is not None else self.load_frames(match_id),
+                    summary=summary if summary is not None else old_summary,
+                    assignments=assignments if assignments is not None else old_assignments,
+                    formation_timeline=formation_timeline if formation_timeline is not None else old_formations,
+                    shots=shots if shots is not None else old_shots,
+                    events=events if events is not None else self.load_events(match_id),
+                    correction_head=ref.correctionHead, calibration_revision=manifest.calibrationRevision,
+                    calibration_data=manifest.calibrationData, effective_config=config,
+                    expected_parent=ref.generationId, provenance=manifest)
 
     @contextmanager
-    def _generation_lock(self, match_id: str) -> Iterator[None]:
-        path = self._match_dir(match_id) / ".generation.lock"
-        with path.open("a+b") as handle:
-            try:
-                import fcntl
-            except ImportError:
-                with self._annotation_issue_lock:
-                    yield
-                return
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-            try:
-                yield
-            finally:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+    def _generation_lock(self, match_id: str):
+        with self.generations.guard(match_id, "review", exclusive=True), self.generations.guard(match_id, "lifetime"), self.generations.guard(match_id, "publication", exclusive=True):
+            yield
 
     def current_generation(self, match_id: str):
-        with self._generation_lock(match_id):
-            return self._current_generation_unlocked(match_id)
+        with self.generation_snapshot(match_id) as ref:
+            return ref
 
     @contextmanager
-    def generation_snapshot(self, match_id: str):
-        with self._generation_lock(match_id):
-            yield self._current_generation_unlocked(match_id)
+    def generation_snapshot(self, match_id: str, *, generation_id: str | None = None):
+        with self.generations.snapshot(match_id, generation_id) as ref:
+            yield ref
 
     def _current_generation_unlocked(self, match_id: str):
-        from .workbench.contracts import GenerationManifest, GenerationRef
-
-        match_dir = self._match_dir(match_id)
-        generations = match_dir / "generations"
-        generations.mkdir(parents=True, exist_ok=True)
-        pointer_path = match_dir / "current_generation.json"
-        pointer = self._read_json(pointer_path) if pointer_path.exists() else None
-        complete = self._complete_generations(match_id)
-        requested = str((pointer or {}).get("generationId") or "")
-        recovery_required = bool(requested and requested not in complete)
-
-        if requested in complete:
-            manifest = complete[requested]
-        elif complete:
-            manifest = max(complete.values(), key=lambda item: item.publishedAt)
-        else:
-            manifest = self._import_legacy_generation(match_id)
-
-        ref = GenerationRef(
-            generationId=manifest.generationId,
-            publishedAt=manifest.publishedAt,
-            correctionHead=manifest.correctionHead,
-            calibrationRevision=manifest.calibrationRevision,
-            recoveryRequired=recovery_required,
-            migrated=manifest.generationId.startswith("gen_legacy_"),
-        )
-        self._write_json(
-            pointer_path,
-            {
-                "generationId": ref.generationId,
-                "publishedAt": ref.publishedAt,
-                "correctionHead": ref.correctionHead,
-                "calibrationRevision": ref.calibrationRevision,
-            },
-        )
-        protected = {ref.generationId}
-        if (match_dir / "corrections.json").is_file():
-            protected.update(
-                item.appliedGeneration
-                for item in self._load_correction_log(match_id).history(match_id)
-                if item.applyState == "applying" and item.appliedGeneration
-            )
-        for child in generations.iterdir():
-            if child.is_dir() and child.name.startswith("gen_") and child.name not in protected:
-                shutil.rmtree(child)
-        return ref
+        return self.generations.resolve(match_id)
 
     def _complete_generations(self, match_id: str) -> dict[str, object]:
-        from .workbench.contracts import GenerationManifest
-
-        root = self._match_dir(match_id) / "generations"
-        complete: dict[str, GenerationManifest] = {}
-        if not root.exists():
-            return complete
-        for directory in root.iterdir():
-            manifest_path = directory / "manifest.json"
-            if not directory.is_dir() or not directory.name.startswith("gen_") or not manifest_path.is_file():
-                continue
-            try:
-                manifest = GenerationManifest.model_validate(self._read_json(manifest_path))
-            except (OSError, ValueError, ValidationError):
-                continue
-            if manifest.generationId != directory.name:
-                continue
-            if all(
-                (directory / name).is_file() and self._sha256_file(directory / name) == digest
-                for name, digest in manifest.files.items()
-            ):
-                complete[directory.name] = manifest
-        return complete
+        """Explicit maintenance helper; never called by a routine reader."""
+        from .generations import GenerationRecoveryRequired
+        with self.generations.guard(match_id, "lifetime"):
+            result = {}
+            root = self.generations.root(match_id) / "generations"
+            for directory in root.iterdir() if root.exists() else ():
+                if directory.is_dir() and directory.name.startswith("gen_"):
+                    try:
+                        result[directory.name] = self.generations.verify(match_id, directory.name)[0]
+                    except (OSError, GenerationRecoveryRequired):
+                        continue
+            return result
 
     def _import_legacy_generation(self, match_id: str):
-        from .workbench.contracts import GenerationManifest
-
-        match_dir = self._match_dir(match_id)
-        legacy_paths = {name: match_dir / name for name in ("frames.json", "events.json", "analytics.json")}
-        if not all(path.is_file() for path in legacy_paths.values()):
-            raise FileNotFoundError(f"No complete generation exists for {match_id}")
-        analytics = self._read_json(legacy_paths["analytics.json"])
-        payloads = {
-            "frames.json": self._read_json(legacy_paths["frames.json"]),
-            "events.json": self._read_json(legacy_paths["events.json"]),
-            "analytics.json": analytics,
-            "shots.json": list(analytics.get("shots") or []),
-            "summary.json": dict(analytics.get("summary") or {}),
-        }
-        digest = hashlib.sha256(
-            b"".join(json.dumps(payloads[name], sort_keys=True, separators=(",", ":")).encode() for name in sorted(payloads))
-        ).hexdigest()
-        generation_id = f"gen_legacy_{digest[:16]}"
-        generation_dir = match_dir / "generations" / generation_id
-        generation_dir.mkdir(parents=True, exist_ok=True)
-        for name, payload in payloads.items():
-            self._write_json(generation_dir / name, payload)
-        try:
-            raw_digest = self._sha256_file(match_dir / "raw_rows.json")
-        except FileNotFoundError:
-            raw_digest = self._sha256_file(generation_dir / "frames.json")
-        corrections = self.list_corrections(match_id)
-        published_at = _utcnow().isoformat().replace("+00:00", "Z")
-        identity_digests: dict[str, str | None] = {"detection": None, "tracking": None}
-        for layer in identity_digests:
-            try:
-                stored_identity = self.load_analysis_artifact(match_id, f"{layer}_identity")
-            except FileNotFoundError:
-                continue
-            digest = stored_identity.get("digest")
-            if stored_identity.get("reusable") is True and isinstance(digest, str):
-                identity_digests[layer] = digest
-        manifest = GenerationManifest(
-            generationId=generation_id,
-            matchId=match_id,
-            observationDigest=raw_digest,
-            correctionHead=str(corrections[-1]["correctionId"]) if corrections else "none",
-            algorithmVersions={"legacy_import": "1"},
-            files={name: self._sha256_file(generation_dir / name) for name in payloads},
-            publishedAt=published_at,
-        )
-        self._write_json(generation_dir / "manifest.json", manifest.model_dump(mode="json"))
-        return manifest
+        self.recover_generations(match_id)
+        ref = self.current_generation(match_id)
+        return self.generations.manifest(match_id, ref.generationId)[0]
 
     def publish_generation(self, match_id: str, **payload):
-        with self._generation_lock(match_id):
-            return self._publish_generation_unlocked(match_id, **payload)
+        return self.generations.publish(match_id, **payload)
 
     def _generation_layer_identities(
         self,
@@ -1362,123 +1291,11 @@ class Storage:
                 "components": report.components(),
             },
         }
-        for name in ("projection", "reviewed", "report"):
-            self._write_json(self._match_dir(match_id) / f"{name}_identity.json", layers[name])
         return layers
 
-    def _publish_generation_unlocked(
-        self,
-        match_id: str,
-        *,
-        frames: list[FrameData],
-        summary: MatchSummary,
-        assignments: list[BallOwnership],
-        formation_timeline: list[FormationSegment],
-        shots: list[ShotAnalytics],
-        events: list[DetectedEvent],
-        correction_head: str,
-        stale: list[str] | None = None,
-        orphaned_decisions: list[str] | None = None,
-        calibration_revision: str | None = None,
-    ):
-        from .workbench.contracts import GenerationManifest, GenerationRef
-        from .workbench.events import with_stable_event_id
-
-        summary = self._video_ball_signal_summary(match_id, summary)
-        if not any(assignment.team in {"my_team", "enemy"} for assignment in assignments):
-            summary = summary.model_copy(update={"possession": None})
-        events = [with_stable_event_id(event) for event in events]
-        generation_id = f"gen_{uuid.uuid4().hex}"
-        generation_dir = self._match_dir(match_id) / "generations" / generation_id
-        generation_dir.mkdir(parents=True, exist_ok=False)
-        analytics = {
-            "summary": summary.model_dump(mode="json"),
-            "ballAssignments": [assignment.model_dump(mode="json") for assignment in assignments],
-            "formationTimeline": [segment.model_dump(mode="json") for segment in formation_timeline],
-            "shots": [shot.model_dump(mode="json") for shot in shots],
-        }
-        payloads = {
-            "frames.json": [frame.model_dump(mode="json") for frame in frames],
-            "events.json": [event.model_dump(mode="json") for event in events],
-            "analytics.json": analytics,
-            "shots.json": analytics["shots"],
-            "summary.json": analytics["summary"],
-        }
-        for name, payload in payloads.items():
-            self._write_json(generation_dir / name, payload)
-            if name == "events.json":
-                self._review_test_fault("during_generation_write")
-        try:
-            observation_digest = self._sha256_file(self._match_dir(match_id) / "raw_rows.json")
-        except FileNotFoundError:
-            observation_digest = self._sha256_file(generation_dir / "frames.json")
-        published_at = _utcnow().isoformat().replace("+00:00", "Z")
-        layered = self._generation_layer_identities(
-            match_id,
-            calibration_revision=calibration_revision,
-            correction_head=correction_head,
-        )
-        identity_digests = {
-            layer: payload.get("digest") if payload.get("reusable") is True else None
-            for layer, payload in layered.items()
-        }
-        manifest = GenerationManifest(
-            generationId=generation_id,
-            matchId=match_id,
-            observationDigest=observation_digest,
-            detectionIdentity=identity_digests.get("detection"),
-            trackingIdentity=identity_digests.get("tracking"),
-            projectionIdentity=identity_digests.get("projection"),
-            reviewedIdentity=identity_digests.get("reviewed"),
-            reportIdentity=identity_digests.get("report"),
-            calibrationRevision=calibration_revision,
-            correctionHead=correction_head,
-            algorithmVersions={"review_materialisation": "1"},
-            files={name: self._sha256_file(generation_dir / name) for name in payloads},
-            stale=list(stale or []),
-            orphanedDecisions=list(orphaned_decisions or []),
-            publishedAt=published_at,
-        )
-        self._write_json(generation_dir / "manifest.json", manifest.model_dump(mode="json"))
-        directory_fd = os.open(generation_dir, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
-        try:
-            os.fsync(directory_fd)
-        finally:
-            os.close(directory_fd)
-        ref = GenerationRef(
-            generationId=generation_id,
-            publishedAt=published_at,
-            correctionHead=correction_head,
-            calibrationRevision=calibration_revision,
-        )
-        with self._connect() as connection:
-            previous_summary = connection.execute(
-                "SELECT analytics_summary_json FROM matches WHERE id = ?",
-                (match_id,),
-            ).fetchone()
-            connection.execute(
-                "UPDATE matches SET analytics_summary_json = ? WHERE id = ?",
-                (summary.model_dump_json(), match_id),
-            )
-        self._review_test_fault("before_pointer_publish")
-        try:
-            self._write_json(
-                self._match_dir(match_id) / "current_generation.json",
-                {
-                    "generationId": ref.generationId,
-                    "publishedAt": ref.publishedAt,
-                    "correctionHead": ref.correctionHead,
-                    "calibrationRevision": ref.calibrationRevision,
-                },
-            )
-        except BaseException:
-            with self._connect() as connection:
-                connection.execute(
-                    "UPDATE matches SET analytics_summary_json = ? WHERE id = ?",
-                    (previous_summary["analytics_summary_json"] if previous_summary is not None else None, match_id),
-                )
-            raise
-        return ref
+    def _publish_generation_unlocked(self, match_id: str, **payload):
+        # Compatibility name; every writer still participates in the protocol.
+        return self.generations.publish(match_id, **payload)
 
     @staticmethod
     def _review_test_fault(point: str) -> None:
@@ -1493,26 +1310,12 @@ class Storage:
                 digest.update(chunk)
         return digest.hexdigest()
 
-    def _generation_payload_path(
-        self,
-        match_id: str,
-        filename: str,
-        generation_id: str | None = None,
-    ) -> Path:
-        match_dir = self._match_dir(match_id)
-        if generation_id is not None:
-            return match_dir / "generations" / generation_id / filename
-        pointer = match_dir / "current_generation.json"
-        legacy_complete = all((match_dir / name).exists() for name in ("frames.json", "events.json", "analytics.json"))
-        if legacy_complete and not pointer.exists():
-            try:
-                self.get_match(match_id)
-            except KeyError:
-                return match_dir / filename
-        if pointer.exists() or legacy_complete:
-            ref = self.current_generation(match_id)
-            return match_dir / "generations" / ref.generationId / filename
-        return match_dir / filename
+    def _generation_payload_path(self, match_id: str, filename: str, generation_id: str | None = None) -> Path:
+        """Compatibility path resolver; callers must hold generation_snapshot through use."""
+        if filename not in {"frames.json", "events.json", "analytics.json", "summary.json", "shots.json", "config.json"}:
+            raise ValueError("unsupported generation filename")
+        with self.generation_snapshot(match_id, generation_id=generation_id) as ref:
+            return self.generations.root(match_id) / "generations" / ref.generationId / filename
 
     def save_analysis_artifact(self, match_id: str, analysis_type: str, payload: dict) -> None:
         path = self._match_dir(match_id) / f"{analysis_type}.json"
@@ -1545,7 +1348,7 @@ class Storage:
             handle.write("\n")
 
     def load_frames(self, match_id: str, *, generation_id: str | None = None) -> list[FrameData]:
-        payload = self._read_json(self._generation_payload_path(match_id, "frames.json", generation_id))
+        payload = self.generations.payload(match_id, "frames.json", generation_id)
         return [FrameData.model_validate(item) for item in payload]
 
     def load_frames_page(
@@ -3066,6 +2869,14 @@ class Storage:
         self._save_calibration_evaluation(match_id, previous)
 
     def calibration_revision(self, match_id: str):
+        from .generations import _UNSET
+        from .workbench.contracts import CalibrationRevision
+        value = self.generations.calibration(match_id)
+        if value is not _UNSET:
+            return None if value is None else CalibrationRevision.model_validate(value)
+        return self._legacy_calibration_revision(match_id)
+
+    def _legacy_calibration_revision(self, match_id: str):
         from .workbench.contracts import CalibrationRevision
 
         try:
@@ -3157,7 +2968,7 @@ class Storage:
         *,
         generation_id: str | None = None,
     ) -> tuple[MatchSummary, list[BallOwnership], list[FormationSegment], list[ShotAnalytics]]:
-        payload = self._read_json(self._generation_payload_path(match_id, "analytics.json", generation_id))
+        payload = self.generations.payload(match_id, "analytics.json", generation_id)
         summary = self._video_ball_signal_summary(match_id, MatchSummary.model_validate(payload["summary"]))
         assignments = [BallOwnership.model_validate(item) for item in payload["ballAssignments"]]
         if not any(assignment.team in {"my_team", "enemy"} for assignment in assignments):
@@ -3167,7 +2978,7 @@ class Storage:
         return summary, assignments, formation_timeline, shots
 
     def load_events(self, match_id: str, *, generation_id: str | None = None) -> list[DetectedEvent]:
-        payload = self._read_json(self._generation_payload_path(match_id, "events.json", generation_id))
+        payload = self.generations.payload(match_id, "events.json", generation_id)
         return [DetectedEvent.model_validate(item) for item in payload]
 
     def load_analysis_artifact(self, match_id: str, analysis_type: str) -> dict:
@@ -3484,18 +3295,14 @@ class Storage:
     # ===== Semantic Search Support =====
 
     def _indexed_match_summary(self, match_id: str, encoded: str | None) -> MatchSummary:
-        if encoded:
-            try:
-                return MatchSummary.model_validate_json(encoded)
-            except ValidationError:
-                pass
-        summary, _, _, _ = self.load_analytics(match_id)
-        with self._connect() as connection:
-            connection.execute(
-                "UPDATE matches SET analytics_summary_json = ? WHERE id = ?",
-                (summary.model_dump_json(), match_id),
-            )
-        return summary
+        # SQLite is a rebuildable index, never a competing analytical authority.
+        try:
+            # A dashboard needs the small bound summary, never full trajectories
+            # or an unversioned/stale SQL subtotal. The read does not backfill SQL.
+            payload = self.generations.payload(match_id, "summary.json")
+            return self._video_ball_signal_summary(match_id, MatchSummary.model_validate(payload))
+        except FileNotFoundError:
+            return self.load_analytics(match_id)[0]  # Unversioned legacy read only.
 
     def list_matches_with_analytics(self) -> list[dict]:
         """List all matches that have analytics available.

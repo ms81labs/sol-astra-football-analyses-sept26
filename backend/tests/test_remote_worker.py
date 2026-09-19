@@ -512,7 +512,7 @@ def test_remote_import_rolls_back_every_owned_video_output(
         "tactical_report.json",
         "drills.json",
             "frames.json",
-            "current_generation.json",
+            # C01 pointer is not a rollback-owned flat output.
             "input_video_identity.json",
         "ownership_publication.json",
         "raw_rows.json",

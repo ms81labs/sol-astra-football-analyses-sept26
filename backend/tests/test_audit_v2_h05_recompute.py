@@ -149,9 +149,10 @@ def test_t09_calibration_execution_reprojects_immutable_tracking_observations(tm
         profile=profile,
         evaluation={"accepted": True, "measured": True},
     )
-    storage._save_calibration_revision(match.id, revision)
-
-    receipt = storage.execute_recompute(match.id, "calibration").model_dump(mode="json")
+    # C01 stages calibration explicitly; a mutable flat file may not override
+    # the committed generation. Keep the original geometric/detector assertions.
+    with storage.generations.candidate(match.id, storage.get_match(match.id).config, revision):
+        receipt = storage.execute_recompute(match.id, "calibration").model_dump(mode="json")
     assert receipt["kind"] == "executed"
     assert receipt["detectorCalls"] == 0
     assert storage.load_frames(match.id)[0].myTeam[0].x != before_x

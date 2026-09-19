@@ -807,6 +807,11 @@ def create_app(
 
     @app.exception_handler(DomainError)
     async def domain_error(_request: Request, exc: DomainError) -> JSONResponse:
+        from .generations import GenerationRecoveryRequired, StaleGeneration, RetentionBusy
+        if isinstance(exc, GenerationRecoveryRequired):
+            return JSONResponse(status_code=503, content={"error": exc.code})
+        if isinstance(exc, (StaleGeneration, RetentionBusy)):
+            return JSONResponse(status_code=409, content={"error": exc.code})
         if isinstance(exc, IdempotencyConflict):
             return JSONResponse(
                 status_code=409,
@@ -1448,19 +1453,18 @@ def create_app(
         afterFrame: int | None = None,
         cursor: str | None = None,
         limit: int | None = None,
+        generationId: str | None = None,
     ) -> dict:
         try:
-            page = storage.load_frames_page(match.id, after_frame=afterFrame, cursor=cursor, limit=limit)
+            with storage.generation_snapshot(match.id, generation_id=generationId) as ref:
+                page = storage.load_frames_page(match.id, after_frame=afterFrame, cursor=cursor, limit=limit)
+                response = MatchFramesResponse(
+                    matchId=match.id, frames=page["frames"], nextCursor=page["nextCursor"],
+                    frameCount=page["frameCount"], intervalEndpoint=page["intervalEndpoint"],
+                ).model_dump(mode="json")
+                return {**response, "generationId": ref.generationId}
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail="Frames not ready") from exc
-        response = MatchFramesResponse(
-            matchId=match.id,
-            frames=page["frames"],
-            nextCursor=page["nextCursor"],
-            frameCount=page["frameCount"],
-            intervalEndpoint=page["intervalEndpoint"],
-        )
-        return response.model_dump(mode="json")
 
     @app.get("/api/matches/{match_id}/evidence")
     def get_match_evidence(
@@ -1482,19 +1486,17 @@ def create_app(
             raise HTTPException(status_code=404, detail="Evidence not ready") from exc
 
     @app.get("/api/matches/{match_id}/analytics")
-    def get_analytics(match: MatchRecord = Depends(require_match)) -> dict:
+    def get_analytics(match: MatchRecord = Depends(require_match), generationId: str | None = None) -> dict:
         try:
-            summary, assignments, formation_timeline, shots = storage.load_analytics(match.id)
+            with storage.generation_snapshot(match.id, generation_id=generationId) as ref:
+                summary, assignments, formation_timeline, shots = storage.load_analytics(match.id)
+                response = MatchAnalyticsResponse(
+                    matchId=match.id, summary=summary, ballAssignments=assignments,
+                    formationTimeline=formation_timeline, shots=shots,
+                ).model_dump(mode="json")
+                return {**response, "generationId": ref.generationId}
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail="Analytics not ready") from exc
-        response = MatchAnalyticsResponse(
-            matchId=match.id,
-            summary=summary,
-            ballAssignments=assignments,
-            formationTimeline=formation_timeline,
-            shots=shots,
-        )
-        return response.model_dump(mode="json")
 
     @app.post("/api/matches/{match_id}/corrections")
     def post_match_correction(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
@@ -1768,13 +1770,13 @@ def create_app(
             raise HTTPException(status_code=404, detail="Analytics not ready") from exc
 
     @app.get("/api/matches/{match_id}/events")
-    def get_events(match: MatchRecord = Depends(require_match)) -> dict:
+    def get_events(match: MatchRecord = Depends(require_match), generationId: str | None = None) -> dict:
         try:
-            events = storage.load_events(match.id)
+            with storage.generation_snapshot(match.id, generation_id=generationId) as ref:
+                response = MatchEventsResponse(matchId=match.id, events=storage.load_events(match.id))
+                return {**response.model_dump(mode="json"), "generationId": ref.generationId}
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail="Events not ready") from exc
-        response = MatchEventsResponse(matchId=match.id, events=events)
-        return response.model_dump(mode="json")
 
     @app.get("/api/matches/{match_id}/export/frames.csv")
     def export_frames_csv(match: MatchRecord = Depends(require_match)) -> Response:
@@ -1932,7 +1934,12 @@ def create_app(
                     raise HTTPException(status_code=409, detail="Match processing must finish before changing analytical configuration.")
                 try:
                     with storage.remote_result_import(match_id):
-                        reprocess_video_match(storage, match_id, config=config_model)
+                        revision = storage.calibration_revision(match_id)
+                        with storage.generations.candidate(
+                            match_id, config_model,
+                            revision.model_dump(mode="json") if revision else None,
+                        ):
+                            reprocess_video_match(storage, match_id, config=config_model)
                         storage.invalidate_coach_analysis(match_id)
                         storage.update_match_config(match_id, config_model)
                 except FileNotFoundError as exc:

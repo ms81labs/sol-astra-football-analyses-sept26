@@ -380,6 +380,10 @@ def test_legacy_outputs_import_as_one_complete_generation_and_recover_pointer(tm
     shutil.rmtree(match_dir / "generations")
     (match_dir / "current_generation.json").unlink()
 
+    # This is deliberately a pre-versioned legacy fixture, not a versioned
+    # store whose authority has vanished. C01 never repairs the latter by guessing.
+    (match_dir / ".generation-format.json").unlink(missing_ok=True)
+    storage.recover_generations(match_id)
     imported = storage.current_generation(match_id)
     assert imported.generationId.startswith("gen_legacy_")
     generation_dir = storage.storage_root / "matches" / match_id / "generations" / imported.generationId
@@ -402,16 +406,17 @@ def test_legacy_outputs_import_as_one_complete_generation_and_recover_pointer(tm
     Storage._write_json(complete_orphan / "manifest.json", orphan_manifest)
     recovered = Storage(storage.storage_root).current_generation(match_id)
     assert recovered.generationId == imported.generationId
-    assert not orphan.exists()
-    assert not complete_orphan.exists()
+    assert orphan.exists()
+    assert complete_orphan.exists()
 
     Storage._write_json(
         storage.storage_root / "matches" / match_id / "current_generation.json",
         {"generationId": "gen_missing", "publishedAt": "2026-09-18T00:00:00Z", "correctionHead": "none"},
     )
-    fallback = Storage(storage.storage_root).current_generation(match_id)
-    assert fallback.generationId == imported.generationId
-    assert fallback.recoveryRequired is True
+    from backend.app.generations import GenerationRecoveryRequired
+    with pytest.raises(GenerationRecoveryRequired):
+        Storage(storage.storage_root).current_generation(match_id)
+    assert generation_dir.exists() and complete_orphan.exists()
 
 
 def test_stale_correction_revision_returns_stable_409(tmp_path: Path) -> None:
@@ -500,7 +505,7 @@ def test_generation_reader_cannot_delete_in_progress_publish(tmp_path: Path, mon
 
     reader = threading.Thread(target=read)
     reader.start()
-    assert not reader_done.wait(0.1)
+    assert reader_done.wait(5), "A reader of committed N must not wait for candidate N+1"
     release.set()
     writer.join(5)
     reader.join(5)
@@ -520,14 +525,11 @@ def test_pointer_publish_failure_restores_semantic_index(tmp_path: Path, monkeyp
         before = connection.execute(
             "SELECT analytics_summary_json FROM matches WHERE id = ?", (match_id,)
         ).fetchone()["analytics_summary_json"]
-    original_write = storage._write_json
+    def fail_pointer(*_args, **_kwargs) -> None:
+        raise OSError("pointer unavailable")
 
-    def fail_pointer(path: Path, payload: object) -> None:
-        if path.name == "current_generation.json":
-            raise OSError("pointer unavailable")
-        original_write(path, payload)
-
-    monkeypatch.setattr(storage, "_write_json", fail_pointer)
+    # Inject before the sole pointer commit, not the generic artifact writer.
+    monkeypatch.setattr(storage.generations, "_commit_pointer", fail_pointer)
     with pytest.raises(OSError, match="pointer unavailable"):
         storage.publish_generation(
             match_id,

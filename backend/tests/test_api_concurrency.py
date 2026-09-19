@@ -18,23 +18,13 @@ def _run(coro, *args) -> None:
 
 
 def _publish_empty_generation(storage, match_id: str) -> None:
-    storage.save_frames(match_id, [])
-    storage.save_analytics(
-        match_id,
-        MatchSummary(
-            possession=None,
-            myTeamDistance=None,
-            enemyDistance=None,
-            myTeamTopSpeed=None,
-            enemyTopSpeed=None,
-            myTeamSprints=None,
-            enemySprints=None,
-        ),
-        [],
-        [],
-        [],
+    storage.publish_generation(
+        match_id, frames=[], events=[], assignments=[], formation_timeline=[], shots=[],
+        correction_head="none",
+        summary=MatchSummary(possession=None, myTeamDistance=None, enemyDistance=None,
+                             myTeamTopSpeed=None, enemyTopSpeed=None,
+                             myTeamSprints=None, enemySprints=None),
     )
-    storage.save_events(match_id, [])
 
 
 @asynccontextmanager
@@ -117,6 +107,8 @@ async def _test_frames_read_does_not_block_other_http_requests(tmp_path: Path, m
         match = app.state.storage.create_match(
             "Held", "tracking_json", "tracking.json", tmp_path / "tracking.json", MatchConfig()
         )
+
+        _publish_empty_generation(app.state.storage, match.id)
 
         def blocked_load_frames(_match_id: str):
             worker_threads.append(threading.get_ident())

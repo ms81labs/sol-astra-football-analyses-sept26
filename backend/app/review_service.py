@@ -103,6 +103,13 @@ class ReviewService:
             return self._apply_pending_locked(match_id)
 
     def _apply_pending_locked(self, match_id: str) -> list[Correction]:
+        try:
+            current = self.storage.current_generation(match_id)
+        except FileNotFoundError:
+            current = None
+        if current is not None:
+            manifest, _ = self.storage.generations.manifest(match_id, current.generationId)
+            self.storage.generations.repair_commands(match_id, manifest)
         log = self.storage._load_correction_log(match_id)
         pending = [
             item for item in log.history(match_id) if item.applyState in {"committed", "applying"}
@@ -118,10 +125,14 @@ class ReviewService:
                 reason="calibration" if any(item.kind == "calibration" for item in pending) else "correction",
             )
         except Exception as exc:
+            from .generations import GenerationCommitUncertain
+            if isinstance(exc, GenerationCommitUncertain):
+                raise  # Leave commands applying; recovery must inspect the pointer.
             for item in pending:
                 log.update(item.correctionId, applyState="failed", lastError=str(exc))
             self.storage._save_correction_log(match_id, log)
             raise CorrectionApplicationError(pending[0].commandId, str(exc)) from exc
+        self._test_fault("before_applied_marker")
         applied = []
         for item in pending:
             applied.append(
@@ -139,11 +150,17 @@ class ReviewService:
         current = self.storage.current_generation(match_id)
         commands = self._active_commands(match_id)
         effective_config = self._effective_config(match_id, commands)
-        previous_config = self.storage.get_match(match_id).config
         previous_calibration = self.storage.calibration_revision(match_id)
-        try:
-            self.storage.update_match_config(match_id, effective_config)
-            self._apply_auxiliary_state(match_id, commands)
+        calibration_data = None if previous_calibration is None else previous_calibration.model_dump(mode="json")
+        active_calibrations = [command for command in commands if command.kind == "calibration"]
+        if active_calibrations:
+            calibration_data = active_calibrations[-1].payload.get("revision")
+        else:
+            history = [command for command in self.storage._load_correction_log(match_id).history(match_id)
+                       if command.kind == "calibration"]
+            if history:
+                calibration_data = history[0].payload.get("previousRevision")
+        with self.storage.generations.candidate(match_id, effective_config, calibration_data):
             output = self._materialize(match_id, effective_config, commands)
             events = [with_stable_event_id(event) for event in output["events"]]
             orphaned_decisions: list[str] = []
@@ -201,15 +218,11 @@ class ReviewService:
                 ),
                 orphaned_decisions=orphaned_decisions,
                 calibration_revision=None if calibration is None else calibration.revisionId,
+                calibration_data=calibration_data,
+                effective_config=effective_config,
+                expected_parent=current.generationId,
+                include_pending_commands=True,
             )
-        except BaseException:
-            self.storage.update_match_config(match_id, previous_config)
-            self.storage._restore_calibration_revision(
-                match_id,
-                None if previous_calibration is None else previous_calibration.model_dump(mode="json"),
-            )
-            raise
-
     def _apply_auxiliary_state(self, match_id: str, commands: list[Correction]) -> None:
         active_calibrations = [command for command in commands if command.kind == "calibration"]
         if active_calibrations:
@@ -317,20 +330,9 @@ class ReviewService:
 
     @contextmanager
     def _match_lock(self, match_id: str) -> Iterator[None]:
-        path = self.storage._match_dir(match_id) / ".review.lock"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("a+b") as handle:
-            try:
-                import fcntl
-            except ImportError:
-                with self.storage._annotation_issue_lock:
-                    yield
-                return
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-            try:
-                yield
-            finally:
-                fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+        self.storage.generations.prepare(match_id)
+        with self.storage.generations.guard(match_id, "review", exclusive=True):
+            yield
 
     @staticmethod
     def _test_fault(point: str) -> None:

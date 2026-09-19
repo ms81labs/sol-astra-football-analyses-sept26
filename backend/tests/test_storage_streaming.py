@@ -104,7 +104,7 @@ def test_save_frames_streams_one_pass_without_eager_json_writer(tmp_path, monkey
     assert [frame.frameId for frame in saved] == [0, 1]
     assert (saved[0].myTeam[0].id, saved[0].myTeam[0].x, saved[0].myTeam[0].confidence) == (7, 48.0, 0.0)
     assert frames.iterations == 1
-    assert sorted(path.name for path in match_dir.iterdir()) == ["frames.json"]
+    assert sorted(path.name for path in match_dir.iterdir()) == [".generation.lifetime.lock", ".generation.lock", ".review.lock", "frames.json"]
 
 
 @pytest.mark.parametrize("failure", ["iteration", "serialization"])
@@ -125,7 +125,7 @@ def test_save_frames_streaming_failure_preserves_existing_file(tmp_path, failure
     with pytest.raises(error):
         storage.save_frames("match-1", frames())
     assert (match_dir / "frames.json").read_bytes() == before
-    assert sorted(path.name for path in match_dir.iterdir()) == ["frames.json"]
+    assert sorted(path.name for path in match_dir.iterdir()) == [".generation.lifetime.lock", ".generation.lock", ".review.lock", "frames.json"]
 
 
 def test_save_raw_rows_streams_a_one_shot_iterable(tmp_path):

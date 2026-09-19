@@ -47,14 +47,18 @@ def test_existing_database_adds_analytics_summary_index_column(tmp_path) -> None
 def test_saved_analytics_summary_is_indexed_with_read_truth_normalization(tmp_path, monkeypatch) -> None:
     storage = Storage(tmp_path)
     match = storage.create_match("indexed", "video", "clip.mp4", tmp_path / "clip.mp4", MatchConfig())
-    storage.save_analytics(match.id, _summary(), [], [], [])
+    storage.publish_generation(match.id, frames=[], summary=_summary(), assignments=[],
+                               formation_timeline=[], shots=[], events=[], correction_head="none")
     storage.update_match_status(match.id, status="ready")
     artifact_reads = 0
 
-    def reject_artifact_read(_path):
+    original_read = storage._read_json
+    def reject_artifact_read(path):
         nonlocal artifact_reads
-        artifact_reads += 1
-        raise AssertionError("full analytics read")
+        if path.name == "analytics.json":
+            artifact_reads += 1
+            raise AssertionError("full analytics read")
+        return original_read(path)
 
     monkeypatch.setattr(storage, "_read_json", reject_artifact_read)
 
@@ -66,7 +70,7 @@ def test_saved_analytics_summary_is_indexed_with_read_truth_normalization(tmp_pa
     assert artifact_reads == 0
 
 
-def test_historical_analytics_summary_is_backfilled_once(tmp_path, monkeypatch) -> None:
+def test_historical_analytics_summary_reads_do_not_backfill_sql(tmp_path, monkeypatch) -> None:
     storage = Storage(tmp_path)
     match = storage.create_match("legacy", "tracking_json", "tracks.json", tmp_path / "tracks.json", MatchConfig())
     storage._write_json(
@@ -81,7 +85,7 @@ def test_historical_analytics_summary_is_backfilled_once(tmp_path, monkeypatch) 
     storage.update_match_status(match.id, status="completed")
 
     assert storage.list_matches_with_analytics()[0]["matchId"] == match.id
-    monkeypatch.setattr(storage, "load_analytics", lambda _match_id: (_ for _ in ()).throw(AssertionError("legacy summary was not backfilled")))
+    monkeypatch.setattr(storage, "_write_json", lambda *_args: (_ for _ in ()).throw(AssertionError("GET attempted backfill")))
     assert storage.list_matches_with_analytics()[0]["summary"]["formation"] == "4-3-3"
 
 
@@ -104,12 +108,18 @@ def test_indexed_match_listing_scales_without_reading_full_analytics(tmp_path, m
                 for index in range(count)
             ),
         )
+    for index in range(count):
+        storage.publish_generation(f"match-{index}", frames=[], summary=_summary(possession=None),
+                                   assignments=[], formation_timeline=[], shots=[], events=[], correction_head="none")
     artifact_reads = 0
 
-    def reject_artifact_read(_path):
+    original_read = storage._read_json
+    def reject_artifact_read(path):
         nonlocal artifact_reads
-        artifact_reads += 1
-        raise AssertionError("full analytics read")
+        if path.name == "analytics.json":
+            artifact_reads += 1
+            raise AssertionError("full analytics read")
+        return original_read(path)
 
     monkeypatch.setattr(storage, "_read_json", reject_artifact_read)
 

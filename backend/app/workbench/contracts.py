@@ -203,9 +203,20 @@ class SamplingReceipt(StrictModel):
 
 
 class GenerationManifest(StrictModel):
+    schemaVersion: int = 1
+    parentGenerationId: str | None = None
+    sourceIdentity: dict[str, Any] | None = None
+    effectiveConfig: dict[str, Any] | None = None
+    semanticConfigRevision: str | None = None
+    calibrationData: dict[str, Any] | None = None
+    identityRevision: str | None = None
+    commandSetDigest: str | None = None
+    includedCommandIds: list[str] = Field(default_factory=list)
+    fileMetadata: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    artifactStates: dict[str, str] = Field(default_factory=dict)
     generationId: str
     matchId: str
-    observationDigest: str
+    observationDigest: str | None
     detectionIdentity: str | None = None
     trackingIdentity: str | None = None
     projectionIdentity: str | None = None
@@ -221,6 +232,9 @@ class GenerationManifest(StrictModel):
 
 
 class GenerationRef(StrictModel):
+    matchId: str | None = None
+    manifestSha256: str | None = None
+    semanticConfigRevision: str | None = None
     generationId: str
     publishedAt: str
     correctionHead: str
