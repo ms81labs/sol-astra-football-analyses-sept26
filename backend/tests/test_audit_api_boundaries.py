@@ -27,23 +27,17 @@ def make_match(storage, input_mode='video'):
 
 
 def publish_minimal_generation(storage, match_id, frames):
-    storage.save_frames(match_id, frames)
-    storage.save_analytics(
-        match_id,
-        MatchSummary(
-            possession=None,
-            myTeamDistance=None,
-            enemyDistance=None,
-            myTeamTopSpeed=None,
-            enemyTopSpeed=None,
-            myTeamSprints=None,
-            enemySprints=None,
+    # C01 fixture admission is explicit; ordinary provider reads never migrate.
+    storage.publish_generation(
+        match_id, frames=frames,
+        summary=MatchSummary(
+            possession=None, myTeamDistance=None, enemyDistance=None,
+            myTeamTopSpeed=None, enemyTopSpeed=None,
+            myTeamSprints=None, enemySprints=None,
         ),
-        [],
-        [],
-        [],
+        assignments=[], formation_timeline=[], shots=[], events=[],
+        correction_head="none",
     )
-    storage.save_events(match_id, [])
 
 
 @pytest.mark.parametrize('payload', [
@@ -104,7 +98,12 @@ def test_direction_update_reprocesses_with_candidate_before_config_publication(a
     received = []
 
     def reprocess(inner_storage, match_id, *, config):
-        assert inner_storage.get_match(match_id).config.attackDirection == 'left_to_right'
+        # The materialiser sees its proposed inputs, but no live SQL publication
+        # may have occurred yet. These are distinct views in C01.
+        assert inner_storage.get_match(match_id).config.attackDirection == 'right_to_left'
+        with inner_storage._connect() as connection:
+            row = connection.execute("SELECT config_json FROM matches WHERE id=?", (match_id,)).fetchone()
+        assert json.loads(row["config_json"])["attackDirection"] == "left_to_right"
         received.append(config.attackDirection)
 
     monkeypatch.setattr('backend.app.main.reprocess_video_match', reprocess)

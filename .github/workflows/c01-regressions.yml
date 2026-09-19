@@ -1,0 +1,93 @@
+name: C01 regression evidence
+
+on:
+  push:
+    branches: [agent/c01-generation-hardening-20260919]
+    paths:
+      - 'backend/**'
+      - '.github/workflows/c01-regressions.yml'
+  pull_request:
+    paths:
+      - 'backend/**'
+      - '.github/workflows/c01-regressions.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: c01-regressions-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  focused:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHON_DOTENV_DISABLED: '1'
+      VERIFY_DAYTONA: '0'
+      ALLOW_DAYTONA_MUTATION: '0'
+      OPENBLAS_NUM_THREADS: '1'
+      OMP_NUM_THREADS: '1'
+      MKL_NUM_THREADS: '1'
+      QT_QPA_PLATFORM: offscreen
+      GA_VERIFICATION_RUN: '1'
+      GA_VERIFICATION_PROFILE: c01-locked-code-only
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements/dev.lock
+      - name: Install genuine generated-media tools
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install declared locked code-only profile
+        run: |
+          python -m pip install --require-hashes -r backend/requirements/dev.lock
+          python -m pip install -e . --no-deps
+      - name: Record source and environment
+        run: |
+          mkdir -p c01-evidence
+          git rev-parse HEAD > c01-evidence/source-sha.txt
+          python --version > c01-evidence/python-version.txt
+          sha256sum backend/requirements/dev.lock > c01-evidence/lock-sha256.txt
+          ffmpeg -version > c01-evidence/ffmpeg-version.txt
+          ffprobe -version > c01-evidence/ffprobe-version.txt
+          python -m pip freeze > c01-evidence/packages.txt
+      - name: Run C01 and neighbouring storage, API and import regressions
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m pytest -q \
+            backend/tests/test_audit_v3_c01_generations.py \
+            backend/tests/test_audit_v2_h02_review.py \
+            backend/tests/test_audit_v2_h03_calibration.py \
+            backend/tests/test_audit_v2_h05_recompute.py \
+            backend/tests/test_audit_api_boundaries.py \
+            backend/tests/test_storage_atomic_writes.py \
+            backend/tests/test_storage_semantic_index.py \
+            backend/tests/test_storage_streaming.py \
+            backend/tests/test_remote_worker.py \
+            backend/tests/test_api.py \
+            backend/tests/test_api_concurrency.py \
+            backend/tests/test_api_origins.py \
+            backend/tests/test_annotations.py \
+            -p no:cacheprovider -o faulthandler_timeout=60 \
+            --junitxml=c01-evidence/focused.xml 2>&1 | tee c01-evidence/focused.log
+      - name: Retain actual stub and execution receipt
+        if: always()
+        shell: bash
+        run: |
+          if [ -f .verification/receipt.json ]; then
+            mkdir -p c01-evidence
+            cp .verification/receipt.json c01-evidence/receipt.json
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c01-locked-profile-evidence
+          path: c01-evidence/
+          retention-days: 14
+          if-no-files-found: error
