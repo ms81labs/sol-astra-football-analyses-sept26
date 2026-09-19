@@ -665,7 +665,10 @@ class GenerationStore:
         analytics = self._read(root / "analytics.json")
         # Normalise only the new candidate, through the established read contract.
         # Original legacy files are retained byte-for-byte, including old defaults.
-        summary, _, _, _ = self.storage.load_analytics(match_id)
+        try:
+            summary, _, _, _ = self.storage.load_analytics(match_id)
+        except (KeyError, TypeError, ValueError) as exc:
+            raise GenerationRecoveryRequired("Invalid legacy analytics schema") from exc
         analytics = {**analytics, "summary": summary.model_dump(mode="json")}
         legacy_digests = {
             name: self.storage._sha256_file(root / name)

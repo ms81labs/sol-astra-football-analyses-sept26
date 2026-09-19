@@ -126,3 +126,20 @@ def test_v3t07_earlier_migrated_generation_keeps_read_contract_without_mutation(
     assert storage.list_matches_with_analytics()[0]["summary"]["possession"] is None
     assert storage.load_analytics(mid, generation_id=ref.generationId)[0].possession is None
     assert before == {str(p): p.read_bytes() for p in root.rglob("*.json")}
+
+
+@pytest.mark.parametrize("invalid", [None, [], {}, {"summary": 50, "ballAssignments": []}])
+def test_v3t09_malformed_legacy_analytics_is_isolated_at_startup(tmp_path, invalid):
+    from backend.app.generations import GenerationRecoveryRequired
+
+    storage, mid, root = _legacy(tmp_path)
+    (root / "analytics.json").write_text(json.dumps(invalid))
+    originals = _hashes(root)
+    with pytest.raises(GenerationRecoveryRequired):
+        storage.recover_generations(mid)
+    assert not (root / "current_generation.json").exists()
+    assert _hashes(root) == originals
+    # One malformed legacy match must not prevent opening the other matches.
+    reopened = Storage(storage.storage_root)
+    assert mid in reopened._generation_recovery_errors
+    assert _hashes(root) == originals
