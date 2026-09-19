@@ -55,6 +55,7 @@ def _seed_dashboard_storage(storage_root: Path, configs: list[dict]) -> list[str
             "formationTimeline": [],
             "shots": [],
         }))
+        (match_dir / "frames.json").write_text("[]")
         (match_dir / "events.json").write_text("[]")
         ids.append(mid)
     return ids
@@ -249,6 +250,7 @@ def test_dashboard_withholds_sprint_averages_when_physical_metrics_are_withheld(
         "formationTimeline": [],
         "shots": [],
     }))
+    (match_dir / "frames.json").write_text("[]")
     (match_dir / "events.json").write_text("[]")
     client = TestClient(create_app(storage_root=str(tmp_path), run_jobs_inline=True), base_url="http://127.0.0.1")
 

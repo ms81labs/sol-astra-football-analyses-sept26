@@ -443,30 +443,20 @@ def test_t08_calibration_revision_is_the_single_physical_metric_gate(tmp_path: P
     source = tmp_path / "tracking.json"
     source.write_text(fixture.read_text(encoding="utf-8"), encoding="utf-8")
     storage = Storage(tmp_path / "storage")
-    match = storage.create_match("Calibration revision", "tracking_json", source.name, source, MatchConfig())
-    process_match(storage, storage.create_job(match.id).id)
-    storage.submit_correction(match.id, kind="identity_validate", payload={"reviewed": True})
-    before = {item.metric: item for item in storage.load_analytics(match.id)[0].metricAvailability}
-    assert before["my_team_distance_m"].availability == "withheld"
-    assert "CALIBRATION_UNAVAILABLE" in before["my_team_distance_m"].reasonCodes
-
     points = [
         {"x": 0.0, "y": 0.0},
         {"x": 100.0, "y": 0.0},
         {"x": 100.0, "y": 64.0},
         {"x": 0.0, "y": 64.0},
     ]
-    storage.update_match_config(
-        match.id,
-        MatchConfig.model_validate(
-            {
-                **storage.get_match(match.id).config.model_dump(mode="json"),
-                "manualHomographyPoints": points,
-                "pitchLengthM": 100.0,
-                "pitchWidthM": 64.0,
-            }
-        ),
-    )
+    match = storage.create_match("Calibration revision", "tracking_json", source.name, source,
+                                 MatchConfig(manualHomographyPoints=points, pitchLengthM=100.0, pitchWidthM=64.0))
+    process_match(storage, storage.create_job(match.id).id)
+    storage.submit_correction(match.id, kind="identity_validate", payload={"reviewed": True})
+    before = {item.metric: item for item in storage.load_analytics(match.id)[0].metricAvailability}
+    assert before["my_team_distance_m"].availability == "withheld"
+    assert "CALIBRATION_UNAVAILABLE" in before["my_team_distance_m"].reasonCodes
+
     result = storage.calibration_for_match(
         match.id,
         {
