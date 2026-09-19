@@ -328,6 +328,15 @@ class GenerationStore:
                         raise GenerationRecoveryRequired("Payload changed during read")
                 except OSError as exc:
                     raise GenerationRecoveryRequired("Required payload unavailable") from exc
+                # The first C01 migration copied legacy summary defaults verbatim.
+                # Preserve those immutable bytes, but retain load_analytics' existing
+                # unknown-possession rule on historical summary reads as well.
+                if filename == "summary.json" and ref.migrated:
+                    manifest, _ = self.manifest(match_id, ref.generationId)
+                    if manifest.algorithmVersions.get("legacy_import") != "3":
+                        return self.storage.load_analytics(
+                            match_id, generation_id=ref.generationId
+                        )[0].model_dump(mode="json")
                 return result
         except FileNotFoundError:
             # Pre-generation compatibility/artifact-only records remain readable,
@@ -414,6 +423,12 @@ class GenerationStore:
     def refresh_index(self, match_id, manifest):
         directory = self.root(match_id) / "generations" / manifest.generationId
         summary = MatchSummary.model_validate(self._read(directory / "summary.json"))
+        if manifest.algorithmVersions.get("legacy_import") and manifest.algorithmVersions["legacy_import"] != "3":
+            # Rebuild the index with the same read semantics as the legacy API.
+            # This is explicit maintenance, not a write performed by a GET.
+            summary = self.storage.load_analytics(
+                match_id, generation_id=manifest.generationId
+            )[0]
         with self.storage._connect() as connection:
             row = connection.execute("SELECT config_json FROM matches WHERE id=?", (match_id,)).fetchone()
             if row is None:
@@ -648,6 +663,14 @@ class GenerationStore:
         if (root / "current_generation.json").exists() or (root / ".generation-format.json").exists():
             raise GenerationRecoveryRequired("Legacy migration cannot replace established authority")
         analytics = self._read(root / "analytics.json")
+        # Normalise only the new candidate, through the established read contract.
+        # Original legacy files are retained byte-for-byte, including old defaults.
+        summary, _, _, _ = self.storage.load_analytics(match_id)
+        analytics = {**analytics, "summary": summary.model_dump(mode="json")}
+        legacy_digests = {
+            name: self.storage._sha256_file(root / name)
+            for name in ("frames.json", "events.json", "analytics.json")
+        }
         payloads = {"frames.json": self._read(root / "frames.json"), "events.json": self._read(root / "events.json"),
                     "analytics.json": analytics, "shots.json": analytics.get("shots", []), "summary.json": analytics.get("summary", {})}
         gid = "gen_legacy_" + _digest(payloads)[:24]
@@ -657,7 +680,7 @@ class GenerationStore:
             self.storage._write_json(directory / name, value)
         manifest = GenerationManifest(
             schemaVersion=2, matchId=match_id, generationId=gid, observationDigest=None,
-            correctionHead="none", algorithmVersions={"legacy_import": "2"},
+            correctionHead="none", algorithmVersions={"legacy_import": "3"},
             files={name: self.storage._sha256_file(directory / name) for name in payloads},
             fileMetadata={name: {"byteSize": (directory / name).stat().st_size, "schema": name + ":1"}
                           for name in payloads},
@@ -670,6 +693,7 @@ class GenerationStore:
         self._commit_pointer(match_id, manifest, digest)
         self.refresh_index(match_id, manifest)
         receipt = {"status": "migrated", "matchId": match_id, "generationId": gid,
+                   "legacyArtifactDigests": legacy_digests, "summaryNormalization": "legacy-read-contract:1",
                    "provenance": "legacy configuration/observations unknown; originals retained", "schemaVersion": 2}
         self._receipt(root / ".generation-migration.json", receipt)
         self._receipt(root / ".generation-format.json", {"schemaVersion": 2})
