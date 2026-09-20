@@ -137,9 +137,9 @@ async def _assert_authorised_cloud_call(tmp_path: Path, monkeypatch) -> None:
     app = create_app(storage_root=tmp_path / "authorised", run_jobs_inline=True, settings=settings)
     build_evidence = app.state.provider_gateway.build_evidence
 
-    def record_generation(match_id: str, generation_id: str):
+    def record_generation(match_id: str, generation_id: str, task_type=None):
         evidence_generations.append(generation_id)
-        return build_evidence(match_id, generation_id)
+        return build_evidence(match_id, generation_id, task_type)
 
     app.state.provider_gateway.build_evidence = record_generation
     async with httpx.AsyncClient(
@@ -246,7 +246,12 @@ def test_t14_returned_evidence_and_numbers_are_validated() -> None:
         reservedCallCost=1.0,
         allowedModelIds=["test-model"],
     )
-    metrics = [{"metric": "possession_pct", "value": 61.0, "availability": "available"}]
+    # C03: the positive numeric control supplies the exact scope and metric
+    # reference. Its old unscoped measurement is no longer a grounded claim.
+    scope = {"metric": "possession_pct", "definitionVersion": "1", "teamScope": "my_team",
+             "intervalStart": 0.0, "intervalEnd": 10.0, "unit": "percent"}
+    metric_ref = {"matchId": "assistance", "generationId": "current", "kind": "metric", "localId": "possession"}
+    metrics = [{**scope, "value": 61.0, "availability": "available", "reference": metric_ref}]
     events = [{"id": "event:current", "type": "turnover"}]
 
     fabricated = AssistanceRouter(
@@ -256,7 +261,7 @@ def test_t14_returned_evidence_and_numbers_are_validated() -> None:
         policy=policy,
         metrics=metrics,
         events=events,
-        known_evidence_ids={"event:current"},
+        known_evidence_ids={"event:current", "metric:possession"},
     )
     nested_fabricated = AssistanceRouter(
         providers_enabled=True,
@@ -265,32 +270,32 @@ def test_t14_returned_evidence_and_numbers_are_validated() -> None:
         policy=policy,
         metrics=metrics,
         events=events,
-        known_evidence_ids={"event:current"},
+        known_evidence_ids={"event:current", "metric:possession"},
     )
     wrong_number = AssistanceRouter(
         providers_enabled=True,
         provider=lambda **_: {
             "evidence": ["event:current"],
-            "measurements": [{"metric": "possession_pct", "value": 99.0}],
+            "measurements": [{**scope, "value": 99.0, "evidence": ["metric:possession"]}],
         },
     ).run(
         policy=policy,
         metrics=metrics,
         events=events,
-        known_evidence_ids={"event:current"},
+        known_evidence_ids={"event:current", "metric:possession"},
     )
     valid = AssistanceRouter(
         providers_enabled=True,
         provider=lambda **_: {
             "evidence": ["event:current"],
-            "measurements": [{"metric": "possession_pct", "value": 61.0}],
+            "measurements": [{**scope, "value": 61.0, "evidence": ["metric:possession"]}],
             "interpretation": "Review the press timing.",
         },
     ).run(
         policy=policy,
         metrics=metrics,
         events=events,
-        known_evidence_ids={"event:current"},
+        known_evidence_ids={"event:current", "metric:possession"},
     )
 
     assert fabricated.route == "template"
@@ -300,7 +305,8 @@ def test_t14_returned_evidence_and_numbers_are_validated() -> None:
     assert wrong_number.route == "template"
     assert wrong_number.reasonCodes == ["NUMERIC_CLAIM_MISMATCH"]
     assert valid.route == "local"
-    assert valid.reasonCodes == ["GROUNDED"]
+    assert valid.reasonCodes == ["INTERPRETIVE"]
+    assert valid.output["measurements"][0]["grounding"] == "grounded"
 
     top_level_mismatch = AssistanceRouter(
         providers_enabled=True,
@@ -309,10 +315,10 @@ def test_t14_returned_evidence_and_numbers_are_validated() -> None:
         policy=policy,
         metrics=metrics,
         events=events,
-        known_evidence_ids={"event:current"},
+        known_evidence_ids={"event:current", "metric:possession"},
     )
     assert top_level_mismatch.route == "template"
-    assert top_level_mismatch.reasonCodes == ["NUMERIC_CLAIM_MISMATCH"]
+    assert top_level_mismatch.reasonCodes == ["STRUCTURED_REPORT_SCHEMA_REQUIRED"]
 
 
 def test_b13_direct_llm_execution_requires_gateway_token(monkeypatch) -> None:

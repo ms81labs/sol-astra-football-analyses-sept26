@@ -1,9 +1,10 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, expect, it, vi } from 'vitest';
 
 import PlaylistBuilder from './PlaylistBuilder';
 
 afterEach(() => {
+  cleanup();
   vi.unstubAllGlobals();
 });
 
@@ -69,4 +70,22 @@ it('assembles a deterministic match report that does not claim whole-match frequ
   expect(reportCall?.[1]?.method).toBe('POST');
   expect(await screen.findByText(/does not claim whole-match frequency/i)).toBeTruthy();
   expect(screen.getByText(/frequency requires a denominator/i)).toBeTruthy();
+});
+
+
+it.each(['match', 'generation'])('C03 ignores a pending clip after the %s changes', async (change) => {
+  let resolve!: (response: Response) => void;
+  const pending = new Promise<Response>((done) => { resolve = done; });
+  const fetchMock = vi.fn((input: RequestInfo) => {
+    if (String(input).includes('/api/playlists/export-interval')) return pending;
+    return Promise.resolve({ ok: true, json: async () => ({ intervals: [], reencodeFullMatch: false, renderOnDemand: true }) } as Response);
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  const save = vi.fn(); const open = vi.fn();
+  const { rerender } = render(<PlaylistBuilder matchId="a" generationId="N" onClipSaved={save} onOpenInterval={open} />);
+  fireEvent.click(screen.getByRole('button', { name: /add clip/i }));
+  rerender(<PlaylistBuilder matchId={change === 'match' ? 'b' : 'a'} generationId={change === 'generation' ? 'N1' : 'N'} onClipSaved={save} onOpenInterval={open} />);
+  await act(async () => resolve({ ok: true, json: async () => ({ sourceStartSeconds: 12, sourceEndSeconds: 14, sourceEndFrameExclusive: 350 }) } as Response));
+  expect(save).not.toHaveBeenCalled(); expect(open).not.toHaveBeenCalled();
+  expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/edits/render'))).toBe(false);
 });

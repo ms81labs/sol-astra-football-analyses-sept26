@@ -16,74 +16,82 @@ def _optional_artifact(storage: Storage, match_id: str, artifact_name: str) -> d
         return None
 
 
-def build_match_bundle(storage: Storage, match_id: str) -> dict[str, Any]:
-    match = storage.get_match(match_id)
-    with storage.generation_snapshot(match_id) as generation:
+def build_match_bundle(storage: Storage, match_id: str, *, generation_id: str | None = None) -> dict[str, Any]:
+    from .report_store import ReportStore
+    with storage.generation_snapshot(match_id, generation_id=generation_id) as generation:
+        match = storage.get_match(match_id)
         frames = storage.load_frames(match_id, generation_id=generation.generationId)
         summary, assignments, formation_timeline, shots = storage.load_analytics(
             match_id, generation_id=generation.generationId
         )
         events = storage.load_events(match_id, generation_id=generation.generationId)
-    accepted_match_state = _optional_artifact(storage, match_id, "accepted_match_state")
-    ball_truth_layers = _optional_artifact(storage, match_id, "ball_truth_layers")
-    ball_pipeline_trace = _optional_artifact(storage, match_id, "ball_pipeline_trace")
-    source_clock = _optional_artifact(storage, match_id, "source_clock")
-    four_rates = _optional_artifact(storage, match_id, "four_rates")
-    decode_anchors = _optional_artifact(storage, match_id, "decode_anchors")
-    proof_runtime_options = _optional_artifact(storage, match_id, "proof_runtime_options")
-    recovery_debug = _optional_artifact(storage, match_id, "recovery_debug")
+        accepted_match_state = storage.load_accepted_match_state(match_id, generation_id=generation.generationId)
+        report_view = ReportStore(storage).view(match_id, generation_id=generation.generationId)
+        ball_truth_layers = _optional_artifact(storage, match_id, "ball_truth_layers")
+        ball_pipeline_trace = _optional_artifact(storage, match_id, "ball_pipeline_trace")
+        source_clock = _optional_artifact(storage, match_id, "source_clock")
+        four_rates = _optional_artifact(storage, match_id, "four_rates")
+        decode_anchors = _optional_artifact(storage, match_id, "decode_anchors")
+        proof_runtime_options = _optional_artifact(storage, match_id, "proof_runtime_options")
+        recovery_debug = _optional_artifact(storage, match_id, "recovery_debug")
 
-    try:
-        benchmark = summarize_match_benchmark(storage, match_id).model_dump(mode="json")
-    except (FileNotFoundError, KeyError, ValueError, TypeError):
-        benchmark = None
+        try:
+            benchmark = summarize_match_benchmark(storage, match_id).model_dump(mode="json")
+        except (FileNotFoundError, KeyError, ValueError, TypeError):
+            benchmark = None
 
-    artifact_availability = {
-        "frames": True,
-        "analytics": True,
-        "events": True,
-        "acceptedMatchState": accepted_match_state is not None,
-        "ballTruthLayers": ball_truth_layers is not None,
-        "ballPipelineTrace": ball_pipeline_trace is not None,
-        "sourceClock": source_clock is not None,
-        "proofRuntimeOptions": proof_runtime_options is not None,
-        "recoveryDebug": recovery_debug is not None,
-        "benchmark": benchmark is not None,
-    }
-    exports = {
-        "matchJson": f"/api/matches/{match_id}/export/match.json",
-        "framesCsv": f"/api/matches/{match_id}/export/frames.csv",
-        "eventsCsv": f"/api/matches/{match_id}/export/events.csv",
-        "metricsCsv": f"/api/matches/{match_id}/export/metrics.csv",
-        "reportHtml": f"/api/matches/{match_id}/report/html",
-        "benchmark": f"/api/matches/{match_id}/benchmark",
-    }
-    return {
-        "schemaVersion": SCHEMA_VERSION,
-        "exportedAt": datetime.now(timezone.utc).isoformat(),
-        "match": match.model_dump(mode="json"),
-        "provenance": {
-            "deterministicCore": True,
-            "llmGenerated": False,
-            "storageArtifactsAreSourceOfTruth": True,
-        },
-        "artifactAvailability": artifact_availability,
-        "exports": exports,
-        "frames": [frame.model_dump(mode="json") for frame in frames],
-        "analytics": {
-            "summary": summary.model_dump(mode="json"),
-            "ballAssignments": [assignment.model_dump(mode="json") for assignment in assignments],
-            "formationTimeline": [segment.model_dump(mode="json") for segment in formation_timeline],
-            "shots": [shot.model_dump(mode="json") for shot in shots],
-        },
-        "events": [event.model_dump(mode="json") for event in events],
-        "acceptedMatchState": accepted_match_state,
-        "ballTruthLayers": ball_truth_layers,
-        "ballPipelineTrace": ball_pipeline_trace,
-        "sourceClock": source_clock,
-        "fourRates": four_rates,
-        "decodeAnchors": decode_anchors,
-        "proofRuntimeOptions": proof_runtime_options,
-        "recoveryDebug": recovery_debug,
-        "benchmark": benchmark,
-    }
+        artifact_availability = {
+            "frames": True,
+            "analytics": True,
+            "events": True,
+            "acceptedMatchState": accepted_match_state.get("availability") == "available",
+            "ballTruthLayers": ball_truth_layers is not None,
+            "ballPipelineTrace": ball_pipeline_trace is not None,
+            "sourceClock": source_clock is not None,
+            "proofRuntimeOptions": proof_runtime_options is not None,
+            "recoveryDebug": recovery_debug is not None,
+            "benchmark": benchmark is not None,
+        }
+        exports = {
+            "matchJson": f"/api/matches/{match_id}/export/match.json",
+            "framesCsv": f"/api/matches/{match_id}/export/frames.csv",
+            "eventsCsv": f"/api/matches/{match_id}/export/events.csv",
+            "metricsCsv": f"/api/matches/{match_id}/export/metrics.csv",
+            "reportHtml": f"/api/matches/{match_id}/report/html",
+            "benchmark": f"/api/matches/{match_id}/benchmark",
+        }
+        exports = {key: value + "?generationId=" + generation.generationId for key, value in exports.items()}
+        return {
+            "matchId": match_id, "generationId": generation.generationId,
+            "reports": report_view,
+            "playlist": storage.edit_list_for_match(match_id, generation_id=generation.generationId),
+            "schemaVersion": SCHEMA_VERSION,
+            "exportedAt": datetime.now(timezone.utc).isoformat(),
+            "match": match.model_dump(mode="json"),
+            "provenance": {
+                "deterministicCore": True,
+                "llmGenerated": False,
+                "storageArtifactsAreSourceOfTruth": True,
+                "generationId": generation.generationId,
+                "flatDiagnostics": "unverified_source_binding",
+            },
+            "artifactAvailability": artifact_availability,
+            "exports": exports,
+            "frames": [frame.model_dump(mode="json") for frame in frames],
+            "analytics": {
+                "summary": summary.model_dump(mode="json"),
+                "ballAssignments": [assignment.model_dump(mode="json") for assignment in assignments],
+                "formationTimeline": [segment.model_dump(mode="json") for segment in formation_timeline],
+                "shots": [shot.model_dump(mode="json") for shot in shots],
+            },
+            "events": [event.model_dump(mode="json") for event in events],
+            "acceptedMatchState": accepted_match_state,
+            "ballTruthLayers": ball_truth_layers,
+            "ballPipelineTrace": ball_pipeline_trace,
+            "sourceClock": source_clock,
+            "fourRates": four_rates,
+            "decodeAnchors": decode_anchors,
+            "proofRuntimeOptions": proof_runtime_options,
+            "recoveryDebug": recovery_debug,
+            "benchmark": benchmark,
+        }

@@ -861,7 +861,6 @@ def reprocess_video_match(
                     "requiresTeamSelection":storage.get_match(match_id).requiresTeamSelection,
                     "generationId":storage.current_generation(match_id).generationId}
         ref, output = service.materialize_and_publish(match_id, reason="processing")
-        storage.save_analysis_artifact(match_id, "accepted_match_state", output["acceptedMatchState"])
         storage.update_match_status(match_id, status="ready", requires_team_selection=output["requiresTeamSelection"],
                                     team_clusters=match.teamClusters)
         return {**output, "generationId":ref.generationId}
@@ -1039,7 +1038,6 @@ def _persist_prepared_video_outputs(
         storage.publish_ownership_events(match_id)
     except Exception:
         pass
-    storage.save_analysis_artifact(match_id, "accepted_match_state", accepted_match_state)
     storage.update_match_status(
         match_id,
         status="ready",
@@ -1216,7 +1214,6 @@ def process_match(storage: Storage, job_id: str) -> None:
     from .review_service import ReviewService
     _, output = ReviewService(storage).materialize_and_publish(match.id, reason="processing")
     accepted_match_state = output["acceptedMatchState"]
-    storage.save_analysis_artifact(match.id, "accepted_match_state", accepted_match_state)
     storage.update_match_status(
         match.id,
         status="ready",

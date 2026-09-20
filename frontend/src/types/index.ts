@@ -353,6 +353,7 @@ export interface PitchAnnotations {
 // ===== Review Bundle Types =====
 
 export interface ReviewBundleItem {
+    generationId?: string;
     annotationId: string;
     matchId: string;
     frameStart: number;
@@ -563,15 +564,38 @@ export interface EventSummaryPlayer {
     actions?: Record<string, number>;
 }
 
-export interface TacticalReport {
-    attacking: string;
-    defensive: string;
-    pressing: string;
-    key_player: number;
-    weaknesses: string;
-    rating: number;
-    summary: string;
-    evidence?: string[];
+export interface ReportEvidenceRef {
+    matchId: string;
+    generationId: string;
+    kind: 'event' | 'frame' | 'metric';
+    localId: string;
+}
+
+export interface ScopedCoachReport {
+  metrics?: Array<{ metric: string; value: number | null; unit?: string | null; availability: string; teamScope?: string | null }>;
+    schemaVersion?: string;
+    matchId?: string;
+    generationId?: string;
+    reportId?: string;
+    status?: 'current' | 'historical';
+    grounding?: string;
+    validationDisposition?: string;
+    interpretation?: string;
+    recommendations?: string[];
+    metricClaims?: Array<{ metric: string; value: number; unit: string; availability: string; teamScope: string | null }>;
+    observations?: Array<{ text: string; grounding: 'referenced'; evidence: Array<string | ReportEvidenceRef> }>;
+    reasonCodes?: string[];
+}
+
+export interface TacticalReport extends ScopedCoachReport {
+    attacking?: string;
+    defensive?: string;
+    pressing?: string;
+    key_player?: number;
+    weaknesses?: string;
+    rating?: number;
+    summary?: string;
+    evidence?: Array<string | ReportEvidenceRef>;
     event_summary?: {
         eventCounts?: Record<string, number>;
         topPlayers?: EventSummaryPlayer[];
@@ -591,10 +615,10 @@ export interface DrillSuggestion {
     duration: string;
 }
 
-export interface DrillResponse {
-    drills: DrillSuggestion[];
-    focus_area: string;
-    evidence?: string[];
+export interface DrillResponse extends ScopedCoachReport {
+    drills?: DrillSuggestion[];
+    focus_area?: string;
+    evidence?: Array<string | ReportEvidenceRef>;
     player_focus?: {
         topCreator?: FocusPlayer;
         topFinisher?: FocusPlayer;

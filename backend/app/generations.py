@@ -176,8 +176,10 @@ class GenerationStore:
             raise GenerationRecoveryRequired("Invalid generation manifest") from exc
         if manifest.matchId != match_id or manifest.generationId != generation_id:
             raise GenerationRecoveryRequired("Manifest match/generation identity mismatch")
-        if manifest.schemaVersion not in (1, 2) or not _REQUIRED <= manifest.files.keys():
+        if manifest.schemaVersion not in (1, 2, 3) or not _REQUIRED <= manifest.files.keys():
             raise GenerationRecoveryRequired("Unsupported or incomplete generation manifest")
+        if manifest.schemaVersion >= 3 and "accepted_match_state.json" not in manifest.files:
+            raise GenerationRecoveryRequired("Required accepted-state artifact missing from manifest")
         for name in manifest.files:
             if Path(name).name != name or name in (".", "..") or not name.endswith(".json"):
                 raise GenerationRecoveryRequired("Invalid generation artifact path")
@@ -201,7 +203,7 @@ class GenerationStore:
             except OSError as exc:
                 raise GenerationRecoveryRequired(f"Missing required artifact: {name}") from exc
             declared = manifest.fileMetadata.get(name)
-            if manifest.schemaVersion == 2 and (
+            if manifest.schemaVersion >= 2 and (
                 not isinstance(declared, dict) or declared.get("byteSize") != before[2]
                 or declared.get("schema") != name + ":1"
             ):
@@ -236,12 +238,16 @@ class GenerationStore:
                 raise ValueError("Summary views disagree")
             if analytics.get("shots", []) != self._read(directory / "shots.json"):
                 raise ValueError("Shot views disagree")
+            if manifest.schemaVersion >= 3:
+                from .accepted_state import validate_state
+                validate_state(self._read(directory / "accepted_match_state.json"), match_id,
+                               generation_id, frames, analytics["ballAssignments"])
             if manifest.calibrationData is not None:
                 calibration = CalibrationRevision.model_validate(manifest.calibrationData)
                 if calibration.revisionId != manifest.calibrationRevision:
                     raise ValueError("Calibration revision binding mismatch")
             if manifest.effectiveConfig is not None:
-                if manifest.schemaVersion == 2 and "config.json" not in manifest.files:
+                if manifest.schemaVersion >= 2 and "config.json" not in manifest.files:
                     raise ValueError("Missing configuration artifact")
                 if set(manifest.effectiveConfig) - _ANALYTICAL:
                     raise ValueError("Operational policy cannot be snapshot configuration")
@@ -313,7 +319,7 @@ class GenerationStore:
                     pins[match_id] = previous
 
     def payload(self, match_id, filename, generation_id=None):
-        if filename not in _REQUIRED | {"config.json"}:
+        if filename not in _REQUIRED | {"config.json", "accepted_match_state.json"}:
             raise GenerationRecoveryRequired("Unsupported generation payload")
         try:
             with self.snapshot(match_id, generation_id) as ref:
@@ -390,7 +396,7 @@ class GenerationStore:
         try:
             with self.snapshot(match_id) as ref:
                 manifest, _ = self.manifest(match_id, ref.generationId)
-                if manifest.schemaVersion == 2:
+                if manifest.schemaVersion >= 2:
                     return manifest.calibrationData
         except FileNotFoundError:
             pass
@@ -457,7 +463,7 @@ class GenerationStore:
     def publish(self, match_id, *, frames, summary, assignments, formation_timeline,
                 shots, events, correction_head, stale=None, orphaned_decisions=None,
                 calibration_revision=None, effective_config=None, calibration_data=_UNSET,
-                expected_parent=_UNSET, provenance=None, include_pending_commands=False, identity_context=None):
+                expected_parent=_UNSET, provenance=None, include_pending_commands=False, identity_context=None, accepted_match_state=None):
         from .storage import _utcnow
         from .workbench.events import with_stable_event_id
         self.prepare(match_id)
@@ -502,6 +508,8 @@ class GenerationStore:
             gid = f"gen_{uuid.uuid4().hex}"
             directory = self.root(match_id) / "generations" / gid
             directory.mkdir(parents=True)
+            from .accepted_state import bind_state
+            payloads["accepted_match_state.json"] = bind_state(match_id, gid, accepted_match_state, frame_count=len(frames))
             self._receipt(self.root(match_id) / ".generation-format.json", {"schemaVersion": 2})
             for name, payload in payloads.items():
                 self.storage._write_json(directory / name, payload)
@@ -532,7 +540,7 @@ class GenerationStore:
                 identities = {key: previous.get(key) for key in ("detectionIdentity", "trackingIdentity")}
                 identities.update(projectionIdentity=None, reviewedIdentity=None, reportIdentity=None)
             fields = {**previous, **identities,
-                      "schemaVersion": 2, "matchId": match_id, "generationId": gid,
+                      "schemaVersion": 3, "matchId": match_id, "generationId": gid,
                       "parentGenerationId": parent, "sourceIdentity": source_identity,
                       "observationDigest": observation_digest, "effectiveConfig": effective,
                       "semanticConfigRevision": _digest(effective) if effective is not None else None,
@@ -541,7 +549,7 @@ class GenerationStore:
                       "identityContext": identity_context if identity_context is not None else previous.get("identityContext"),
                       "correctionHead": commands[-1].correctionId if commands else correction_head,
                       "commandSetDigest": command_digest, "includedCommandIds": [c.commandId for c in commands],
-                      "algorithmVersions": {**previous.get("algorithmVersions", {}), "generation_protocol": "2"},
+                      "algorithmVersions": {**previous.get("algorithmVersions", {}), "generation_protocol": "3"},
                       "files": {name: self.storage._sha256_file(directory / name) for name in payloads},
                       "fileMetadata": {name: {"byteSize": (directory / name).stat().st_size, "schema": name + ":1"}
                                        for name in payloads},
@@ -549,6 +557,7 @@ class GenerationStore:
                       "orphanedDecisions": list(orphaned_decisions if orphaned_decisions is not None else previous.get("orphanedDecisions", [])),
                       "artifactStates": {**previous.get("artifactStates", {}), **{name: "present" for name in payloads}},
                       "publishedAt": _utcnow().isoformat().replace("+00:00", "Z")}
+            fields["artifactStates"]["accepted_match_state.json"] = payloads["accepted_match_state.json"]["availability"]
             for name in fields["stale"]:
                 fields["artifactStates"][name] = "stale"
             manifest = GenerationManifest.model_validate(fields)
@@ -735,6 +744,15 @@ class GenerationStore:
                 if rel.parts[0] in {"generations", ".generation-verified"} or path.name.startswith("."):
                     continue
                 references(self._read(path))
+            # Cross-match playlists live outside the per-match directory. The
+            # bundle writer holds the same lifetime pins until its write commits.
+            bundles = self.storage.storage_root / "bundles"
+            if bundles.is_dir():
+                for path in bundles.glob("*.json"):
+                    document = self._read(path)
+                    for item in document.get("items", []):
+                        if item.get("matchId") == match_id:
+                            references(item.get("generationId"))
             # Only proven ancestors are eligible. Failed/unpublished candidates stay retained.
             ancestors = set()
             parent = manifest.parentGenerationId

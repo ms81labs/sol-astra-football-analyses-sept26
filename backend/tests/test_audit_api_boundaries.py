@@ -236,9 +236,13 @@ def test_coach_reports_are_invalidated_only_after_successful_reprocessing(api, m
     assert result.status_code == (500 if fail_publication else 200)
     for name in ('tactical_report', 'drills'):
         path = storage.storage_root / 'matches' / match.id / f'{name}.json'
-        assert path.exists() == fail_publication
-        if fail_publication:
-            assert json.loads(path.read_text()) == {'previous': True}
+        # C03 preserves unbound legacy history in both outcomes; it is never current.
+        assert path.is_file()
+        assert json.loads(path.read_text()) == {'previous': True}
+    from backend.app.report_store import ReportStore
+    view = ReportStore(storage).view(match.id)
+    assert view['reports'] == {}
+    assert any(n['code'] == 'LEGACY_REPORTS_UNVERIFIED' for n in view['notices'])
 
 
 @pytest.mark.parametrize('busy_status', ['match_processing', 'dispatching', 'queued', 'processing'])

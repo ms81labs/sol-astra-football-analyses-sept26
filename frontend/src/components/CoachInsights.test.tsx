@@ -217,3 +217,29 @@ describe('CoachInsights', () => {
     expect(dispatchEvent).not.toHaveBeenCalled();
   });
 });
+
+it('C03 displays scoped zero, experimental and unavailable facts without inventing a rating', () => {
+  render(<CoachInsights activeTab="report" llmThinking={false} matchId="m" generationId="N" currentFrame={0}
+    events={[]} tacticalReport={{ matchId: 'm', generationId: 'N', status: 'historical', grounding: 'interpretive',
+      metricClaims: [{ metric: 'shot_quality', value: 0, unit: 'score', availability: 'experimental', teamScope: 'my_team' }],
+      metrics: [{ metric: 'distance', value: null, unit: 'm', availability: 'withheld' }],
+      interpretation: '<script>unsafe()</script>',
+      evidence: [{ matchId: 'm', generationId: 'N', kind: 'event', localId: '0' }],
+    }} drillResponse={null} onGenerateReport={vi.fn()} onGenerateDrills={vi.fn()} />);
+  expect(screen.getByText(/shot_quality/).textContent).toContain('0');
+  expect(screen.getByText(/distance/).textContent).toContain('unavailable');
+  expect(screen.getByText(/experimental/)).toBeTruthy();
+  expect(document.querySelector('script')).toBeNull();
+  expect(screen.getByText(/unsafe\(\)/)).toBeTruthy();
+  expect(screen.queryByText(/out of 10/i)).toBeNull();
+});
+
+it('C03 refuses silent loading of a playlist from another generation', async () => {
+  const dispatchEvent = vi.fn();
+  const result = await loadPlaylistItemsForMatch([{ annotationId: 'a', matchId: 'm', generationId: 'old',
+    frameStart: 0, frameEnd: 0, timestampStart: 0, timestampEnd: 1, label: 'Old clip', description: '' }],
+    { currentMatchId: 'm', currentGenerationId: 'N', dispatchEvent });
+  expect(result.success).toBe(false);
+  expect(result.error).toContain('historical or unverified');
+  expect(dispatchEvent).not.toHaveBeenCalled();
+});

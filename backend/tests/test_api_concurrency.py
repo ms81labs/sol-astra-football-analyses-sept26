@@ -138,7 +138,7 @@ async def _test_frames_read_does_not_block_other_http_requests(tmp_path: Path, m
 
 @pytest.mark.parametrize(
     ("analysis_result", "expected_status"),
-    [({"ok": True}, 200), (RuntimeError("analysis exploded"), 400)],
+    [({"interpretation": "Nonblocking report advice"}, 200), (RuntimeError("analysis exploded"), 400)],
 )
 def test_analysis_does_not_block_http_or_websocket_progress(
     tmp_path: Path,
@@ -185,7 +185,7 @@ async def _test_analysis_does_not_block_http_or_websocket_progress(
 
         async def request_analysis() -> None:
             responses["analysis"] = await client.post(
-                f"/api/matches/{match.id}/analysis/snapshot",
+                f"/api/matches/{match.id}/analysis/tactical_report",
                 json={"provider": "local"},
             )
 

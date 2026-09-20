@@ -50,6 +50,7 @@ import {
   fetchMatchWorkspace,
   mapBackendEventsToTags,
   runMatchAnalysis,
+  fetchGenerationReports,
   updateMatchConfig,
   waitForJobCompletion,
 } from './utils/api';
@@ -169,6 +170,9 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
     runtimeCapabilities,
     runMatchAnalysis,
     currentFrame,
+    activeMatchId: activeMatch?.id,
+    generationId: activeMatch?.detail?.generationId,
+    fetchReports: fetchGenerationReports,
   });
   const resetCoachAnalysis = coach.resetAnalysis;
 
@@ -1475,10 +1479,11 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           <div className="mb-3 shrink-0">
             <PlaylistBuilder
               matchId={activeMatch?.id}
+              generationId={activeMatch?.detail.generationId ?? undefined}
               reviewRange={review.reviewRange}
               frames={matchData}
               sourceFps={fps}
-              storedClips={playlistClipsFromCorrections(correctionHistory, activeMatch?.detail.includedCommandIds ?? [])}
+              storedClips={playlistClipsFromCorrections(correctionHistory, activeMatch?.detail.includedCommandIds ?? [], activeMatch?.detail.generationId ?? undefined)}
               onClipSaved={handleClipSaved}
               onOpenInterval={(timestamp) => {
                 setIsPlaying(false);
@@ -1571,6 +1576,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
               <div className="flex-1 overflow-y-auto space-y-3 text-sm">
                 {coach.activeTab === 'analysis' && (
                   <>
+                    {coach.reportNotice && <p role="status" className="text-xs text-amber-300">{coach.reportNotice}</p>}
                     {showLeftoverPanels && (
                     <div className="p-3 bg-slate-900 rounded border border-slate-700">
                       <h3 className="text-emerald-500 font-medium mb-1 text-xs">Offside Check</h3>
@@ -1619,6 +1625,8 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
                   matchId={activeMatch?.id ?? null}
                   currentFrame={currentFrame}
                   events={events}
+                  generationId={activeMatch?.detail?.generationId}
+                  reportNotice={coach.reportNotice}
                   tacticalReport={coach.tacticalReport}
                   drillResponse={coach.drillResponse}
                   ballSignalStatus={matchStats?.ballSignalStatus ?? null}

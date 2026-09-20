@@ -7,6 +7,7 @@ import os
 from typing import Any, Callable
 
 CONFIGURED_DEFAULT = "disabled_until_policy"
+LOCAL_MODEL_ID = "deepseek-r1:1.5b"
 
 Validator = Callable[[str, Any], dict]
 
@@ -16,7 +17,7 @@ def execute_local(prompt: str, analysis_type: str, validate: Validator, *, timeo
 
     response = requests.post(
         "http://localhost:11434/api/generate",
-        json={"model": "deepseek-r1:1.5b", "prompt": prompt, "stream": False, "format": "json"},
+        json={"model": LOCAL_MODEL_ID, "prompt": prompt, "stream": False, "format": "json"},
         timeout=timeout_seconds,
     )
     response.raise_for_status()

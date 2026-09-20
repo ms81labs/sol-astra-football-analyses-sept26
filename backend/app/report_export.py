@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from datetime import datetime, timezone
 from html import escape
 
@@ -86,7 +88,7 @@ def _render_kv_card(label: str, value: str) -> str:
 def _render_list_items(items: list[str]) -> str:
     if not items:
         return '<p class="muted">No supporting evidence captured.</p>'
-    return "<ul>" + "".join(f"<li>{escape(item)}</li>" for item in items) + "</ul>"
+    return "<ul>" + "".join(f"<li>{escape(json.dumps(item, sort_keys=True) if isinstance(item, dict) else str(item))}</li>" for item in items) + "</ul>"
 
 
 def _collect_data_confidence_notes(summary: dict) -> list[str]:
@@ -142,7 +144,10 @@ def render_match_report_html(
     tactical_report: dict | None,
     drills: dict | None,
     publication: dict | None = None,
+    report_context: dict | None = None,
 ) -> str:
+    report_context = report_context or {"generationId": None, "status": "unverified",
+                                        "notices": [{"code": "REPORT_SOURCE_NOT_BOUND"}]}
     latest_formations = formation_timeline[-5:]
     publication = publication or {
         "accepted": True,
@@ -153,7 +158,7 @@ def render_match_report_html(
     whole_match_frequency = "true" if publication.get("wholeMatchFrequency") else "false"
     has_tactical_report = bool(tactical_report)
     has_drills = bool(drills)
-    if summary.get("possession") is None:
+    if summary.get("possession") is None and report_context.get("status") == "unverified":
         has_tactical_report = False
         has_drills = False
         tactical_report = None
@@ -225,6 +230,10 @@ def render_match_report_html(
       <header>
         <div class="eyebrow">Guerilla Analytics Match Report</div>
         <h1>{escape(match_name)}</h1>
+        <p class="lede" data-generation-id="{escape(str(report_context.get('generationId') or 'unknown'))}">
+          Generation: {escape(str(report_context.get('generationId') or 'unknown'))} · {escape(str(report_context.get('status')))}
+        </p>
+        <div role="status">{_render_list_items([str(n.get('code', 'REPORT_UNAVAILABLE')) for n in report_context.get('notices', [])])}</div>
         <p class="lede">Input mode: {escape(input_mode)} • Exported at: {escape(exported_at)}</p>
         <p class="lede" data-whole-match-frequency="{whole_match_frequency}">Reviewed passages do not establish a whole-match frequency.</p>
       </header>
@@ -237,6 +246,8 @@ def render_match_report_html(
       </section>
 
       {_render_data_confidence_section(summary)}
+      {_render_scoped_report(tactical_report)}
+      {_render_scoped_report(drills)}
 
       <section>
         <h2>Tactical Analysis</h2>
@@ -355,6 +366,25 @@ def render_match_report_html(
 </html>"""
 
 
+def _render_scoped_report(payload: dict) -> str:
+    if not payload:
+        return ""
+    parts = ['<section><h2>Report validation</h2>',
+             '<p>' + escape(str(payload.get("grounding", "unverified"))) +
+             ' — prose and recommendations require analyst review.</p>']
+    for claim in payload.get("metricClaims", []) + payload.get("measurements", []) + payload.get("metrics", []):
+        parts.append('<p>' + escape(str(claim.get("metric"))) + ': ' + escape(str(claim.get("value")) if claim.get("value") is not None else "unavailable") +
+                     ' ' + escape(str(claim.get("unit"))) + ' · ' + escape(str(claim.get("availability"))) +
+                     ' · ' + escape(str(claim.get("teamScope"))) + '</p>')
+    for claim in payload.get("observations", []):
+        parts.append('<p>Referenced observation (not semantic proof): ' + escape(claim["text"]) + '</p>')
+    if payload.get("interpretation"):
+        parts.append('<p>Interpretation: ' + escape(payload["interpretation"]) + '</p>')
+    parts.append(_render_list_items(payload.get("recommendations", [])))
+    parts.append('</section>')
+    return ''.join(parts)
+
+
 def _known_evidence_ids(events: list[DetectedEvent], tactical_report: dict | None, drills: dict | None) -> set[str]:
     known: set[str] = set()
     for event in events:
@@ -377,18 +407,30 @@ def build_match_report_export(
     events: list[DetectedEvent],
     tactical_report: dict | None,
     drills: dict | None,
+    report_context: dict | None = None,
 ) -> str:
     event_summary = _build_event_summary(events, shots)
     exported_at = datetime.now(timezone.utc).isoformat()
-    claimed = [str(item) for item in (tactical_report or {}).get("evidence") or []]
-    assembled = assemble_report(
-        metrics=[item.model_dump(mode="json") for item in summary.metricAvailability],
-        events=[event.model_dump(mode="json") for event in events],
-        claimed_evidence_ids=claimed,
-        known_evidence_ids=_known_evidence_ids(events, tactical_report, drills),
-        narrative=tactical_report,
-    )
-    published_tactical = tactical_report if assembled["publication"]["accepted"] else None
+    if report_context is not None:
+        # Integrity-checked ReportStore records are already bound to this pin.
+        # Failed provider validation is a labelled deterministic fallback, not a
+        # newly accepted narrative or permission to scan/approve arbitrary prose.
+        published_tactical = tactical_report
+        publication = {"accepted": all(p.get("validationDisposition") != "validation_failed"
+                                       for p in (tactical_report, drills) if p),
+                       "requiresAnalyst": True, "wholeMatchFrequency": False,
+                       "frequencyRequiresDenominator": True}
+    else:
+        claimed = [str(item) for item in (tactical_report or {}).get("evidence") or []]
+        assembled = assemble_report(
+            metrics=[item.model_dump(mode="json") for item in summary.metricAvailability],
+            events=[event.model_dump(mode="json") for event in events],
+            claimed_evidence_ids=claimed,
+            known_evidence_ids=_known_evidence_ids(events, tactical_report, drills),
+            narrative=tactical_report,
+        )
+        publication = assembled["publication"]
+        published_tactical = tactical_report if publication["accepted"] else None
     return render_match_report_html(
         match_name=match.name,
         input_mode=match.inputMode,
@@ -398,5 +440,6 @@ def build_match_report_export(
         event_summary=event_summary,
         tactical_report=published_tactical,
         drills=drills,
-        publication=assembled["publication"],
+        publication=publication,
+        report_context=report_context,
     )
