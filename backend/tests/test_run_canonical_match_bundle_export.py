@@ -4,11 +4,11 @@ import json
 from pathlib import Path
 
 import backend.scripts.run_canonical_match_bundle_export as bundle_batch
-from backend.app.schemas import BallOwnership, DetectedEvent, FrameData, MatchConfig, MatchSummary
+from backend.app.schemas import BallOwnership, DetectedEvent, FrameData, MatchConfig, MatchSummary, PlayerData
 from backend.app.storage import Storage
 
 
-def _seed_ready_match(storage_root: Path) -> str:
+def _seed_ready_match(storage_root: Path, *, published_state: bool = True) -> str:
     storage = Storage(storage_root)
     upload_path = storage.save_upload("sample.json", b"[]")
     match = storage.create_match(
@@ -47,6 +47,25 @@ def _seed_ready_match(storage_root: Path) -> str:
     )
     storage.save_analysis_artifact(match.id, "accepted_match_state", {"frames": [{"frameId": 0}]})
     storage.save_analysis_artifact(match.id, "ball_pipeline_trace", {"traceVersion": 1})
+    if published_state:
+        # C03 requires accepted state in the validated generation, not merely
+        # a flat file with an incomplete frame. Keep that legacy file as a
+        # negative control: it must not override this coherent publication.
+        frames = storage.load_frames(match.id)
+        frames[0] = frames[0].model_copy(update={
+            "myTeam": [PlayerData(id=7, x=21.0, y=50.0, confidence=0.95)],
+        })
+        summary, assignments, formations, shots = storage.load_analytics(match.id)
+        storage.publish_generation(
+            match.id, frames=frames, summary=summary, assignments=assignments,
+            formation_timeline=formations, shots=shots,
+            events=storage.load_events(match.id), correction_head="bundle-fixture",
+            accepted_match_state={"frames": [{
+                "frameId": 0, "timestamp": 0.0, "mode": "controlled_possession",
+                "controllingTeam": "my_team", "controllingTrackId": 7,
+                "ballVisibility": "visible", "source": "observed_ball", "confidence": 0.95,
+            }]},
+        )
     return match.id
 
 
@@ -92,8 +111,27 @@ def test_canonical_match_bundle_export_attempt_plan_has_three_failsafes(tmp_path
 
     payload = bundle_batch.run_canonical_match_bundle_export(storage_root=tmp_path)
 
-    assert [item["attemptApproachFamily"] for item in payload["attemptPlan"]] == [
+    assert [item["attemptApproachFamily"] for item in payload["attemptPlan"] == [
         "persisted_artifact_bundle_contract",
         "bundle_schema_or_api_contract_repair",
         "bundle_export_blocker_summary",
     ]
+
+
+def test_canonical_bundle_preserves_unverified_flat_state_without_promoting_it(tmp_path: Path) -> None:
+    match_id = _seed_ready_match(tmp_path, published_state=False)
+    legacy = tmp_path / "matches" / match_id / "accepted_match_state.json"
+    original = legacy.read_bytes()
+
+    payload = bundle_batch.run_canonical_match_bundle_export(storage_root=tmp_path)
+    sample_path = (tmp_path / "benchmark_suites" / "frozen-viable-baseline-slice-suite"
+                   / "canonical_match_bundle_export_v1" / "sample_match_bundle.json")
+    bundle = json.loads(sample_path.read_text(encoding="utf-8"))
+
+    assert payload["bundleExportReady"] is True  # Unknown optional state does not erase valid core data.
+    assert bundle["artifactAvailability"]["acceptedMatchState"] is False
+    assert bundle["acceptedMatchState"]["availability"] == "unknown"
+    assert bundle["acceptedMatchState"]["reasonCodes"]
+    assert bundle["generationId"] == bundle["acceptedMatchState"]["generationId"]
+    assert bundle["events"][0]["description"] == "turnover"
+    assert legacy.read_bytes() == original
