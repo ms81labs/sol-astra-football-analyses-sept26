@@ -130,3 +130,23 @@ def test_indexed_match_listing_scales_without_reading_full_analytics(tmp_path, m
     assert len(results) == count
     assert elapsed < 2.0
     assert artifact_reads == 0
+
+
+def test_bulk_summary_reads_reuse_server_input_mode_without_per_match_sql(tmp_path, monkeypatch):
+    storage = Storage(tmp_path)
+    for index in range(3):
+        match = storage.create_match(f'indexed-{index}', 'video', 'clip.mp4', tmp_path / 'clip.mp4', MatchConfig())
+        storage.publish_generation(match.id, frames=[], summary=_summary(), assignments=[],
+                                   formation_timeline=[], shots=[], events=[], correction_head='none')
+        storage.update_match_status(match.id, status='ready')
+    connections = 0
+    original = storage._connect
+    def counted():
+        nonlocal connections
+        connections += 1
+        return original()
+    monkeypatch.setattr(storage, '_connect', counted)
+    rows = storage.list_matches_with_analytics()
+    assert connections == 1
+    assert len(rows) == 3
+    assert all(row['summary']['ballSignalStatus'] == 'untrusted' for row in rows)

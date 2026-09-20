@@ -1,3 +1,4 @@
+import { COMMAND_LABEL, type CommandState } from '../utils/commandLifecycle';
 import { useEffect, useRef, useState } from 'react';
 
 import type { TacticalAnnotation } from '../types';
@@ -7,17 +8,19 @@ interface ReviewToolbarProps {
     onCreateNote: (text: string) => Promise<TacticalAnnotation | null>;
     onCreateTaggedMoment: (text: string) => Promise<TacticalAnnotation | null>;
     onShortcut?: (action: ReviewAction) => void;
-    saveState?: 'saved' | 'pending' | 'conflicted' | 'unavailable' | null;
+    saveState?: CommandState | 'saved' | 'pending' | null;
+    message?: string | null;
 }
 
 const SAVE_STATE_LABEL: Record<string, string> = {
-    saved: 'Edit saved',
+    ...COMMAND_LABEL,
+    saved: 'Edit recorded — application not confirmed',
     pending: 'Edit pending',
-    conflicted: 'Stale correction — not replaced',
-    unavailable: 'Save unavailable',
+    conflicted: COMMAND_LABEL.conflicted,
+    unavailable: COMMAND_LABEL.unavailable,
 };
 
-export default function ReviewToolbar({ onCreateNote, onCreateTaggedMoment, onShortcut, saveState = null }: ReviewToolbarProps) {
+export default function ReviewToolbar({ onCreateNote, onCreateTaggedMoment, onShortcut, saveState = null, message = null }: ReviewToolbarProps) {
     const inputRef = useRef<HTMLInputElement>(null);
     const shortcutRef = useRef(onShortcut);
     shortcutRef.current = onShortcut;
@@ -98,6 +101,7 @@ export default function ReviewToolbar({ onCreateNote, onCreateTaggedMoment, onSh
             {saveState && (
                 <p className="text-[11px] text-amber-200" role="status">
                     {SAVE_STATE_LABEL[saveState] ?? saveState}
+                    {message ? ` · ${message}` : ''}
                 </p>
             )}
         </div>

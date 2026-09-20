@@ -31,6 +31,9 @@ class Landmark(StrictModel):
 
 class CalibrationProfile(StrictModel):
     calibrationId: str
+    sourceStreamId: str = "video:0"
+    sourceWidth: int | None = Field(default=None, gt=0)
+    sourceHeight: int | None = Field(default=None, gt=0)
     schemaVersion: str = "calibration_v2"
     cameraModel: CameraModel
     cameraSide: CameraSide | None = None
@@ -529,3 +532,18 @@ def project_tracking_frames(
             )
         )
     return projected
+
+
+def normalized_path_distance_m(frames: list[Any], *, pitch_length_m: float, pitch_width_m: float) -> float:
+    """Distances of canonical 0..100 pitch coordinates; no image homography."""
+    total = 0.0
+    for previous, current in zip(frames, frames[1:]):
+        if current.timestamp <= previous.timestamp:
+            continue
+        for field in ("myTeam", "enemies", "unassignedPlayers"):
+            previous_by_id = {p.id:p for p in getattr(previous,field)}
+            for p in getattr(current,field):
+                old = previous_by_id.get(p.id)
+                if old is not None:
+                    total += math.hypot((p.x-old.x)*pitch_length_m/100, (p.y-old.y)*pitch_width_m/100)
+    return total

@@ -1,13 +1,7 @@
-interface ChangeHistoryItem {
-  correctionId: string;
-  kind: string;
-  saveState: string;
-  undoOf?: string | null;
-  author?: string;
-}
+import { canUndo, commandState, type CommandReceipt } from '../utils/commandLifecycle';
 
 interface ChangeHistoryProps {
-  items: ChangeHistoryItem[];
+  items: CommandReceipt[];
   onUndo?: (correctionId: string) => void;
 }
 
@@ -24,11 +18,12 @@ export default function ChangeHistory({ items, onUndo }: ChangeHistoryProps) {
             <li key={item.correctionId} className="flex items-center justify-between gap-2">
               <span className="font-mono">
                 <span>{item.correctionId}</span>
-                {` · ${item.kind} · ${item.saveState}`}
+                {` · ${item.kind} · ${commandState(item)}`}
+                {item.appliedGeneration ? ` · generation ${item.appliedGeneration}` : ''}
                 {item.author ? ` · ${item.author}` : ''}
                 {item.undoOf ? ` · undo of ${item.undoOf}` : ''}
               </span>
-              {!item.undoOf && (
+              {canUndo(item, items) && onUndo && (
                 <button
                   type="button"
                   onClick={() => onUndo?.(item.correctionId)}

@@ -13,9 +13,9 @@ import SecurityBoundary from './SecurityBoundary';
 import ReleaseGate from './ReleaseGate';
 import NativePackaging from './NativePackaging';
 import QualityTimeline from './QualityTimeline';
-import SetupWizard, { type SetupWizardSavePayload } from './SetupWizard';
+import LoadedMatchSetupPanel, { type LoadedMatchSetupPanelProps } from './LoadedMatchSetupPanel';
+import { commandState, mergeReceipt, type CommandReceipt } from '../utils/commandLifecycle';
 import TrainingSuggestions from './TrainingSuggestions';
-import { updateMatchConfig } from '../utils/api';
 import {
   exportPlaylistInterval,
   fetchAssistance,
@@ -28,11 +28,9 @@ import {
   fetchJobCost,
   fetchJobView,
   fetchLabelProducts,
-  fetchLandmarkPreview,
   fetchMatchClock,
   fetchMatchEdits,
   fetchMatchProxy,
-  fetchMatchSetup,
   fetchMetricInspect,
   fetchNative,
   fetchNativeMemory,
@@ -81,8 +79,6 @@ import {
   type ExperimentReceiptSnapshot,
   type GpuTimingSnapshot,
   type LabelProductsSnapshot,
-  type LandmarkPreview,
-  type MatchSetup,
   type MetricInspect,
   type NativeMemorySnapshot,
   type NativeSnapshot,
@@ -120,6 +116,8 @@ import {
 } from '../utils/workbench';
 
 interface WorkbenchPanelProps {
+  generationId?: string;
+  executeCommand?: LoadedMatchSetupPanelProps['executeCommand'];
   onClose: () => void;
   matchId?: string;
   jobId?: string;
@@ -136,12 +134,12 @@ const STATUS_LABEL: Record<string, string> = {
   unproven: 'Unproven',
 };
 
-export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], onSeek }: WorkbenchPanelProps) {
+export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], onSeek, generationId, executeCommand }: WorkbenchPanelProps) {
   const [dossier, setDossier] = useState<WorkbenchDossier | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState('show our second-half turnovers followed by a shot within 10 seconds');
   const [searchMessage, setSearchMessage] = useState<string | null>(null);
-  const [pendingCorrection, setPendingCorrection] = useState<{ correctionId: string; kind: string; saveState: string } | null>(null);
+  const [pendingCorrection, setPendingCorrection] = useState<CommandReceipt | null>(null);
   const [recoveryMessage, setRecoveryMessage] = useState<string | null>(null);
   const [playlistStart, setPlaylistStart] = useState('3');
   const [playlistEnd, setPlaylistEnd] = useState('5');
@@ -155,7 +153,6 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
   const [libraryQuery, setLibraryQuery] = useState('');
   const [libraryHits, setLibraryHits] = useState<Array<{ id: string; title?: string }>>([]);
   const [playersLimited, setPlayersLimited] = useState(false);
-  const [setup, setSetup] = useState<MatchSetup | null>(null);
   const [metricInspect, setMetricInspect] = useState<MetricInspect | null>(null);
   const [drills, setDrills] = useState<Array<{ name: string; coachReviewed?: boolean }>>([]);
   const [jobView, setJobView] = useState<{
@@ -172,9 +169,8 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
     touchEnd: number;
     samples: Array<{ time: number; attackerX: number; offsideLineX: number; indeterminate: boolean }>;
   } | null>(null);
-  const [history, setHistory] = useState<Array<{ correctionId: string; kind: string; saveState: string; undoOf?: string | null }>>([]);
+  const [history, setHistory] = useState<CommandReceipt[]>([]);
   const [recovery, setRecovery] = useState<RecoverySnapshot | null>(null);
-  const [landmarkPreview, setLandmarkPreview] = useState<LandmarkPreview | null>(null);
   const [qualityItems, setQualityItems] = useState<QualityTimelinePayload['items']>([]);
   const [providersEnabled, setProvidersEnabled] = useState(false);
   const [security, setSecurity] = useState<SecuritySnapshot | null>(null);
@@ -500,7 +496,7 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
     return () => {
       cancelled = true;
     };
-  }, [matchId]);
+  }, [matchId, generationId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -547,20 +543,14 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
   useEffect(() => {
     if (!matchId) return;
     let cancelled = false;
-    fetchPlayerObservations(matchId)
+    fetchPlayerObservations(matchId, generationId)
       .then((payload) => {
         if (!cancelled) setPlayersLimited(Boolean(payload.intervalLimited));
       })
       .catch(() => {
         if (!cancelled) setPlayersLimited(false);
       });
-    fetchMatchSetup(matchId)
-      .then((payload) => {
-        if (!cancelled && typeof payload.cameraProfile === 'string') setSetup(payload);
-      })
-      .catch(() => {
-        if (!cancelled) setSetup(null);
-      });
+
     fetchMatchProxy(matchId)
       .then((payload) => {
         if (!cancelled && payload.replacesOriginal === false) setProxyAssets(payload);
@@ -575,7 +565,7 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
       .catch(() => {
         if (!cancelled) setEditList(null);
       });
-    fetchMetricInspect('my_team_distance_m', matchId)
+    fetchMetricInspect('my_team_distance_m', matchId, generationId)
       .then((payload) => {
         if (!cancelled && payload.metric) setMetricInspect(payload);
       })
@@ -589,7 +579,7 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
       .catch(() => {
         if (!cancelled) setClock(null);
       });
-    fetchIncidentReview(matchId)
+    fetchIncidentReview(matchId, generationId)
       .then((payload) => {
         if (!cancelled && payload.decision == null && Array.isArray(payload.samples)) {
           const interval = payload.touchInterval;
@@ -603,21 +593,8 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
       .catch(() => {
         if (!cancelled) setIncident(null);
       });
-    fetchLandmarkPreview(matchId)
-      .then((payload) => {
-        if (!cancelled && payload.committed === false) setLandmarkPreview(payload);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setLandmarkPreview({
-            residualP95M: null,
-            accepted: false,
-            committed: false,
-            measured: false,
-          });
-        }
-      });
-    fetchQualityTimeline(matchId)
+
+    fetchQualityTimeline(matchId, generationId)
       .then((payload) => {
         if (!cancelled && Array.isArray(payload.items)) setQualityItems(payload.items);
       })
@@ -627,7 +604,7 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
     return () => {
       cancelled = true;
     };
-  }, [matchId]);
+  }, [matchId, generationId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -648,7 +625,8 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
       setSearchMessage('Load a match before running typed search.');
       return;
     }
-    const result = await searchWorkbenchEvents(query, matchId, events);
+    try {
+    const result = await searchWorkbenchEvents(query, matchId, events, generationId);
     if (result.query.unanswerable) {
       setSearchMessage(`Unanswerable: ${result.query.reason ?? 'unknown'}`);
       return;
@@ -659,19 +637,16 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
     }
     setSearchMessage(`${result.results.length} evidence-linked interval(s).`);
     onSeek?.(result.results[0].timestamp);
+    } catch (failure) { setSearchMessage(failure instanceof Error ? failure.message : 'Search unavailable for this snapshot.'); }
   }
 
   async function recoverPending() {
-    if (!matchId || !pendingCorrection) return;
-    const saved = await recoverMatchCorrection(matchId, pendingCorrection.correctionId);
-    setPendingCorrection(null);
-    setRecoveryMessage(saved.saveState);
-    try {
-      const historyPayload = await fetchCorrectionHistory(matchId);
-      if (Array.isArray(historyPayload.items)) setHistory(historyPayload.items);
-    } catch {
-      /* fail-closed: keep local history */
-    }
+    if (!matchId || !pendingCorrection || !executeCommand) { setRecoveryMessage('Use the selected match review controls to recover a command.'); return; }
+    const saved = await executeCommand(() => recoverMatchCorrection(matchId, pendingCorrection.correctionId), true);
+    if (!saved) return;
+    setPendingCorrection(commandState(saved) === 'applied' ? null : saved);
+    setRecoveryMessage(commandState(saved));
+    setHistory((previous) => mergeReceipt(previous, saved));
   }
 
   async function exportPlaylist() {
@@ -918,35 +893,7 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
                 ))}
                 {playersLimited && <p className="text-xs text-amber-200">Interval-limited player observations. Totals withheld.</p>}
               </div>
-              <SetupWizard
-                matchId={matchId}
-                cameraProfile={setup?.cameraProfile ?? dossier.baseline.declaredCameraProfile}
-                pitchLengthM={setup?.pitchLengthM != null ? String(setup.pitchLengthM) : ''}
-                homeTeam={setup?.homeTeam ?? ''}
-                awayTeam={setup?.awayTeam ?? ''}
-                automationAdmitted={setup?.automationAdmitted ?? false}
-                manualTaggingPermitted={setup?.manualTaggingPermitted ?? true}
-                cannotMeasure={setup?.cannotMeasure ?? ['physical_metrics']}
-                landmarkPreview={
-                  landmarkPreview ?? {
-                    residualP95M: null,
-                    accepted: false,
-                    committed: false,
-                    measured: false,
-                  }
-                }
-                onSave={async (payload: SetupWizardSavePayload) => {
-                  if (!matchId) return;
-                  await updateMatchConfig(matchId, {
-                    cameraProfile: payload.cameraProfile,
-                    pitchLengthM: payload.pitchLengthM,
-                    periods: payload.periods,
-                    rights: payload.rights,
-                    homeTeam: payload.homeTeam,
-                    awayTeam: payload.awayTeam,
-                  });
-                }}
-              />
+              <LoadedMatchSetupPanel key={`${matchId}:${generationId}`} matchId={matchId} generationId={generationId} executeCommand={executeCommand} />
               <ClockReadout
                 presentationTimeSeconds={clock?.presentationTimeSeconds ?? 0}
                 matchClockSeconds={clock?.matchClockSeconds ?? 0}
@@ -954,20 +901,12 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
               <AiUnavailableBanner providersEnabled={providersEnabled} />
               <ChangeHistory
                 items={history}
-                onUndo={(correctionId) => {
+                onUndo={executeCommand ? (correctionId) => {
                   if (!matchId) return;
-                  void undoMatchCorrection(matchId, correctionId).then((saved) => {
-                    setHistory((previous) => [
-                      ...previous,
-                      {
-                        correctionId: saved.correctionId,
-                        kind: 'undo',
-                        saveState: 'saved',
-                        undoOf: saved.undoOf,
-                      },
-                    ]);
+                  void executeCommand((controls) => undoMatchCorrection(matchId, correctionId, controls)).then((saved) => {
+                    if (saved) setHistory((previous) => mergeReceipt(previous, saved));
                   });
-                }}
+                } : undefined}
               />
               <IncidentReview
                 touchStart={incident?.touchStart ?? 0}

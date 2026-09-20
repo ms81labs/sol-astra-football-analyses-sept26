@@ -1,5 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import ModalDialog from './components/ModalDialog';
+import { ApiError } from './utils/request';
+import { canUndo, commandErrorState, commandState, mergeReceipt, newCommandControls, type CommandControls, type CommandReceipt, type CommandState, nextTimestamp } from './utils/commandLifecycle';
 import { lazy, Suspense, useState, useEffect, useCallback, useLayoutEffect, useMemo, useRef } from 'react';
 
 
@@ -39,12 +41,11 @@ import UploadCalibrationPanel from './components/UploadCalibrationPanel';
 import { useCoachAnalysis } from './hooks/useCoachAnalysis';
 import { useReviewSurface } from './features/review/useReviewSurface';
 import type { BackendEvent, CameraProfile, EventTag, FormationSegment, FrameData, MatchBenchmarkSummary, MatchRecord, MatchStats, ProcessingJob, RuntimeCapabilities, ShotMarker } from './types';
-import { buildPassingNetwork, buildPlayerProfiles, computeHeatmap, physicalMetricAvailability, playerPhysicalTotalsAvailability, speedAvailability, computeSpeedsForFrame, summarizeShots } from './utils/analytics';
+import { buildPassingNetwork, buildPlayerProfiles, computeHeatmap, physicalMetricAvailability, playerPhysicalTotalsAvailability, speedAvailability, computeSpeedsForFrame, summarizeShots, type PitchDimensions } from './utils/analytics';
 import {
   buildMatchVideoUrl,
   createMatchUpload,
   fetchMatches,
-  fetchMatchEvents,
   fetchMatchFrames,
   fetchMatchWorkspace,
   mapBackendEventsToTags,
@@ -57,7 +58,7 @@ import { getUploadFailureGuidance } from './utils/uploadErrors';
 import { findNearestFrameIndex } from './utils/videoSync';
 import { playlistClipsFromCorrections } from './utils/playlist';
 import { applyReviewShortcut, type ReviewAction } from './utils/reviewShortcuts';
-import { fetchAssistance, fetchCorrectionHistory, fetchHeatmap, fetchIncidentReview, fetchMatchFormation, fetchMatchMetrics, fetchNative, fetchNativeMemory, fetchPendingCorrections, fetchQualityTimeline, fetchRecovery, fetchSecurity, fetchWorkbenchDossier, promoteMatchIdentity, recoverMatchCorrection, repairMatchIdentity, requestAccessDeletion, submitMatchCorrection, undoMatchCorrection, type FormationAvailability, type MetricAvailability } from './utils/workbench';
+import { fetchAssistance, fetchCorrectionHistory, fetchPendingCorrections, fetchHeatmap, fetchIncidentReview, fetchMatchFormation, fetchMatchMetrics, fetchNative, fetchNativeMemory, fetchQualityTimeline, fetchRecovery, fetchSecurity, fetchWorkbenchDossier, promoteMatchIdentity, recoverMatchCorrection, repairMatchIdentity, requestAccessDeletion, submitMatchCorrection, undoMatchCorrection, type FormationAvailability, type MetricAvailability } from './utils/workbench';
 import { windowedTimelineProps } from './utils/windowedTimeline';
 import { splitScores } from './utils/quantities';
 
@@ -179,6 +180,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
   const [speedAvail, setSpeedAvail] = useState({ wholeMatch: false, intervalLimited: true, withheld: true });
   const [playerTotalsAvail, setPlayerTotalsAvail] = useState({ wholeMatch: false, intervalLimited: true, withheld: true });
   const [identityContinuous, setIdentityContinuous] = useState(false);
+  const [physicalDimensions, setPhysicalDimensions] = useState<PitchDimensions | null>(null);
   const [selectedPlayer, setSelectedPlayer] = useState<import('./types').PlayerProfile | null>(null);
   const [showIssuePanel, setShowIssuePanel] = useState(false);
   const [showDashboard, setShowDashboard] = useState(false);
@@ -193,6 +195,9 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
   const activeWorkspaceRequestRef = useRef(0);
   const comparisonWorkspaceRequestRef = useRef(0);
   const activeMatchIdRef = useRef<string | null>(null);
+  const activeGenerationRef = useRef<string | null>(null);
+  const commandBusyRef = useRef(false);
+  const historyMatchRef = useRef<string | null>(null);
   const activeFrameTimestampsRef = useRef<number[]>([]);
   const loadingOperationRef = useRef(0);
   const [uploadAttackDirection, setUploadAttackDirection] = useState<'left_to_right' | 'right_to_left'>('left_to_right');
@@ -220,112 +225,84 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
 
   useLayoutEffect(() => {
     activeMatchIdRef.current = activeMatch?.id ?? null;
-  }, [activeMatch?.id]);
+    activeGenerationRef.current = activeMatch?.detail.generationId ?? null;
+  }, [activeMatch?.id, activeMatch?.detail.generationId]);
   useEffect(() => {
-    if (!activeMatch?.id) {
-      setStoredIncident(null);
-      setQualityItems([]);
-      setFormationAvailability(null);
-      setHeatmapAvail({ wholeMatch: false, intervalLimited: true, withheld: true });
-      setSpeedAvail({ wholeMatch: false, intervalLimited: true, withheld: true });
-      setPlayerTotalsAvail({ wholeMatch: false, intervalLimited: true, withheld: true });
-      setIdentityContinuous(false);
+    setStoredIncident(null);
+    setQualityItems([]);
+    setFormationAvailability(null);
+    setStoredMetrics([]);
+    setIdentityContinuous(false);
+    setHeatmapAvail({ wholeMatch: false, intervalLimited: true, withheld: true });
+    setSpeedAvail({ wholeMatch: false, intervalLimited: true, withheld: true });
+    setPlayerTotalsAvail({ wholeMatch: false, intervalLimited: true, withheld: true });
+    setPhysicalDimensions(null);
+    if (historyMatchRef.current !== (activeMatch?.id ?? null)) {
       setPendingCorrection(null);
       setCorrectionHistory([]);
       correctionHistoryRef.current = [];
-      setStoredMetrics([]);
-      return;
+      correctionVersionRef.current = undefined;
+      historyMatchRef.current = activeMatch?.id ?? null;
     }
+    if (!activeMatch?.id) return;
     let cancelled = false;
-    fetchIncidentReview(activeMatch.id)
-      .then((payload) => {
-        if (cancelled || payload.decision != null || !Array.isArray(payload.samples)) return;
-        const interval = payload.touchInterval;
-        setStoredIncident({
-          touchStart: interval?.[0] ?? payload.samples[0]?.time ?? 0,
-          touchEnd: interval?.[1] ?? payload.samples[payload.samples.length - 1]?.time ?? 0.12,
-          samples: payload.samples,
-        });
-      })
-      .catch(() => {
-        if (!cancelled) setStoredIncident(null);
-      });
-    fetchQualityTimeline(activeMatch.id)
-      .then((payload) => {
-        if (cancelled || !Array.isArray(payload.items)) return;
-        setQualityItems(payload.items);
-      })
-      .catch(() => {
-        if (!cancelled) setQualityItems([]);
-      });
-    fetchMatchFormation(activeMatch.id)
-      .then((payload) => {
-        if (cancelled || typeof payload.availability !== 'string') return;
-        setFormationAvailability(payload);
-      })
-      .catch(() => {
-        if (!cancelled) setFormationAvailability(null);
-      });
-    fetchHeatmap(activeMatch.id)
-      .then((payload) => {
-        if (cancelled) return;
-        const identity = payload.identityContinuous === true;
-        setIdentityContinuous(identity);
-        setHeatmapAvail({
-          wholeMatch: payload.wholeMatch === true,
-          intervalLimited: payload.intervalLimited !== false,
-          withheld: payload.withheld !== false,
-        });
-        setSpeedAvail(speedAvailability(identity));
-        setPlayerTotalsAvail(playerPhysicalTotalsAvailability(identity));
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setIdentityContinuous(false);
-          setHeatmapAvail({ wholeMatch: false, intervalLimited: true, withheld: true });
-          setSpeedAvail({ wholeMatch: false, intervalLimited: true, withheld: true });
-          setPlayerTotalsAvail({ wholeMatch: false, intervalLimited: true, withheld: true });
-        }
-      });
-    fetchPendingCorrections(activeMatch.id)
-      .then((payload) => {
-        if (cancelled) return;
-        const pending = payload.items.find((item) => item.saveState === 'pending') ?? payload.items[0] ?? null;
-        setPendingCorrection(pending);
-        if (pending) {
-          setCorrectionSaveState('pending');
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setPendingCorrection(null);
-      });
-    fetchCorrectionHistory(activeMatch.id)
-      .then((payload) => {
-        if (cancelled || !Array.isArray(payload.items)) return;
-        const items = payload.items.map((item) => ({
-          correctionId: item.correctionId,
-          kind: item.kind,
-          saveState: item.saveState,
-          undoOf: item.undoOf ?? null,
-          author: item.author,
-          payload: item.payload ?? undefined,
-        }));
-        setCorrectionHistory(items);
-        correctionHistoryRef.current = items;
-      })
-      .catch(() => undefined);
-    fetchMatchMetrics(activeMatch.id)
-      .then((payload) => {
-        if (cancelled || !Array.isArray(payload.metrics)) return;
-        setStoredMetrics(payload.metrics);
-      })
-      .catch(() => {
-        if (!cancelled) setStoredMetrics([]);
-      });
-    return () => {
-      cancelled = true;
+    const matchId = activeMatch.id;
+    const generationId = activeMatch.detail.generationId ?? undefined;
+    // Every optional pane is cleared on snapshot selection, then populated only
+    // with its own verified same-generation response. An unavailable optional
+    // pane must not prevent the other verified panes from appearing.
+    const failedPane = (error: unknown) => {
+      if (!cancelled) setCommandMessage(error instanceof Error ? error.message : 'Derived snapshot unavailable.');
     };
-  }, [activeMatch?.id]);
+    if (generationId) {
+      void fetchIncidentReview(matchId, generationId).then((incident) => {
+        if (cancelled) return;
+        const interval = incident.touchInterval;
+        if (incident.decision == null && Array.isArray(incident.samples)) setStoredIncident({
+          touchStart: interval?.[0] ?? incident.samples[0]?.time ?? 0,
+          touchEnd: interval?.[1] ?? incident.samples[incident.samples.length - 1]?.time ?? 0,
+          samples: incident.samples,
+        });
+      }).catch(failedPane);
+      void fetchQualityTimeline(matchId, generationId).then((quality) => {
+        if (!cancelled) setQualityItems(quality.items ?? []);
+      }).catch(failedPane);
+      void fetchMatchFormation(matchId, generationId).then((formation) => {
+        if (!cancelled) setFormationAvailability(formation);
+      }).catch(failedPane);
+      void fetchMatchMetrics(matchId, generationId).then((metrics) => {
+        if (!cancelled) setStoredMetrics(metrics.metrics ?? []);
+      }).catch(failedPane);
+      void fetchHeatmap(matchId, generationId).then((heatmap) => {
+        if (cancelled) return;
+        const identity = heatmap.identityContinuous === true;
+        const dimensions = heatmap.pitchDimensions;
+        const physical = identity && heatmap.geometryEligible === true && heatmap.withheld === false
+          && dimensions != null && Number.isFinite(dimensions.pitchLengthM) && dimensions.pitchLengthM > 0
+          && Number.isFinite(dimensions.pitchWidthM) && dimensions.pitchWidthM > 0;
+        setIdentityContinuous(identity);
+        setPhysicalDimensions(physical ? dimensions : null);
+        setHeatmapAvail({ wholeMatch: heatmap.wholeMatch === true,
+          intervalLimited: heatmap.intervalLimited !== false, withheld: heatmap.withheld !== false });
+        setSpeedAvail(speedAvailability(physical));
+        setPlayerTotalsAvail(playerPhysicalTotalsAvailability(physical));
+      }).catch(failedPane);
+    }
+    // Received commands and committed history are distinct durable surfaces.
+    // Never infer an applied effect from either log without its receipt state.
+    const acceptLog = (payload: { items: CommandReceipt[] }, versionedHistory: boolean) => {
+      if (cancelled || !Array.isArray(payload.items)) return;
+      if (versionedHistory) correctionVersionRef.current = Math.max(correctionVersionRef.current ?? 0,
+        ...payload.items.map((item) => item.version ?? 0));
+      const merged = payload.items.reduce((all, item) => mergeReceipt(all, item), correctionHistoryRef.current);
+      correctionHistoryRef.current = merged;
+      setCorrectionHistory(merged);
+      setPendingCorrection(merged.find((item) => ['recorded', 'applying', 'failed'].includes(commandState(item))) ?? null);
+    };
+    void fetchCorrectionHistory(matchId).then((payload) => acceptLog(payload, true)).catch(failedPane);
+    void fetchPendingCorrections(matchId).then((payload) => acceptLog(payload, false)).catch(failedPane);
+    return () => { cancelled = true; };
+  }, [activeMatch?.id, activeMatch?.detail.generationId]);
   useEffect(() => {
     let cancelled = false;
     fetchRecovery()
@@ -409,9 +386,10 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
     () => windowedTimelineProps(matchData, currentFrame, totalFrameCount),
     [matchData, currentFrame, totalFrameCount],
   );
-  const [correctionSaveState, setCorrectionSaveState] = useState<'saved' | 'pending' | 'conflicted' | 'unavailable' | null>(null);
-  const [correctionHistory, setCorrectionHistory] = useState<Array<{ correctionId: string; kind: string; saveState: string; undoOf?: string | null; author?: string; payload?: Record<string, unknown> }>>([]);
-  const [pendingCorrection, setPendingCorrection] = useState<{ correctionId: string; kind: string; saveState: string; payload?: Record<string, unknown> | null } | null>(null);
+  const [correctionSaveState, setCorrectionSaveState] = useState<CommandState | null>(null);
+  const [commandMessage, setCommandMessage] = useState<string | null>(null);
+  const [correctionHistory, setCorrectionHistory] = useState<CommandReceipt[]>([]);
+  const [pendingCorrection, setPendingCorrection] = useState<CommandReceipt | null>(null);
   const [storedIncident, setStoredIncident] = useState<{
     touchStart: number;
     touchEnd: number;
@@ -439,7 +417,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
     universallyPortable?: boolean;
     completeRuntimeMemory?: boolean;
   } | null>(null);
-  const correctionVersionRef = useRef(0);
+  const correctionVersionRef = useRef<number | undefined>(undefined);
   const correctionHistoryRef = useRef(correctionHistory);
   correctionHistoryRef.current = correctionHistory;
   const matchStats = activeMatch?.stats || null;
@@ -510,10 +488,12 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
     if (loaded || totalFrameCount <= matchData.length) return;
     const matchId = activeMatch.id;
     let cancelled = false;
-    void fetchMatchFrames(matchId, { afterFrame: currentFrame }).then((page) => {
+    const generationId = activeMatch.detail.generationId ?? undefined;
+    if (!generationId) return;
+    void fetchMatchFrames(matchId, { afterFrame: currentFrame, generationId }).then((page) => {
       if (cancelled) return;
       setActiveMatch((previous) => (
-        previous && previous.id === matchId
+        previous && previous.id === matchId && previous.detail.generationId === generationId
           ? { ...previous, data: page.frames, frameCount: page.frameCount || previous.frameCount }
           : previous
       ));
@@ -551,9 +531,9 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
   }, [handleAddEvent]);
 
   const heatmapData = useMemo(() => {
-    if (matchData.length === 0 || heatmapAvail.withheld) return null;
+    if (matchData.length === 0 || heatmapAvail.withheld || matchData.length !== totalFrameCount) return null;
     return computeHeatmap(matchData, 'my_team');
-  }, [heatmapAvail.withheld, matchData]);
+  }, [heatmapAvail.withheld, matchData, totalFrameCount]);
 
   const passingNetwork = useMemo(() => {
     if (!activeMatch) return [];
@@ -568,13 +548,16 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
 
   const playerProfiles = useMemo(() => {
     if (!activeMatch) return [];
-    return buildPlayerProfiles(activeMatch.data, activeMatch.backendEvents, shotMarkers, identityContinuous);
-  }, [activeMatch, identityContinuous, shotMarkers]);
+    return buildPlayerProfiles(activeMatch.data, activeMatch.backendEvents, shotMarkers,
+      !playerTotalsAvail.withheld && physicalDimensions != null && activeMatch.data.length === activeMatch.frameCount,
+      physicalDimensions ?? undefined);
+  }, [activeMatch, playerTotalsAvail.withheld, physicalDimensions, shotMarkers]);
 
   const speedData = useMemo(() => {
-    if (matchData.length === 0 || speedAvail.withheld) return null;
-    return computeSpeedsForFrame(matchData, currentFrame);
-  }, [currentFrame, matchData, speedAvail.withheld]);
+    if (matchData.length === 0 || speedAvail.withheld || !physicalDimensions) return null;
+    const index = matchData.findIndex((frame) => frame.Frame_ID === currentFrame);
+    return computeSpeedsForFrame(matchData, index, physicalDimensions);
+  }, [currentFrame, matchData, speedAvail.withheld, physicalDimensions]);
 
   const togglePlay = useCallback(() => setIsPlaying((playing) => !playing), []);
 
@@ -585,142 +568,10 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
     coach.clearResponse();
   }, [coach, totalFrameCount]);
 
-  const applyStoredMatchEvents = useCallback(async (matchId: string, frames: FrameData[]) => {
-    const storedEvents = await fetchMatchEvents(matchId);
-    const tags = mapBackendEventsToTags(storedEvents, frames);
-    setActiveMatch((previous) => {
-      if (!previous || previous.id !== matchId) {
-        return previous;
-      }
-      return {
-        ...previous,
-        backendEvents: storedEvents,
-        baseEvents: tags,
-      };
-    });
-    setEvents(tags);
-  }, []);
-
-  const handleReviewShortcut = useCallback((action: ReviewAction) => {
-    const next = applyReviewShortcut(action, {
-      isPlaying,
-      currentFrame,
-      frameCount: Math.max(totalFrameCount, 1),
-      events,
-      reviewRange: review.reviewRange,
-    });
-    if (next.isPlaying !== isPlaying) {
-      setIsPlaying(next.isPlaying);
-    }
-    if (next.currentFrame !== currentFrame) {
-      handleSeek(next.currentFrame);
-    }
-    const rangeChanged =
-      next.reviewRange?.startFrame !== review.reviewRange?.startFrame ||
-      next.reviewRange?.endFrame !== review.reviewRange?.endFrame;
-    if (rangeChanged) {
-      review.setReviewRange(next.reviewRange);
-    }
-    setEvents(next.events as EventTag[]);
-    if ((action === 'accept' || action === 'reject') && activeMatch) {
-      const matchId = activeMatch.id;
-      const frames = activeMatch.data;
-      const kind = action === 'accept' ? 'event_accept' : 'event_reject';
-      const expectedVersion = correctionVersionRef.current;
-      const reviewed = next.events.find((event) => event.frame === next.currentFrame) ?? next.events.find((event) => event.reviewStatus === (kind === 'event_accept' ? 'accepted' : 'rejected'));
-      setCorrectionSaveState('pending');
-      void submitMatchCorrection(matchId, {
-        kind,
-        payload: { frame: next.currentFrame, type: reviewed?.type },
-        expectedVersion,
-      })
-        .then(async (saved) => {
-          setCorrectionSaveState(saved.saveState as 'saved' | 'pending' | 'conflicted' | 'unavailable');
-          if (saved.saveState === 'saved' && typeof saved.version === 'number') {
-            correctionVersionRef.current = saved.version;
-          }
-          if (saved.correctionId) {
-            setCorrectionHistory((previous) => {
-              const next = [
-                ...previous,
-                { correctionId: saved.correctionId, kind, saveState: saved.saveState, undoOf: null },
-              ];
-              correctionHistoryRef.current = next;
-              return next;
-            });
-          }
-          if (saved.saveState !== 'saved') {
-            return;
-          }
-          await applyStoredMatchEvents(matchId, frames);
-        })
-        .catch(() => {
-          setCorrectionSaveState('unavailable');
-        });
-      return;
-    }
-    if (action === 'undo' && activeMatch) {
-      const history = correctionHistoryRef.current;
-      const undoneIds = new Set(
-        history
-          .map((item) => item.undoOf)
-          .filter((undoOf): undoOf is string => typeof undoOf === 'string' && undoOf.length > 0),
-      );
-      const target = [...history].reverse().find((item) => (
-        (item.kind === 'event_accept' || item.kind === 'event_reject')
-        && item.saveState === 'saved'
-        && !undoneIds.has(item.correctionId)
-      ));
-      if (!target) {
-        return;
-      }
-      const matchId = activeMatch.id;
-      const frames = activeMatch.data;
-      setCorrectionSaveState('pending');
-      void undoMatchCorrection(matchId, target.correctionId)
-        .then(async (saved) => {
-          setCorrectionSaveState('saved');
-          setCorrectionHistory((previous) => {
-            const next = [
-              ...previous,
-              {
-                correctionId: saved.correctionId,
-                kind: target.kind,
-                saveState: 'saved',
-                undoOf: saved.undoOf,
-              },
-            ];
-            correctionHistoryRef.current = next;
-            return next;
-          });
-          await applyStoredMatchEvents(matchId, frames);
-        })
-        .catch(() => {
-          setCorrectionSaveState('unavailable');
-        });
-    }
-  }, [activeMatch, applyStoredMatchEvents, currentFrame, events, handleSeek, isPlaying, totalFrameCount, review]);
-
-  const handleDrawingAnnotation = useCallback(
-    (x: number, y: number, x2?: number, y2?: number) => {
-      if (!review.reviewMode || !activeMatch) return;
-      if (review.reviewMode === 'circle') {
-        void review.handlePitchPointSelect({ x, y });
-      } else if (review.reviewMode === 'arrow') {
-        if (review.pitchAnnotationPlacementMode === 'arrow-start') {
-          void review.handlePitchPointSelect({ x, y });
-        } else if (review.pitchAnnotationPlacementMode === 'arrow-end' && x2 !== undefined && y2 !== undefined) {
-          void review.handlePitchPointSelect({ x: x2, y: y2 });
-        }
-      }
-    },
-    [activeMatch, review],
-  );
-
   const loadWorkspaceIntoState = useCallback(
     async (
       matchId: string,
-      { prepend = false, force = false }: { prepend?: boolean; force?: boolean } = {},
+      { prepend = false, force = false, generationId }: { prepend?: boolean; force?: boolean; generationId?: string } = {},
       signal?: AbortSignal,
     ) => {
       if (!force && activeMatchIdRef.current === matchId) return true;
@@ -729,9 +580,27 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
       const loadingOperationId = beginLoadingOperation();
       setLoadError(null);
       try {
-        const workspace = await fetchMatchWorkspace(matchId, signal);
+        const workspace = generationId ? await fetchMatchWorkspace(matchId, signal, generationId)
+          : await fetchMatchWorkspace(matchId, signal);
         if (signal?.aborted || activeWorkspaceRequestRef.current !== requestId) return false;
+        if (generationId && workspace.detail.generationId !== generationId) {
+          throw new ApiError('The refreshed workspace does not match the applied generation.', 409, 'GENERATION_RESPONSE_MISMATCH');
+        }
         const entry = workspaceToEntry(workspace);
+        if (activeMatchIdRef.current !== matchId || (force && !generationId)) {
+          setCorrectionSaveState(null);
+          setCommandMessage(null);
+        }
+        // Clear derived panes in the same React batch as the new core snapshot.
+        setStoredMetrics([]);
+        setQualityItems([]);
+        setStoredIncident(null);
+        setFormationAvailability(null);
+        setIdentityContinuous(false);
+        setPhysicalDimensions(null);
+        setHeatmapAvail({ wholeMatch: false, intervalLimited: true, withheld: true });
+        setSpeedAvail({ wholeMatch: false, intervalLimited: true, withheld: true });
+        setPlayerTotalsAvail({ wholeMatch: false, intervalLimited: true, withheld: true });
         activeFrameTimestampsRef.current = entry.data.map(frame => frame.Timestamp);
 
         setMatches((previous) => {
@@ -744,7 +613,9 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
         comparisonWorkspaceRequestRef.current += 1;
         setComparisonMatch(null);
         setComparisonLoadError(null);
-        setCurrentFrame(entry.data[0]?.Frame_ID ?? 0);
+        const sameMatch = activeMatchIdRef.current === matchId;
+        setCurrentFrame((previous) => sameMatch ? Math.min(previous, Math.max(0, entry.frameCount - 1))
+          : entry.data[0]?.Frame_ID ?? 0);
         setIsPlaying(false);
         setSelectedPlayer(null);
         setEvents(entry.baseEvents);
@@ -762,43 +633,111 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
     [beginLoadingOperation, finishLoadingOperation, resetCoachAnalysis],
   );
 
+  const executeCommand = useCallback(async (
+    send: (controls: CommandControls) => Promise<CommandReceipt | undefined>,
+    recovering = false,
+  ): Promise<CommandReceipt | null> => {
+    if (!activeMatch || commandBusyRef.current) return null;
+    if (!recovering && correctionSaveState && ['recorded', 'applying', 'unavailable', 'conflicted'].includes(correctionSaveState)) {
+      setCommandMessage('Resolve the pending command or refresh the current snapshot before another edit.');
+      return null;
+    }
+    const matchId = activeMatch.id;
+    const baseGeneration = activeMatch.detail.generationId;
+    const epoch = activeWorkspaceRequestRef.current;
+    const stillSelected = () => activeMatchIdRef.current === matchId && activeWorkspaceRequestRef.current === epoch;
+    commandBusyRef.current = true;
+    setCorrectionSaveState('applying');
+    setCommandMessage(null);
+    try {
+      const controls = newCommandControls(baseGeneration, correctionVersionRef.current);
+      const receipt = await send(controls);
+      if (!stillSelected()) return null;
+      if (!receipt?.correctionId) throw new ApiError('No application receipt returned. Refresh before retrying.', 503, 'COMMAND_RECEIPT_MISSING');
+      setCorrectionHistory((previous) => {
+        const next = mergeReceipt(previous, receipt);
+        correctionHistoryRef.current = next;
+        return next;
+      });
+      if (typeof receipt.version === 'number') correctionVersionRef.current = Math.max(correctionVersionRef.current ?? 0, receipt.version);
+      const disposition = commandState(receipt);
+      if (disposition !== 'applied') {
+        setCorrectionSaveState(disposition);
+        setPendingCorrection(receipt);
+        setCommandMessage(receipt.lastError ?? null);
+        return receipt;
+      }
+      // A duplicate/recovered historical receipt must never roll the UI back from a newer snapshot.
+      if (receipt.baseGeneration && receipt.baseGeneration !== baseGeneration && receipt.appliedGeneration !== baseGeneration) {
+        setCorrectionSaveState('conflicted');
+        setCommandMessage(`This command was applied to historical generation ${receipt.appliedGeneration}. Refresh to select current state.`);
+        return null;
+      }
+      const loaded = await loadWorkspaceIntoState(matchId, { force: true, generationId: receipt.appliedGeneration! });
+      if (loaded) {
+        setPendingCorrection(null);
+        setCorrectionSaveState('applied');
+        setCommandMessage(`Generation ${receipt.appliedGeneration}`);
+      }
+      return loaded ? receipt : null;
+    } catch (error) {
+      // Refresh increments the epoch itself; only report a refresh failure on the same match.
+      if (activeMatchIdRef.current === matchId && (stillSelected() || activeGenerationRef.current === baseGeneration)) {
+        setCorrectionSaveState(commandErrorState(error));
+        setCommandMessage(error instanceof Error ? error.message : 'Application unconfirmed. Refresh before retrying.');
+      }
+      return null;
+    } finally { commandBusyRef.current = false; }
+  }, [activeMatch, correctionSaveState, loadWorkspaceIntoState]);
+
+  const handleUndoCommand = useCallback((correctionId: string) => {
+    if (!activeMatch) return;
+    const item = correctionHistoryRef.current.find((entry) => entry.correctionId === correctionId);
+    if (!item || !canUndo(item, correctionHistoryRef.current)) return;
+    void executeCommand((controls) => undoMatchCorrection(activeMatch.id, correctionId, controls));
+  }, [activeMatch, executeCommand]);
+
+  const handleReviewShortcut = useCallback((action: ReviewAction) => {
+    const next = applyReviewShortcut(action, { isPlaying, currentFrame,
+      frameCount: Math.max(totalFrameCount, 1), events, reviewRange: review.reviewRange });
+    if (next.isPlaying !== isPlaying) setIsPlaying(next.isPlaying);
+    if (next.currentFrame !== currentFrame) handleSeek(next.currentFrame);
+    if (next.reviewRange?.startFrame !== review.reviewRange?.startFrame || next.reviewRange?.endFrame !== review.reviewRange?.endFrame) review.setReviewRange(next.reviewRange);
+    if ((action === 'accept' || action === 'reject') && activeMatch) {
+      const kind = action === 'accept' ? 'event_accept' : 'event_reject';
+      const reviewed = next.events.find((event) => event.frame === next.currentFrame);
+      // Do not show accepted/rejected effects before a published generation is received.
+      void executeCommand((controls) => submitMatchCorrection(activeMatch.id, {
+        kind, payload: { frame: next.currentFrame, type: reviewed?.type }, ...controls,
+      }));
+    } else if (action === 'undo' && activeMatch) {
+      const history = correctionHistoryRef.current;
+      const target = [...history].reverse().find((item) =>
+        (item.kind === 'event_accept' || item.kind === 'event_reject') && canUndo(item, history));
+      if (target) handleUndoCommand(target.correctionId);
+    } else if (action !== 'accept' && action !== 'reject' && action !== 'undo') setEvents(next.events as EventTag[]);
+  }, [activeMatch, currentFrame, events, executeCommand, handleSeek, handleUndoCommand, isPlaying, totalFrameCount, review]);
+
+  const handleDrawingAnnotation = useCallback(
+    (x: number, y: number, x2?: number, y2?: number) => {
+      if (!review.reviewMode || !activeMatch) return;
+      if (review.reviewMode === 'circle') {
+        void review.handlePitchPointSelect({ x, y });
+      } else if (review.reviewMode === 'arrow') {
+        if (review.pitchAnnotationPlacementMode === 'arrow-start') {
+          void review.handlePitchPointSelect({ x, y });
+        } else if (review.pitchAnnotationPlacementMode === 'arrow-end' && x2 !== undefined && y2 !== undefined) {
+          void review.handlePitchPointSelect({ x: x2, y: y2 });
+        }
+      }
+    },
+    [activeMatch, review],
+  );
+
   const handleRecoverPendingCorrection = useCallback(() => {
     if (!activeMatch || !pendingCorrection) return;
-    const matchId = activeMatch.id;
-    const frames = activeMatch.data;
-    const pending = pendingCorrection;
-    setCorrectionSaveState('pending');
-    void recoverMatchCorrection(matchId, pending.correctionId)
-      .then(async (saved) => {
-        setPendingCorrection(null);
-        setCorrectionSaveState(saved.saveState === 'saved' ? 'saved' : 'pending');
-        setCorrectionHistory((previous) => {
-          const next = [
-            ...previous,
-            {
-              correctionId: saved.correctionId,
-              kind: pending.kind,
-              saveState: saved.saveState,
-              undoOf: null,
-              payload: pending.payload ?? undefined,
-            },
-          ];
-          correctionHistoryRef.current = next;
-          return next;
-        });
-        if (pending.kind === 'event_accept' || pending.kind === 'event_reject') {
-          await applyStoredMatchEvents(matchId, frames);
-          return;
-        }
-        if (pending.kind === 'playlist_item') {
-          return;
-        }
-        await loadWorkspaceIntoState(matchId, { prepend: true, force: true });
-      })
-      .catch(() => {
-        setCorrectionSaveState('unavailable');
-      });
-  }, [activeMatch, applyStoredMatchEvents, loadWorkspaceIntoState, pendingCorrection]);
+    void executeCommand(() => recoverMatchCorrection(activeMatch.id, pendingCorrection.correctionId), true);
+  }, [activeMatch, executeCommand, pendingCorrection]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1001,111 +940,27 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
       });
   }, [comparisonMatch?.id]);
 
-  const handleTeamClusterSelection = useCallback(
-    async (clusterId: number) => {
-      if (!activeMatch) return;
+  const handleTeamClusterSelection = useCallback(async (clusterId: number) => {
+    if (!activeMatch) return;
+    setTeamSelectionSaving(true);
+    try {
+      await executeCommand(async (controls) => (await updateMatchConfig(activeMatch.id, { myTeamCluster: clusterId, ...controls })).correction);
+    } finally { setTeamSelectionSaving(false); }
+  }, [activeMatch, executeCommand]);
 
-      const matchId = activeMatch.id;
-      const activeRequestId = activeWorkspaceRequestRef.current;
-      const loadingOperationId = beginLoadingOperation();
-      setTeamSelectionSaving(true);
-      setJobStatus('Relabeling teams...');
-      setLoadError(null);
-      try {
-        await updateMatchConfig(matchId, { myTeamCluster: clusterId });
-        if (activeWorkspaceRequestRef.current !== activeRequestId || activeMatchIdRef.current !== matchId) return;
-        await loadWorkspaceIntoState(matchId, { prepend: true, force: true });
-      } catch (err) {
-        console.error(err);
-        if (activeWorkspaceRequestRef.current === activeRequestId) {
-          setLoadError(err instanceof Error ? err.message : 'Failed to apply team selection.');
-        }
-      } finally {
-        setJobStatus(null);
-        finishLoadingOperation(loadingOperationId);
-        setTeamSelectionSaving(false);
-      }
-    },
-    [activeMatch, beginLoadingOperation, finishLoadingOperation, loadWorkspaceIntoState],
-  );
-
-  const handleClipSaved = useCallback((clip: { start: number; end: number; notes: string; sourceEndFrameExclusive: number }) => {
-    if (!activeMatch?.id) return Promise.resolve();
-    const matchId = activeMatch.id;
-    const expectedVersion = correctionVersionRef.current;
-    setCorrectionSaveState('pending');
-    return submitMatchCorrection(matchId, {
-      kind: 'playlist_item',
-      payload: {
-        timestampStart: clip.start,
-        timestampEnd: clip.end,
-        sourceEndFrameExclusive: clip.sourceEndFrameExclusive,
-        notes: clip.notes,
-      },
-      expectedVersion,
-    })
-      .then((saved) => {
-        setCorrectionSaveState(saved.saveState as 'saved' | 'pending' | 'conflicted' | 'unavailable');
-        if (saved.saveState === 'saved' && typeof saved.version === 'number') {
-          correctionVersionRef.current = saved.version;
-        }
-        if (saved.correctionId) {
-          setCorrectionHistory((previous) => {
-            const next = [
-              ...previous,
-              {
-                correctionId: saved.correctionId,
-                kind: 'playlist_item',
-                saveState: saved.saveState,
-                undoOf: null,
-                author: 'analyst',
-                payload: {
-                  timestampStart: clip.start,
-                  timestampEnd: clip.end,
-                  sourceEndFrameExclusive: clip.sourceEndFrameExclusive,
-                  notes: clip.notes,
-                },
-              },
-            ];
-            correctionHistoryRef.current = next;
-            return next;
-          });
-        }
-      })
-      .catch(() => {
-        setCorrectionSaveState('unavailable');
-      });
-  }, [activeMatch?.id]);
+  const handleClipSaved = useCallback(async (clip: { start: number; end: number; notes: string; sourceEndFrameExclusive: number }) => {
+    if (!activeMatch) return;
+    const receipt = await executeCommand((controls) => submitMatchCorrection(activeMatch.id, {
+      kind: 'playlist_item', ...controls,
+      payload: { timestampStart: clip.start, timestampEnd: clip.end, sourceEndFrameExclusive: clip.sourceEndFrameExclusive, notes: clip.notes },
+    }));
+    if (!receipt || commandState(receipt) !== 'applied') throw new Error('Clip application is not confirmed. See the correction status.');
+  }, [activeMatch, executeCommand]);
 
   const handleSwapTeams = useCallback(() => {
-    if (!activeMatch?.id || requiresTeamSelection) return;
-    const matchId = activeMatch.id;
-    const expectedVersion = correctionVersionRef.current;
-    setCorrectionSaveState('pending');
-    void submitMatchCorrection(matchId, {
-      kind: 'team_mapping',
-      payload: { swap: true },
-      expectedVersion,
-    })
-      .then(async (saved) => {
-        setCorrectionSaveState(saved.saveState as 'saved' | 'pending' | 'conflicted' | 'unavailable');
-        if (saved.saveState === 'saved' && typeof saved.version === 'number') {
-          correctionVersionRef.current = saved.version;
-        }
-        if (saved.correctionId) {
-          setCorrectionHistory((previous) => [
-            ...previous,
-            { correctionId: saved.correctionId, kind: 'team_mapping', saveState: saved.saveState, undoOf: null },
-          ]);
-        }
-        if (saved.saveState === 'saved') {
-          await loadWorkspaceIntoState(matchId, { prepend: true, force: true });
-        }
-      })
-      .catch(() => {
-        setCorrectionSaveState('unavailable');
-      });
-  }, [activeMatch?.id, loadWorkspaceIntoState, requiresTeamSelection]);
+    if (!activeMatch || requiresTeamSelection) return;
+    void executeCommand((controls) => submitMatchCorrection(activeMatch.id, { kind: 'team_mapping', payload: { swap: true }, ...controls }));
+  }, [activeMatch, executeCommand, requiresTeamSelection]);
 
   const handleVideoTimeChange = useCallback(
     (time: number) => {
@@ -1340,119 +1195,25 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
                 events={activeMatch?.backendEvents ?? []}
                 identityContinuous={identityContinuous}
                 onSplitIdentity={() => {
-                  if (!activeMatch?.id || selectedPlayer.playerId == null) return;
-                  const matchId = activeMatch.id;
-                  setCorrectionSaveState('pending');
-                  void repairMatchIdentity(matchId, {
-                    kind: 'track_split',
-                    trackId: String(selectedPlayer.playerId),
-                    atFrame: currentFrame,
-                  })
-                    .then(async (payload) => {
-                      setCorrectionSaveState(payload.correction?.saveState === 'saved' ? 'saved' : 'pending');
-                      if (payload.correction?.correctionId) {
-                        setCorrectionHistory((previous) => [
-                          ...previous,
-                          {
-                            correctionId: payload.correction?.correctionId ?? '',
-                            kind: payload.correction?.kind ?? 'track_split',
-                            saveState: payload.correction?.saveState ?? 'pending',
-                            undoOf: null,
-                          },
-                        ]);
-                      }
-                      setIdentityContinuous(false);
-                      if (payload.correction?.saveState === 'saved') {
-                        await loadWorkspaceIntoState(matchId, { prepend: true, force: true });
-                      }
-                      const heatmap = await fetchHeatmap(matchId);
-                      const identity = heatmap.identityContinuous === true;
-                      setIdentityContinuous(identity);
-                      setHeatmapAvail({
-                        wholeMatch: heatmap.wholeMatch === true,
-                        intervalLimited: heatmap.intervalLimited !== false,
-                        withheld: heatmap.withheld !== false,
-                      });
-                      setSpeedAvail(speedAvailability(identity));
-                      setPlayerTotalsAvail(playerPhysicalTotalsAvailability(identity));
-                    })
-                    .catch(() => {
-                      setCorrectionSaveState('unavailable');
-                    });
+                  if (!activeMatch || selectedPlayer.playerId == null) return;
+                  void executeCommand(async (controls) => (await repairMatchIdentity(activeMatch.id, {
+                    kind: 'track_split', trackId: String(selectedPlayer.playerId), atFrame: currentFrame, ...controls,
+                  })).correction);
                 }}
                 onJoinIdentity={(rightTrackId) => {
-                  if (!activeMatch?.id || selectedPlayer.playerId == null) return;
-                  const matchId = activeMatch.id;
-                  setCorrectionSaveState('pending');
-                  void repairMatchIdentity(matchId, {
-                    kind: 'track_join',
-                    leftTrackId: String(selectedPlayer.playerId),
-                    rightTrackId,
-                  })
-                    .then(async (payload) => {
-                      setCorrectionSaveState(payload.correction?.saveState === 'saved' ? 'saved' : 'pending');
-                      if (payload.correction?.correctionId) {
-                        setCorrectionHistory((previous) => [
-                          ...previous,
-                          {
-                            correctionId: payload.correction?.correctionId ?? '',
-                            kind: payload.correction?.kind ?? 'track_join',
-                            saveState: payload.correction?.saveState ?? 'pending',
-                            undoOf: null,
-                          },
-                        ]);
-                      }
-                      setIdentityContinuous(false);
-                      if (payload.correction?.saveState === 'saved') {
-                        await loadWorkspaceIntoState(matchId, { prepend: true, force: true });
-                      }
-                      const heatmap = await fetchHeatmap(matchId);
-                      const identity = heatmap.identityContinuous === true;
-                      setIdentityContinuous(identity);
-                      setHeatmapAvail({
-                        wholeMatch: heatmap.wholeMatch === true,
-                        intervalLimited: heatmap.intervalLimited !== false,
-                        withheld: heatmap.withheld !== false,
-                      });
-                      setSpeedAvail(speedAvailability(identity));
-                      setPlayerTotalsAvail(playerPhysicalTotalsAvailability(identity));
-                    })
-                    .catch(() => {
-                      setCorrectionSaveState('unavailable');
-                    });
+                  if (!activeMatch || selectedPlayer.playerId == null) return;
+                  void executeCommand(async (controls) => (await repairMatchIdentity(activeMatch.id, {
+                    kind: 'track_join', leftTrackId: String(selectedPlayer.playerId), rightTrackId, ...controls,
+                  })).correction);
                 }}
                 onValidateIdentity={() => {
-                  if (!activeMatch?.id) return;
-                  const matchId = activeMatch.id;
-                  setCorrectionSaveState('pending');
-                  void promoteMatchIdentity(matchId)
-                    .then(async (payload) => {
-                      setCorrectionSaveState(payload.correction?.saveState === 'saved' ? 'saved' : 'pending');
-                      if (payload.correction?.correctionId) {
-                        setCorrectionHistory((previous) => [
-                          ...previous,
-                          {
-                            correctionId: payload.correction?.correctionId ?? '',
-                            kind: payload.correction?.kind ?? 'identity_validate',
-                            saveState: payload.correction?.saveState ?? 'pending',
-                            undoOf: null,
-                          },
-                        ]);
-                      }
-                      const heatmap = await fetchHeatmap(matchId);
-                      const identity = heatmap.identityContinuous === true;
-                      setIdentityContinuous(identity);
-                      setHeatmapAvail({
-                        wholeMatch: heatmap.wholeMatch === true,
-                        intervalLimited: heatmap.intervalLimited !== false,
-                        withheld: heatmap.withheld !== false,
-                      });
-                      setSpeedAvail(speedAvailability(identity));
-                      setPlayerTotalsAvail(playerPhysicalTotalsAvailability(identity));
-                    })
-                    .catch(() => {
-                      setCorrectionSaveState('unavailable');
-                    });
+                  if (!activeMatch || selectedPlayer.playerId == null || matchData.length < 2) return;
+                  const start = matchData[0].Timestamp;
+                  const last = matchData[matchData.length - 1].Timestamp;
+                  void executeCommand(async (controls) => (await promoteMatchIdentity(activeMatch.id, {
+                    ...controls, trackIds: [String(selectedPlayer.playerId)], teamScope: selectedPlayer.team, intervalStart: start,
+                    intervalEnd: nextTimestamp(last),
+                  })).correction);
                 }}
               />
               <button
@@ -1518,14 +1279,14 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
                     {button.label}
                   </button>
                 ))}
-                {heatmapAvail.withheld && (
-                  <span className="text-[11px] text-amber-200">Whole-match heatmap withheld until identity continuity.</span>
+                {(heatmapAvail.withheld || matchData.length !== totalFrameCount) && (
+                  <span className="text-[11px] text-amber-200">Whole-match heatmap withheld until identity continuity, accepted geometry and complete frame coverage.</span>
                 )}
                 {speedAvail.withheld && (
-                  <span className="text-[11px] text-amber-200">Derived speeds withheld until identity continuity.</span>
+                  <span className="text-[11px] text-amber-200">Derived speeds withheld until identity continuity and accepted pitch dimensions.</span>
                 )}
-                {playerTotalsAvail.withheld && (
-                  <span className="text-[11px] text-amber-200">Player physical totals withheld until identity continuity.</span>
+                {(playerTotalsAvail.withheld || matchData.length !== totalFrameCount) && (
+                  <span className="text-[11px] text-amber-200">Player physical totals withheld until identity continuity, accepted geometry and complete frame coverage.</span>
                 )}
                 <button
                   type="button"
@@ -1584,7 +1345,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
                   : (matchStats as MatchStats | null)?.metricAvailability?.length
                     ? matchStats?.metricAvailability
                     : activeMatch?.detail.requiresTeamSelection || matchBenchmark?.fiveMinuteTruthReady === false
-                      ? physicalMetricAvailability(identityContinuous)
+                      ? physicalMetricAvailability(!playerTotalsAvail.withheld)
                       : []
               }
             />
@@ -1609,12 +1370,20 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
 
           {/* A.4 — Annotation toolbar and list wired to useReviewSurface */}
           <div className="mb-3 shrink-0">
+            {activeMatch?.detail.generationId && <p className="text-[11px] text-slate-400" data-testid="analysis-generation">
+              Analysis snapshot {activeMatch.detail.generationId}
+            </p>}
             <ReviewToolbar
               onCreateNote={review.handleCreateNote}
               onCreateTaggedMoment={review.handleCreateTaggedMoment}
               onShortcut={handleReviewShortcut}
               saveState={correctionSaveState}
+              message={commandMessage}
             />
+            {activeMatch && correctionSaveState && correctionSaveState !== 'applied' && correctionSaveState !== 'applying' && (
+              <button type="button" onClick={() => { void loadWorkspaceIntoState(activeMatch.id, { force: true }).catch(() => undefined); }}
+                className="mt-2 rounded border border-slate-600 px-3 py-1 text-xs">Refresh current snapshot</button>
+            )}
             {pendingCorrection && (
               <div className="mt-2 rounded-lg border border-amber-700/50 bg-amber-950/30 p-3 space-y-2">
                 <p className="text-xs text-amber-200">Pending correction ({pendingCorrection.kind})</p>
@@ -1631,49 +1400,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           <div className="mb-3 shrink-0">
             <ChangeHistory
               items={correctionHistory}
-              onUndo={(correctionId) => {
-                if (!activeMatch?.id) return;
-                const matchId = activeMatch.id;
-                const frames = activeMatch.data;
-                const original = correctionHistory.find((item) => item.correctionId === correctionId)
-                  ?? correctionHistoryRef.current.find((item) => item.correctionId === correctionId);
-                void undoMatchCorrection(matchId, correctionId).then(async (saved) => {
-                  setCorrectionHistory((previous) => {
-                    const next = [
-                      ...previous,
-                      {
-                        correctionId: saved.correctionId,
-                        kind: original?.kind ?? 'undo',
-                        saveState: 'saved',
-                        undoOf: saved.undoOf,
-                        author: original?.author,
-                      },
-                    ];
-                    correctionHistoryRef.current = next;
-                    return next;
-                  });
-                  if (original?.kind === 'event_accept' || original?.kind === 'event_reject') {
-                    await applyStoredMatchEvents(matchId, frames);
-                    return;
-                  }
-                  if (original?.kind === 'playlist_item') {
-                    return;
-                  }
-                  await loadWorkspaceIntoState(matchId, { prepend: true, force: true });
-                  const heatmap = await fetchHeatmap(matchId);
-                  const identity = heatmap.identityContinuous === true;
-                  setIdentityContinuous(identity);
-                  setHeatmapAvail({
-                    wholeMatch: heatmap.wholeMatch === true,
-                    intervalLimited: heatmap.intervalLimited !== false,
-                    withheld: heatmap.withheld !== false,
-                  });
-                  setSpeedAvail(speedAvailability(identity));
-                  setPlayerTotalsAvail(playerPhysicalTotalsAvailability(identity));
-                }).catch(() => {
-                  setCorrectionSaveState('unavailable');
-                });
-              }}
+              onUndo={handleUndoCommand}
             />
           </div>
           <div className="mb-3 shrink-0">
@@ -1751,7 +1478,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
               reviewRange={review.reviewRange}
               frames={matchData}
               sourceFps={fps}
-              storedClips={playlistClipsFromCorrections(correctionHistory)}
+              storedClips={playlistClipsFromCorrections(correctionHistory, activeMatch?.detail.includedCommandIds ?? [])}
               onClipSaved={handleClipSaved}
               onOpenInterval={(timestamp) => {
                 setIsPlaying(false);
@@ -1767,13 +1494,14 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
             <FourRatesPanel matchId={activeMatch?.id} />
           </div>
           <div className="mb-3 shrink-0">
-            <LoadedMatchSetupPanel matchId={activeMatch?.id} />
+            <LoadedMatchSetupPanel key={`${activeMatch?.id}:${activeMatch?.detail.generationId}`} matchId={activeMatch?.id}
+              generationId={activeMatch?.detail.generationId ?? undefined} executeCommand={executeCommand} />
           </div>
           <div className="mb-3 shrink-0">
-            <MatchMetricInspectorPanel matchId={activeMatch?.id} />
+            <MatchMetricInspectorPanel key={`${activeMatch?.id}:${activeMatch?.detail.generationId}`} matchId={activeMatch?.id} generationId={activeMatch?.detail.generationId ?? undefined} />
           </div>
           <div className="mb-3 shrink-0">
-            <MatchCoveragePanel matchId={activeMatch?.id} />
+            <MatchCoveragePanel key={`${activeMatch?.id}:${activeMatch?.detail.generationId}`} matchId={activeMatch?.id} generationId={activeMatch?.detail.generationId ?? undefined} />
           </div>
           {showLeftoverPanels && (
             <Suspense fallback={null}>
@@ -1784,7 +1512,8 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
             <OperationsView />
           </div>
           <div className="mb-3 shrink-0">
-            <TypedSearchPanel
+            <TypedSearchPanel key={`${activeMatch?.id}:${activeMatch?.detail.generationId}`}
+              generationId={activeMatch?.detail.generationId ?? undefined}
               matchId={activeMatch?.id}
               onSeek={(timestamp) => {
                 setIsPlaying(false);
@@ -1946,6 +1675,9 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
 
       {showWorkbench && (
         <WorkbenchPanel
+          key={`${activeMatch?.id}:${activeMatch?.detail.generationId}`}
+          generationId={activeMatch?.detail.generationId ?? undefined}
+          executeCommand={executeCommand}
           onClose={() => setShowWorkbench(false)}
           matchId={activeMatch?.id}
           events={(activeMatch?.backendEvents ?? []).map((event) => ({

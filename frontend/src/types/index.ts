@@ -185,6 +185,9 @@ export interface TeamCluster {
 }
 
 export interface MatchRecord {
+  generationId?: string | null;
+  commandVersion?: number;
+  includedCommandIds?: string[];
     id: string;
     name: string;
     inputMode: string;
@@ -219,7 +222,22 @@ export type CameraProfile =
     | 'broadcast_cuts_zoom'
     | 'handheld_low_angle';
 
+/** Declared import geometry, validated by the backend; never inferred from value ranges. */
+export interface CoordinateConvention {
+    schemaVersion?: 1;
+    space: 'source_pixels' | 'pitch_normalized_0_100' | 'pitch_metres' | 'unknown';
+    axes?: 'x_right_y_down';
+    origin?: 'top_left';
+    pitchLengthM?: number | null;
+    pitchWidthM?: number | null;
+    sourceWidth?: number | null;
+    sourceHeight?: number | null;
+    streamId?: string | null;
+    sourceFromObservation?: [[number, number, number], [number, number, number], [number, number, number]] | null;
+}
+
 export interface UploadConfig {
+    coordinateConvention?: CoordinateConvention | null;
     attackDirection?: 'left_to_right' | 'right_to_left';
     manualHomographyPoints?: Array<{ x: number; y: number }>;
     myTeamCluster?: number | null;

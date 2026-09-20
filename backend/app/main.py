@@ -742,27 +742,30 @@ VIDEO_TO_ANALYSIS_BOUNDED_NEXT_SAMPLE_REPORT_BINDING_DIR = (
 )
 
 
-def _dashboard_metric_measured(summary: dict, metric: str) -> bool:
-    records = summary.get("metricAvailability") or []
-    record = next((item for item in records if item.get("metric") == metric), None)
-    if record is None:
-        return True
-    return record.get("availability") in {"available", "experimental"}
+def _dashboard_metric_value(summary: dict, *, field: str, metric: str) -> float | None:
+    """A missing/withheld measurement is not zero, including historical summaries."""
+    record = next(
+        (item for item in summary.get("metricAvailability") or [] if item.get("metric") == metric),
+        None,
+    )
+    if record is not None and record.get("availability") not in {"available", "experimental"}:
+        return None
+    value = summary.get(field) if record is None else record.get("value")
+    if type(value) not in (int, float) or not math.isfinite(value):
+        return None
+    return float(value)
 
 
 def _dashboard_average(summaries: list[dict], *, field: str, metric: str, digits: int = 1) -> float | None:
-    values: list[float] = []
-    for summary in summaries:
-        record = next(
-            (item for item in summary.get("metricAvailability") or [] if item.get("metric") == metric),
-            None,
-        )
-        value = summary.get(field) if record is None else record.get("value")
-        if value is not None and (record is None or record.get("availability") in {"available", "experimental"}):
-            values.append(float(value))
-    if not values:
-        return None
-    return round(sum(values) / len(values), digits)
+    values = [value for summary in summaries
+              if (value := _dashboard_metric_value(summary, field=field, metric=metric)) is not None]
+    return round(sum(values) / len(values), digits) if values else None
+
+
+def _dashboard_difference(latest: dict, previous: dict, *, field: str, metric: str) -> float | None:
+    left = _dashboard_metric_value(latest, field=field, metric=metric)
+    right = _dashboard_metric_value(previous, field=field, metric=metric)
+    return round(left - right, 1) if left is not None and right is not None else None
 
 
 def _xg_balance(summary: dict) -> float | None:
@@ -808,6 +811,9 @@ def create_app(
     @app.exception_handler(DomainError)
     async def domain_error(_request: Request, exc: DomainError) -> JSONResponse:
         from .generations import GenerationRecoveryRequired, StaleGeneration, RetentionBusy
+        from .semantic_commands import SemanticCommandError
+        if isinstance(exc, SemanticCommandError):
+            return JSONResponse(status_code=exc.status_code, content={"error": exc.code, "detail": str(exc)})
         if isinstance(exc, GenerationRecoveryRequired):
             return JSONResponse(status_code=503, content={"error": exc.code})
         if isinstance(exc, (StaleGeneration, RetentionBusy)):
@@ -1380,9 +1386,33 @@ def create_app(
             matches = [match for match in matches if match.config.rights.audience == request.state.tenant]
         return [match.model_dump(mode="json") for match in matches]
 
+    def snapshot_response(match_id: str, load, generation_id: str | None = None) -> dict:
+        """Generation selection is explicit across independently fetched panes."""
+        from contextlib import ExitStack
+        with ExitStack() as stack:
+            try:
+                ref = stack.enter_context(storage.generation_snapshot(match_id, generation_id=generation_id))
+            except FileNotFoundError:
+                if generation_id is not None:
+                    raise
+                ref = None  # Preserve documented brand-new/not-ready outcomes.
+            result = load()
+            return {**result, "generationId": ref.generationId if ref is not None else None}
+
     @app.get("/api/matches/{match_id}")
-    def get_match(match: MatchRecord = Depends(require_match)) -> dict:
-        return match.model_dump(mode="json")
+    def get_match(match: MatchRecord = Depends(require_match), generationId: str | None = None) -> dict:
+        def detail() -> dict:
+            result = storage.get_match(match.id).model_dump(mode="json")
+            try:
+                ref = storage.current_generation(match.id)
+            except FileNotFoundError:
+                return result
+            manifest, _ = storage.generations.manifest(match.id, ref.generationId)
+            # Playlist/history effects must be selected from this snapshot, not
+            # from a newer operational log fetched by another browser request.
+            result["includedCommandIds"] = manifest.includedCommandIds
+            return result
+        return snapshot_response(match.id, detail, generationId)
 
     @app.post("/api/matches/{match_id}/jobs", status_code=202)
     def post_match_job(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
@@ -1473,15 +1503,13 @@ def create_app(
         intervalEnd: float | None = None,
         cursor: str | None = None,
         limit: int = 100,
+        generationId: str | None = None,
     ) -> dict:
         try:
-            return storage.load_evidence_page(
-                match.id,
-                interval_start=intervalStart,
-                interval_end=intervalEnd,
-                cursor=cursor,
-                limit=limit,
-            )
+            return snapshot_response(match.id, lambda: storage.load_evidence_page(
+                match.id, interval_start=intervalStart, interval_end=intervalEnd,
+                cursor=cursor, limit=limit,
+            ), generationId)
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail="Evidence not ready") from exc
 
@@ -1501,6 +1529,12 @@ def create_app(
     @app.post("/api/matches/{match_id}/corrections")
     def post_match_correction(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
         body = payload or {}
+        if not isinstance(body.get("payload", {}), dict):
+            from .semantic_commands import SemanticCommandError
+            raise SemanticCommandError("INVALID_COMMAND_PAYLOAD", "Command payload must be an object")
+        if body.get("kind") == "calibration":
+            from .semantic_commands import SemanticCommandError
+            raise SemanticCommandError("CALIBRATION_COMMIT_REQUIRED", "Use the validated calibration commit endpoint")
         try:
             saved = storage.submit_correction(
                 match.id,
@@ -1508,6 +1542,9 @@ def create_app(
                 payload=dict(body.get("payload") or {}),
                 author=str(body.get("author") or "analyst"),
                 expected_version=body.get("expectedVersion"),
+                base_generation=body.get("baseGeneration"),
+                command_id=body.get("commandId"),
+                idempotency_key=body.get("idempotencyKey"),
                 crash_before_commit=bool(body.get("crashBeforeCommit")),
             )
         except ValidationError as exc:
@@ -1526,9 +1563,12 @@ def create_app(
         return correction_api_payload(saved)
 
     @app.post("/api/matches/{match_id}/corrections/{correction_id}/undo")
-    def undo_match_correction(correction_id: str, match: MatchRecord = Depends(require_match)) -> dict:
+    def undo_match_correction(correction_id: str, match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
         try:
-            saved = storage.undo_correction(match.id, correction_id)
+            body = payload or {}
+            saved = storage.undo_correction(match.id, correction_id,
+                expected_version=body.get("expectedVersion"), base_generation=body.get("baseGeneration"),
+                command_id=body.get("commandId"), idempotency_key=body.get("idempotencyKey"))
         except KeyError as exc:
             raise HTTPException(status_code=404, detail="Correction not found") from exc
         return correction_api_payload(saved)
@@ -1540,7 +1580,7 @@ def create_app(
     @app.post("/api/matches/{match_id}/queries")
     def post_match_query(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
         body = payload or {}
-        return storage.query_match_events(match.id, str(body.get("query") or ""))
+        return snapshot_response(match.id, lambda: storage.query_match_events(match.id, str(body.get("query") or "")), body.get("generationId"))
 
     @app.post("/api/matches/{match_id}/reports")
     def post_match_report(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
@@ -1556,13 +1596,13 @@ def create_app(
             raise HTTPException(status_code=404, detail="Analytics not ready") from exc
 
     @app.get("/api/matches/{match_id}/heatmap")
-    def get_match_heatmap(match: MatchRecord = Depends(require_match)) -> dict:
-        return storage.heatmap_for_match(match.id)
+    def get_match_heatmap(match: MatchRecord = Depends(require_match), generationId: str | None = None) -> dict:
+        return snapshot_response(match.id, lambda: storage.heatmap_for_match(match.id), generationId)
 
     @app.get("/api/matches/{match_id}/players")
-    def get_match_players(match: MatchRecord = Depends(require_match)) -> dict:
+    def get_match_players(match: MatchRecord = Depends(require_match), generationId: str | None = None) -> dict:
         try:
-            return storage.player_observations_for_match(match.id)
+            return snapshot_response(match.id, lambda: storage.player_observations_for_match(match.id), generationId)
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail="Frames not ready") from exc
 
@@ -1588,24 +1628,24 @@ def create_app(
             raise HTTPException(status_code=404, detail="Frames not ready") from exc
 
     @app.get("/api/matches/{match_id}/setup")
-    def match_setup(match: MatchRecord = Depends(require_match)) -> dict:
-        return storage.assess_stored_match_setup(match.id)
+    def match_setup(match: MatchRecord = Depends(require_match), generationId: str | None = None) -> dict:
+        return snapshot_response(match.id, lambda: storage.assess_stored_match_setup(match.id), generationId)
 
     @app.get("/api/matches/{match_id}/rates")
     def match_rates(match: MatchRecord = Depends(require_match)) -> dict:
         return storage.four_rates_for_match(match.id)
 
     @app.get("/api/matches/{match_id}/metrics")
-    def get_match_metrics(match: MatchRecord = Depends(require_match)) -> dict:
+    def get_match_metrics(match: MatchRecord = Depends(require_match), generationId: str | None = None) -> dict:
         try:
-            return storage.match_metrics_for_match(match.id)
+            return snapshot_response(match.id, lambda: storage.match_metrics_for_match(match.id), generationId)
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail="Analytics not ready") from exc
 
     @app.get("/api/matches/{match_id}/metrics/inspect/{metric}")
-    def inspect_stored_metric(metric: str, match: MatchRecord = Depends(require_match)) -> dict:
+    def inspect_stored_metric(metric: str, match: MatchRecord = Depends(require_match), generationId: str | None = None) -> dict:
         try:
-            return storage.inspect_match_metric(match.id, metric)
+            return snapshot_response(match.id, lambda: storage.inspect_match_metric(match.id, metric), generationId)
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail="Analytics not ready") from exc
 
@@ -1621,9 +1661,9 @@ def create_app(
             raise HTTPException(status_code=404, detail="Frames not ready") from exc
 
     @app.get("/api/matches/{match_id}/incidents/review")
-    def get_match_incident_review(match: MatchRecord = Depends(require_match)) -> dict:
+    def get_match_incident_review(match: MatchRecord = Depends(require_match), generationId: str | None = None) -> dict:
         try:
-            return storage.incident_review_for_match(match.id)
+            return snapshot_response(match.id, lambda: storage.incident_review_for_match(match.id), generationId)
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail="Frames not ready") from exc
 
@@ -1632,8 +1672,8 @@ def create_app(
         return storage.dpia_for_match(match.id)
 
     @app.get("/api/matches/{match_id}/setup/preview")
-    def get_match_setup_preview(match: MatchRecord = Depends(require_match)) -> dict:
-        return storage.preview_landmark_for_match(match.id)
+    def get_match_setup_preview(match: MatchRecord = Depends(require_match), generationId: str | None = None) -> dict:
+        return snapshot_response(match.id, lambda: storage.preview_landmark_for_match(match.id), generationId)
 
     @app.post("/api/matches/{match_id}/calibration/commit")
     def commit_match_calibration(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
@@ -1654,12 +1694,12 @@ def create_app(
         return storage.promotion_receipt_for_match(match.id)
 
     @app.get("/api/matches/{match_id}/quality")
-    def get_match_quality(match: MatchRecord = Depends(require_match)) -> dict:
-        return storage.quality_timeline_for_match(match.id)
+    def get_match_quality(match: MatchRecord = Depends(require_match), generationId: str | None = None) -> dict:
+        return snapshot_response(match.id, lambda: storage.quality_timeline_for_match(match.id), generationId)
 
     @app.get("/api/matches/{match_id}/identity")
-    def get_match_identity(match: MatchRecord = Depends(require_match)) -> dict:
-        return storage.identity_for_match(match.id)
+    def get_match_identity(match: MatchRecord = Depends(require_match), generationId: str | None = None) -> dict:
+        return snapshot_response(match.id, lambda: storage.identity_for_match(match.id), generationId)
 
     @app.post("/api/matches/{match_id}/identity/repair")
     def post_match_identity_repair(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
@@ -1703,8 +1743,8 @@ def create_app(
         return storage.calibration_for_match(match.id, payload)
 
     @app.get("/api/matches/{match_id}/formation")
-    def get_match_formation(match: MatchRecord = Depends(require_match)) -> dict:
-        return storage.formation_for_match(match.id)
+    def get_match_formation(match: MatchRecord = Depends(require_match), generationId: str | None = None) -> dict:
+        return snapshot_response(match.id, lambda: storage.formation_for_match(match.id), generationId)
 
     @app.get("/api/matches/{match_id}/events/partition")
     def get_match_event_partition(match: MatchRecord = Depends(require_match)) -> dict:
@@ -1715,8 +1755,8 @@ def create_app(
         return storage.provenance_for_match(match.id)
 
     @app.get("/api/matches/{match_id}/reports/coverage")
-    def get_match_report_coverage(match: MatchRecord = Depends(require_match)) -> dict:
-        return storage.coverage_for_match(match.id)
+    def get_match_report_coverage(match: MatchRecord = Depends(require_match), generationId: str | None = None) -> dict:
+        return snapshot_response(match.id, lambda: storage.coverage_for_match(match.id), generationId)
 
     @app.get("/api/matches/{match_id}/shots/quality")
     def get_match_shot_quality(match: MatchRecord = Depends(require_match)) -> dict:
@@ -1744,8 +1784,8 @@ def create_app(
         return storage.tracklets_for_match(match.id)
 
     @app.get("/api/matches/{match_id}/geometry/distance")
-    def get_match_derived_distance(match: MatchRecord = Depends(require_match)) -> dict:
-        return storage.derived_distance_for_match(match.id)
+    def get_match_derived_distance(match: MatchRecord = Depends(require_match), generationId: str | None = None) -> dict:
+        return snapshot_response(match.id, lambda: storage.derived_distance_for_match(match.id), generationId)
 
     @app.get("/api/matches/{match_id}/shots/features")
     def get_match_shot_features(match: MatchRecord = Depends(require_match)) -> dict:
@@ -1905,49 +1945,24 @@ def create_app(
 
     @app.patch("/api/matches/{match_id}/config")
     def update_match_config(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
-        match_id = match.id
-        payload = payload or {}
-        with storage.config_update_lock:
-            try:
-                match = storage.get_match(match_id)
-            except KeyError as exc:
-                raise HTTPException(status_code=404, detail="Match not found") from exc
-
-            merged = match.config.model_dump()
-            merged.update(payload)
-            try:
-                config_model = MatchConfig.model_validate(merged, strict=True)
-            except ValidationError as exc:
-                raise HTTPException(status_code=422, detail=exc.errors(include_context=False, include_input=False)) from exc
-
-            selected_cluster = config_model.myTeamCluster
-            available_cluster_ids = {cluster.clusterId for cluster in match.teamClusters}
-            if selected_cluster is not None and available_cluster_ids and selected_cluster not in available_cluster_ids:
-                raise HTTPException(status_code=400, detail="myTeamCluster must match one of the detected team clusters.")
-
-            needs_reprocessing = (
-                config_model.attackDirection != match.config.attackDirection
-                or (match.inputMode == "video" and config_model.myTeamCluster != match.config.myTeamCluster)
-            )
-            if needs_reprocessing:
-                if match.status == "processing" or storage.has_active_job(match_id):
-                    raise HTTPException(status_code=409, detail="Match processing must finish before changing analytical configuration.")
-                try:
-                    with storage.remote_result_import(match_id):
-                        revision = storage.calibration_revision(match_id)
-                        with storage.generations.candidate(
-                            match_id, config_model,
-                            revision.model_dump(mode="json") if revision else None,
-                        ):
-                            reprocess_video_match(storage, match_id, config=config_model)
-                        storage.invalidate_coach_analysis(match_id)
-                        storage.update_match_config(match_id, config_model)
-                except FileNotFoundError as exc:
-                    raise HTTPException(status_code=409, detail="Required match artifacts are not available for reprocessing.") from exc
-            else:
-                storage.update_match_config(match_id, config_model)
-
-            return storage.get_match(match_id).model_dump(mode="json")
+        from .review_service import ReviewService
+        try:
+            _config, command = ReviewService(storage).configure(match.id, payload or {})
+        except ValidationError as exc:
+            raise HTTPException(status_code=422, detail=exc.errors(include_context=False, include_input=False)) from exc
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=409, detail="Required match artifacts are not available for reprocessing.") from exc
+        if command is not None and command.appliedGeneration is not None:
+            with storage.generation_snapshot(match.id, generation_id=command.appliedGeneration):
+                response = storage.get_match(match.id).model_dump(mode="json")
+            response["correction"] = correction_api_payload(command)
+            response["generationId"] = command.appliedGeneration
+            return response
+        response = storage.get_match(match.id).model_dump(mode="json")
+        if command is not None:
+            response["correction"] = correction_api_payload(command)
+            response["generationId"] = None
+        return response
 
     @app.websocket("/ws/jobs/{job_id}")
     async def job_updates(websocket: WebSocket, job_id: str) -> None:
@@ -2182,17 +2197,11 @@ def create_app(
                     and (previous_balance := _xg_balance(s_prev)) is not None
                     else None
                 ),
-                myTeamSprintsDelta=(
-                    round(s_latest.get("myTeamSprints", 0) - s_prev.get("myTeamSprints", 0), 1)
-                    if _dashboard_metric_measured(s_latest, "my_team_sprints")
-                    and _dashboard_metric_measured(s_prev, "my_team_sprints")
-                    else None
+                myTeamSprintsDelta=_dashboard_difference(
+                    s_latest, s_prev, field="myTeamSprints", metric="my_team_sprints",
                 ),
-                enemySprintsDelta=(
-                    round(s_latest.get("enemySprints", 0) - s_prev.get("enemySprints", 0), 1)
-                    if _dashboard_metric_measured(s_latest, "enemy_sprints")
-                    and _dashboard_metric_measured(s_prev, "enemy_sprints")
-                    else None
+                enemySprintsDelta=_dashboard_difference(
+                    s_latest, s_prev, field="enemySprints", metric="enemy_sprints",
                 ),
             )
 

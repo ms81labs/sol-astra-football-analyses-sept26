@@ -2,92 +2,75 @@ import { useEffect, useState } from 'react';
 
 import SetupWizard, { type SetupWizardSavePayload } from './SetupWizard';
 import { updateMatchConfig } from '../utils/api';
-import {
-  commitMatchCalibration,
-  fetchLandmarkPreview,
-  fetchMatchSetup,
-  type LandmarkPreview,
-  type MatchSetup,
-} from '../utils/workbench';
+import { ApiError } from '../utils/request';
+import { commandState, newCommandControls, type CommandControls, type CommandReceipt } from '../utils/commandLifecycle';
+import { commitMatchCalibration, fetchLandmarkPreview, fetchMatchSetup, type LandmarkPreview, type MatchSetup } from '../utils/workbench';
 
-interface LoadedMatchSetupPanelProps {
+export interface LoadedMatchSetupPanelProps {
   matchId?: string;
+  generationId?: string;
+  executeCommand?: (send: (controls: CommandControls) => Promise<CommandReceipt | undefined>, recovering?: boolean) => Promise<CommandReceipt | null>;
 }
 
-export default function LoadedMatchSetupPanel({ matchId }: LoadedMatchSetupPanelProps) {
+export default function LoadedMatchSetupPanel({ matchId, generationId, executeCommand }: LoadedMatchSetupPanelProps) {
   const [setup, setSetup] = useState<MatchSetup | null>(null);
   const [landmarkPreview, setLandmarkPreview] = useState<LandmarkPreview | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!matchId) return;
     let cancelled = false;
-    Promise.all([fetchMatchSetup(matchId), fetchLandmarkPreview(matchId)])
+    Promise.all([fetchMatchSetup(matchId, generationId), fetchLandmarkPreview(matchId, generationId)])
       .then(([payload, preview]) => {
         if (cancelled) return;
-        if (payload.certified === false) {
-          setSetup(payload);
-          setLandmarkPreview(preview);
-        } else {
-          setSetup(null);
-          setLandmarkPreview(null);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setSetup(null);
-          setLandmarkPreview(null);
-        }
+        setSetup(payload.certified === false ? payload : null);
+        setLandmarkPreview(preview);
+      }).catch((failure: unknown) => {
+        if (!cancelled) { setSetup(null); setError(failure instanceof Error ? failure.message : 'Setup unavailable.'); }
       });
-    return () => {
-      cancelled = true;
-    };
-  }, [matchId]);
+    return () => { cancelled = true; };
+  }, [matchId, generationId]);
+
+  async function apply(send: (controls: CommandControls) => Promise<CommandReceipt | undefined>) {
+    const receipt = executeCommand ? await executeCommand(send)
+      : await send(newCommandControls(generationId ?? setup?.generationId));
+    if (!receipt || commandState(receipt) !== 'applied') throw new ApiError(
+      receipt?.lastError ?? 'Setup was not applied. Check the correction status and refresh.', 409, 'COMMAND_NOT_APPLIED');
+    return receipt;
+  }
 
   async function handleSave(payload: SetupWizardSavePayload) {
-    if (!matchId) return;
-    await updateMatchConfig(matchId, {
-      cameraProfile: payload.cameraProfile,
-      pitchLengthM: payload.pitchLengthM,
-      periods: payload.periods,
-      rights: payload.rights,
-      homeTeam: payload.homeTeam,
-      awayTeam: payload.awayTeam,
-    });
+    if (!matchId) throw new Error('Load a match first.');
+    await apply(async (controls) => (await updateMatchConfig(matchId, {
+      cameraProfile: payload.cameraProfile, pitchLengthM: payload.pitchLengthM, periods: payload.periods, ...controls,
+    })).correction);
   }
 
   async function handleCommitCalibration() {
-    if (!matchId) return;
-    const result = await commitMatchCalibration(matchId, {
-      calibrationId: `${matchId}-live`,
-      cameraModel: 'planar_homography',
-      residualP95M: landmarkPreview?.residualP95M ?? null,
-      landmarks: landmarkPreview?.accepted
-        ? [{ name: 'holdout', imageX: 10, imageY: 10, pitchX: 10, pitchY: 10, independentHoldout: true }]
-        : [{ name: 'corner', imageX: 0, imageY: 0, pitchX: 0, pitchY: 0, independentHoldout: false }],
-      homography: landmarkPreview?.accepted
-        ? [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
-        : undefined,
-    });
-    setLandmarkPreview((current) => current
-      ? { ...current, committed: result.committed, accepted: result.committed, certified: result.certified }
-      : { residualP95M: null, accepted: result.committed, committed: result.committed });
-    setSetup((current) => current ? { ...current, calibrationCommitted: result.committed } : current);
+    if (!matchId || !landmarkPreview?.profile) return;
+    setError(null);
+    try {
+      // A preview number is not a matrix or a holdout. Never invent calibration observations.
+      await apply(async (controls) => (await commitMatchCalibration(matchId, { ...landmarkPreview.profile, ...controls })).correction);
+    } catch (failure) { setError(failure instanceof Error ? failure.message : 'Calibration application unconfirmed.'); }
   }
 
-  if (!setup) return null;
+  if (!setup) return error ? <p role="status" aria-label="Match setup unavailable" className="text-xs text-amber-200">{error}</p> : null;
   return (
-    <SetupWizard
-      matchId={matchId}
-      cameraProfile={setup.cameraProfile}
-      pitchLengthM={setup.pitchLengthM != null ? String(setup.pitchLengthM) : ''}
-      homeTeam={setup.homeTeam ?? ''}
-      awayTeam={setup.awayTeam ?? ''}
-      automationAdmitted={setup.automationAdmitted}
-      manualTaggingPermitted={setup.manualTaggingPermitted}
-      cannotMeasure={setup.cannotMeasure}
-      landmarkPreview={landmarkPreview}
-      onSave={handleSave}
-      onCommitCalibration={() => { void handleCommitCalibration(); }}
-    />
+    <>
+      <SetupWizard matchId={matchId} cameraProfile={setup.cameraProfile}
+        pitchLengthM={setup.pitchLengthM != null ? String(setup.pitchLengthM) : ''}
+        homeTeam={setup.homeTeam ?? ''} awayTeam={setup.awayTeam ?? ''}
+        cloudPermission={setup.cloudPermission === true}
+        periods={setup.periods?.map((period) => period.name).join(',') || '1,2'} periodDefinitions={setup.periods}
+        automationAdmitted={setup.automationAdmitted} manualTaggingPermitted={setup.manualTaggingPermitted}
+        cannotMeasure={setup.cannotMeasure} landmarkPreview={landmarkPreview} onSave={handleSave} separateLiveSettings
+        onSaveMetadata={async (payload) => { if (matchId) await updateMatchConfig(matchId, payload); }}
+        onSavePolicy={async (rights) => { if (matchId) await updateMatchConfig(matchId, { rights }); }}
+        onCommitCalibration={landmarkPreview?.profile && !landmarkPreview.committed ? () => { void handleCommitCalibration(); } : undefined}
+      />
+      {!landmarkPreview?.profile && <p className="text-xs text-amber-200">No measured calibration profile is available to commit. Supply actual source landmarks and independent holdouts; preview status alone is not calibration.</p>}
+      {error && <p role="alert" className="text-xs text-amber-200">{error}</p>}
+    </>
   );
 }

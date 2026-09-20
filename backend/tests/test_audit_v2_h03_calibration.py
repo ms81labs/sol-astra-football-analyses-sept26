@@ -491,9 +491,8 @@ def test_t08_calibration_revision_is_the_single_physical_metric_gate(tmp_path: P
         ).read_text(encoding="utf-8")
     )
     assert set(manifest["stale"]) == {
-        "pitch_positions",
-        "physical_metrics",
-        "tactical_metrics",
+        "tactical_report",
+        "drills",
         "report",
     }
 
@@ -578,7 +577,7 @@ def test_t08_direct_calibration_commit_rebuilds_existing_generation(tmp_path: Pa
             encoding="utf-8"
         )
     )
-    assert set(manifest["stale"]) == {"pitch_positions", "physical_metrics", "tactical_metrics", "report"}
+    assert set(manifest["stale"]) == {"tactical_report", "drills", "report"}
 
     first_frames = storage.load_frames(match.id)
     second_profile = {
@@ -592,7 +591,10 @@ def test_t08_direct_calibration_commit_rebuilds_existing_generation(tmp_path: Pa
     }
     second = storage.commit_calibration_for_match(match.id, second_profile)
     second_frames = storage.load_frames(match.id)
-    assert second_frames[0].myTeam[0].x != first_frames[0].myTeam[0].x
+    # The named legacy format is already on the pitch; a camera transform
+    # must not be applied a second time. Actual pixel changes are tested in R03.
+    assert second_frames[0].myTeam[0].x == first_frames[0].myTeam[0].x
+    assert second_frames[0].coordinateProvenance["inputConvention"]["space"] == "pitch_normalized_0_100"
     latest_revision = storage.calibration_revision(match.id)
     storage.undo_correction(match.id, second["correction"]["correctionId"])
     restored = storage.calibration_revision(match.id)
@@ -605,7 +607,10 @@ def test_t08_direct_calibration_commit_rebuilds_existing_generation(tmp_path: Pa
 def test_t08_preprocessing_calibration_is_applied_to_first_generation(tmp_path: Path) -> None:
     fixture = Path(__file__).parent / "fixtures" / "sample_tracking.json"
     source = tmp_path / "tracking.json"
-    source.write_text(fixture.read_text(encoding="utf-8"), encoding="utf-8")
+    # This test requires image-space input; declare that convention explicitly.
+    source.write_text(json.dumps({"format": "guerilla_tracking_v2", "schemaVersion": 2,
+        "coordinates": {"space": "source_pixels", "sourceWidth": 100, "sourceHeight": 100, "streamId": "video:0"},
+        "frames": json.loads(fixture.read_text(encoding="utf-8"))}), encoding="utf-8")
     storage = Storage(tmp_path / "storage")
     match = storage.create_match("Precalibrated", "tracking_json", source.name, source, MatchConfig())
     profile = {

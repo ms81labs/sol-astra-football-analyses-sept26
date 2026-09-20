@@ -1116,14 +1116,16 @@ async def _test_match_players_follow_stored_identity_receipt(tmp_path: Path):
         )
         assert players.status_code == 200
         payload = players.json()
-        assert payload["totalsWithheld"] is False
-        assert payload["intervalLimited"] is False
+        assert payload["totalsWithheld"] is True
+        assert payload["intervalLimited"] is True
         assert "IDENTITY_DISCONTINUITY" not in payload["reasonCodes"]
+        assert "CALIBRATION_UNAVAILABLE" in payload["reasonCodes"]
+        assert payload["identityContinuous"] is True
         assert "forged" not in {str(row["trackId"]) for row in payload["rows"]}
 
         listed = await client.get(f"/api/matches/{match_id}/players")
         assert listed.status_code == 200
-        assert listed.json()["totalsWithheld"] is False
+        assert listed.json()["totalsWithheld"] is True
         assert "IDENTITY_DISCONTINUITY" not in listed.json()["reasonCodes"]
 
         metrics = await client.post(
@@ -1397,7 +1399,10 @@ async def _test_match_identity_promote_validates_stored_continuity_without_clien
         heatmap = await client.get(f"/api/matches/{match_id}/heatmap")
         assert heatmap.json()["identityContinuous"] is True
         players = await client.get(f"/api/matches/{match_id}/players")
-        assert players.json()["totalsWithheld"] is False
+        # Identity approval alone is not permission to publish physical totals.
+        assert players.json()["totalsWithheld"] is True
+        assert players.json()["identityContinuous"] is True
+        assert "CALIBRATION_UNAVAILABLE" in players.json()["reasonCodes"]
         metrics = await client.get(f"/api/matches/{match_id}/metrics")
         by_name = {item["metric"]: item for item in metrics.json()["metrics"]}
         assert "CALIBRATION_UNAVAILABLE" in by_name["my_team_distance_m"]["reasonCodes"]
@@ -1639,8 +1644,11 @@ async def _test_match_team_mapping_correction_swaps_stored_teams_without_vision(
                 },
             },
         )
-        assert forged.status_code == 200
-        assert forged.json()["saveState"] == "saved"
+        # C02: a payload without a supported operation is rejected at admission,
+        # rather than stored as a successful no-op. Forged observations are still
+        # ignored even on the valid swap below.
+        assert forged.status_code == 422
+        assert forged.json()["error"] == "INVALID_TEAM_MAPPING"
         frames = (await client.get(f"/api/matches/{match_id}/frames")).json()["frames"]
         assert frames[0]["myTeam"][0]["id"] == 7
         assert frames[0]["enemies"][0]["id"] == 18

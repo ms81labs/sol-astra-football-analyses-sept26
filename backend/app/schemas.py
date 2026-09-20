@@ -33,6 +33,9 @@ class SourceRights(BaseModel):
     audience: str | None = None
 
 
+from .coordinate_contracts import CoordinateConvention
+
+
 class MatchConfig(BaseModel):
     attackDirection: Literal["left_to_right", "right_to_left"] = "left_to_right"
     manualHomographyPoints: list[HomographyPoint] = Field(default_factory=list)
@@ -52,6 +55,7 @@ class MatchConfig(BaseModel):
     homeTeam: str = ""
     awayTeam: str = ""
     calibrationCommitted: bool = False
+    coordinateConvention: CoordinateConvention | None = None
 
     @model_validator(mode="after")
     def ordered_periods(self):
@@ -92,6 +96,9 @@ class FrameData(BaseModel):
     enemies: list[PlayerData] = Field(default_factory=list)
     unassignedPlayers: list[PlayerData] = Field(default_factory=list)
     possession: "BallOwnership | None" = None
+    coordinateSpace: Literal["pitch_normalized_0_100", "unknown"] = "pitch_normalized_0_100"
+    geometryAvailable: bool = False
+    coordinateProvenance: dict = Field(default_factory=dict)
 
 
 class BallOwnership(BaseModel):

@@ -563,7 +563,7 @@ def test_concurrent_storage_instances_do_not_lose_corrections(tmp_path: Path) ->
 
     threads = [
         threading.Thread(target=submit, args=(first, "team_mapping", {"swap": True})),
-        threading.Thread(target=submit, args=(second, "identity_validate", {"accepted": True})),
+        threading.Thread(target=submit, args=(second, "identity_validate", {"reviewed": True})),
     ]
     for thread in threads:
         thread.start()

@@ -5,15 +5,16 @@ import { fetchMetricInspect, type MetricInspect } from '../utils/workbench';
 
 interface MatchMetricInspectorPanelProps {
   matchId?: string;
+  generationId?: string;
 }
 
-export default function MatchMetricInspectorPanel({ matchId }: MatchMetricInspectorPanelProps) {
+export default function MatchMetricInspectorPanel({ matchId, generationId }: MatchMetricInspectorPanelProps) {
   const [inspect, setInspect] = useState<MetricInspect | null>(null);
 
   useEffect(() => {
     if (!matchId) return;
     let cancelled = false;
-    fetchMetricInspect('my_team_distance_m', matchId)
+    fetchMetricInspect('my_team_distance_m', matchId, generationId)
       .then((payload) => {
         if (!cancelled) setInspect(payload);
       })
@@ -23,7 +24,7 @@ export default function MatchMetricInspectorPanel({ matchId }: MatchMetricInspec
     return () => {
       cancelled = true;
     };
-  }, [matchId]);
+  }, [matchId, generationId]);
 
   if (!inspect?.metric) return null;
   return (

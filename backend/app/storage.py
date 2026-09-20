@@ -278,6 +278,22 @@ def _generation_writer(method):
     return guarded
 
 
+def _generation_reader(method):
+    """Keep all derived input/eligibility reads on one immutable generation."""
+    from contextlib import ExitStack
+    from functools import wraps
+
+    @wraps(method)
+    def guarded(self, match_id, *args, **kwargs):
+        with ExitStack() as stack:
+            try:
+                stack.enter_context(self.generation_snapshot(match_id, generation_id=kwargs.get("generation_id")))
+            except FileNotFoundError:
+                pass  # Preserve the method's documented pre-processing outcome.
+            return method(self, match_id, *args, **kwargs)
+    return guarded
+
+
 class Storage:
     def __init__(self, storage_root: Path):
         self.storage_root = Path(storage_root)
@@ -1133,13 +1149,17 @@ class Storage:
     def save_raw_rows(self, match_id: str, rows: Iterable[dict]) -> None:
         self._write_json_array(self._match_dir(match_id) / "raw_rows.json", rows)
 
-    def _video_ball_signal_summary(self, match_id: str, summary: MatchSummary) -> MatchSummary:
+    def _video_ball_signal_summary(self, match_id: str, summary: MatchSummary, *, input_mode: str | None = None) -> MatchSummary:
         # ponytail: promote video trust only after a match-bound independent ball-label receipt exists.
-        with self._connect() as connection:
-            row = connection.execute("SELECT input_mode FROM matches WHERE id=?", (match_id,)).fetchone()
-        if row is None:
-            return summary  # Artifact-only record has no authoritative input mode.
-        if row["input_mode"] == "video" and summary.ballSignalStatus == "trusted":
+        # Bulk listing already has this immutable, server-owned column. Reuse it
+        # instead of opening one extra SQLite connection for every match.
+        if input_mode is None:
+            with self._connect() as connection:
+                row = connection.execute("SELECT input_mode FROM matches WHERE id=?", (match_id,)).fetchone()
+            if row is None:
+                return summary  # Artifact-only record has no authoritative input mode.
+            input_mode = row["input_mode"]
+        if input_mode == "video" and summary.ballSignalStatus == "trusted":
             return summary.model_copy(update={
                 "ballSignalStatus": "untrusted",
                 "ballSignalMessage": "Ball detections have not been independently verified.",
@@ -1414,32 +1434,20 @@ class Storage:
         self._write_json(self._corrections_path(match_id), log.dump())
 
     def submit_correction(
-        self,
-        match_id: str,
-        *,
-        kind: str,
-        payload: dict | None = None,
-        author: str = "analyst",
-        expected_version: int | None = None,
-        crash_before_commit: bool = False,
+        self, match_id: str, *, kind: str, payload: dict | None = None,
+        author: str = "analyst", expected_version: int | None = None,
+        crash_before_commit: bool = False, base_generation: str | None = None,
+        command_id: str | None = None, idempotency_key: str | None = None,
     ):
         from .review_service import ReviewService
-
-        payload = dict(payload or {})
-        if kind in {"event_accept", "event_reject"}:
-            payload["previous"] = self._event_review_snapshot(match_id, payload)
-        try:
-            base_generation = self.current_generation(match_id).generationId
-        except FileNotFoundError:
-            base_generation = None
+        # The canonical service validates non-object inputs; do not coerce an
+        # arbitrary iterable into a supposedly valid command dictionary.
+        payload = {} if payload is None else payload
         return ReviewService(self).submit(
-            match_id,
-            kind=kind,
-            payload=payload,
-            author=author,
-            expected_version=expected_version,
-            base_generation=base_generation,
-            crash_before_commit=crash_before_commit,
+            match_id, kind=kind, payload=payload, author=author,
+            expected_version=expected_version, base_generation=base_generation,
+            crash_before_commit=crash_before_commit, command_id=command_id,
+            idempotency_key=idempotency_key,
         )
 
     def recover_correction(self, match_id: str, correction_id: str):
@@ -1447,10 +1455,14 @@ class Storage:
 
         return ReviewService(self).recover(match_id, correction_id)
 
-    def undo_correction(self, match_id: str, correction_id: str, *, author: str = "analyst"):
+    def undo_correction(self, match_id: str, correction_id: str, *, author: str = "analyst",
+                        expected_version: int | None = None, base_generation: str | None = None,
+                        command_id: str | None = None, idempotency_key: str | None = None):
         from .review_service import ReviewService
 
-        return ReviewService(self).undo(match_id, correction_id, author=author)
+        return ReviewService(self).undo(match_id, correction_id, author=author,
+                                        expected_version=expected_version, base_generation=base_generation,
+                                        command_id=command_id, idempotency_key=idempotency_key)
 
     def list_corrections(self, match_id: str, *, state: str | None = None) -> list[dict]:
         log = self._load_correction_log(match_id)
@@ -1563,6 +1575,7 @@ class Storage:
             "results": [hit.model_dump(mode="json") for hit in hits],
         }
 
+    @_generation_reader
     def assemble_match_report(
         self,
         match_id: str,
@@ -1614,13 +1627,19 @@ class Storage:
             narrative=narrative,
         )
 
+    @_generation_reader
     def player_observations_for_match(self, match_id: str) -> dict:
         from .workbench.identity import player_observations, rows_from_frames
 
-        return player_observations(
+        identity = self._stored_identity_continuous(match_id)
+        geometry = self._stored_calibration_accepted(match_id)
+        result = player_observations(
             rows_from_frames(self.load_frames(match_id)),
-            identity_continuous=self._stored_identity_continuous(match_id),
+            identity_continuous=identity and geometry,
         )
+        return {**result, "identityContinuous": identity, "geometryEligible": geometry,
+                "reasonCodes": ([] if identity else ["IDENTITY_DISCONTINUITY"]) +
+                               ([] if geometry else ["CALIBRATION_UNAVAILABLE"])}
 
     def search_stored_library(self, query: str) -> dict:
         from .workbench.library import search_match_library
@@ -1704,6 +1723,7 @@ class Storage:
         self.save_analysis_artifact(match_id, "ownership_publication", published)
         return published
 
+    @_generation_reader
     def assemble_stored_match_package(self, match_id: str) -> dict:
         from .workbench.assistance import events_as_query_rows
         from .workbench.evidence import summarize_legacy_match
@@ -1799,6 +1819,7 @@ class Storage:
             "notes": notes,
         }
 
+    @_generation_reader
     def match_metrics_for_match(self, match_id: str) -> dict:
         from .workbench.evidence import summarize_legacy_match
 
@@ -1922,6 +1943,7 @@ class Storage:
             evaluation = dict(revision.evaluation)
             return {
                 "preview": False,
+                "profile": dict(revision.profile),
                 "committed": True,
                 "certified": False,
                 "accepted": bool(evaluation.get("accepted", True)),
@@ -1946,33 +1968,32 @@ class Storage:
         from .workbench.review import correction_api_payload
 
         match = self.get_match(match_id)
-        profile = CalibrationProfile.model_validate(payload)
+        controls = {key: payload[key] for key in ("expectedVersion", "baseGeneration", "commandId", "idempotencyKey") if key in payload}
+        profile = CalibrationProfile.model_validate({key: value for key, value in payload.items() if key not in controls})
         result = commit_calibration(profile)
         if result.get("committed"):
-            previous_revision = self.calibration_revision(match_id)
-            revision = self._new_calibration_revision(
-                match_id,
-                profile=result["profile"],
-                evaluation={**dict(result["evaluation"]), "measured": True},
-            )
             try:
                 self.current_generation(match_id)
             except FileNotFoundError:
+                revision = self._new_calibration_revision(
+                    match_id,
+                    profile=result["profile"],
+                    evaluation={**dict(result["evaluation"]), "measured": True},
+                )
                 self._save_calibration_revision(match_id, revision)
             else:
                 saved = self.submit_correction(
                     match_id,
                     kind="calibration",
-                    payload={
-                        "revision": revision,
-                        "previousRevision": (
-                            None
-                            if previous_revision is None
-                            else previous_revision.model_dump(mode="json")
-                        ),
-                    },
+                    expected_version=controls.get("expectedVersion"),
+                    base_generation=controls.get("baseGeneration"),
+                    command_id=controls.get("commandId"),
+                    idempotency_key=controls.get("idempotencyKey"),
+                    payload={"profile": profile.model_dump(mode="json")},
                 )
                 result["correction"] = correction_api_payload(saved)
+                result["committed"] = saved.applyState == "applied"
+                result["generationId"] = saved.appliedGeneration
         return result
 
     def plan_recompute(self, match_id: str, change: str):
@@ -2104,32 +2125,47 @@ class Storage:
             )
         return {"items": items, "reviewFirst": True, "accepted": False, "measured": False}
 
+    def identity_eligibility(self, match_id: str, *, generation_id: str | None = None) -> dict:
+        from .identity_eligibility import identity_eligibility
+        try:
+            with self.generation_snapshot(match_id, generation_id=generation_id) as ref:
+                manifest, _ = self.generations.manifest(match_id, ref.generationId)
+                result = identity_eligibility(manifest.identityContext)
+                return {**result, "generationId": ref.generationId}
+        except FileNotFoundError:
+            return identity_eligibility(None)
+
     def _stored_identity_continuous(self, match_id: str) -> bool:
-        history = self._load_correction_log(match_id).history(match_id)
-        applied = [item for item in history if item.applyState in {"applied", "applying"}]
-        undone = {
-            str(item.payload.get("of"))
-            for item in applied
-            if item.kind == "undo" and item.payload.get("of")
-        }
-        identity_changes = [
-            item
-            for item in applied
-            if item.kind in {"identity_validate", "track_split", "track_join"}
-            and item.correctionId not in undone
-        ]
-        return bool(identity_changes and identity_changes[-1].kind == "identity_validate")
+        return self.identity_eligibility(match_id)["continuous"]
 
     def _stored_calibration_accepted(self, match_id: str) -> bool:
+        try:
+            with self.generation_snapshot(match_id) as ref:
+                manifest, _ = self.generations.manifest(match_id, ref.generationId)
+                if manifest.identityContext is not None:
+                    return manifest.identityContext.get("geometryEligible") is True
+        except FileNotFoundError:
+            pass
         revision = self.calibration_revision(match_id)
         return bool(revision and revision.accepted and revision.measured)
 
+    @_generation_reader
     def heatmap_for_match(self, match_id: str) -> dict:
         from .workbench.quantities import heatmap_availability
 
         self.get_match(match_id)
-        return heatmap_availability(identity_continuous=self._stored_identity_continuous(match_id))
+        identity = self._stored_identity_continuous(match_id)
+        geometry = self._stored_calibration_accepted(match_id)
+        result = heatmap_availability(identity_continuous=identity and geometry)
+        calibration = self.calibration_revision(match_id)
+        dimensions = ({"pitchLengthM": calibration.pitchLengthM, "pitchWidthM": calibration.pitchWidthM}
+                      if geometry and calibration is not None else None)
+        return {**result, "identityContinuous": identity, "geometryEligible": geometry,
+                "pitchDimensions": dimensions,
+                "reasonCodes": ([] if identity else ["IDENTITY_DISCONTINUITY"]) +
+                               ([] if geometry else ["CALIBRATION_UNAVAILABLE"])}
 
+    @_generation_reader
     def identity_for_match(self, match_id: str) -> dict:
         from .workbench.identity import (
             appearance_embedding_policy,
@@ -2159,8 +2195,6 @@ class Storage:
     def repair_identity_for_match(self, match_id: str, payload: dict | None = None) -> dict:
         from .workbench.identity import (
             frames_have_identity_overlap,
-            frames_with_track,
-            next_available_track_id,
             rows_from_frames,
         )
         from .workbench.perception import IdentityRepair, preview_identity_change
@@ -2187,11 +2221,8 @@ class Storage:
         )
         known = False
         reason_codes: list[str] = []
-        new_track_id: int | None = None
         if kind == "track_split":
             known = track_id in stored_ids
-            if known:
-                new_track_id = next_available_track_id(frames)
         elif kind == "track_join":
             known = left_track_id in stored_ids and right_track_id in stored_ids
             if known and frames_have_identity_overlap(frames, left_track_id, right_track_id):
@@ -2206,28 +2237,28 @@ class Storage:
             repair.split(track_id or "t-1", at_frame, author=str(body.get("author") or "analyst"))
         correction = None
         committed = False
-        if known and kind in {"track_split", "track_join"}:
+        if kind in {"track_split", "track_join"} and (known or any(key in body for key in ("commandId", "idempotencyKey", "baseGeneration", "expectedVersion"))):
             payload = {
                 "trackId": track_id,
                 "atFrame": at_frame,
                 "leftTrackId": left_track_id,
                 "rightTrackId": right_track_id,
             }
-            if kind == "track_split" and new_track_id is not None:
-                payload["newTrackId"] = new_track_id
-            if kind == "track_join":
-                payload["rightFrameIds"] = frames_with_track(frames, right_track_id)
+            if "newTrackId" in body:
+                payload["newTrackId"] = body["newTrackId"]
             saved = self.submit_correction(
                 match_id,
                 kind=kind,
                 payload=payload,
                 author=str(body.get("author") or "analyst"),
+                expected_version=body.get("expectedVersion"),
+                base_generation=body.get("baseGeneration"),
+                command_id=body.get("commandId"),
+                idempotency_key=body.get("idempotencyKey"),
+
             )
             correction = correction_api_payload(saved)
-            committed = saved.saveState == "saved"
-            if committed:
-                self._apply_identity_edit(match_id, kind=kind, payload=payload)
-                self._invalidate_stored_identity_continuity(match_id)
+            committed = saved.applyState == "applied"
         return {
             **preview,
             "committed": committed,
@@ -2255,12 +2286,17 @@ class Storage:
             saved = self.submit_correction(
                 match_id,
                 kind="identity_validate",
-                payload={"reviewed": True},
+                payload={key: body[key] for key in ("reviewed", "identityRevision", "intervalStart", "intervalEnd", "trackIds", "teamScope") if key in body},
                 author=str(body.get("author") or "analyst"),
+                expected_version=body.get("expectedVersion"),
+                base_generation=body.get("baseGeneration"),
+                command_id=body.get("commandId"),
+                idempotency_key=body.get("idempotencyKey"),
+
                 crash_before_commit=bool(body.get("crashBeforeCommit")),
             )
             correction = correction_api_payload(saved)
-            committed = saved.saveState == "saved"
+            committed = saved.applyState == "applied"
         return {
             "preview": True,
             "committed": committed,
@@ -2428,6 +2464,7 @@ class Storage:
             shots,
         )
 
+    @_generation_reader
     def formation_for_match(self, match_id: str) -> dict:
         from .workbench.quantities import formation_availability
 
@@ -2594,8 +2631,9 @@ class Storage:
             "silentlyReconnected": False,
         }
 
+    @_generation_reader
     def derived_distance_for_match(self, match_id: str) -> dict:
-        from .workbench.geometry import derived_distance, from_legacy_four_points, path_distance_m
+        from .workbench.geometry import derived_distance
         from .workbench.media import detect_camera_cuts
 
         match = self.get_match(match_id)
@@ -2611,18 +2649,12 @@ class Storage:
         evaluation = self._load_calibration_evaluation(match_id)
         residual = evaluation.get("p95M")
         uncertainty_m = float(residual) if residual is not None else 0.0
-        points = [{"x": float(point.x), "y": float(point.y)} for point in match.config.manualHomographyPoints]
-        if len(points) != 4:
-            points = [{"x": 0.0, "y": 0.0}, {"x": 1.0, "y": 0.0}, {"x": 1.0, "y": 1.0}, {"x": 0.0, "y": 1.0}]
-        profile = from_legacy_four_points(
-            points,
-            calibration_id=match_id,
-            pitch_length_m=match.config.pitchLengthM or 105.0,
-            pitch_width_m=match.config.pitchWidthM or 68.0,
-        )
         delta_m = 0.0
+        revision = self.calibration_revision(match_id)
         if frames and not identity_gap and not calibration_missing and not cuts:
-            delta_m = path_distance_m(frames, profile)
+            from .workbench.geometry import normalized_path_distance_m
+            delta_m = normalized_path_distance_m(frames, pitch_length_m=revision.pitchLengthM,
+                                                pitch_width_m=revision.pitchWidthM)
         return derived_distance(
             delta_m=delta_m,
             uncertainty_m=uncertainty_m,
@@ -2805,7 +2837,7 @@ class Storage:
                     crash_before_commit=bool(body.get("crashBeforeCommit")),
                 )
                 correction = correction_api_payload(saved)
-                committed = saved.saveState == "saved"
+                committed = saved.applyState == "applied"
                 if committed:
                     stored = {**measured_evaluation, "measured": True}
                 else:
@@ -2943,7 +2975,7 @@ class Storage:
             "accepted": bool(evaluation.get("accepted")) and evaluation.get("measured") is True,
             "measured": evaluation.get("measured") is True,
             "sourceSha256": source_sha,
-            "validInterval": {"start": 0.0, "end": None},
+            "validInterval": {"start": profile.get("sourceIntervalStart", 0.0), "end": profile.get("sourceIntervalEnd")},
             "createdAt": _utcnow().isoformat(),
             "fitPointSpace": "source_pixels",
             "pitchLengthM": float(profile.get("pitchLengthM") or match.config.pitchLengthM or 105.0),
@@ -2962,6 +2994,7 @@ class Storage:
         payload = self._read_json(self._match_dir(match_id) / "raw_rows.json")
         return [dict(item) for item in payload]
 
+    @_generation_reader
     def load_analytics(
         self,
         match_id: str,
@@ -2975,6 +3008,7 @@ class Storage:
             summary = summary.model_copy(update={"possession": None})
         formation_timeline = [FormationSegment.model_validate(item) for item in payload.get("formationTimeline", [])]
         shots = [ShotAnalytics.model_validate(item) for item in payload.get("shots", [])]
+        summary = self._physical_summary_view(match_id, summary, generation_id=generation_id)
         return summary, assignments, formation_timeline, shots
 
     def load_events(self, match_id: str, *, generation_id: str | None = None) -> list[DetectedEvent]:
@@ -3294,13 +3328,57 @@ class Storage:
 
     # ===== Semantic Search Support =====
 
-    def _indexed_match_summary(self, match_id: str, encoded: str | None) -> MatchSummary:
+    def _physical_summary_view(self, match_id: str, summary: MatchSummary, *, generation_id: str | None = None) -> MatchSummary:
+        """Read-only compatibility for pre-C02 snapshots with unscoped physical totals.
+
+        The stored values remain historical bytes, not newly approved measurements.
+        This same filter is used by compact dashboards and full analytics readers.
+        """
+        from .identity_eligibility import identity_eligibility
+
+        try:
+            with self.generation_snapshot(match_id, generation_id=generation_id) as ref:
+                manifest, _ = self.generations.manifest(match_id, ref.generationId)
+                context = manifest.identityContext
+        except FileNotFoundError:
+            if generation_id is not None:
+                raise
+            context = None  # Explicit pre-generation migration, never proof of approval.
+        eligibility = identity_eligibility(context)
+        geometry = isinstance(context, dict) and context.get("geometryEligible") is True
+        if eligibility["continuous"] and geometry:
+            return summary
+        reasons = list(eligibility["reasonCodes"])
+        if not geometry:
+            reasons += ["CALIBRATION_OR_MOVEMENT_UNAVAILABLE"]
+        physical_names = {"my_team_distance_m", "enemy_distance_m", "my_team_top_speed_kmh",
+                          "enemy_top_speed_kmh", "my_team_sprints", "enemy_sprints"}
+        availability = [item.model_copy(update={
+            "availability": "withheld", "value": None,
+            "reasonCodes": list(dict.fromkeys([*item.reasonCodes, *reasons])),
+        }) if item.metric in physical_names else item for item in summary.metricAvailability]
+        # Old summaries may contain no availability entries at all. Publish an
+        # explicit withheld disposition on the read view, without editing history.
+        from .schemas import MetricAvailabilityRecord
+        present = {item.metric for item in availability}
+        availability.extend(MetricAvailabilityRecord(
+            metric=metric, value=None, availability="withheld", reasonCodes=reasons,
+        ) for metric in sorted(physical_names - present))
+        return summary.model_copy(update={
+            **{name: None for name in ("myTeamDistance", "enemyDistance", "myTeamTopSpeed",
+                                      "enemyTopSpeed", "myTeamSprints", "enemySprints")},
+            "metricAvailability": availability,
+        })
+
+    @_generation_reader
+    def _indexed_match_summary(self, match_id: str, encoded: str | None, *, input_mode: str | None = None) -> MatchSummary:
         # SQLite is a rebuildable index, never a competing analytical authority.
         try:
             # A dashboard needs the small bound summary, never full trajectories
             # or an unversioned/stale SQL subtotal. The read does not backfill SQL.
             payload = self.generations.payload(match_id, "summary.json")
-            return self._video_ball_signal_summary(match_id, MatchSummary.model_validate(payload))
+            summary = self._video_ball_signal_summary(match_id, MatchSummary.model_validate(payload), input_mode=input_mode)
+            return self._physical_summary_view(match_id, summary)
         except FileNotFoundError:
             return self.load_analytics(match_id)[0]  # Unversioned legacy read only.
 
@@ -3312,7 +3390,7 @@ class Storage:
         with self._connect() as connection:
             matches = connection.execute(
                 """
-                SELECT id, name, created_at, analytics_summary_json
+                SELECT id, name, input_mode, created_at, analytics_summary_json
                 FROM matches
                 WHERE status IN ('completed', 'ready')
                 ORDER BY created_at DESC
@@ -3322,7 +3400,7 @@ class Storage:
 
         for match in matches:
             try:
-                summary = self._indexed_match_summary(match["id"], match["analytics_summary_json"])
+                summary = self._indexed_match_summary(match["id"], match["analytics_summary_json"], input_mode=match["input_mode"])
                 results.append({
                     "matchId": match["id"],
                     "matchName": match["name"],
@@ -3341,13 +3419,13 @@ class Storage:
         """
         with self._connect() as connection:
             match = connection.execute(
-                "SELECT id, name, analytics_summary_json FROM matches WHERE id = ?",
+                "SELECT id, name, input_mode, analytics_summary_json FROM matches WHERE id = ?",
                 (match_id,),
             ).fetchone()
         if match is None:
             return None
         try:
-            summary = self._indexed_match_summary(match_id, match["analytics_summary_json"])
+            summary = self._indexed_match_summary(match_id, match["analytics_summary_json"], input_mode=match["input_mode"])
             return {
                 "matchId": match_id,
                 "matchName": match["name"],

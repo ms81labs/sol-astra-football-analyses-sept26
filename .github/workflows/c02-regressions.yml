@@ -1,0 +1,88 @@
+name: C02 regression evidence
+on:
+  push:
+    branches: [agent/c02-integration]
+    paths: ['backend/**', 'frontend/**', '.github/workflows/c02-regressions.yml']
+  pull_request:
+    paths: ['backend/**', 'frontend/**', '.github/workflows/c02-regressions.yml']
+permissions:
+  contents: read
+concurrency:
+  group: c02-regressions-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Retain exact source for isolated verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/c02-source"
+          git bundle create "$RUNNER_TEMP/c02-source/repository.bundle" HEAD refs/remotes/origin/main
+          git rev-parse HEAD > "$RUNNER_TEMP/c02-source/source-sha.txt"
+          git rev-parse HEAD^{tree} > "$RUNNER_TEMP/c02-source/source-tree.txt"
+          (cd "$RUNNER_TEMP/c02-source" && sha256sum repository.bundle > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: c02-source-evidence
+          path: ${{ runner.temp }}/c02-source/
+          if-no-files-found: error
+          retention-days: 14
+  focused:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PYTHON_DOTENV_DISABLED: '1'
+      VERIFY_DAYTONA: '0'
+      ALLOW_DAYTONA_MUTATION: '0'
+      OPENBLAS_NUM_THREADS: '1'
+      OMP_NUM_THREADS: '1'
+      MKL_NUM_THREADS: '1'
+      QT_QPA_PLATFORM: offscreen
+      GA_VERIFICATION_RUN: '1'
+      GA_VERIFICATION_PROFILE: c02-locked-code-only
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements/dev.lock
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install declared locked profile
+        run: |
+          python -m pip install --require-hashes -r backend/requirements/dev.lock
+          python -m pip install -e . --no-deps
+      - name: Record exact source and runtime
+        run: |
+          mkdir -p c02-evidence
+          git rev-parse HEAD > c02-evidence/source-sha.txt
+          git rev-parse HEAD^{tree} > c02-evidence/source-tree.txt
+          python --version > c02-evidence/python-version.txt
+          sha256sum backend/requirements/dev.lock frontend/package-lock.json > c02-evidence/locks.txt
+          python -m pip freeze > c02-evidence/packages.txt
+          ffmpeg -version > c02-evidence/ffmpeg-version.txt
+      - name: Run complete C02 plus C01 and neighbouring regressions
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m pytest -q backend/tests/test_audit_v3_c02_*.py backend/tests/test_audit_v3_c01_*.py backend/tests/test_audit_v2_h02_review.py backend/tests/test_audit_v2_h03_calibration.py backend/tests/test_audit_v2_h05_recompute.py backend/tests/test_audit_api_boundaries.py backend/tests/test_api.py backend/tests/test_api_concurrency.py backend/tests/test_dashboard.py backend/tests/test_processor.py backend/tests/test_remote_worker.py --junitxml=c02-evidence/focused.xml -o faulthandler_timeout=60 2>&1 | tee c02-evidence/focused.log
+      - name: Retain receipt
+        if: always()
+        run: |
+          if [ -f .verification/receipt.json ]; then cp .verification/receipt.json c02-evidence/receipt.json; fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c02-locked-profile-evidence
+          path: c02-evidence/
+          if-no-files-found: error
+          retention-days: 14

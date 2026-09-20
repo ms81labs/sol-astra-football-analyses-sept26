@@ -131,10 +131,10 @@ describe('ReviewToolbar', () => {
     rerender(
       <ReviewToolbar onCreateNote={vi.fn()} onCreateTaggedMoment={vi.fn()} saveState="unavailable" />,
     );
-    expect(screen.getByText(/save unavailable/i)).toBeTruthy();
+    expect(screen.getByText(/application unconfirmed/i)).toBeTruthy();
     rerender(
       <ReviewToolbar onCreateNote={vi.fn()} onCreateTaggedMoment={vi.fn()} saveState="saved" />,
     );
-    expect(screen.getByText(/edit saved/i)).toBeTruthy();
+    expect(screen.getByText(/edit recorded.*application not confirmed/i)).toBeTruthy();
   });
 });

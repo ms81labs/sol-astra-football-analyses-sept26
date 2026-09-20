@@ -4,15 +4,16 @@ import { fetchMatchCoverage } from '../utils/workbench';
 
 interface MatchCoveragePanelProps {
   matchId?: string;
+  generationId?: string;
 }
 
-export default function MatchCoveragePanel({ matchId }: MatchCoveragePanelProps) {
+export default function MatchCoveragePanel({ matchId, generationId }: MatchCoveragePanelProps) {
   const [note, setNote] = useState<string | null>(null);
 
   useEffect(() => {
     if (!matchId) return;
     let cancelled = false;
-    fetchMatchCoverage(matchId)
+    fetchMatchCoverage(matchId, generationId)
       .then((payload) => {
         if (cancelled) return;
         if (payload.coverageAware === true && payload.representsWholeMatch === false) {
@@ -27,7 +28,7 @@ export default function MatchCoveragePanel({ matchId }: MatchCoveragePanelProps)
     return () => {
       cancelled = true;
     };
-  }, [matchId]);
+  }, [matchId, generationId]);
 
   if (!note) return null;
   return (

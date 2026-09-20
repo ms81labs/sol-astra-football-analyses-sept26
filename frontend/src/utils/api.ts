@@ -1,3 +1,5 @@
+import { assertGeneration, parseJson, readGeneration, ApiError } from './request';
+import type { CommandReceipt } from './commandLifecycle';
 import { findNearestFrameIndex } from './videoSync';
 import type {
   AnalyticsPayload,
@@ -44,6 +46,7 @@ export interface EvidenceRecord {
 }
 
 export interface EvidencePage {
+  generationId?: string | null;
   matchId?: string | null;
   items: EvidenceRecord[];
   nextCursor: string | null;
@@ -52,7 +55,8 @@ export interface EvidencePage {
   definitionVersion: string;
 }
 
-interface MatchWorkspace {
+export interface MatchWorkspace {
+  generationId?: string | null;
   detail: MatchRecord;
   frames: FrameData[];
   analytics: AnalyticsPayload;
@@ -67,22 +71,26 @@ export const WORKSPACE_FRAME_LIMIT = 240;
 
 export async function fetchMatchFrames(
   matchId: string,
-  options: { afterFrame?: number; cursor?: string; limit?: number; signal?: AbortSignal } = {},
-): Promise<{ frames: FrameData[]; frameCount: number; nextCursor: string | null }> {
+  options: { afterFrame?: number; cursor?: string; limit?: number; signal?: AbortSignal; generationId?: string } = {},
+): Promise<{ frames: FrameData[]; frameCount: number; nextCursor: string | null; generationId?: string | null }> {
   const params = new URLSearchParams();
   if (options.afterFrame != null) params.set('afterFrame', String(options.afterFrame));
   if (options.cursor) params.set('cursor', options.cursor);
   params.set('limit', String(options.limit ?? WORKSPACE_FRAME_LIMIT));
+  if (options.generationId) params.set('generationId', options.generationId);
   const response = await fetch(`/api/matches/${matchId}/frames?${params.toString()}`, { signal: options.signal });
   const payload = await parseJson<{
     matchId: string;
     frames: Array<Record<string, unknown>>;
     nextCursor?: string | null;
     frameCount?: number;
+    generationId?: string | null;
   }>(response);
+  assertGeneration(payload, options.generationId);
   const frames = payload.frames.map(mapFrame);
   return {
     frames,
+    generationId: payload.generationId,
     frameCount: payload.frameCount ?? frames.length,
     nextCursor: payload.nextCursor ?? null,
   };
@@ -96,6 +104,7 @@ export async function fetchMatchEvidence(
     cursor?: string;
     limit?: number;
     signal?: AbortSignal;
+    generationId?: string;
   } = {},
 ): Promise<EvidencePage> {
   const params = new URLSearchParams();
@@ -103,8 +112,9 @@ export async function fetchMatchEvidence(
   if (options.intervalEnd != null) params.set('intervalEnd', String(options.intervalEnd));
   if (options.cursor) params.set('cursor', options.cursor);
   params.set('limit', String(options.limit ?? 100));
+  if (options.generationId) params.set('generationId', options.generationId);
   const response = await fetch(`/api/matches/${matchId}/evidence?${params.toString()}`, { signal: options.signal });
-  if (response.status === 404) {
+  if (response.status === 404 && !options.generationId) {
     return {
       matchId,
       items: [],
@@ -114,21 +124,9 @@ export async function fetchMatchEvidence(
       definitionVersion: '1',
     };
   }
-  return parseJson<EvidencePage>(response);
-}
-
-async function parseJson<T>(response: Response): Promise<T> {
-  if (!response.ok) {
-    let message = `Request failed with status ${response.status}`;
-    try {
-      const payload = await response.json();
-      message = payload.detail || payload.error || message;
-    } catch {
-      // Ignore JSON parse issues and keep the default message.
-    }
-    throw new Error(message);
-  }
-  return response.json() as Promise<T>;
+  const page = await parseJson<EvidencePage>(response);
+  assertGeneration(page, options.generationId);
+  return page;
 }
 
 function mapFrame(frame: Record<string, unknown>): FrameData {
@@ -216,13 +214,16 @@ export async function fetchMatches(): Promise<MatchRecord[]> {
   return parseJson<MatchRecord[]>(response);
 }
 
-async function fetchMatchBenchmark(matchId: string, signal?: AbortSignal): Promise<MatchBenchmarkSummary | null> {
+async function fetchMatchBenchmark(matchId: string, signal?: AbortSignal, generationId?: string): Promise<MatchBenchmarkSummary | null> {
   const response = await fetch(`/api/matches/${matchId}/benchmark`, { signal });
   if (response.status === 404) return null;
-  return parseJson<MatchBenchmarkSummary>(response);
+  const result = await parseJson<MatchBenchmarkSummary & { generationId?: string }>(response);
+  // Flat diagnostic summaries without a proven source snapshot are not current
+  // analytical panes. C05 owns a richer benchmark/provenance migration.
+  return generationId && result.generationId !== generationId ? null : result;
 }
 
-export async function updateMatchConfig(matchId: string, payload: Record<string, unknown>): Promise<MatchRecord> {
+export async function updateMatchConfig(matchId: string, payload: Record<string, unknown>): Promise<MatchRecord & { correction?: CommandReceipt; generationId?: string | null }> {
   const response = await fetch(`/api/matches/${matchId}/config`, {
     method: 'PATCH',
     headers: {
@@ -230,49 +231,35 @@ export async function updateMatchConfig(matchId: string, payload: Record<string,
     },
     body: JSON.stringify(payload),
   });
-  return parseJson<MatchRecord>(response);
+  return parseJson<MatchRecord & { correction?: CommandReceipt; generationId?: string | null }>(response);
 }
 
-export async function fetchMatchWorkspace(matchId: string, signal?: AbortSignal): Promise<MatchWorkspace> {
-  const [detail, framesPayload, analyticsPayload, eventsPayload, benchmark, evidence] = await Promise.all([
-    fetch(`/api/matches/${matchId}`, { signal }).then((response) => parseJson<MatchRecord>(response)),
-    fetchMatchFrames(matchId, { limit: WORKSPACE_FRAME_LIMIT, signal }),
-    fetch(`/api/matches/${matchId}/analytics`, { signal }).then((response) =>
-      parseJson<{
-        matchId: string;
-        summary: MatchStats;
-        ballAssignments: AnalyticsPayload['ballAssignments'];
-        formationTimeline?: AnalyticsPayload['formationTimeline'];
-        shots?: AnalyticsPayload['shots'];
-      }>(response),
-    ),
-    fetch(`/api/matches/${matchId}/events`, { signal }).then((response) =>
-      parseJson<{ matchId: string; events: BackendEvent[] }>(response),
-    ),
-    fetchMatchBenchmark(matchId, signal),
-    fetchMatchEvidence(matchId, { limit: 100, signal }),
+export async function fetchMatchWorkspace(matchId: string, signal?: AbortSignal, requestedGeneration?: string): Promise<MatchWorkspace> {
+  // Resolve once before parallel reads. No silent retry against a newer generation.
+  const detail = await readGeneration<MatchRecord>(`/api/matches/${matchId}`, requestedGeneration, signal);
+  const generationId = detail.generationId;
+  if (!generationId) throw new ApiError('Analysis has not published a snapshot yet.', 409, 'GENERATION_NOT_READY');
+  const [framesPayload, analyticsPayload, eventsPayload, benchmark, evidence] = await Promise.all([
+    fetchMatchFrames(matchId, { limit: WORKSPACE_FRAME_LIMIT, signal, generationId }),
+    readGeneration<{
+      matchId: string; summary: MatchStats; ballAssignments: AnalyticsPayload['ballAssignments'];
+      formationTimeline?: AnalyticsPayload['formationTimeline']; shots?: AnalyticsPayload['shots'];
+    }>(`/api/matches/${matchId}/analytics`, generationId, signal),
+    readGeneration<{ matchId: string; events: BackendEvent[] }>(`/api/matches/${matchId}/events`, generationId, signal),
+    fetchMatchBenchmark(matchId, signal, generationId),
+    fetchMatchEvidence(matchId, { limit: 100, signal, generationId }),
   ]);
-
   return {
-    detail,
-    frames: framesPayload.frames,
-    frameCount: framesPayload.frameCount,
-    nextCursor: framesPayload.nextCursor,
-    analytics: {
-      summary: analyticsPayload.summary,
-      ballAssignments: analyticsPayload.ballAssignments,
-      formationTimeline: analyticsPayload.formationTimeline ?? [],
-      shots: analyticsPayload.shots ?? [],
-    },
-    events: eventsPayload.events,
-    benchmark,
-    evidence,
+    detail, generationId,
+    frames: framesPayload.frames, frameCount: framesPayload.frameCount, nextCursor: framesPayload.nextCursor,
+    analytics: { summary: analyticsPayload.summary, ballAssignments: analyticsPayload.ballAssignments,
+      formationTimeline: analyticsPayload.formationTimeline ?? [], shots: analyticsPayload.shots ?? [] },
+    events: eventsPayload.events, benchmark, evidence,
   };
 }
 
-export async function fetchMatchEvents(matchId: string, signal?: AbortSignal): Promise<BackendEvent[]> {
-  const response = await fetch(`/api/matches/${matchId}/events`, { signal });
-  const payload = await parseJson<{ matchId: string; events: BackendEvent[] }>(response);
+export async function fetchMatchEvents(matchId: string, signal?: AbortSignal, generationId?: string): Promise<BackendEvent[]> {
+  const payload = await readGeneration<{ matchId: string; events: BackendEvent[] }>(`/api/matches/${matchId}/events`, generationId, signal);
   return payload.events;
 }
 

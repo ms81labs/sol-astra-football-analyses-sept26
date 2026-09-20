@@ -14,6 +14,7 @@ from .cache import REBUILD_FOR
 
 EditKind = Literal[
     "team_mapping",
+    "config_set",
     "track_split",
     "track_join",
     "identity_validate",
@@ -28,6 +29,7 @@ ApplyState = Literal["received", "committed", "applying", "applied", "failed"]
 
 CORRECTION_INVALIDATION: dict[str, str] = {
     "team_mapping": "team_mapping",
+    "config_set": "team_mapping",
     "track_split": "track_edit",
     "track_join": "track_edit",
     "identity_validate": "track_edit",
@@ -40,6 +42,9 @@ CORRECTION_INVALIDATION: dict[str, str] = {
 
 
 class Correction(StrictModel):
+    schemaVersion: Literal[1, 2] = 1
+    idempotencyKey: str | None = None
+    requestDigest: str | None = None
     correctionId: str
     commandId: str
     matchId: str
@@ -99,7 +104,8 @@ class CorrectionLog:
         with self._lock:
             if correction_id in self._pending:
                 pending = self._pending[correction_id]
-                committed = pending.model_copy(update={"saveState": "saved", "applyState": "committed"})
+                version = 1 + max((item.version for item in self._items if item.matchId == pending.matchId), default=0)
+                committed = pending.model_copy(update={"saveState": "saved", "applyState": "committed", "version": version})
                 self._items.append(committed)
                 self._pending.pop(correction_id)
                 return committed

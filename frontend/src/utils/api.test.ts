@@ -165,11 +165,11 @@ describe('fetchMatchWorkspace', () => {
       .fn()
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ id: 'match-1', name: 'Sample Match', status: 'ready', inputMode: 'tracking_json' }),
+        json: async () => ({ generationId: 'g1', id: 'match-1', name: 'Sample Match', status: 'ready', inputMode: 'tracking_json' }),
       })
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({
+        json: async () => ({ generationId: 'g1',
           matchId: 'match-1',
           frames: [
             {
@@ -188,7 +188,7 @@ describe('fetchMatchWorkspace', () => {
       })
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({
+        json: async () => ({ generationId: 'g1',
           matchId: 'match-1',
           summary: {
             possession: 67,
@@ -242,7 +242,7 @@ describe('fetchMatchWorkspace', () => {
       })
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({
+        json: async () => ({ generationId: 'g1',
           matchId: 'match-1',
           events: [{ type: 'turnover', frameId: 1, timestamp: 0.2, team: 'enemy', description: 'Possession changed' }],
         }),
@@ -250,7 +250,7 @@ describe('fetchMatchWorkspace', () => {
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: async () => ({
+        json: async () => ({ generationId: 'g1',
           matchId: 'match-1',
           jobId: 'job-1',
           inputMode: 'tracking_json',
@@ -284,7 +284,7 @@ describe('fetchMatchWorkspace', () => {
       })
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({
+        json: async () => ({ generationId: 'g1',
           matchId: 'match-1',
           items: [
             {

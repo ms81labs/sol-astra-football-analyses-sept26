@@ -13,7 +13,9 @@ pytestmark = pytest.mark.integration
 
 
 def summary(value: int = 1) -> MatchSummary:
-    return MatchSummary(possession=None, myTeamDistance=value, enemyDistance=None,
+    # XG is the readable non-physical sentinel. The legacy distance remains in
+    # stored bytes, but C02 correctly withholds it without scoped approval.
+    return MatchSummary(possession=None, myTeamXg=value / 100, myTeamDistance=value, enemyDistance=None,
                         myTeamTopSpeed=None, enemyTopSpeed=None,
                         myTeamSprints=None, enemySprints=None)
 
@@ -70,7 +72,8 @@ def test_v3t07_stale_sql_summary_is_not_current_truth(tmp_path):
         connection.execute("UPDATE matches SET analytics_summary_json=? WHERE id=?",
                            (summary(999).model_dump_json(), mid))
     result = storage.list_matches_with_analytics()
-    assert result[0]["summary"]["myTeamDistance"] == 1
+    assert result[0]["summary"]["myTeamXg"] == .01
+    assert result[0]["summary"]["myTeamDistance"] is None
     with storage._connect() as connection:
         row = connection.execute("SELECT analytics_summary_json FROM matches WHERE id=?", (mid,)).fetchone()
     assert json.loads(row[0])["myTeamDistance"] == 999, "GET secretly repaired SQL"
@@ -114,6 +117,7 @@ def _reader(root, mid, conn):
                        "frame": storage.load_frames(mid)[0].frameId,
                        "events": len(storage.load_events(mid)),
                        "distance": storage.load_analytics(mid)[0].myTeamDistance,
+                       "xg": storage.load_analytics(mid)[0].myTeamXg,
                        "direction": storage.get_match(mid).config.attackDirection})
     except BaseException as exc:
         conn.send(("error", repr(exc)))
@@ -191,7 +195,7 @@ def test_v3t02_two_process_reader_keeps_n_while_writer_commits(tmp_path, childre
     writer.finish()  # Publication must finish before the old reader is released.
     reader.pipe.send("read")
     assert reader.receive() == {"generation": old.generationId, "frame": 1, "events": 0,
-                                "distance": 1, "direction": "left_to_right"}
+                                "distance": None, "xg": .01, "direction": "left_to_right"}
     reader.finish()
     with storage.generation_snapshot(mid) as current:
         assert current.generationId == new_id
@@ -299,7 +303,8 @@ def test_v3t07_post_commit_index_error_does_not_roll_back_or_restore_consent(tmp
         connection.execute("UPDATE matches SET config_json=? WHERE id=?", (json.dumps(config), mid))
     assert row[1] == old.generationId
     assert storage.get_match(mid).config.attackDirection == "right_to_left"
-    assert storage.load_analytics(mid)[0].myTeamDistance == 2
+    assert storage.load_analytics(mid)[0].myTeamXg == .02
+    assert storage.load_analytics(mid)[0].myTeamDistance is None
     monkeypatch.undo()
     storage.recover_generations(mid)
     assert storage.current_generation(mid).generationId == ref.generationId

@@ -96,6 +96,6 @@ it('offers match-scoped identity validation without treating the click as a clie
       onValidateIdentity={onValidateIdentity}
     />,
   );
-  fireEvent.click(screen.getByRole('button', { name: /validate identity/i }));
+  fireEvent.click(screen.getByRole('button', { name: /approve visible track interval/i }));
   expect(onValidateIdentity).toHaveBeenCalledTimes(1);
 });

@@ -62,7 +62,7 @@ export default function PlayerDetailPanel({ player, events, identityContinuous =
                         onClick={onValidateIdentity}
                         className="mt-2 rounded border border-emerald-600/40 bg-emerald-900/20 px-2 py-1 text-[11px] font-semibold text-emerald-100 hover:bg-emerald-900/40"
                     >
-                        Validate identity
+                        Approve visible track interval
                     </button>
                 )}
                 {onSplitIdentity && (

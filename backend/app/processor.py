@@ -454,6 +454,8 @@ def _compute_outputs_and_match_state(
     attack_direction: str = "left_to_right",
     ball_truth_layers: dict[str, object] | None = None,
     match_state_evidence: dict[str, object] | None = None,
+    review_commands=None,
+    summary_options: dict[str, Any] | None = None,
 ) -> tuple[
     list[FrameData],
     MatchSummary,
@@ -477,9 +479,24 @@ def _compute_outputs_and_match_state(
     enriched_frames: list[FrameData] = apply_possession_to_frames(frames, assignments)
     formation_timeline = build_formation_timeline(frames, attack_direction=attack_direction)
     events = detect_events(frames, assignments, attack_direction=attack_direction)
-    shots = build_shot_analytics(frames, events, attack_direction=attack_direction)
-    summary = summarize_match(frames, assignments, shots, events, attack_direction=attack_direction)
+    orphaned = []
+    if review_commands is not None:
+        from .workbench.events import apply_event_review, with_stable_event_id
+        events = [with_stable_event_id(e) for e in events]
+        for command in review_commands:
+            if command.kind in {"event_accept", "event_reject"}:
+                events, previous = apply_event_review(events, kind=command.kind, payload=command.payload,
+                                                      match_id=command.matchId)
+                if not previous:
+                    orphaned.append(str(command.payload.get("eventId") or command.correctionId))
+    # Unreviewed suggestions retain their existing experimental status. A review
+    # excludes rejected events; unrelated edits must not silently erase suggestions.
+    reviewed = [e for e in events if e.reviewStatus != "rejected"]
+    shots = build_shot_analytics(frames, reviewed, attack_direction=attack_direction)
+    summary = summarize_match(frames, assignments, shots, reviewed, attack_direction=attack_direction,
+                              **(summary_options or {}))
     accepted_match_state_payload = {
+        "orphanedDecisions": orphaned,
         "stateContinuityAppliedFrames": continuity_applied_frames,
         "frames": [frame.model_dump(mode="json") for frame in accepted_match_state],
     }
@@ -801,148 +818,53 @@ def reprocess_match_for_change(
     )
 
 
-def _publish_outputs(
-    storage: Storage,
-    match_id: str,
-    *,
-    frames: list[FrameData],
-    summary: MatchSummary,
-    assignments: list[BallOwnership],
-    formation_timeline: list[FormationSegment],
-    shots: list[ShotAnalytics],
-    events: list[DetectedEvent],
-) -> None:
-    from .review_service import ReviewService
-
-    service = ReviewService(storage)
-    with service._match_lock(match_id):
-        if any(item["applyState"] == "applied" for item in storage.list_corrections(match_id)):
-            service.rebuild_generation(match_id, reason="processing")
-            return
-        revision = storage.calibration_revision(match_id)
-        calibration_revision = None
-        if revision is not None and revision.accepted and revision.measured:
-            calibration_revision = revision.revisionId
-            if storage.get_match(match_id).inputMode == "tracking_json":
-                from .workbench.geometry import CalibrationProfile, project_tracking_frames
-
-                base_path = storage._match_dir(match_id) / "review_base_frames.json"
-                if not base_path.exists():
-                    storage._write_json(base_path, [frame.model_dump(mode="json") for frame in frames])
-                frames = project_tracking_frames(
-                    frames,
-                    CalibrationProfile.model_validate(revision.profile),
-                    pitch_length_m=revision.pitchLengthM,
-                    pitch_width_m=revision.pitchWidthM,
-                )
-                frames, _, events, assignments, formation_timeline, shots, _ = (
-                    _compute_outputs_and_match_state(
-                        frames,
-                        attack_direction=storage.get_match(match_id).config.attackDirection,
-                    )
-                )
-            summary = summarize_match(
-                frames,
-                assignments,
-                shots,
-                events,
-                attack_direction=storage.get_match(match_id).config.attackDirection,
-                calibration_accepted=True,
-                pitch_length_m=revision.pitchLengthM,
-                pitch_width_m=revision.pitchWidthM,
-            )
-        try:
-            correction_head = storage.current_generation(match_id).correctionHead
-        except FileNotFoundError:
-            correction_head = "none"
-        storage.publish_generation(
-            match_id,
-            frames=frames,
-            summary=summary,
-            assignments=assignments,
-            formation_timeline=formation_timeline,
-            shots=shots,
-            events=events,
-            correction_head=correction_head,
-            calibration_revision=calibration_revision,
-        )
-
-
-def reprocess_video_match(
-    storage: Storage,
-    match_id: str,
-    *,
-    config: MatchConfig | None = None,
-    persist: bool = True,
-) -> dict[str, Any]:
+def load_video_source_frames(storage: Storage, match_id: str, *, config: MatchConfig, team_clusters=None):
+    """Post-perception inputs only. Reprojection never dispatches a detector."""
+    from .coordinates import project_video_rows, refused
     match = storage.get_match(match_id)
-    config = config or match.config
-    if config.myTeamCluster != match.config.myTeamCluster:
-        change = "team_mapping"
-    elif config.attackDirection != match.config.attackDirection:
-        change = "ownership"
-    else:
-        change = "report"
-
-    def refuse_vision() -> dict[str, object]:
-        raise RuntimeError("image-space-safe reprocess must not invoke vision")
-
-    plan = reprocess_for_change(
-        change=change,
-        previous_identity=None,
-        current_identity=match.id,
-        vision=refuse_vision,
-    )
-    if plan.get("visionInvoked"):
-        raise RuntimeError("image-space-safe reprocess invoked vision")
-    storage.save_analysis_artifact(match.id, "reprocess_plan", plan)
-
+    revision = storage.calibration_revision(match_id)
     try:
         raw_rows = storage.load_raw_rows(match_id)
     except FileNotFoundError:
         raw_rows = []
-
     if raw_rows:
-        classified_rows, requires_team_selection = _classify_video_rows(raw_rows, config, match.teamClusters)
-        frames = [frame if isinstance(frame, FrameData) else FrameData.model_validate(frame) for frame in normalize_tracking_rows(classified_rows)]
-    else:
-        if match.inputMode == "video" and config.myTeamCluster != match.config.myTeamCluster:
-            raise FileNotFoundError("Raw video rows are required to change team selection")
-        frames = storage.load_frames(match_id)
-        requires_team_selection = match.requiresTeamSelection
-    ball_truth_layers = _load_saved_ball_truth_layers(storage, match_id)
-    match_state_evidence = _normalize_match_state_evidence(
-        frames,
-        ball_truth_layers=ball_truth_layers,
-    )
-    enriched_frames, summary, events, assignments, formation_timeline, shots, accepted_match_state = _compute_outputs_and_match_state(
-        frames,
-        attack_direction=config.attackDirection,
-        ball_truth_layers=ball_truth_layers,
-        match_state_evidence=match_state_evidence,
-    )
-    if persist:
-        _publish_outputs(
-            storage, match.id, frames=enriched_frames, summary=summary, assignments=assignments,
-            formation_timeline=formation_timeline, shots=shots, events=events,
-        )
-        storage.save_analysis_artifact(match.id, "accepted_match_state", accepted_match_state)
-        storage.update_match_status(
-            match.id,
-            status="ready",
-            requires_team_selection=requires_team_selection,
-            team_clusters=match.teamClusters,
-        )
-    return {
-        "frames": enriched_frames,
-        "summary": summary,
-        "events": events,
-        "assignments": assignments,
-        "formationTimeline": formation_timeline,
-        "shots": shots,
-        "acceptedMatchState": accepted_match_state,
-        "requiresTeamSelection": requires_team_selection,
-    }
+        classified, selection = _classify_video_rows(raw_rows, config, team_clusters if team_clusters is not None else match.teamClusters)
+        if revision is not None and revision.sourceSha256 != storage.source_sha256(match_id):
+            refused("CALIBRATION_SOURCE_MISMATCH", "Calibration is bound to another input asset")
+        return project_video_rows(classified, revision, convention=config.coordinateConvention), selection
+    if revision is not None or config.myTeamCluster != match.config.myTeamCluster:
+        refused("SOURCE_OBSERVATIONS_REQUIRED", "Original video source observations are required")
+    return storage.load_frames(match_id), match.requiresTeamSelection
+
+
+def reprocess_video_match(
+    storage: Storage, match_id: str, *, config: MatchConfig | None = None, persist: bool = True,
+) -> dict[str, Any]:
+    from .review_service import ReviewService
+    from .generations import semantic_config
+    service = ReviewService(storage)
+    with service._match_lock(match_id):
+        match = storage.get_match(match_id)
+        config = config or match.config
+        if not persist:
+            revision = storage.calibration_revision(match_id)
+            with storage.generations.candidate(match_id, config, revision.model_dump(mode="json") if revision else None):
+                return service._materialize(match_id, config, service._active_commands(match_id))
+        changes = {k:v for k,v in semantic_config(config).items() if semantic_config(match.config).get(k) != v
+                   and k != "calibrationCommitted"}
+        if changes:
+            service.configure(match_id, changes)
+            summary, assignments, timeline, shots = storage.load_analytics(match_id)
+            return {"frames":storage.load_frames(match_id), "summary":summary,
+                    "events":storage.load_events(match_id), "assignments":assignments,
+                    "formationTimeline":timeline, "shots":shots,
+                    "requiresTeamSelection":storage.get_match(match_id).requiresTeamSelection,
+                    "generationId":storage.current_generation(match_id).generationId}
+        ref, output = service.materialize_and_publish(match_id, reason="processing")
+        storage.save_analysis_artifact(match_id, "accepted_match_state", output["acceptedMatchState"])
+        storage.update_match_status(match_id, status="ready", requires_team_selection=output["requiresTeamSelection"],
+                                    team_clusters=match.teamClusters)
+        return {**output, "generationId":ref.generationId}
 
 
 def _persist_video_outputs(
@@ -1055,19 +977,18 @@ def _persist_prepared_video_outputs(
         storage.save_raw_rows(match_id, ball_rows)
 
     frames = [frame if isinstance(frame, FrameData) else FrameData.model_validate(frame) for frame in frames]
-    match_state_evidence = _normalize_match_state_evidence(
-        frames,
-        ball_truth_layers=ball_truth_layers,
-        match_state_evidence=video_result.get("matchStateEvidence") if isinstance(video_result, dict) else None,
-    )
+    match_state_evidence = video_result.get("matchStateEvidence") if isinstance(video_result, dict) else None
     _upsert_ball_pipeline_stage(ball_pipeline_trace, _trace_stage_from_frames("normalizedFrames", frames))
     storage.update_job(job_id, status="processing", progress=0.55, message="Computing possession and metrics")
-    enriched_frames, summary, events, assignments, formation_timeline, shots, accepted_match_state = _compute_outputs_and_match_state(
-        frames,
-        attack_direction=storage.get_match(match_id).config.attackDirection,
-        ball_truth_layers=ball_truth_layers,
-        match_state_evidence=match_state_evidence,
+    from .review_service import ReviewService
+    _, output = ReviewService(storage).materialize_and_publish(
+        match_id, reason="processing", team_clusters=team_clusters, match_state_evidence=match_state_evidence,
+        prepared_frames=frames,
     )
+    enriched_frames, summary, events, assignments, formation_timeline, shots, accepted_match_state = (
+        output["frames"], output["summary"], output["events"], output["assignments"],
+        output["formationTimeline"], output["shots"], output["acceptedMatchState"])
+    requires_team_selection = output["requiresTeamSelection"]
     tracked_possession_frames = sum(
         1 for assignment in assignments if assignment.team in {"my_team", "enemy", "unassigned"} and assignment.trackId is not None
     )
@@ -1101,10 +1022,6 @@ def _persist_prepared_video_outputs(
         ),
     )
 
-    _publish_outputs(
-        storage, match_id, frames=enriched_frames, summary=summary, assignments=assignments,
-        formation_timeline=formation_timeline, shots=shots, events=events,
-    )
     if isinstance(video_result, dict) and not isinstance(video_result.get("decodeAnchors"), dict) and enriched_frames:
         times = [float(frame.timestamp) for frame in enriched_frames]
         storage.save_analysis_artifact(
@@ -1251,8 +1168,7 @@ def process_match(storage: Storage, job_id: str) -> None:
 
     storage.update_job(job_id, status="processing", progress=0.1, message="Loading input")
     if match.inputMode == "tracking_json":
-        rows = json.loads(input_path.read_text(encoding="utf-8"))
-        frames = normalize_tracking_rows(rows)
+        # Immutable input envelope is read by the canonical materialiser.
         team_clusters: list[ColorClusterSummary] = []
         requires_team_selection = False
     elif match.inputMode == "video":
@@ -1296,18 +1212,10 @@ def process_match(storage: Storage, job_id: str) -> None:
     else:
         raise RuntimeError(f"Unsupported input mode: {match.inputMode}")
 
-    frames = [frame if isinstance(frame, FrameData) else FrameData.model_validate(frame) for frame in frames]
-
     storage.update_job(job_id, status="processing", progress=0.55, message="Computing possession and metrics")
-    enriched_frames, summary, events, assignments, formation_timeline, shots, accepted_match_state = _compute_outputs_and_match_state(
-        frames,
-        attack_direction=match.config.attackDirection,
-    )
-
-    _publish_outputs(
-        storage, match.id, frames=enriched_frames, summary=summary, assignments=assignments,
-        formation_timeline=formation_timeline, shots=shots, events=events,
-    )
+    from .review_service import ReviewService
+    _, output = ReviewService(storage).materialize_and_publish(match.id, reason="processing")
+    accepted_match_state = output["acceptedMatchState"]
     storage.save_analysis_artifact(match.id, "accepted_match_state", accepted_match_state)
     storage.update_match_status(
         match.id,

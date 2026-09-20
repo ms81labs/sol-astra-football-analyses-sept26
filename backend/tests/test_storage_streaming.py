@@ -30,6 +30,7 @@ def test_player_data_rejects_invalid_constructor_and_nested_frame_values(field, 
 def test_frame_data_preserves_nested_player_json_round_trip():
     payload = {
         "frameId": 0, "timestamp": 0.0, "ball": None, "possession": None,
+        "coordinateSpace": "pitch_normalized_0_100", "geometryAvailable": False, "coordinateProvenance": {},
         "myTeam": [{"id": 7, "x": 48.0, "y": 34.0, "confidence": 0.9}],
         "enemies": [{"id": 8, "x": 90.0, "y": 34.0, "confidence": 0.8}],
         "unassignedPlayers": [{"id": 9, "x": 50.0, "y": 34.0, "confidence": 0.0}],
