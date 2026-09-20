@@ -2,12 +2,13 @@ name: C02 checked dashboard patch
 on:
   push:
     branches: [agent/c02-integration]
-    paths: [.c02-dashboard-fix.patch.gz]
+    paths: [.c02-dashboard-fix.patch.gz, .github/workflows/c02-dashboard-fix.yml]
 permissions:
   contents: read
 jobs:
   apply:
-    if: github.event.head_commit.message == 'C02: apply verified dashboard fix'
+    if: >-
+      github.event.head_commit.message == 'C02: apply verified dashboard fix'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -21,7 +22,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = refs/heads/agent/c02-integration
-          test "$(git rev-parse HEAD^)" = 831daf74fc63bccfcc5706298181214288c538ca
+          test "$(git rev-parse HEAD^)" = 476baea04acbe2cbc868f71c0f1d67574a947595
           test "$(git ls-remote origin refs/heads/main | cut -f1)" = a453ffb476d55efa4de8ee81b03b6e322e0b2efe
           python - <<'PY'
           from pathlib import Path
