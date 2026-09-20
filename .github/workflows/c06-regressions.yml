@@ -14,8 +14,8 @@ on:
 permissions:
   contents: read
 env:
-  # Recovery checkpoint; switched to github.sha when the verified code is published.
-  C06_SOURCE_SHA: ${{ inputs.source_sha || '30e7fc5fcb4757e533002f78dc11ad5f24a0b881' }}
+  # Recovery checkpoint; replaced by the normal main workflow on promotion.
+  C06_SOURCE_SHA: ${{ inputs.source_sha || '4ab1d37e35a34a9830237cbe8d16ea3604abf976' }}
   VERIFY_DAYTONA: '0'
   ALLOW_DAYTONA_MUTATION: '0'
 jobs:
@@ -130,6 +130,43 @@ jobs:
         if: always()
         with:
           name: c06-full-verification
+          include-hidden-files: true
+          path: |
+            .verification/logs/
+            .verification/receipt.json
+          if-no-files-found: warn
+          retention-days: 30
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.C06_SOURCE_SHA }}
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements/dev.lock
+      - name: Install unchanged integration profile
+        run: |
+          sudo apt-get update && sudo apt-get install -y ffmpeg
+          pip install --dry-run --require-hashes -r backend/requirements/dev.lock
+          pip install --require-hashes -r backend/requirements/dev.lock
+          pip install -e '.[cv]' --no-deps
+      - name: Original integration and real-media selection
+        env:
+          GA_VERIFICATION_RUN: '1'
+          GA_VERIFICATION_PROFILE: cv+dev
+        run: |
+          set -o pipefail
+          mkdir -p .verification/logs
+          pytest -m "integration or real_media" backend/tests 2>&1 | tee .verification/logs/integration.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c06-integration-evidence
           include-hidden-files: true
           path: |
             .verification/logs/
