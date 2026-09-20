@@ -463,7 +463,7 @@ class GenerationStore:
     def publish(self, match_id, *, frames, summary, assignments, formation_timeline,
                 shots, events, correction_head, stale=None, orphaned_decisions=None,
                 calibration_revision=None, effective_config=None, calibration_data=_UNSET,
-                expected_parent=_UNSET, provenance=None, include_pending_commands=False, identity_context=None, accepted_match_state=None):
+                expected_parent=_UNSET, provenance=None, include_pending_commands=False, identity_context=None, accepted_match_state=None, observation_inputs=None):
         from .storage import _utcnow
         from .workbench.events import with_stable_event_id
         self.prepare(match_id)
@@ -504,7 +504,9 @@ class GenerationStore:
             if any(c.applyState in {"committed", "applying"} for c in commands) and not include_pending_commands:
                 raise StaleGeneration("Pending review commands require the canonical review materialiser")
             layered = self.storage._generation_layer_identities(
-                match_id, calibration_revision=calibration_revision, correction_head=correction_head)
+                match_id, calibration_revision=calibration_revision, correction_head=correction_head,
+                observations=observation_inputs, effective_config=effective, identity_context=identity_context,
+                command_digest=command_digest, calibration_data=calibration_data)
             gid = f"gen_{uuid.uuid4().hex}"
             directory = self.root(match_id) / "generations" / gid
             directory.mkdir(parents=True)
@@ -516,7 +518,8 @@ class GenerationStore:
                 if name == "events.json":
                     self.storage._review_test_fault("during_generation_write")
             previous = provenance.model_dump(mode="json") if provenance else {}
-            observation_digest = previous.get("observationDigest")
+            observation_digest = (observation_inputs["observations"]["sha256"] if observation_inputs
+                                  else previous.get("observationDigest"))
             if observation_digest is None:
                 for name in ("raw_rows.json", "review_base_frames.json"):
                     path = self.root(match_id) / name
@@ -525,7 +528,7 @@ class GenerationStore:
                         break
             if observation_digest is None and identity_context is not None:
                 observation_digest = identity_context.get("observationDigest")
-            source_identity = previous.get("sourceIdentity")
+            source_identity = observation_inputs["source"] if observation_inputs else previous.get("sourceIdentity")
             if source_identity is None:
                 try:
                     path = self.storage.get_match_input_path(match_id)
@@ -542,7 +545,9 @@ class GenerationStore:
             fields = {**previous, **identities,
                       "schemaVersion": 3, "matchId": match_id, "generationId": gid,
                       "parentGenerationId": parent, "sourceIdentity": source_identity,
-                      "observationDigest": observation_digest, "effectiveConfig": effective,
+                      "observationDigest": observation_digest,
+                      "observationInputs": observation_inputs or previous.get("observationInputs"),
+                      "effectiveConfig": effective,
                       "semanticConfigRevision": _digest(effective) if effective is not None else None,
                       "calibrationRevision": calibration_revision, "calibrationData": calibration_data,
                       "identityRevision": identity_context.get("identityRevision") if identity_context else previous.get("identityRevision"),

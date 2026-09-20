@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
-import uuid
-from dataclasses import dataclass, field, is_dataclass
+import math
+import re
+from dataclasses import dataclass, is_dataclass
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
@@ -27,7 +28,9 @@ def _known(value: Any) -> bool:
         return all(_known(item) for item in value.values())
     if isinstance(value, (list, tuple)):
         return all(_known(item) for item in value)
-    return True
+    if isinstance(value, float):
+        return math.isfinite(value)
+    return isinstance(value, (str, int, bool))
 
 
 def _identity_payload(value: Any, *, include_unknown_salt: bool) -> Any:
@@ -49,11 +52,19 @@ def _identity_payload(value: Any, *, include_unknown_salt: bool) -> Any:
 class _LayerIdentity:
     @property
     def reusable(self) -> bool:
-        return _known(self)
+        if not _known(self):
+            return False
+        # A shaped all-zero digest is a sentinel, not verified source/weight bytes.
+        return all(isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value)
+                   and value != "0" * 64
+                   for name, value in vars(self).items() if name.endswith("_sha256")) and all(
+                       value.reusable for value in vars(self).values() if isinstance(value, _LayerIdentity))
 
-    def digest(self) -> str:
-        payload = _identity_payload(self, include_unknown_salt=not self.reusable)
-        canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    def digest(self) -> str | None:
+        if not self.reusable:
+            return None
+        payload = self.components()
+        canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
         return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
     def components(self) -> dict[str, Any]:
@@ -70,35 +81,30 @@ class DetectionIdentity(_LayerIdentity):
     class_map_id: str | None
     precision: str | None
     runtime_build: str | None
-    _unknown_salt: str = field(default_factory=lambda: uuid.uuid4().hex, repr=False, compare=False)
 
 
 @dataclass(frozen=True)
 class TrackingIdentity(_LayerIdentity):
     detection: DetectionIdentity
     tracker_config_id: str | None
-    _unknown_salt: str = field(default_factory=lambda: uuid.uuid4().hex, repr=False, compare=False)
 
 
 @dataclass(frozen=True)
 class ProjectionIdentity(_LayerIdentity):
     tracking: TrackingIdentity
     calibration_revision: str | None
-    _unknown_salt: str = field(default_factory=lambda: uuid.uuid4().hex, repr=False, compare=False)
 
 
 @dataclass(frozen=True)
 class ReviewedIdentity(_LayerIdentity):
     projection: ProjectionIdentity
     correction_head: str | None
-    _unknown_salt: str = field(default_factory=lambda: uuid.uuid4().hex, repr=False, compare=False)
 
 
 @dataclass(frozen=True)
 class ReportIdentity(_LayerIdentity):
     reviewed: ReviewedIdentity
     report_template_version: str | None
-    _unknown_salt: str = field(default_factory=lambda: uuid.uuid4().hex, repr=False, compare=False)
 
 
 class _RecomputeModel(BaseModel):
@@ -154,12 +160,12 @@ def cache_identity(
         "calibrationId": calibration_id,
         "namespace": namespace,
     }
-    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), allow_nan=False)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-def cache_compatible(left: str, right: str) -> bool:
-    return left == right
+def cache_compatible(left: str | None, right: str | None) -> bool:
+    return bool(left) and left == right
 
 
 REBUILD_FOR: dict[str, list[str]] = {
@@ -178,7 +184,7 @@ def recompute_plan(
     current_identity: str,
     change: str,
 ) -> dict[str, Any]:
-    if previous_identity == current_identity:
+    if previous_identity is not None and cache_compatible(previous_identity, current_identity):
         return {"reuse": True, "rebuild": [], "reason": "identical_cache_identity"}
     return {
         "reuse": False,

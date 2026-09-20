@@ -24,7 +24,7 @@ def profile(dx=0.0, sx=0.1, **kwargs):
             for i,(x,y) in enumerate(expected)], **kwargs)
 
 
-def video(storage, tmp_path, *, with_source=True):
+def video(storage, tmp_path, *, with_source=True, prepare_rows=None):
     source=tmp_path/'synthetic-video.mp4';source.write_bytes(b'not decoded - synthetic post-perception observations')
     match=storage.create_match('Synthetic pixels','video',source.name,source,
         MatchConfig(myTeamCluster=0,pitchLengthM=100.,pitchWidthM=60.))
@@ -36,6 +36,8 @@ def video(storage, tmp_path, *, with_source=True):
             row.update(Source_X1=100.+fid*10,Source_Y1=100.,Source_X2=140.+fid*10,Source_Y2=180.,
                        Source_Width=1000,Source_Height=600)
         rows.append(row)
+    if prepare_rows is not None:
+        prepare_rows(rows)
     storage.save_raw_rows(match.id,rows)
     storage.update_match_status(match.id,status='ready',team_clusters=[
         ColorClusterSummary(clusterId=0,rgbCentroid=[255.,0.,0.],trackIds=[7])])
@@ -134,13 +136,12 @@ def test_v3t17_named_legacy_format_has_explicit_migration_provenance(tmp_path):
 ])
 def test_v3t16_crop_resize_rotation_inverted_before_ground_contact(tmp_path,matrix,box):
     from backend.app.coordinate_contracts import CoordinateConvention
-    s=Storage(tmp_path/'store');mid=video(s,tmp_path)
-    rows=s.load_raw_rows(mid)
-    for row in rows:
-        for k in ('Source_X1','Source_Y1','Source_X2','Source_Y2'):
-            row.pop(k)
-        row['bbox']=box
-    s.save_raw_rows(mid,rows)
+    def prepare(rows):
+        for row in rows:
+            for k in ('Source_X1','Source_Y1','Source_X2','Source_Y2'):
+                row.pop(k)
+            row['bbox']=box
+    s=Storage(tmp_path/'store');mid=video(s,tmp_path,prepare_rows=prepare)
     c=s.get_match(mid).config.model_copy(update={'coordinateConvention':CoordinateConvention(
         space='source_pixels',sourceWidth=1000,sourceHeight=600,streamId='video:0',sourceFromObservation=matrix)})
     # Use the actual analytical command boundary before calibration exists.
@@ -179,14 +180,13 @@ def test_other_stream_calibration_and_unsupported_camera_are_refused(tmp_path):
 
 
 def test_airborne_and_unknown_ground_ball_are_not_projected_as_measured(tmp_path):
-    s=Storage(tmp_path/'store');mid=video(s,tmp_path)
-    rows=s.load_raw_rows(mid)
-    for i,row in enumerate(list(rows)):
-        ball={**row,'Entity_Type':'ball','Track_ID':-1}
-        if i==0: ball['airborne']=True
-        if i==1: ball['groundPlane']=True
-        rows.append(ball)
-    s.save_raw_rows(mid,rows)
+    def prepare(rows):
+        for i,row in enumerate(list(rows)):
+            ball={**row,'Entity_Type':'ball','Track_ID':-1}
+            if i==0: ball['airborne']=True
+            if i==1: ball['groundPlane']=True
+            rows.append(ball)
+    s=Storage(tmp_path/'store');mid=video(s,tmp_path,prepare_rows=prepare)
     s.commit_calibration_for_match(mid,profile().model_dump(mode='json'))
     frames=s.load_frames(mid)
     assert frames[0].ball is None and frames[1].ball is not None and frames[2].ball is None
@@ -201,8 +201,7 @@ def test_airborne_and_unknown_ground_ball_are_not_projected_as_measured(tmp_path
     ({'PTS':999},'INVALID_SOURCE_CLOCK'),
 ])
 def test_bad_source_metadata_refuses_without_publishing(tmp_path,change,code):
-    s=Storage(tmp_path/'store');mid=video(s,tmp_path)
-    rows=s.load_raw_rows(mid);rows[0].update(change);s.save_raw_rows(mid,rows)
+    s=Storage(tmp_path/'store');mid=video(s,tmp_path,prepare_rows=lambda rows:rows[0].update(change))
     before=s.current_generation(mid).generationId
     with pytest.raises(Exception) as error:
         s.commit_calibration_for_match(mid,profile().model_dump(mode='json'))
@@ -220,9 +219,9 @@ def test_source_dimensions_bound_to_calibration(tmp_path):
 
 
 def test_explicit_ground_flag_cannot_override_airborne_ball(tmp_path):
-    s=Storage(tmp_path/'store');mid=video(s,tmp_path);rows=s.load_raw_rows(mid)
-    rows.append({**rows[0],'Entity_Type':'ball','Track_ID':-1,'airborne':True,'groundPlane':True})
-    s.save_raw_rows(mid,rows)
+    def prepare(rows):
+        rows.append({**rows[0],'Entity_Type':'ball','Track_ID':-1,'airborne':True,'groundPlane':True})
+    s=Storage(tmp_path/'store');mid=video(s,tmp_path,prepare_rows=prepare)
     s.commit_calibration_for_match(mid,profile().model_dump(mode='json'))
     first=s.load_frames(mid)[0]
     assert first.ball is None

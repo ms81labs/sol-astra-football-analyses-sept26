@@ -573,7 +573,8 @@ def test_evaluation_gate_fails_closed_without_independent_labels() -> None:
         team_declarations_present=True,
         scorer_replayable=True,
     )
-    assert passing.accepted is True
+    assert passing.accepted is False
+    assert passing.status == "prerequisites_ok"
 
 
 def test_ground_contact_is_not_box_centre_and_aerial_ball_is_not_on_the_pitch() -> None:
@@ -2382,8 +2383,9 @@ def test_calibration_team_and_track_edits_reuse_image_space_detections() -> None
             vision=lambda: calls.append(change) or {"rows": [{"Frame_ID": 1}]},
         )
         assert result["visionInvoked"] is False
-        assert result["imageSpaceDetectionsReused"] is True
-        assert result["reused"] is True
+        assert result["kind"] == "plan"
+        assert result["imageSpaceDetectionsReused"] is False
+        assert result["reused"] is False
     assert calls == []
 
 

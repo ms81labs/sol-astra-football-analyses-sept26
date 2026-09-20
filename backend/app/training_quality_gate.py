@@ -192,7 +192,9 @@ def _validation_metric_summary(
             "map50_95": 0.0,
             "fitness": 0.0,
             "allZero": True,
-            "checkpointMatched": best_epoch is None,
+            "checkpointMatched": False,
+            "diagnosticEpochMatched": best_epoch is None,
+            "checkpointBindingStatus": "unverified",
             "diagnostics": {"maxPrecision": 0.0, "maxRecall": 0.0, "maxMap50": 0.0, "maxMap50_95": 0.0},
         }
     with results_csv_path.open("r", encoding="utf-8", newline="") as handle:
@@ -226,6 +228,8 @@ def _validation_metric_summary(
             "fitness": 0.0,
             "allZero": True,
             "checkpointMatched": False,
+            "diagnosticEpochMatched": False,
+            "checkpointBindingStatus": "unverified",
             "diagnostics": {
                 "maxPrecision": max_precision,
                 "maxRecall": max_recall,
@@ -247,7 +251,9 @@ def _validation_metric_summary(
         "map50_95": map50_95,
         "fitness": fitness(checkpoint),
         "allZero": max(precision, recall, map50, map50_95) <= 0.0,
-        "checkpointMatched": True,
+        "checkpointMatched": False,
+        "diagnosticEpochMatched": True,
+        "checkpointBindingStatus": "unverified",
         "diagnostics": {
             "maxPrecision": max_precision,
             "maxRecall": max_recall,
@@ -465,8 +471,10 @@ def run_training_quality_gate(
         local_positive_sanity_detected_image_count=local_positive_sanity_detected_image_count,
         train_val_overlap_count=len(train_val_overlap),
         provenance_hashes_present=all(provenance_hashes.values()),
-        checkpoint_matched=bool(checkpoint_metrics["checkpointMatched"]),
+        checkpoint_matched=bool(checkpoint_metrics["diagnosticEpochMatched"]),
     )
+    if _sha256(best_weights_path) != provenance_hashes["bestWeightsSha256"]:
+        primary_blocker = "checkpoint_changed_during_sanity"
     training_quality_gate_passed = primary_blocker is None
     summary = {
         "generatedAt": _utc_now_iso(),
@@ -477,10 +485,16 @@ def run_training_quality_gate(
         "validationPositiveLabelImageCount": validation_positive_label_image_count,
         "validationEmptyLabelImageCount": validation_empty_label_image_count,
         "validationInformative": validation_informative,
-        "checkpointEpoch": checkpoint_metrics["epoch"],
-        "checkpointEpochMatched": checkpoint_metrics["checkpointMatched"],
-        "checkpointFitness": round(float(checkpoint_metrics["fitness"]), 8),
-        "checkpointValidationMetrics": {
+        "checkpointEpoch": None,
+        "checkpointEpochMatched": False,
+        "checkpointFitness": None,
+        "checkpointValidationMetrics": None,
+        "checkpointBindingStatus": "unverified",
+        "checkpointBindingReasonCodes": ["CHECKPOINT_VALIDATION_REPLAY_REQUIRED"],
+        "diagnosticEpoch": checkpoint_metrics["epoch"],
+        "diagnosticEpochMatched": checkpoint_metrics["diagnosticEpochMatched"],
+        "diagnosticFitness": round(float(checkpoint_metrics["fitness"]), 8),
+        "diagnosticValidationMetrics": {
             key: round(float(checkpoint_metrics[key]), 8)
             for key in ("precision", "recall", "map50", "map50_95")
         },

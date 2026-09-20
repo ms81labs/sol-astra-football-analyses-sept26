@@ -62,6 +62,14 @@ def process_video_input(
             "Set autoHomography=True to use automatic pitch detection instead."
         )
 
+    from .perception_identity import capture_inputs
+    identity_args = dict(model_path=primary_model_path or model_path or "yolov10n.pt",
+        auxiliary_ball_model_path=auxiliary_ball_model_path, auxiliary_profile=auxiliary_ball_model_profile,
+        repair_profile=edge_share_repair_profile, acquisition_mode=primary_acquisition_mode,
+        seed_paths={"baseline": baseline_guided_rescue_reference_path,
+                    "truth": proposal_selection_truth_seed_path, "reviewed": reviewed_positive_anchor_seed_path},
+        geometry={"auto": auto_homography, "manual": homography_points or []})
+    before_inputs = capture_inputs(Path(video_path), **identity_args)
     result = _process_video_impl(
         str(video_path),
         output_parquet=None,
@@ -94,9 +102,11 @@ def process_video_input(
         adapter=adapter,
         model_path=primary_model_path or model_path,
         hash_cache=hash_cache,
+        before_inputs=before_inputs, after_inputs=capture_inputs(Path(video_path), **identity_args),
     )
     payload["detectionIdentity"] = identities["detectionIdentity"]
     payload["trackingIdentity"] = identities["trackingIdentity"]
+    payload["observationIdentity"] = identities["observationIdentity"]
     payload["policy"] = declared_sampling_policy(source_clock, adapter)
     payload.setdefault(
         "hardware",
@@ -161,20 +171,8 @@ def _layered_identities(
     adapter: FrameSource,
     model_path: str | None,
     hash_cache: HashCache | None,
+    before_inputs: dict | None = None, after_inputs: dict | None = None,
 ) -> dict[str, object]:
-    weights = Path(model_path) if model_path else None
-    weights_sha = None
-    if weights is not None and weights.is_file():
-        weights_sha = (hash_cache.identity(weights) if hash_cache else stream_sha256(weights)).sha256
-    anchors = payload.get("decodeAnchors")
-    start = anchors.get("beginning") if isinstance(anchors, dict) else None
-    end = anchors.get("end") if isinstance(anchors, dict) else None
-    interval = None
-    if isinstance(start, (int, float)) and not isinstance(start, bool):
-        interval = Interval(
-            start=float(start),
-            end=float(end) if isinstance(end, (int, float)) and not isinstance(end, bool) else None,
-        )
     versions: list[str] = []
     runtime_known = True
     for package in ("ultralytics", "torch"):
@@ -190,29 +188,11 @@ def _layered_identities(
             runtime_known = False
     if not isinstance(decoder_build, str) or not decoder_build:
         runtime_known = False
-    identity = DetectionIdentity(
-        source_sha256=str(source_clock.get("sourceSha256") or "") or None,
-        stream_index=0,
-        interval=interval,
-        weights_sha256=weights_sha,
-        preprocessing_id="bgr24-source-grid-v1",
-        class_map_id="coco-football-v1",
-        precision=str(payload.get("precision") or "") or None,
-        runtime_build=(f"{decoder_build}|{'|'.join(versions)}" if runtime_known else None),
-    )
-    tracking = TrackingIdentity(detection=identity, tracker_config_id="botsort.yaml")
-    return {
-        "detectionIdentity": {
-            "digest": identity.digest(),
-            "reusable": identity.reusable,
-            "components": identity.components(),
-        },
-        "trackingIdentity": {
-            "digest": tracking.digest(),
-            "reusable": tracking.reusable,
-            "components": tracking.components(),
-        },
-    }
+    from .perception_identity import layered_identities
+    incomplete = {"primary": {"source": None, "weights": None, "preprocessing": {}, "classes": []},
+                  "tracker": None, "recovery": {"inputs": None}}
+    return layered_identities(before_inputs or incomplete, after_inputs or incomplete,
+        payload, source_clock, runtime_build=f"{decoder_build}|{'|'.join(versions)}" if runtime_known else None)
 
 
 def project_detected_rows(rows: list[dict]) -> list[dict]:
@@ -293,23 +273,14 @@ def reprocess_for_change(
         change=change,
     )
     if change in IMAGE_SPACE_SAFE_CHANGES:
+        # Compatibility planner has no artifact reader. Only Storage's canonical
+        # materializer can report an executed, verified observation reuse.
         return {
-            "visionInvoked": False,
-            "rebuild": list(plan["rebuild"]),
-            "reused": True,
-            "imageSpaceDetectionsReused": change != "report" or bool(plan["reuse"]),
-            "reason": "image_space_detections_reused"
-            if change != "report"
-            else "report_text_or_identical_cache_identity",
+            "kind": "plan", "visionInvoked": False, "rebuild": list(plan["rebuild"]),
+            "reused": False, "imageSpaceDetectionsReused": False,
+            "reason": "verified_observations_required",
         }
-    if plan["reuse"]:
-        return {
-            "visionInvoked": False,
-            "rebuild": list(plan["rebuild"]),
-            "reused": True,
-            "imageSpaceDetectionsReused": True,
-            "reason": "identical_cache_identity",
-        }
+    # Equal keys alone never demonstrate an artifact hit.
     payload = vision()
     if not isinstance(payload, dict):
         payload = {"rows": payload}

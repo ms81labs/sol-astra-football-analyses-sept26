@@ -59,7 +59,8 @@ def test_t09_layered_identities_invalidate_only_their_layer_and_downstream() -> 
     assert ReviewedIdentity(projection, "correction-2").projection.digest() == projection.digest()
     assert ReportIdentity(reviewed, "report-v2").reviewed.digest() == reviewed.digest()
     assert not _detection(source_sha256=None).reusable
-    assert _detection(source_sha256=None).digest() != _detection(source_sha256=None).digest()
+    assert _detection(source_sha256=None).digest() is None
+    assert _detection(source_sha256=None).digest() == _detection(source_sha256=None).digest()
     assert report.reusable
 
 
@@ -68,7 +69,7 @@ def test_t09_generation_wires_projection_review_and_report_identities(tmp_path: 
     source = tmp_path / "tracking.json"
     source.write_text("[]", encoding="utf-8")
     match = storage.create_match("identity layers", "tracking_json", source.name, source, MatchConfig())
-    detection = _detection()
+    detection = _detection(source_sha256=storage.source_sha256(match.id))
     tracking = TrackingIdentity(detection, "botsort-v1")
     storage.save_analysis_artifact(
         match.id,
@@ -81,14 +82,18 @@ def test_t09_generation_wires_projection_review_and_report_identities(tmp_path: 
         {"digest": tracking.digest(), "reusable": True, "components": tracking.components()},
     )
 
+    evidence = dict(observations={"matchId":match.id,"source":{"sha256":storage.source_sha256(match.id)},
+        "observations":{"sha256":storage.source_sha256(match.id)}},
+        effective_config=match.config.model_dump(mode="json"), identity_context={"identityRevision":"synthetic-review"},
+        command_digest="synthetic-command-set")
     first = storage._generation_layer_identities(
-        match.id, calibration_revision="cal-1", correction_head="correction-1"
+        match.id, calibration_revision="cal-1", correction_head="correction-1", **evidence
     )
     calibrated = storage._generation_layer_identities(
-        match.id, calibration_revision="cal-2", correction_head="correction-1"
+        match.id, calibration_revision="cal-2", correction_head="correction-1", **evidence
     )
     reviewed = storage._generation_layer_identities(
-        match.id, calibration_revision="cal-2", correction_head="correction-2"
+        match.id, calibration_revision="cal-2", correction_head="correction-2", **evidence
     )
     assert first["detection"]["digest"] == calibrated["detection"]["digest"]
     assert first["tracking"]["digest"] == calibrated["tracking"]["digest"]
@@ -214,6 +219,7 @@ def test_t09_video_identity_uses_resolved_weights_and_actual_interval(
     }
     monkeypatch.setattr("backend.app.video_pipeline._process_video_impl", lambda *args, **kwargs: dict(producer))
     monkeypatch.setattr("backend.app.video_pipeline.importlib.metadata.version", lambda package: "1.0")
+    monkeypatch.setattr("backend.app.perception_identity._detector_defaults", lambda: "synthetic-defaults")
 
     class Source:
         name = "fixture-decoder"
@@ -222,7 +228,8 @@ def test_t09_video_identity_uses_resolved_weights_and_actual_interval(
         def probe(self, path):
             from backend.app.workbench.contracts import SourceClockIdentity
 
-            return SourceClockIdentity(sourceSha256="a" * 64, byteSize=path.stat().st_size, codec="h264")
+            return SourceClockIdentity(sourceSha256=__import__("hashlib").sha256(path.read_bytes()).hexdigest(),
+                byteSize=path.stat().st_size, codec="h264",frameCount=25,nominalFps=25)
 
     video = tmp_path / "clip.mp4"
     weights = tmp_path / "model.pt"

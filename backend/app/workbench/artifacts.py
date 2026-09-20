@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from pathlib import Path
 from typing import Any
 
@@ -24,10 +25,17 @@ class ArtifactStore:
         return digest
 
     def get(self, digest: str, *, namespace: str) -> bytes:
+        if not re.fullmatch(r"[a-f0-9]{64}", digest) or not re.fullmatch(r"[A-Za-z0-9_-]+", namespace):
+            raise ValueError("Invalid artifact identity or namespace")
         path = self.root / namespace / digest
+        if path.parent.is_symlink() or path.is_symlink():
+            raise ValueError("Artifact symlink is not a verified hit")
         if not path.exists():
             raise KeyError(digest)
-        return path.read_bytes()
+        payload = path.read_bytes()
+        if hashlib.sha256(payload).hexdigest() != digest:
+            raise ValueError("Artifact digest mismatch")
+        return payload
 
     def restore_to(self, destination: Path) -> Path:
         dest = Path(destination)

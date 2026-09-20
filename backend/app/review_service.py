@@ -337,6 +337,8 @@ class ReviewService:
                 # Trusted post-perception input from the processor; only valid
                 # for the initial uncalibrated publication at this configuration.
                 options["prepared_frames"] = prepared_frames
+            if reason == "processing":
+                options["new_observations"] = True
             output = self._materialize(match_id, effective_config, commands, **options)
             calibration = self.storage.calibration_revision(match_id)
             ref = self.storage.publish_generation(
@@ -350,6 +352,7 @@ class ReviewService:
                 expected_parent=current.generationId if current else None, include_pending_commands=True,
                 identity_context=output["identityContext"],
                 accepted_match_state=output["acceptedMatchState"],
+                observation_inputs=output.get("observationInputs"),
             )
             return ref, output
 
@@ -371,13 +374,23 @@ class ReviewService:
                 match_id, previous if isinstance(previous, dict) else None
             )
 
-    def _materialize(
-        self,
-        match_id: str,
-        config: MatchConfig,
-        commands: list[Correction],
-        *, team_clusters=None, match_state_evidence=None, prepared_frames=None,
-    ) -> dict:
+    def _materialize(self, match_id: str, config: MatchConfig, commands: list[Correction],
+                     *, team_clusters=None, match_state_evidence=None, prepared_frames=None,
+                     new_observations=False) -> dict:
+        from .observation_inputs import observation_snapshot
+        with observation_snapshot(self.storage, match_id, new_observations=new_observations) as (payload, record):
+            output = self._materialize_inputs(match_id, config, commands,
+                team_clusters=team_clusters, match_state_evidence=match_state_evidence,
+                prepared_frames=prepared_frames, observation_payload=payload)
+            if output["identityContext"]["observationDigest"] != record["observations"]["sha256"]:
+                from .observation_inputs import refused
+                refused("OBSERVATIONS_CHANGED_DURING_MATERIALIZATION")
+            output["observationInputs"] = record
+            return output
+
+    def _materialize_inputs(self, match_id: str, config: MatchConfig, commands: list[Correction],
+                            *, team_clusters=None, match_state_evidence=None, prepared_frames=None,
+                            observation_payload=None) -> dict:
         match = self.storage.get_match(match_id)
         if match.inputMode == "video":
             if prepared_frames is not None:
@@ -393,23 +406,11 @@ class ReviewService:
                     frame.geometryAvailable = False
                     frame.coordinateProvenance = provenance
             else:
-                frames, requires_selection = load_video_source_frames(self.storage, match_id, config=config, team_clusters=team_clusters)
+                frames, requires_selection = load_video_source_frames(self.storage, match_id, config=config, team_clusters=team_clusters, source_rows=observation_payload)
         else:
             requires_selection = False
             from .coordinates import import_tracking, project_tracking
-            source_path = self.storage.get_match_input_path(match_id)
-            base_path = self.storage._match_dir(match_id) / "review_base_frames.json"
-            payload = self.storage._read_json(source_path)
-            if not payload and base_path.exists():
-                payload = self.storage._read_json(base_path)
-            elif not payload:
-                try:
-                    frames = self.storage.load_frames(match_id)
-                except FileNotFoundError:
-                    frames = []
-                payload = [frame.model_dump(mode="json") for frame in frames]
-                if frames:
-                    self.storage._write_json(base_path, payload)
+            payload = observation_payload
             frames, convention, migration = import_tracking(payload, convention=config.coordinateConvention)
             calibration = self.storage.calibration_revision(match_id)
             if calibration is not None and calibration.sourceSha256 != self.storage.source_sha256(match_id):
