@@ -1,0 +1,79 @@
+name: C03 exact source publication
+on:
+  push:
+    branches: [agent/c03-integration]
+    paths: ['.github/workflows/c03-publish.yml']
+permissions:
+  contents: read
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/agent/c03-integration'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    env:
+      EXPECTED_MAIN: 312cb5a77718830948378ccbcb577b9539b9aed1
+      EXPECTED_TREE: e4e630859aaeab38ee2a704369c0342113e63178
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify the exact C03 candidate before a branch-only publication
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/agent/c03-integration
+          test "$(git rev-parse HEAD^)" = "$EXPECTED_MAIN"
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$EXPECTED_MAIN"
+          test "$(git ls-remote origin refs/heads/agent/c03-integration | cut -f1)" = "$GITHUB_SHA"
+          python - <<'PY'
+          import base64, hashlib, json, lzma, os, subprocess
+          from pathlib import Path
+          root = Path('.c03-transport')
+          manifest = json.loads((root / 'manifest.json').read_text())
+          assert manifest['base'] == os.environ['EXPECTED_MAIN']
+          assert manifest['tree'] == os.environ['EXPECTED_TREE']
+          names = [f'part-{i:02d}.txt' for i in range(8)]
+          assert list(manifest['parts']) == names
+          parts = []
+          for name in names:
+              data = (root / name).read_bytes()
+              assert len(data) <= 8000
+              assert hashlib.sha256(data).hexdigest() == manifest['parts'][name]
+              parts.append(data)
+          compressed = base64.b64decode(b''.join(parts), validate=True)
+          assert hashlib.sha256(compressed).hexdigest() == manifest['compressedSha256']
+          decoder = lzma.LZMADecompressor(memlimit=100 * 1024 * 1024)
+          patch = decoder.decompress(compressed, max_length=1024 * 1024)
+          assert decoder.eof and not decoder.unused_data
+          assert len(patch) == manifest['patchBytes'] == 211076
+          assert hashlib.sha256(patch).hexdigest() == manifest['patchSha256']
+          path = Path(os.environ['RUNNER_TEMP']) / 'c03.patch'
+          path.write_bytes(patch)
+          subprocess.run(['git', 'apply', '--check', str(path)], check=True)
+          subprocess.run(['git', 'apply', '--index', str(path)], check=True)
+          changed = subprocess.check_output(['git', 'diff', '--cached', '--name-only'], text=True).splitlines()
+          assert set(changed) == set(manifest['files'])
+          for name, digest in manifest['files'].items():
+              source = Path(name)
+              assert not source.is_symlink()
+              assert hashlib.sha256(source.read_bytes()).hexdigest() == digest, name
+          subprocess.run(['git', 'rm', '-r', '.c03-transport'], check=True)
+          subprocess.run(['git', 'diff', '--cached', '--check'], check=True)
+          # The Actions token does not modify workflow files. The authorized
+          # connector removes this unchanged, branch-only publisher afterward.
+          tree = subprocess.check_output(['git', 'write-tree'], text=True).strip()
+          env = dict(os.environ, GIT_INDEX_FILE=str(Path(os.environ['RUNNER_TEMP']) / 'product.index'))
+          subprocess.run(['git', 'read-tree', tree], env=env, check=True)
+          subprocess.run(['git', 'update-index', '--force-remove', '.github/workflows/c03-publish.yml'], env=env, check=True)
+          product_tree = subprocess.check_output(['git', 'write-tree'], env=env, text=True).strip()
+          assert product_tree == manifest['tree'], product_tree
+          print('Verified complete product tree:', product_tree)
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'C03 R05 R06: generation-bound reports and exhaustive evidence validation' -m 'Exact candidate tree e4e630859aaeab38ee2a704369c0342113e63178 and all 37 source/test hashes verified. Includes four new accepted-state/assignment consistency regressions. Full locked-profile CI is still required. No main merge, deployment, provider or paid/GPU execution.'
+          test "$(git ls-remote origin refs/heads/agent/c03-integration | cut -f1)" = "$GITHUB_SHA"
+          git push origin HEAD:refs/heads/agent/c03-integration
+          echo "Published source $(git rev-parse HEAD); product tree $EXPECTED_TREE" >> "$GITHUB_STEP_SUMMARY"
