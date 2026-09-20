@@ -1,3 +1,4 @@
+import type { CostSummary } from '../utils/costs';
 import { useEffect, useState } from 'react';
 
 import MetricInspector from './MetricInspector';
@@ -149,20 +150,24 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
     experimental_ui?: boolean;
     embeddings_search?: boolean;
   } | null>(null);
-  const [jobCost, setJobCost] = useState<{ reservedTotal: number } | null>(null);
+  const [storedJobCost, setJobCost] = useState<{ sourceJobId: string; summary: CostSummary } | null>(null);
+  const jobCost = storedJobCost && storedJobCost.sourceJobId === jobId ? storedJobCost.summary : null;
   const [libraryQuery, setLibraryQuery] = useState('');
   const [libraryHits, setLibraryHits] = useState<Array<{ id: string; title?: string }>>([]);
   const [playersLimited, setPlayersLimited] = useState(false);
   const [metricInspect, setMetricInspect] = useState<MetricInspect | null>(null);
   const [drills, setDrills] = useState<Array<{ name: string; coachReviewed?: boolean }>>([]);
-  const [jobView, setJobView] = useState<{
+  const [storedJobView, setJobView] = useState<{
+    sourceJobId: string;
     status?: string;
     durablePhase?: string | null;
     costReserved?: number;
-    costActual?: number;
+    costActual?: number | null;
+    costSummary?: CostSummary;
     cleanupResult?: string;
     cancelRequested?: boolean;
   } | null>(null);
+  const jobView = storedJobView?.sourceJobId === jobId ? storedJobView : null;
   const [clock, setClock] = useState<{ presentationTimeSeconds: number; matchClockSeconds: number } | null>(null);
   const [incident, setIncident] = useState<{
     touchStart: number;
@@ -520,7 +525,7 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
     fetchJobCost(jobId)
       .then((payload) => {
         if (!cancelled && typeof payload.reservedTotal === 'number') {
-          setJobCost(payload);
+          setJobCost({ sourceJobId: jobId, summary: payload });
         }
       })
       .catch(() => {
@@ -529,7 +534,7 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
     fetchJobView(jobId)
       .then((payload) => {
         if (!cancelled && (typeof payload.status === 'string' || typeof payload.durablePhase === 'string')) {
-          setJobView(payload);
+          setJobView({ ...payload, sourceJobId: jobId });
         }
       })
       .catch(() => {
@@ -858,8 +863,9 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
               <div className="rounded-lg border border-slate-700 p-3 space-y-2">
                 <OperationsView
                   phase={jobView?.durablePhase ?? jobView?.status ?? 'submitted'}
-                  estimatedCost={jobCost?.reservedTotal ?? jobView?.costReserved ?? 0}
-                  actualCost={jobView?.costActual ?? 0}
+                  cost={jobView?.costSummary ?? jobCost}
+                  estimatedCost={jobView?.costSummary?.reservedTotal ?? jobCost?.reservedTotal ?? jobView?.costReserved ?? null}
+                  actualCost={jobView?.costActual ?? null}
                   retries={0}
                   cleanupResult={jobView?.cleanupResult ?? 'unknown'}
                   cancelRequested={Boolean(jobView?.cancelRequested)}
@@ -873,7 +879,7 @@ export default function WorkbenchPanel({ onClose, matchId, jobId, events = [], o
                 {flags && flags.embeddings_search === false && (
                   <p className="text-xs text-slate-400">embeddings search: shadowed</p>
                 )}
-                {jobCost && <p className="text-xs text-slate-300">Live job cost reserved {jobCost.reservedTotal}</p>}
+                {jobCost && <p className="text-xs text-slate-300">Live job cost reserved {(jobView?.costSummary ?? jobCost).reservedTotal}</p>}
               </div>
               <div className="rounded-lg border border-slate-700 p-3 space-y-2">
                 <h4 className="text-xs uppercase tracking-wide text-slate-500">Match library</h4>

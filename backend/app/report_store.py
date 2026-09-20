@@ -26,12 +26,16 @@ class StaleReportPolicy(StaleGeneration):
 
 
 def policy_revision(match, settings) -> str:
+    from dataclasses import asdict
+    spend_policy = getattr(settings, "provider_spend_policy", None)
     return digest({"rights": match.config.rights.model_dump(mode="json"),
                    "preferredProvider": match.config.llmProvider,
                    "homeTeam": match.config.homeTeam, "awayTeam": match.config.awayTeam,
                    "updatedAt": match.updatedAt.isoformat(),
                    "cloudEnabled": settings.cloud_provider_enabled,
-                   "model": settings.cloud_model_id, "allowedModels": sorted(settings.allowed_model_ids)})
+                   "model": settings.cloud_model_id, "allowedModels": sorted(settings.allowed_model_ids),
+                   "spendPolicy": asdict(spend_policy) if spend_policy is not None else None,
+                   "callBudget": settings.provider_call_reservation, "totalBudget": settings.provider_budget_limit})
 
 
 def validate_record(document, match_id: str, generation_id: str, task: str) -> None:

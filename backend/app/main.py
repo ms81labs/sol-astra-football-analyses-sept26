@@ -146,8 +146,6 @@ from .workbench.costs import (
     deployment_choice,
     historical_capacity_seconds,
     match_cost,
-    reconcile_spend,
-    reserve_budget,
     scale_scenario,
 )
 from .workbench.benchmarks import experiment_receipt, quality_gate_holds
@@ -803,8 +801,9 @@ def create_app(
         settings,
         adapter_factory=lambda: run_analysis,
         budget_ledger=ProviderBudgetLedger(
-            storage.storage_root / "provider-budget.sqlite3",
+            storage.job_ledger.db_path,
             settings.provider_budget_limit,
+            legacy_path=storage.storage_root / "provider-budget.sqlite3",
         ),
     )
     app.state.provider_gateway = provider_gateway
@@ -1054,6 +1053,10 @@ def create_app(
             raise HTTPException(status_code=403, detail=decision)
         return attach_durable_job_view(job.model_dump(mode="json"), runner.ledger)
 
+    @app.get("/api/matches/{match_id}/cost")
+    def get_match_cost(match: MatchRecord = Depends(require_match)) -> dict:
+        return {"matchId": match.id, **runner.ledger.cost_summary(match_id=match.id)}
+
     @app.get("/api/jobs/{job_id}/cost")
     def get_job_cost(
         job_id: str,
@@ -1103,8 +1106,15 @@ def create_app(
         if not decision["allowed"]:
             raise HTTPException(status_code=403, detail=decision)
         cost = runner.ledger.cost_for(job_id)
-        reserved = reserve_budget(estimate=float(cost.get("reservedTotal") or 0.0))
-        reconcile = reconcile_spend(reserved=float(reserved["reserved"]), actual=float(cost.get("actualTotal") or 0.0))
+        # Compatibility envelopes are views, not a second reservation or an invoice.
+        from .workbench.money import money
+        actual = cost["actualTotal"]
+        exceeded = "BUDGET_BREACH" in cost["reasonCodes"]
+        reserved = {"authorised": False, "reserved": cost["reservedTotal"],
+                    "estimate": cost["reservedTotal"], "currency": cost["currency"]}
+        reconcile = {"reserved": cost["reservedTotal"], "actual": actual,
+                     "variance": None if actual is None else float(money(actual) - money(cost["authorisedBudget"])),
+                     "exceeded": exceeded, "alert": exceeded, "billingComplete": cost["billingComplete"]}
         return {"reserve": reserved, "reconcile": reconcile, "cost": cost}
 
     @app.get("/api/jobs/{job_id}/charges")
@@ -1131,12 +1141,11 @@ def create_app(
         if not decision["allowed"]:
             raise HTTPException(status_code=403, detail=decision)
         view = attach_durable_job_view(job.model_dump(mode="json"), runner.ledger)
-        cost = runner.ledger.cost_for(job_id)
-        incurred = float(cost.get("actualTotal") or 0.0)
-        if incurred == 0.0:
-            incurred = float(cost.get("reservedTotal") or 0.0)
+        cost = view["costSummary"]
         cancelled = bool(view.get("cancelRequested") or job.status == "cancelled")
-        return cancellation_does_not_erase_charges(cancelled=cancelled, incurred=incurred)
+        legacy = cancellation_does_not_erase_charges(cancelled=cancelled, incurred=cost["settledTotal"])
+        return {**legacy, **cost, "costSummary": view["costSummary"],
+                "reasonCodes": sorted(set(legacy["reasonCodes"]) | set(cost["reasonCodes"]))}
 
     @app.post("/api/jobs/{job_id}/cancel")
     def cancel_job(
@@ -1167,6 +1176,7 @@ def create_app(
     @app.post("/api/jobs/{job_id}/retry")
     def retry_job(
         job_id: str,
+        payload: dict | None = None,
         authorization: str | None = Header(default=None),
         x_object_scope: str | None = Header(default=None),
         x_deployment_boundary: str | None = Header(default=None),
@@ -1187,9 +1197,16 @@ def create_app(
         )
         if not decision["allowed"]:
             raise HTTPException(status_code=403, detail=decision)
-        runner.retry(job_id)
-        job = storage.reset_job_for_retry(job_id)
-        runner.start(job_id)
+        anchor = (payload or {}).get("retryOfAttemptId")
+        if anchor is not None and (not isinstance(anchor, str) or not anchor or len(anchor) > 128):
+            raise HTTPException(status_code=422, detail="invalid retryOfAttemptId")
+        if runner.ledger.request(job_id).authorisedLocation != "local" and anchor is None:
+            raise ReconciliationRequired("paid retry requires retryOfAttemptId from its receipt")
+        before = runner.ledger.latest_attempt(job_id)
+        attempt = runner.retry(job_id, retry_of_attempt_id=anchor)
+        if attempt.attemptId != before.attemptId and attempt.status == "submitted":
+            job = storage.reset_job_for_retry(job_id)
+            runner.start(job_id)
         return attach_durable_job_view(job.model_dump(mode="json"), runner.ledger)
 
     @app.post("/api/jobs/{job_id}/timeout")
@@ -1419,12 +1436,11 @@ def create_app(
     def post_match_job(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
         body = payload or {}
         request_id = str(body.get("requestId") or uuid.uuid4().hex)
+        from .workbench.money import money
         try:
-            budget = float(body.get("budget") or 0.0)
+            budget = float(money(body.get("budget", 0)))
         except (TypeError, ValueError) as exc:
-            raise HTTPException(status_code=422, detail="budget must be numeric") from exc
-        if not math.isfinite(budget) or budget < 0:
-            raise HTTPException(status_code=422, detail="budget must be finite and non-negative")
+            raise HTTPException(status_code=422, detail="budget must be a finite non-negative money amount, not a boolean or null") from exc
         if runner.settings.processing_backend == "daytona" and budget <= 0:
             raise HTTPException(
                 status_code=422,
@@ -1460,6 +1476,9 @@ def create_app(
             "status": job.status,
             "attemptId": attempt.attemptId,
             "costReserved": float(attempt.reservedCost),
+            "costActual": view["costActual"],
+            "costSummary": view["costSummary"],
+            **view["costSummary"],
             "reused": not created,
             "cancelRequested": view["cancelRequested"],
             "terminated": view["terminated"],
@@ -1887,7 +1906,7 @@ def create_app(
                 requested_provider=body.get("provider"),
                 body=body,
             )
-        except (StaleGeneration, GenerationRecoveryRequired):
+        except DomainError:
             raise
         except ProviderDenied as exc:
             raise HTTPException(status_code=403, detail={"reasonCodes": exc.reason_codes}) from exc

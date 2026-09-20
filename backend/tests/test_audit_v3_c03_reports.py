@@ -230,13 +230,15 @@ def test_v3t27_blocking_provider_keeps_incurred_reservation_and_never_overwrites
     config=storage.get_match(mid).config.model_copy(deep=True)
     config.rights.cloudPermission=True; config.rights.processingScope='local_plus_burst'
     storage.update_match_config(mid,config)
-    settings=ProcessingSettings(cloud_provider_enabled=True,cloud_provider_api_key='test-only',
+    from backend.tests.provider_billing_fixtures import fake_spend_policy
+    settings=ProcessingSettings(provider_spend_policy=fake_spend_policy(),cloud_provider_enabled=True,cloud_provider_api_key='test-only',
         cloud_model_id='test-model',allowed_model_ids=('test-model',),provider_call_reservation=0.25,provider_budget_limit=2.0)
     entered=threading.Event(); release=threading.Event(); calls=[]
     def adapter(*a,**kw):
         calls.append(kw); entered.set()
         assert release.wait(10),'test barrier was not released'
         return _interprets(*a,**kw)
+    adapter.billing_contract_id = 'synthetic-byte-token-v1'
     gateway=_gateway(storage,adapter,settings)
     with ThreadPoolExecutor(max_workers=1) as pool:
         future=pool.submit(gateway.execute,mid,'tactical_report',requested_provider='cloud',body={'requireProvider':True})

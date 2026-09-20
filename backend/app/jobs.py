@@ -73,10 +73,11 @@ class JobRunner:
     def receipt(self, job_id: str) -> JobPhase:
         return self.ledger.receipt(job_id)
 
-    def retry(self, job_id: str) -> JobAttempt:
+    def retry(self, job_id: str, *, retry_of_attempt_id: str | None = None) -> JobAttempt:
         return self.ledger.admit(
             self.ledger.request(job_id),
             mode="retry",
+            retry_of_attempt_id=retry_of_attempt_id,
             owner_id=f"job:{job_id}",
             lease_seconds=60.0,
         )
@@ -87,6 +88,8 @@ class JobRunner:
 
     def start(self, job_id: str) -> None:
         self._ensure_admitted(job_id)
+        if not self.ledger.claim_dispatch(job_id, owner_id=f"job:{job_id}"):
+            return
         try:
             self._dispatch(job_id)
         except JobDispatchError as exc:
@@ -100,6 +103,7 @@ class JobRunner:
                     owner_id=f"job:{job_id}",
                     status="failed",
                     error="dispatch_failed",
+                    noChargeReason="NO_DISPATCH_CONFIRMED",
                 )
             raise
 

@@ -15,7 +15,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
-from pydantic import Field
+from pydantic import Field, field_validator
+
+from .money import ZERO, money, text, total
+from .billing import AttemptBilling, CostSummary
 
 from .errors import (
     BudgetExhausted,
@@ -64,7 +67,17 @@ class JobRequest(StrictModel):
     modelHash: str
     outputSchema: str
     budget: float = Field(ge=0, allow_inf_nan=False)
-    authorisedLocation: Literal["local", "daytona"]
+    authorisedLocation: Literal["local", "daytona", "cloud"]
+    currency: str = Field(default="USD", pattern=r"^[A-Z]{3}$")
+    scope: Literal["job", "provider"] = "job"
+    providerTask: str | None = None
+    executionBound: dict[str, Any] | None = None
+
+    @field_validator("budget", mode="before")
+    @classmethod
+    def exact_budget(cls, value):
+        money(value)
+        return value
     fallbackPolicy: str = "cpu_local"
     pixelFormat: str = "bgr24"
     precision: str = "fp32"
@@ -79,7 +92,7 @@ class JobAttempt(StrictModel):
     selectedBackend: str | None = None
     actualHardware: str | None = None
     reservedCost: float = 0.0
-    actualCost: float | None = None
+    actualCost: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     cleanupResult: Literal["confirmed", "failed", "not_required", "unknown"] = "not_required"
     error: str | None = None
     sequence: int = 1
@@ -87,6 +100,8 @@ class JobAttempt(StrictModel):
     leaseExpiresAt: float | None = None
     revision: int = 0
     reconciled: bool = False
+    # None means legacy dispatch provenance was not established.
+    dispatchStarted: bool | None = None
 
 
 class CostEntry(StrictModel):
@@ -143,7 +158,11 @@ class DurableJobLedger:
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._ensure_schema()
+        with self._transaction() as connection:
+            if "amount_exact" not in {r["name"] for r in connection.execute("PRAGMA table_info(job_charges)")}:
+                connection.execute("ALTER TABLE job_charges ADD COLUMN amount_exact TEXT")
         self._migrate_legacy_once()
+        self._migrate_billing_evidence()
 
     def _open_connection(self) -> sqlite3.Connection:
         connection = sqlite3.connect(str(self.db_path), check_same_thread=False, timeout=30.0)
@@ -227,6 +246,30 @@ class DurableJobLedger:
                     amount REAL,
                     recorded_at TEXT NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS job_billing_events (
+                    sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                    event_id TEXT NOT NULL UNIQUE,
+                    request_id TEXT NOT NULL REFERENCES job_requests(request_id),
+                    attempt_id TEXT NOT NULL REFERENCES job_attempts(attempt_id),
+                    state TEXT NOT NULL CHECK(state IN ('final','partial','unknown')),
+                    total_exact TEXT,
+                    reason TEXT NOT NULL,
+                    evidence_json TEXT NOT NULL,
+                    recorded_at TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS billing_by_attempt ON job_billing_events(attempt_id, sequence);
+                CREATE INDEX IF NOT EXISTS charges_by_request ON job_charges(request_id, attempt_id);
+                CREATE TABLE IF NOT EXISTS job_billing_migrations (
+                    key TEXT PRIMARY KEY, receipt_json TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS job_charge_receipts (
+                receipt_id TEXT PRIMARY KEY,
+                payload_json TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS provider_results (
+                    request_id TEXT PRIMARY KEY REFERENCES job_requests(request_id),
+                    response_json TEXT NOT NULL
+                );
                 CREATE TABLE IF NOT EXISTS job_cancels (
                     request_id TEXT PRIMARY KEY REFERENCES job_requests(request_id),
                     requested_at TEXT NOT NULL,
@@ -236,6 +279,39 @@ class DurableJobLedger:
                 );
                 """
             )
+
+    def _migrate_billing_evidence(self) -> None:
+        """One startup migration. Preserve old payloads/charges; never infer zero."""
+        with self._transaction() as connection:
+            columns = {row["name"] for row in connection.execute("PRAGMA table_info(job_charges)")}
+            if "amount_exact" not in columns:
+                connection.execute("ALTER TABLE job_charges ADD COLUMN amount_exact TEXT")
+            if connection.execute("SELECT 1 FROM job_billing_migrations WHERE key='billing-v2'").fetchone():
+                return
+            count = 0
+            for row in connection.execute("SELECT * FROM job_attempts"):
+                attempt = self._attempt_from_row(row)
+                if connection.execute("SELECT 1 FROM job_billing_events WHERE attempt_id=?", (attempt.attemptId,)).fetchone():
+                    continue
+                request = JobRequest.model_validate_json(connection.execute(
+                    "SELECT payload_json FROM job_requests WHERE request_id=?", (attempt.requestId,)
+                ).fetchone()["payload_json"])
+                # Old remote reconciliation coerced an absent invoice to zero. Such
+                # zero payloads cannot prove a no-charge outcome, even if reconciled.
+                # Positive recorded actuals keep the historical invoice contract;
+                # explicitly local execution remains positively non-billable.
+                final = (attempt.actualCost is not None
+                         and (money(attempt.actualCost) > ZERO or request.authorisedLocation == "local")
+                         and attempt.status in {"complete", "failed", "cancelled"}
+                         and money(attempt.actualCost) == self._attempt_charge_total(connection, attempt.attemptId, "settled"))
+                self._billing_event(connection, attempt,
+                    state="final" if final else "unknown",
+                    amount=None if not final else money(attempt.actualCost),
+                    event_id="migration-v2:" + attempt.attemptId,
+                    reason="LEGACY_EXPLICIT_FINAL_INVOICE" if final else "LEGACY_BILLING_UNVERIFIED")
+                count += 1
+            connection.execute("INSERT INTO job_billing_migrations VALUES ('billing-v2', ?)",
+                (json.dumps({"schemaVersion": 2, "attempts": count, "originalRowsPreserved": True}),))
 
     def _migrate_legacy_once(self) -> None:
         with self._transaction() as connection:
@@ -334,36 +410,26 @@ class DurableJobLedger:
     def attempts(self) -> dict[str, list[JobAttempt]]:
         result: dict[str, list[JobAttempt]] = {}
         with self._connect() as connection:
+            connection.execute("BEGIN")
             for row in connection.execute(
                 "SELECT request_id, payload_json FROM job_attempts ORDER BY request_id, sequence"
             ):
-                result.setdefault(row["request_id"], []).append(
-                    JobAttempt.model_validate_json(row["payload_json"])
-                )
+                result.setdefault(row["request_id"], []).append(self._attempt_view(connection, row))
         return result
 
     @property
     def costs(self) -> list[CostEntry]:
         with self._connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT a.request_id, a.attempt_id,
-                       COALESCE(SUM(CASE WHEN c.kind='reserved' THEN c.amount ELSE 0 END), 0) reserved,
-                       SUM(CASE WHEN c.kind='settled' THEN c.amount END) actual
-                FROM job_attempts a LEFT JOIN job_charges c ON c.attempt_id=a.attempt_id
-                GROUP BY a.request_id, a.attempt_id ORDER BY a.request_id, a.sequence
-                """
-            ).fetchall()
-        return [
-            CostEntry(
-                requestId=row["request_id"],
-                attemptId=row["attempt_id"],
-                reserved=float(row["reserved"]),
-                actual=None if row["actual"] is None else float(row["actual"]),
-                scope="job",
-            )
-            for row in rows
-        ]
+            connection.execute("BEGIN")
+            result = []
+            for row in connection.execute("SELECT * FROM job_attempts ORDER BY request_id, sequence"):
+                attempt = self._attempt_from_row(row)
+                state = self._billing_state(connection, attempt)
+                result.append(CostEntry(requestId=attempt.requestId, attemptId=attempt.attemptId,
+                    reserved=float(state.outstanding + state.unsettled),
+                    actual=float(state.settled) if state.complete else None, scope="job"))
+            return result
+
 
     @property
     def cancel_flags(self) -> set[str]:
@@ -387,10 +453,11 @@ class DurableJobLedger:
 
     def latest_attempt(self, request_id: str) -> JobAttempt:
         with self._connect() as connection:
+            connection.execute("BEGIN")
             row = self._latest_attempt_row(connection, request_id)
-        if row is None:
-            raise KeyError(request_id)
-        return self._attempt_from_row(row)
+            if row is None:
+                raise KeyError(request_id)
+            return self._attempt_view(connection, row)
 
     def admit(
         self,
@@ -399,6 +466,9 @@ class DurableJobLedger:
         mode: Literal["submit", "retry"],
         owner_id: str,
         lease_seconds: float,
+        reservation: float | None = None,
+        group_limit: float | None = None,
+        retry_of_attempt_id: str | None = None,
     ) -> JobAttempt:
         payload = _canonical_request_json(request)
         payload_sha = _payload_sha256(payload)
@@ -409,6 +479,8 @@ class DurableJobLedger:
                 "SELECT * FROM job_requests WHERE request_id=?", (request.requestId,)
             ).fetchone()
             if request_row is None:
+                if mode == "retry":
+                    raise ReconciliationRequired("retry requires an existing logical request")
                 connection.execute(
                     "INSERT INTO job_requests VALUES (?, ?, ?, ?, 0, ?)",
                     (request.requestId, payload, payload_sha, request.budget, now),
@@ -416,11 +488,29 @@ class DurableJobLedger:
                 latest = None
                 sequence = 1
             else:
-                if request_row["payload_sha256"] != payload_sha:
+                if _canonical_request_json(JobRequest.model_validate_json(request_row["payload_json"])) != payload:
                     raise IdempotencyConflict(request.requestId)
                 latest_row = self._latest_attempt_row(connection, request.requestId)
                 latest = None if latest_row is None else self._attempt_from_row(latest_row)
                 sequence = 1 if latest is None else latest.sequence + 1
+                if retry_of_attempt_id is not None:
+                    if mode != "retry":
+                        raise ReconciliationRequired("retry anchor requires explicit retry mode")
+                    anchor_row = connection.execute(
+                        "SELECT * FROM job_attempts WHERE attempt_id=? AND request_id=?",
+                        (retry_of_attempt_id, request.requestId),
+                    ).fetchone()
+                    if anchor_row is None:
+                        raise ReconciliationRequired("retry anchor does not belong to this request")
+                    anchor = self._attempt_from_row(anchor_row)
+                    if latest is not None and latest.sequence > anchor.sequence:
+                        # The same retry request always means the same immediate child,
+                        # including when that child failed or became uncertain later.
+                        child = connection.execute(
+                            "SELECT * FROM job_attempts WHERE request_id=? AND sequence=?",
+                            (request.requestId, anchor.sequence + 1),
+                        ).fetchone()
+                        return self._attempt_view(connection, child)
                 if latest is not None:
                     if latest.status == "outcome_unknown" and not latest.reconciled:
                         raise ReconciliationRequired("reconcile outcome-unknown attempt before retry")
@@ -434,19 +524,44 @@ class DurableJobLedger:
                     )
             if sequence > MAX_ATTEMPTS:
                 raise RetryBudgetExhausted("retry budget exhausted")
+            existing_cost = self._cost_view(connection, request.requestId)
+            if "BUDGET_BREACH" in existing_cost.reasonCodes:
+                raise BudgetExhausted("observed invoice exceeded the authorised budget or reservation")
+            if existing_cost.unsettledAttemptCount:
+                raise ReconciliationRequired("billing reconciliation required before another attempt")
             settled, reserved, unsettled = self._budget_totals(connection, request.requestId)
-            remaining = max(0.0, request.budget - settled - reserved - unsettled)
-            reservation = min(request.budget, remaining)
-            if request.budget > 0 and reservation <= 0:
+            remaining = max(ZERO, money(request.budget) - settled - reserved - unsettled)
+            reservation = remaining if reservation is None else money(reservation)
+            if reservation > remaining or (request.budget > 0 and reservation <= ZERO):
                 raise BudgetExhausted("authorised budget exhausted")
+            if request.authorisedLocation != "local":
+                # An observed overrun must not be escaped by choosing a new request ID.
+                # Free local work and existing idempotent receipts remain usable.
+                for item in connection.execute("SELECT request_id, payload_json FROM job_requests"):
+                    other = JobRequest.model_validate_json(item["payload_json"])
+                    if other.currency == request.currency and "BUDGET_BREACH" in self._cost_view(connection, other.requestId).reasonCodes:
+                        raise BudgetExhausted("billing reconciliation required after an observed budget breach")
+            if group_limit is not None:
+                limit = money(group_limit)
+                consumed = ZERO
+                for item in connection.execute("SELECT request_id, payload_json FROM job_requests"):
+                    other = JobRequest.model_validate_json(item["payload_json"])
+                    if other.scope == request.scope and other.currency == request.currency:
+                        view = self._cost_view(connection, other.requestId)
+                        if "BUDGET_BREACH" in view.reasonCodes or "UNBOUNDED_EXPOSURE" in view.reasonCodes:
+                            raise BudgetExhausted("group has unresolved unbounded exposure or a budget breach")
+                        consumed = total((consumed, total(self._budget_totals(connection, other.requestId))))
+                if consumed + reservation > limit:
+                    raise BudgetExhausted("shared provider budget exhausted")
             attempt = JobAttempt(
                 attemptId=str(uuid.uuid4()),
                 requestId=request.requestId,
                 status="submitted",
-                reservedCost=reservation,
+                reservedCost=float(reservation),
                 sequence=sequence,
                 ownerId=owner_id,
                 leaseExpiresAt=now_epoch + max(0.0, lease_seconds),
+                dispatchStarted=False,
             )
             self._insert_attempt(connection, attempt, now)
             self._insert_charge(connection, request.requestId, attempt.attemptId, "reserved", reservation)
@@ -463,79 +578,106 @@ class DurableJobLedger:
             lease_seconds=60.0,
         )
 
-    def transition(
-        self,
-        attempt_id: str,
-        *,
-        expected_revision: int,
-        owner_id: str,
-        status: JobStatus,
-        **updates: Any,
-    ) -> JobAttempt:
-        now_epoch = time.time()
+    def claim_dispatch(self, request_id: str, *, owner_id: str, phase: Literal["validating", "running"] = "validating") -> bool:
+        """Atomically claim a new dispatch; cancellation is checked in the same transaction."""
         with self._transaction() as connection:
-            row = self._attempt_or_latest_row(connection, attempt_id)
-            current = self._attempt_from_row(row)
-            if current.revision != expected_revision:
-                raise StaleTransition(expected=expected_revision, actual=current.revision)
-            if (
-                current.ownerId is not None
-                and owner_id != current.ownerId
-                and (current.leaseExpiresAt is None or current.leaseExpiresAt >= now_epoch)
-            ):
-                raise NotOwner("attempt lease belongs to another owner")
-            if current.status == "outcome_unknown" and status != "outcome_unknown":
-                raise ReconciliationRequired("reconcile outcome-unknown attempt before transition")
-            if self._cancel_requested(connection, current.requestId) and status not in {
-                "cancelled",
-                "cancelling",
-                "outcome_unknown",
-            }:
-                status = "cancelling"
-            updated = current.model_copy(
-                update={
-                    "status": status,
-                    "ownerId": owner_id,
-                    "revision": current.revision + 1,
-                    **updates,
-                }
+            current = self._attempt_from_row(self._attempt_or_latest_row(connection, request_id))
+            if current.dispatchStarted is not False:
+                return False
+            if self._cancel_requested(connection, request_id):
+                if current.status in {"submitted", "cancelling"}:
+                    self._transition(connection, current.attemptId, expected_revision=current.revision,
+                        owner_id=owner_id, status="cancelled", noChargeReason="NO_DISPATCH_CONFIRMED")
+                return False
+            if current.status != "submitted":
+                return False
+            self._transition(connection, current.attemptId, expected_revision=current.revision,
+                             owner_id=owner_id, status=phase)
+            return True
+
+    def transition(self, attempt_id: str, *, expected_revision: int, owner_id: str,
+                   status: JobStatus, **updates: Any) -> JobAttempt:
+        with self._transaction() as connection:
+            return self._transition(connection, attempt_id, expected_revision=expected_revision,
+                owner_id=owner_id, status=status, **updates)
+
+    def _transition(self, connection, attempt_id, *, expected_revision, owner_id, status, **updates):
+        now_epoch = time.time()
+        row = self._attempt_or_latest_row(connection, attempt_id)
+        current = self._attempt_from_row(row)
+        if current.revision != expected_revision:
+            raise StaleTransition(expected=expected_revision, actual=current.revision)
+        if (
+            current.ownerId is not None
+            and owner_id != current.ownerId
+            and (current.leaseExpiresAt is None or current.leaseExpiresAt >= now_epoch)
+        ):
+            raise NotOwner("attempt lease belongs to another owner")
+        if current.status == "outcome_unknown" and status != "outcome_unknown":
+            raise ReconciliationRequired("reconcile outcome-unknown attempt before transition")
+        if current.status in {"complete", "failed", "cancelled"} and status not in {
+            current.status, "outcome_unknown"
+        }:
+            raise ReconciliationRequired("terminal execution cannot be restarted by transition")
+        if current.status not in {"complete", "failed", "cancelled"} and self._cancel_requested(connection, current.requestId) and status not in {
+            "cancelled",
+            "cancelling",
+            "outcome_unknown",
+        }:
+            status = "cancelling"
+        no_charge_reason = updates.pop("noChargeReason", None)
+        updates.pop("dispatchStarted", None)  # Server-owned dispatch evidence.
+        if status in (_RUNNING_STATUSES - {"cancelling"}) | {"outcome_unknown"}:
+            updates["dispatchStarted"] = True
+        actual = updates.get("actualCost")
+        if actual is not None:
+            money(actual)
+        if status == "outcome_unknown":
+            updates.update(actualCost=None, reconciled=False)
+        updated = current.model_copy(
+            update={
+                "status": status,
+                "ownerId": owner_id,
+                "revision": current.revision + 1,
+                **updates,
+            }
+        )
+        if status == "outcome_unknown" and current.status != "outcome_unknown":
+            self._mark_unsettled(connection, updated)
+        elif status in {"complete", "failed", "cancelled"} and current.status not in {"complete", "failed", "cancelled"}:
+            self._settle_attempt(connection, updated, updates.get("actualCost"),
+                                 no_charge_reason=no_charge_reason)
+        if status in {"complete", "failed", "cancelled", "outcome_unknown"}:
+            billed = self._billing_state(connection, updated)
+            updated = updated.model_copy(update={"actualCost": float(billed.settled) if billed.complete else None})
+        cursor = connection.execute(
+            """
+            UPDATE job_attempts
+            SET status=?, owner_id=?, lease_expires_at=?, revision=?, reconciled=?,
+                payload_json=?, updated_at=?
+            WHERE attempt_id=? AND revision=?
+            """,
+            (
+                updated.status,
+                updated.ownerId,
+                updated.leaseExpiresAt,
+                updated.revision,
+                int(updated.reconciled),
+                updated.model_dump_json(),
+                _now(),
+                current.attemptId,
+                expected_revision,
+            ),
+        )
+        if cursor.rowcount != 1:
+            actual = connection.execute(
+                "SELECT revision FROM job_attempts WHERE attempt_id=?", (current.attemptId,)
+            ).fetchone()
+            raise StaleTransition(
+                expected=expected_revision,
+                actual=int(actual["revision"]),
             )
-            cursor = connection.execute(
-                """
-                UPDATE job_attempts
-                SET status=?, owner_id=?, lease_expires_at=?, revision=?, reconciled=?,
-                    payload_json=?, updated_at=?
-                WHERE attempt_id=? AND revision=?
-                """,
-                (
-                    updated.status,
-                    updated.ownerId,
-                    updated.leaseExpiresAt,
-                    updated.revision,
-                    int(updated.reconciled),
-                    updated.model_dump_json(),
-                    _now(),
-                    current.attemptId,
-                    expected_revision,
-                ),
-            )
-            if cursor.rowcount != 1:
-                actual = connection.execute(
-                    "SELECT revision FROM job_attempts WHERE attempt_id=?", (current.attemptId,)
-                ).fetchone()
-                raise StaleTransition(
-                    expected=expected_revision,
-                    actual=int(actual["revision"]),
-                )
-            if status == "outcome_unknown" and current.status != "outcome_unknown":
-                self._mark_unsettled(connection, updated)
-            elif status in {"complete", "failed", "cancelled"} and current.status not in {
-                "complete",
-                "failed",
-                "cancelled",
-            }:
-                self._settle_attempt(connection, updated, updates.get("actualCost"))
-            return updated
+        return updated
 
     def heartbeat(self, attempt_id: str, *, owner_id: str, lease_seconds: float) -> None:
         with self._transaction() as connection:
@@ -586,87 +728,85 @@ class DurableJobLedger:
                 reclaimed.append(updated)
         return reclaimed
 
-    def reconcile_attempt(
-        self,
-        attempt_id: str,
-        *,
-        provider_outcome: Literal["complete", "failed", "not_found"],
-        settled_cost: float | None,
-    ) -> JobAttempt:
+    def reconcile_attempt(self, attempt_id: str, *, provider_outcome, settled_cost,
+                          billing_complete: bool = True, receipt_id: str | None = None,
+                          no_charge_reason: str | None = None) -> JobAttempt:
+        if provider_outcome not in {"complete", "failed", "not_found"}:
+            raise ValueError("invalid provider outcome")
+        if type(billing_complete) is not bool:
+            raise ValueError("billing_complete must be boolean")
+        if settled_cost is None and no_charge_reason == "PROVIDER_CONFIRMED_NO_CHARGE":
+            settled_cost = ZERO
+        exact = None if settled_cost is None else money(settled_cost)
         with self._transaction() as connection:
-            row = self._attempt_or_latest_row(connection, attempt_id)
-            current = self._attempt_from_row(row)
-            if current.status != "outcome_unknown":
+            current = self._attempt_from_row(self._attempt_or_latest_row(connection, attempt_id))
+            if exact is None:
+                # Execution outcome says nothing about the absent invoice.
+                if not self._billing_state(connection, current).complete:
+                    self._mark_unsettled(connection, current, reason="USAGE_PENDING")
                 return current
-            unsettled = self._attempt_charge_total(connection, current.attemptId, "unsettled")
-            if unsettled:
-                self._insert_charge(
-                    connection, current.requestId, current.attemptId, "unsettled", -unsettled
-                )
-            already_settled = self._attempt_charge_total(
-                connection, current.attemptId, "settled"
-            )
-            cost = already_settled if settled_cost is None else float(settled_cost)
-            additional = cost - already_settled
-            if additional < -1e-9 or additional > unsettled + 1e-9:
-                raise BudgetExhausted("settled cost exceeds reserved amount")
-            if additional > 0:
-                self._insert_charge(
-                    connection, current.requestId, current.attemptId, "settled", additional
-                )
-            if unsettled - additional > 0:
-                self._insert_charge(
-                    connection,
-                    current.requestId,
-                    current.attemptId,
-                    "released",
-                    unsettled - additional,
-                )
-            updated = current.model_copy(
-                update={
-                    "status": "complete" if provider_outcome == "complete" else "failed",
-                    "actualCost": cost,
-                    "reconciled": True,
-                    "revision": current.revision + 1,
-                    "error": None if provider_outcome == "complete" else provider_outcome,
-                }
-            )
-            connection.execute(
-                """
-                UPDATE job_attempts SET status=?, revision=?, reconciled=1, payload_json=?, updated_at=?
-                WHERE attempt_id=?
-                """,
-                (updated.status, updated.revision, updated.model_dump_json(), _now(), current.attemptId),
-            )
+            identity = receipt_id or "legacy-invoice:" + _payload_sha256(json.dumps(
+                [current.attemptId, provider_outcome, text(exact), billing_complete, no_charge_reason]))
+            inserted = self._apply_invoice(connection, current, exact, final=billing_complete,
+                                           receipt_id=identity, reason=no_charge_reason or "PROVIDER_INVOICE")
+            if not inserted:
+                return current  # Historical replay must not clear later uncertainty.
+            updated = current.model_copy(update={
+                "status": ("complete" if provider_outcome == "complete" else "failed") if billing_complete else current.status,
+                "actualCost": float(exact) if billing_complete else None,
+                "reconciled": billing_complete, "revision": current.revision + 1,
+                "error": None if provider_outcome == "complete" else provider_outcome})
+            connection.execute("UPDATE job_attempts SET status=?, revision=?, reconciled=?, payload_json=?, updated_at=? WHERE attempt_id=?",
+                (updated.status, updated.revision, int(updated.reconciled), updated.model_dump_json(), _now(), updated.attemptId))
             return updated
 
-    def record_charge(
-        self,
-        attempt_id: str,
-        *,
-        kind: Literal["reserved", "estimated", "unsettled", "settled", "released"],
-        amount: float | None,
-    ) -> None:
-        if amount is None or amount < 0:
-            raise ValueError("charge amount must be non-negative")
+
+    def record_charge(self, attempt_id: str, *, kind, amount, evidence_id: str | None = None) -> None:
+        exact = money(amount)
+        if kind not in {"reserved", "estimated", "unsettled", "settled", "released"}:
+            raise ValueError("unknown charge kind")
         with self._transaction() as connection:
             row = self._attempt_or_latest_row(connection, attempt_id)
-            request_id = row["request_id"]
+            attempt = self._attempt_from_row(row)
+            if evidence_id is not None:
+                identity = json.dumps([attempt.attemptId, kind, text(exact)])
+                previous = connection.execute("SELECT payload_json FROM job_charge_receipts WHERE receipt_id=?", (evidence_id,)).fetchone()
+                if previous is not None:
+                    if previous["payload_json"] != identity:
+                        raise IdempotencyConflict(evidence_id)
+                    return
+                connection.execute("INSERT INTO job_charge_receipts VALUES (?,?)", (evidence_id, identity))
+            if kind == "settled":
+                # Increment identity is independent of the subsequently accumulated subtotal.
+                # A replay must compare the original input, not recalculate a different invoice.
+                event_id = evidence_id or str(uuid.uuid4())
+                old = connection.execute("SELECT evidence_json FROM job_billing_events WHERE event_id=?", (event_id,)).fetchone()
+                input_evidence = {"increment": text(exact)}
+                if old is not None:
+                    original = json.loads(old["evidence_json"])
+                    if (original.get("attemptId") != attempt.attemptId
+                            or original.get("state") != "partial"
+                            or original.get("reason") != "PARTIAL_INVOICE"
+                            or original.get("input") != input_evidence):
+                        raise IdempotencyConflict(event_id)
+                    return
+                self._apply_invoice(connection, attempt,
+                    total((self._attempt_charge_total(connection, attempt.attemptId, "settled"), exact)),
+                    final=False, receipt_id=event_id, reason="PARTIAL_INVOICE", input_evidence=input_evidence)
+                return
             if kind == "reserved":
-                budget = float(
-                    connection.execute(
-                        "SELECT authorised_budget FROM job_requests WHERE request_id=?",
-                        (request_id,),
-                    ).fetchone()["authorised_budget"]
-                )
-                settled, reserved, unsettled = self._budget_totals(connection, request_id)
-                if amount > budget - settled - reserved - unsettled + 1e-9:
+                request = JobRequest.model_validate_json(connection.execute(
+                    "SELECT payload_json FROM job_requests WHERE request_id=?", (attempt.requestId,)).fetchone()["payload_json"])
+                settled, outstanding, unsettled = self._budget_totals(connection, attempt.requestId)
+                if exact > money(request.budget) - settled - outstanding - unsettled:
                     raise BudgetExhausted("charge exceeds authorised budget")
-            elif kind in {"settled", "unsettled", "released"}:
-                outstanding = self._attempt_outstanding(connection, row["attempt_id"])
-                if amount > outstanding + 1e-9:
-                    raise BudgetExhausted("charge exceeds reserved amount")
-            self._insert_charge(connection, request_id, row["attempt_id"], kind, amount)
+            if kind in {"released", "unsettled"} and exact > self._attempt_outstanding(connection, attempt.attemptId):
+                raise BudgetExhausted("charge exceeds reserved amount")
+            self._insert_charge(connection, attempt.requestId, attempt.attemptId, kind, exact)
+            if kind == "unsettled":
+                self._billing_event(connection, attempt, state="unknown", amount=None,
+                                    event_id=evidence_id or str(uuid.uuid4()), reason="PROVIDER_OUTCOME_UNKNOWN")
+
 
     def timeout_before_response(self, request_id: str, *, owner_id: str) -> JobAttempt:
         attempt = self.latest_attempt(request_id)
@@ -698,60 +838,37 @@ class DurableJobLedger:
 
     def request_cancel(self, request_id: str) -> JobAttempt | None:
         with self._transaction() as connection:
-            connection.execute(
-                """
-                INSERT INTO job_cancels (request_id, requested_at) VALUES (?, ?)
-                ON CONFLICT(request_id) DO NOTHING
-                """,
-                (request_id, _now()),
-            )
             row = self._latest_attempt_row(connection, request_id)
-        if row is None:
-            return None
-        latest = self._attempt_from_row(row)
-        if latest.status in {"complete", "failed", "cancelled", "outcome_unknown"}:
-            return latest
-        return self.transition(
-            latest.attemptId,
-            expected_revision=latest.revision,
-            owner_id=latest.ownerId or "control-plane",
-            status="cancelling",
-        )
+            if row is None:
+                return None
+            latest = self._attempt_from_row(row)
+            connection.execute("INSERT INTO job_cancels (request_id, requested_at) VALUES (?, ?) ON CONFLICT(request_id) DO NOTHING", (request_id, _now()))
+            if latest.status in {"complete", "failed", "cancelled", "outcome_unknown"}:
+                return latest
+            return self._transition(connection, latest.attemptId, expected_revision=latest.revision,
+                                    owner_id=latest.ownerId or "control-plane", status="cancelling")
 
-    def confirm_termination(
-        self, request_id: str, *, owner_id: str, cost_known: bool = True
-    ) -> JobAttempt:
+
+    def confirm_termination(self, request_id: str, *, owner_id: str, cost_known: bool = True) -> JobAttempt:
         with self._transaction() as connection:
-            connection.execute(
-                "UPDATE job_cancels SET termination_confirmed_at=? WHERE request_id=?",
-                (_now(), request_id),
-            )
-            row = self._latest_attempt_row(connection, request_id)
-        attempt = self._attempt_from_row(row)
-        return self.transition(
-            attempt.attemptId,
-            expected_revision=attempt.revision,
-            owner_id=owner_id,
-            status="cancelled" if cost_known else "outcome_unknown",
-            error=None if cost_known else "cancelled_cost_unsettled",
-        )
+            attempt = self._attempt_from_row(self._attempt_or_latest_row(connection, request_id))
+            terminal = attempt.status in {"complete", "failed", "cancelled", "outcome_unknown"}
+            result = self._transition(connection, attempt.attemptId, expected_revision=attempt.revision,
+                owner_id=owner_id, status=attempt.status if terminal else "cancelled" if cost_known else "outcome_unknown",
+                error=attempt.error if terminal else None if cost_known else "cancelled_cost_unsettled")
+            connection.execute("UPDATE job_cancels SET termination_confirmed_at=? WHERE request_id=?", (_now(), request_id))
+            return result
+
 
     def confirm_cleanup(self, request_id: str, *, owner_id: str, ok: bool) -> JobAttempt:
         result = "confirmed" if ok else "failed"
         with self._transaction() as connection:
-            connection.execute(
-                "UPDATE job_cancels SET cleanup_confirmed_at=?, cleanup_result=? WHERE request_id=?",
-                (_now(), result, request_id),
-            )
-            row = self._latest_attempt_row(connection, request_id)
-        current = self._attempt_from_row(row)
-        return self.transition(
-            current.attemptId,
-            expected_revision=current.revision,
-            owner_id=owner_id,
-            status=current.status,
-            cleanupResult=result,
-        )
+            current = self._attempt_from_row(self._attempt_or_latest_row(connection, request_id))
+            updated = self._transition(connection, current.attemptId, expected_revision=current.revision,
+                                       owner_id=owner_id, status=current.status, cleanupResult=result)
+            connection.execute("UPDATE job_cancels SET cleanup_confirmed_at=?, cleanup_result=? WHERE request_id=?", (_now(), result, request_id))
+            return updated
+
 
     @staticmethod
     def _attempt_from_row(row: sqlite3.Row) -> JobAttempt:
@@ -804,42 +921,31 @@ class DurableJobLedger:
         )
 
     @staticmethod
-    def _insert_charge(
-        connection: sqlite3.Connection,
-        request_id: str,
-        attempt_id: str,
-        kind: str,
-        amount: float | None,
-    ) -> None:
+    def _insert_charge(connection, request_id, attempt_id, kind, amount):
+        exact = None if amount is None else money(amount, signed=kind == "unsettled")
         connection.execute(
-            "INSERT INTO job_charges VALUES (?, ?, ?, ?, ?, ?)",
-            (str(uuid.uuid4()), request_id, attempt_id, kind, amount, _now()),
-        )
+            "INSERT INTO job_charges (charge_id,request_id,attempt_id,kind,amount,recorded_at,amount_exact) VALUES (?,?,?,?,?,?,?)",
+            (str(uuid.uuid4()), request_id, attempt_id, kind,
+             None if exact is None else float(exact), _now(), None if exact is None else text(exact)))
+
 
     @staticmethod
-    def _charge_totals(
-        connection: sqlite3.Connection, *, request_id: str | None = None, attempt_id: str | None = None
-    ) -> dict[str, float]:
+    def _charge_totals(connection, *, request_id=None, attempt_id=None):
         clause = "request_id=?" if request_id is not None else "attempt_id=?"
         value = request_id if request_id is not None else attempt_id
-        rows = connection.execute(
-            f"SELECT kind, COALESCE(SUM(amount), 0) total FROM job_charges WHERE {clause} GROUP BY kind",
-            (value,),
-        )
-        totals = {kind: 0.0 for kind in ("reserved", "estimated", "unsettled", "settled", "released")}
-        totals.update({row["kind"]: float(row["total"]) for row in rows})
+        totals = {kind: ZERO for kind in ("reserved", "estimated", "unsettled", "settled", "released")}
+        for row in connection.execute(f"SELECT kind, amount, amount_exact FROM job_charges WHERE {clause}", (value,)):
+            if row["amount"] is not None or row["amount_exact"] is not None:
+                totals[row["kind"]] = total((totals[row["kind"]], money(
+                    row["amount_exact"] if row["amount_exact"] is not None else row["amount"], signed=True)))
         return totals
 
-    def _budget_totals(
-        self, connection: sqlite3.Connection, request_id: str
-    ) -> tuple[float, float, float]:
-        totals = self._charge_totals(connection, request_id=request_id)
-        unsettled = max(0.0, totals["unsettled"])
-        outstanding = max(
-            0.0,
-            totals["reserved"] - totals["settled"] - totals["released"] - unsettled,
-        )
-        return totals["settled"], outstanding, unsettled
+
+    def _budget_totals(self, connection, request_id):
+        states = [self._billing_state(connection, self._attempt_from_row(row)) for row in
+                  connection.execute("SELECT * FROM job_attempts WHERE request_id=?", (request_id,))]
+        return (total(s.settled for s in states), total(s.outstanding for s in states), total(s.unsettled for s in states))
+
 
     def _attempt_charge_total(
         self, connection: sqlite3.Connection, attempt_id: str, kind: str
@@ -849,47 +955,118 @@ class DurableJobLedger:
     def _attempt_outstanding(self, connection: sqlite3.Connection, attempt_id: str) -> float:
         totals = self._charge_totals(connection, attempt_id=attempt_id)
         return max(
-            0.0,
+            ZERO,
             totals["reserved"]
             - totals["settled"]
             - totals["released"]
-            - max(0.0, totals["unsettled"]),
+            - max(ZERO, totals["unsettled"]),
         )
 
-    def _mark_unsettled(self, connection: sqlite3.Connection, attempt: JobAttempt) -> None:
-        outstanding = self._attempt_outstanding(connection, attempt.attemptId)
-        if outstanding:
-            self._insert_charge(
-                connection, attempt.requestId, attempt.attemptId, "unsettled", outstanding
-            )
+    def _mark_unsettled(self, connection, attempt, *, reason="PROVIDER_OUTCOME_UNKNOWN"):
+        totals = self._charge_totals(connection, attempt_id=attempt.attemptId)
+        exposure = max(ZERO, totals["reserved"] - totals["settled"])
+        delta = exposure - totals["unsettled"]
+        if delta:
+            self._insert_charge(connection, attempt.requestId, attempt.attemptId, "unsettled", delta)
+        self._billing_event(connection, attempt, state="unknown", amount=None,
+                            event_id=str(uuid.uuid4()), reason=reason)
 
-    def _settle_attempt(
-        self, connection: sqlite3.Connection, attempt: JobAttempt, actual_cost: Any
-    ) -> None:
-        outstanding = self._attempt_outstanding(connection, attempt.attemptId)
-        already_settled = self._attempt_charge_total(connection, attempt.attemptId, "settled")
-        cost = already_settled if actual_cost is None else float(actual_cost)
-        additional = cost - already_settled
-        if additional < -1e-9 or additional > outstanding + 1e-9:
-            raise BudgetExhausted("settled cost exceeds reserved amount")
-        if additional > 0:
-            self._insert_charge(
-                connection, attempt.requestId, attempt.attemptId, "settled", additional
-            )
-        if outstanding - additional > 0:
-            self._insert_charge(
-                connection,
-                attempt.requestId,
-                attempt.attemptId,
-                "released",
-                outstanding - additional,
-            )
+
+    def _settle_attempt(self, connection, attempt, actual_cost, *, no_charge_reason=None):
+        request = JobRequest.model_validate_json(connection.execute(
+            "SELECT payload_json FROM job_requests WHERE request_id=?", (attempt.requestId,)).fetchone()["payload_json"])
+        already = self._attempt_charge_total(connection, attempt.attemptId, "settled")
+        if actual_cost is None:
+            if no_charge_reason == "NO_DISPATCH_CONFIRMED" and already == ZERO:
+                actual_cost = ZERO
+            elif request.authorisedLocation == "local":
+                # Server-admitted local computation has no metered provider dispatch.
+                # Preserve any separately recorded charge; do not replace it with zero.
+                actual_cost = already
+                no_charge_reason = "LOCAL_NON_BILLABLE" if already == ZERO else "LOCAL_FINAL_SETTLEMENT"
+            else:
+                self._mark_unsettled(connection, attempt, reason="USAGE_PENDING")
+                return
+        self._apply_invoice(connection, attempt, money(actual_cost), final=True,
+                            receipt_id="transition:" + attempt.attemptId + ":" + str(attempt.revision),
+                            reason=no_charge_reason or "EXPLICIT_FINAL_INVOICE")
+
 
     @staticmethod
     def _cancel_requested(connection: sqlite3.Connection, request_id: str) -> bool:
         return connection.execute(
             "SELECT 1 FROM job_cancels WHERE request_id=?", (request_id,)
         ).fetchone() is not None
+
+    def _attempt_view(self, connection, row):
+        attempt = self._attempt_from_row(row)
+        billing = self._billing_state(connection, attempt)
+        return attempt.model_copy(update={"actualCost": float(billing.settled) if billing.complete else None})
+
+    def _billing_state(self, connection, attempt):
+        charges = self._charge_totals(connection, attempt_id=attempt.attemptId)
+        latest = connection.execute("SELECT * FROM job_billing_events WHERE attempt_id=? ORDER BY sequence DESC LIMIT 1", (attempt.attemptId,)).fetchone()
+        final = latest is not None and latest["state"] == "final"
+        uncertain = (latest is not None and latest["state"] in {"partial", "unknown"}) or (
+            not final and attempt.status in {"outcome_unknown", "complete", "failed", "cancelled"})
+        exposure = max(ZERO, charges["reserved"] - charges["settled"])
+        reasons = []
+        if final:
+            outstanding = unsettled = ZERO
+            reasons.append(latest["reason"])
+        elif uncertain:
+            outstanding, unsettled = ZERO, exposure
+            reasons.append(latest["reason"] if latest else "LEGACY_BILLING_UNVERIFIED")
+            if exposure == ZERO:
+                reasons.append("UNBOUNDED_EXPOSURE")
+        else:
+            outstanding, unsettled = exposure, ZERO
+            reasons.append("IN_PROGRESS")
+        if charges["settled"] > charges["reserved"]:
+            reasons.append("BUDGET_BREACH")
+        return AttemptBilling(charges["settled"], outstanding, unsettled, final, uncertain, tuple(reasons))
+
+    def _cost_view(self, connection, request_id):
+        row = connection.execute("SELECT payload_json FROM job_requests WHERE request_id=?", (request_id,)).fetchone()
+        if row is None:
+            raise KeyError(request_id)
+        request = JobRequest.model_validate_json(row["payload_json"])
+        states = [self._billing_state(connection, self._attempt_from_row(r)) for r in
+                  connection.execute("SELECT * FROM job_attempts WHERE request_id=? ORDER BY sequence", (request_id,))]
+        return CostSummary.project(currency=request.currency, budget=money(request.budget), attempts=states)
+
+    def _billing_event(self, connection, attempt, *, state, amount, event_id, reason, input_evidence=None):
+        evidence = json.dumps({"attemptId": attempt.attemptId, "state": state,
+            "total": None if amount is None else text(amount), "reason": reason,
+            **({"input": input_evidence} if input_evidence is not None else {})}, sort_keys=True)
+        old = connection.execute("SELECT evidence_json FROM job_billing_events WHERE event_id=?", (event_id,)).fetchone()
+        if old:
+            if old["evidence_json"] != evidence:
+                raise IdempotencyConflict(event_id)
+            return False
+        connection.execute("INSERT INTO job_billing_events (event_id,request_id,attempt_id,state,total_exact,reason,evidence_json,recorded_at) VALUES (?,?,?,?,?,?,?,?)",
+            (event_id, attempt.requestId, attempt.attemptId, state, None if amount is None else text(amount), reason, evidence, _now()))
+        return True
+
+    def _apply_invoice(self, connection, attempt, amount, *, final, receipt_id, reason, input_evidence=None):
+        # Check the immutable receipt FIRST: replay cannot settle newly discovered uncertainty.
+        if not self._billing_event(connection, attempt, state="final" if final else "partial",
+                                   amount=amount, event_id=receipt_id, reason=reason, input_evidence=input_evidence):
+            return False
+        charges = self._charge_totals(connection, attempt_id=attempt.attemptId)
+        additional = amount - charges["settled"]
+        if additional < ZERO:
+            raise ValueError("cumulative invoice cannot reduce known charges without an explicit credit")
+        if additional:
+            self._insert_charge(connection, attempt.requestId, attempt.attemptId, "settled", additional)
+        exposure = ZERO if final else max(ZERO, charges["reserved"] - amount)
+        if exposure != charges["unsettled"]:
+            self._insert_charge(connection, attempt.requestId, attempt.attemptId, "unsettled", exposure - charges["unsettled"])
+        if final:
+            released = max(ZERO, charges["reserved"] - amount - charges["released"])
+            if released:
+                self._insert_charge(connection, attempt.requestId, attempt.attemptId, "released", released)
+        return True
 
     def charges_for(self, attempt_id: str) -> list[dict[str, Any]]:
         with self._connect() as connection:
@@ -906,6 +1083,7 @@ class DurableJobLedger:
 
     def receipt(self, request_id: str) -> JobPhase:
         with self._connect() as connection:
+            connection.execute("BEGIN")
             request_row = connection.execute(
                 "SELECT payload_json FROM job_requests WHERE request_id=?", (request_id,)
             ).fetchone()
@@ -914,12 +1092,9 @@ class DurableJobLedger:
                 raise KeyError(request_id)
             request = JobRequest.model_validate_json(request_row["payload_json"])
             attempt = self._attempt_from_row(attempt_row)
-            attempt_count = int(
-                connection.execute(
-                    "SELECT COUNT(*) count FROM job_attempts WHERE request_id=?", (request_id,)
-                ).fetchone()["count"]
-            )
-            settled, reserved, unsettled = self._budget_totals(connection, request_id)
+            cancel_requested = self._cancel_requested(connection, request_id)
+            summary = self._cost_view(connection, request_id)
+            attempt_billing = self._billing_state(connection, attempt)
         return JobPhase(
             requestId=request_id,
             attemptId=attempt.attemptId,
@@ -929,7 +1104,7 @@ class DurableJobLedger:
             temporalPolicy=request.temporalPolicy,
             fallbackPolicy=request.fallbackPolicy,
             costReserved=attempt.reservedCost,
-            costActual=attempt.actualCost,
+            costActual=float(attempt_billing.settled) if attempt_billing.complete else None,
             cleanupResult=attempt.cleanupResult,
             cacheIdentity=cache_identity(
                 source_sha256=request.sourceSha256,
@@ -942,11 +1117,9 @@ class DurableJobLedger:
                 namespace=request.namespace,
             ),
             error=attempt.error,
-            attemptCount=attempt_count,
-            reservedTotal=round(reserved, 4),
-            settledTotal=round(settled, 4),
-            unsettledTotal=round(unsettled, 4),
-            actualTotal=None if unsettled > 0 else round(settled, 4),
+            **summary.model_dump(),
+            costSummary=summary,
+            cancelRequested=cancel_requested,
         )
 
     def cancel_requested(self, request_id: str) -> bool:
@@ -993,40 +1166,49 @@ class DurableJobLedger:
             error="disk_exhaustion",
         )
 
-    def cost_summary(self) -> dict[str, float | int]:
+    def cost_summary(self, *, match_id: str | None = None) -> dict[str, Any]:
         with self._connect() as connection:
-            request_ids = [row["request_id"] for row in connection.execute("SELECT request_id FROM job_requests")]
-            budget_totals = [self._budget_totals(connection, request_id) for request_id in request_ids]
-            reservations = [
-                float(row["amount"] or 0.0)
-                for row in connection.execute("SELECT amount FROM job_charges WHERE kind='reserved'")
-            ]
-        return {
-            "attempts": len(reservations),
-            "reservedTotal": round(sum(item[1] + item[2] for item in budget_totals), 4),
-            "actualTotal": round(sum(item[0] for item in budget_totals), 4),
-            "p50Reserved": _percentile(reservations, 50),
-            "p95Reserved": _percentile(reservations, 95),
-        }
+            connection.execute("BEGIN")
+            grouped = {}
+            reservations = []
+            for row in connection.execute("SELECT payload_json FROM job_requests"):
+                req = JobRequest.model_validate_json(row["payload_json"])
+                if match_id is not None and req.matchId != match_id:
+                    continue
+                bucket = grouped.setdefault(req.currency, {"budget": ZERO, "attempts": []})
+                bucket["budget"] = total((bucket["budget"], money(req.budget)))
+                for item in connection.execute("SELECT * FROM job_attempts WHERE request_id=?", (req.requestId,)):
+                    attempt = self._attempt_from_row(item)
+                    bucket["attempts"].append(self._billing_state(connection, attempt))
+                    reservations.append(attempt.reservedCost)
+            summaries = {currency: CostSummary.project(currency=currency, **values).model_dump(mode="json")
+                         for currency, values in sorted(grouped.items())}
+            if len(summaries) == 1:
+                result = dict(next(iter(summaries.values())))
+            else:
+                result = {"schemaVersion": 2, "currency": None, "authorisedBudget": None,
+                    "settledTotal": None, "outstandingReserved": None, "unsettledTotal": None,
+                    "reservedTotal": None, "actualTotal": None,
+                    "billingComplete": bool(summaries) and all(v["billingComplete"] for v in summaries.values()),
+                    "attemptCount": sum(v["attemptCount"] for v in summaries.values()),
+                    "unsettledAttemptCount": sum(v["unsettledAttemptCount"] for v in summaries.values()),
+                    "reasonCodes": ["MIXED_CURRENCIES"] if summaries else ["NO_BILLING_EVIDENCE"]}
+            return {**result, "attempts": result["attemptCount"], "byCurrency": summaries,
+                    "p50Reserved": _percentile(reservations, 50) if len(summaries) == 1 else None,
+                    "p95Reserved": _percentile(reservations, 95) if len(summaries) == 1 else None}
 
-    def cost_for(self, request_id: str) -> dict[str, float | int | str]:
+
+    def cost_for(self, request_id: str) -> dict[str, Any]:
         with self._connect() as connection:
-            settled, reserved, unsettled = self._budget_totals(connection, request_id)
-            reservations = [
-                float(row["amount"] or 0.0)
-                for row in connection.execute(
-                    "SELECT amount FROM job_charges WHERE request_id=? AND kind='reserved'",
-                    (request_id,),
-                )
-            ]
-        return {
-            "requestId": request_id,
-            "attempts": len(reservations),
-            "reservedTotal": round(reserved + unsettled, 4),
-            "actualTotal": round(settled, 4),
-            "p50Reserved": _percentile(reservations, 50),
-            "p95Reserved": _percentile(reservations, 95),
-        }
+            connection.execute("BEGIN")
+            summary = self._cost_view(connection, request_id)
+            reservations = [float(row["reservedCost"]) for row in
+                (json.loads(item["payload_json"]) for item in connection.execute(
+                    "SELECT payload_json FROM job_attempts WHERE request_id=?", (request_id,)))]
+            return {**summary.model_dump(mode="json"), "requestId": request_id,
+                "attempts": summary.attemptCount, "p50Reserved": _percentile(reservations, 50),
+                "p95Reserved": _percentile(reservations, 95)}
+
 
 
 def _now() -> str:
@@ -1099,24 +1281,31 @@ def attach_durable_job_view(payload: dict[str, Any], ledger: DurableJobLedger) -
     job_id = str(payload.get("id") or payload.get("jobId") or "")
     view = dict(payload)
     storage_terminal = view.get("status") in {"completed", "complete", "failed", "cancelled"}
-    view["cancelRequested"] = ledger.cancel_requested(job_id)
     if ledger.has_request(job_id):
         receipt = ledger.receipt(job_id)
+        view["cancelRequested"] = receipt.cancelRequested
         view["durablePhase"] = receipt.status
         view["ledgerStatus"] = receipt.status
         view["attemptId"] = receipt.attemptId
         view["costReserved"] = receipt.costReserved
         view["costActual"] = receipt.costActual
+        view["costSummary"] = receipt.costSummary.model_dump(mode="json")
+        view.update(receipt.costSummary.model_dump(mode="json"))
         view["cleanupResult"] = receipt.cleanupResult
         view["temporalPolicy"] = receipt.temporalPolicy
         view["cacheIdentity"] = receipt.cacheIdentity
-        view["terminated"] = ledger.terminated(job_id)
+        view["terminated"] = receipt.status in {"cancelled", "complete", "failed"}
     else:
+        view["cancelRequested"] = ledger.cancel_requested(job_id)
         view["durablePhase"] = None
         view["ledgerStatus"] = None
         view["cleanupResult"] = "unknown"
         view["terminated"] = storage_terminal
         view["costReserved"] = view.get("costReserved", 0.0)
+        view["costActual"] = None
+        view["actualTotal"] = None
+        view["billingComplete"] = False
+        view["reasonCodes"] = ["NO_BILLING_EVIDENCE"]
     return view
 
 

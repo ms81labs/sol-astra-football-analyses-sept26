@@ -332,6 +332,9 @@ class MeasuredRuntimeReceipt(StrictModel):
     committedGeneration: str | None
 
 
+from .billing import CostSummary
+
+
 class JobPhase(StrictModel):
     requestId: str
     attemptId: str
@@ -361,6 +364,15 @@ class JobPhase(StrictModel):
     settledTotal: float = 0.0
     unsettledTotal: float = 0.0
     actualTotal: float | None = None
+    schemaVersion: int = 2
+    currency: str = "USD"
+    authorisedBudget: float = 0.0
+    outstandingReserved: float = 0.0
+    unsettledAttemptCount: int = 0
+    billingComplete: bool = False
+    reasonCodes: tuple[str, ...] = ()
+    costSummary: CostSummary | None = None
+    cancelRequested: bool = False
 
 
 def utc_now() -> datetime:

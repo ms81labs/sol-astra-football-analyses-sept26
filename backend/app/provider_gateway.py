@@ -3,13 +3,15 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-import sqlite3
+import uuid
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
 from .settings import ProcessingSettings
 from .provider_adapters import LOCAL_MODEL_ID
+from .provider_billing import (ProviderBudgetLedger, ProviderTicket, ProviderResult, ProviderNotDispatched)
+from .workbench.money import money
+from .workbench.jobs import maintain_job_lease
 from .workbench.evidence import records_from_match
 
 
@@ -40,6 +42,8 @@ class ExecutionPolicy:
     budget_reserved: float | None
     deadline_seconds: float
     reason_codes: tuple[str, ...]
+    execution_bound: dict | None = None
+    ticket: ProviderTicket | None = None
 
 
 class ProviderDenied(Exception):
@@ -68,44 +72,6 @@ class ValidatedOutput:
     reason_codes: tuple[str, ...]
 
 
-class ProviderBudgetLedger:
-    def __init__(self, path: Path, limit: float) -> None:
-        self.path = path
-        self.limit = limit
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with sqlite3.connect(path) as connection:
-            connection.execute(
-                "CREATE TABLE IF NOT EXISTS provider_reservations ("
-                "id INTEGER PRIMARY KEY, match_id TEXT NOT NULL, task_type TEXT NOT NULL, amount REAL NOT NULL)"
-            )
-
-    def reserve(self, *, match_id: str, task_type: str, amount: float) -> float | None:
-        if not math.isfinite(amount) or amount <= 0:
-            return None
-        with sqlite3.connect(self.path) as connection:
-            connection.execute("BEGIN IMMEDIATE")
-            spent = float(connection.execute(
-                "SELECT COALESCE(SUM(amount), 0) FROM provider_reservations"
-            ).fetchone()[0])
-            if spent + amount > self.limit:
-                return None
-            connection.execute(
-                "INSERT INTO provider_reservations(match_id, task_type, amount) VALUES (?, ?, ?)",
-                (match_id, task_type, amount),
-            )
-        return amount
-
-    def reservations(self) -> list[dict[str, object]]:
-        with sqlite3.connect(self.path) as connection:
-            rows = connection.execute(
-                "SELECT match_id, task_type, amount FROM provider_reservations ORDER BY id"
-            ).fetchall()
-        return [
-            {"matchId": match_id, "taskType": task_type, "amount": amount}
-            for match_id, task_type, amount in rows
-        ]
-
-
 class ProviderGateway:
     def __init__(self, storage, settings: ProcessingSettings, *, adapter_factory, budget_ledger=None) -> None:
         self.storage = storage
@@ -122,6 +88,11 @@ class ProviderGateway:
         task_type: str,
         generation_id: str,
         require_provider: bool,
+        prompt: str | None = None,
+        request_id: str | None = None,
+        source_identity: str = "",
+        adapter=None,
+        retry_of_attempt_id: str | None = None,
     ) -> ExecutionPolicy:
         requested = requested_provider or match.config.llmProvider
         if requested not in {"local", "cloud"}:
@@ -156,17 +127,37 @@ class ProviderGateway:
                     requested = "local"
 
         reserved = None
+        bound = None
+        ticket = None
         if requested == "cloud":
-            reserved = self.budget_ledger.reserve(
-                match_id=match.id,
-                task_type=task_type,
-                amount=self.settings.provider_call_reservation,
-            )
-            if reserved is None:
+            spend = self.settings.provider_spend_policy
+            adapter = self.adapter_factory() if adapter is None else adapter
+            reasons = []
+            if spend is None or getattr(adapter, "billing_contract_id", None) != spend.adapter_id:
+                reasons.append("CLOUD_SPEND_BOUND_UNQUALIFIED")
+            elif prompt is None:
+                reasons.append("REQUEST_BOUND_MISSING")
+            else:
+                try:
+                    bound = spend.bind(prompt=prompt, task=task_type, model=self.settings.cloud_model_id)
+                    if money(bound["maximumCost"]) > money(self.settings.provider_call_reservation):
+                        reasons.append("REQUEST_BOUND_EXCEEDS_AUTHORISED_BUDGET")
+                except ValueError as exc:
+                    reasons.append(str(exc))
+            if not reasons:
+                ticket = self.budget_ledger.admit(match_id=match.id, task_type=task_type,
+                    request_id=request_id or "provider:" + str(uuid.uuid4()),
+                    source_identity=source_identity, execution_bound=bound,
+                    authorised_budget=self.settings.provider_call_reservation, retry_of_attempt_id=retry_of_attempt_id)
+                if ticket is None:
+                    reasons.append("BUDGET_EXHAUSTED")
+                else:
+                    reserved = ticket.attempt.reservedCost
+            if reasons:
                 if require_provider:
-                    raise ProviderDenied(["BUDGET_EXHAUSTED"])
-                policy_reasons.append("BUDGET_EXHAUSTED")
-                requested = "local"
+                    raise ProviderDenied(reasons)
+                policy_reasons.extend(reasons)
+                requested, bound, ticket = "local", None, None
         return ExecutionPolicy(
             match_id=match.id,
             generation_id=generation_id,
@@ -176,7 +167,7 @@ class ProviderGateway:
             cloud_permitted=requested == "cloud",
             budget_reserved=reserved,
             deadline_seconds=self.settings.provider_deadline_seconds,
-            reason_codes=tuple(policy_reasons),
+            reason_codes=tuple(policy_reasons), execution_bound=bound, ticket=ticket,
         )
 
     def build_evidence(self, match_id: str, generation_id: str, task_type: str | None = None) -> tuple[ApprovedEvidencePackage, dict[str, Any]]:
@@ -237,6 +228,15 @@ class ProviderGateway:
         if task_type not in TASKS:
             raise ValueError("Unsupported report task")
         body = body or {}
+        retry = body.get("retry", False)
+        retry_anchor = body.get("retryOfAttemptId")
+        if type(retry) is not bool:
+            raise ValueError("retry must be a boolean")
+        if retry and (not isinstance(retry_anchor, str) or not retry_anchor or len(retry_anchor) > 128):
+            from .workbench.errors import ReconciliationRequired
+            raise ReconciliationRequired("explicit retry requires retryOfAttemptId from its receipt")
+        if not retry and retry_anchor is not None:
+            raise ValueError("retryOfAttemptId requires explicit retry")
         with self.storage.generation_snapshot(match_id) as generation:
             generation_id = generation.generationId
             if body.get("generationId") not in (None, generation_id):
@@ -249,31 +249,89 @@ class ProviderGateway:
                 raise StaleEvidenceGeneration("Evidence changed before dispatch")
             live_match = self.storage.get_match(match_id)
         revision = policy_revision(live_match, self.settings)
+        from .llm import build_prompt
+        approved = copy.deepcopy({"matchId": match_id, "generationId": generation_id,
+            "taskType": task_type, "inputEvidenceDigest": package.digest,
+            "aliases": package.aliases, "metrics": package.metrics, "events": package.events,
+            "frameSamples": package.frame_samples})
+        frame_index = body.get("currentFrameIndex")
+        if frame_index is not None and (type(frame_index) is not int or not 0 <= frame_index < len(inputs["frames"])):
+            raise ValueError("Invalid current frame index")
+        prompt = build_prompt(task_type, inputs["frames"],
+            current_frame=inputs["frames"][frame_index] if frame_index is not None else None,
+            summary=inputs["summary"], events=inputs["events"],
+            formation_timeline=inputs["formation_timeline"], shots=inputs["shots"],
+            attack_direction=analytical_match.config.attackDirection, approved_evidence=approved)
+        adapter = self.adapter_factory()
+        # Keyless legacy callers replay one logical request for these immutable inputs.
+        # An explicitly new request must use a new caller ID, never an automatic retry.
+        key = body["requestId"] if "requestId" in body else "auto:" + hashlib.sha256(
+            json.dumps([task_type, package.digest, requested_provider or live_match.config.llmProvider,
+                        self.settings.cloud_model_id, frame_index]).encode()).hexdigest()
+        if not isinstance(key, str) or not 1 <= len(key) <= 256:
+            raise ValueError("Invalid provider request ID")
+        request_id = "provider:" + hashlib.sha256(json.dumps([match_id, key]).encode()).hexdigest()
         policy = self.resolve_policy(live_match, requested_provider=requested_provider, task_type=task_type,
-                                     generation_id=generation_id, require_provider=bool(body.get("requireProvider")))
-        raw = self.adapter_factory()(
-            task_type, inputs["frames"], provider=policy.provider,
-            attack_direction=analytical_match.config.attackDirection,
-            current_frame_index=body.get("currentFrameIndex"), summary=inputs["summary"],
-            events=inputs["events"], formation_timeline=inputs["formation_timeline"], shots=inputs["shots"],
+            generation_id=generation_id, require_provider=bool(body.get("requireProvider")),
+            prompt=prompt, request_id=request_id, source_identity=package.digest, adapter=adapter,
+            retry_of_attempt_id=retry_anchor)
+        ticket = policy.ticket
+        if ticket is not None:
+            original = self.budget_ledger.result(request_id)
+            if original is not None:
+                return original
+            self.budget_ledger.claim(ticket)
+        kwargs = dict(provider=policy.provider, attack_direction=analytical_match.config.attackDirection,
+            current_frame_index=frame_index, summary=inputs["summary"], events=inputs["events"],
+            formation_timeline=inputs["formation_timeline"], shots=inputs["shots"],
             gateway_token=self._token, model_id=policy.model_id, deadline_seconds=policy.deadline_seconds,
-            approved_evidence=copy.deepcopy({"matchId": match_id, "generationId": generation_id,
-                "taskType": task_type, "inputEvidenceDigest": package.digest,
-                "aliases": package.aliases, "metrics": package.metrics, "events": package.events,
-                "frameSamples": package.frame_samples}))
+            approved_evidence=approved)
+        if ticket is not None:
+            kwargs.update(prepared_prompt=prompt, execution_bound=copy.deepcopy(policy.execution_bound),
+                          request_id=request_id, reservation_id=ticket.attempt.attemptId)
+        try:
+            if ticket is not None:
+                with maintain_job_lease(self.budget_ledger.ledger, request_id, owner_id=ticket.owner_id):
+                    raw = adapter(task_type, inputs["frames"], **kwargs)
+            else:
+                raw = adapter(task_type, inputs["frames"], **kwargs)
+        except BaseException as exc:
+            if ticket is not None:
+                ledger = self.budget_ledger.ledger
+                current = ledger.latest_attempt(request_id)
+                ledger.transition(current.attemptId, expected_revision=current.revision, owner_id=ticket.owner_id,
+                    status="failed" if isinstance(exc, ProviderNotDispatched) else "outcome_unknown",
+                    noChargeReason="NO_DISPATCH_CONFIRMED" if isinstance(exc, ProviderNotDispatched) else None,
+                    error="NO_DISPATCH_CONFIRMED" if isinstance(exc, ProviderNotDispatched) else "PROVIDER_OUTCOME_UNKNOWN")
+            raise
+        if ticket is not None:
+            ledger = self.budget_ledger.ledger
+            current = ledger.latest_attempt(request_id)
+            ledger.transition(current.attemptId, expected_revision=current.revision, owner_id=ticket.owner_id,
+                              status="complete")
+            # Preserve verified billing before validating/rendering/publishing optional prose.
+            if isinstance(raw, ProviderResult) and raw.usage is not None:
+                usage = raw.usage
+                ledger.reconcile_attempt(current.attemptId, provider_outcome="complete", settled_cost=usage.total,
+                    billing_complete=usage.final, receipt_id=request_id + ":" + usage.receipt_id)
+        if isinstance(raw, ProviderResult):
+            raw = raw.output
         validated = validate_output(raw, package)
         response = validated.payload if validated.grounding in {"grounded", "referenced", "interpretive"} else deterministic_fallback(package, validated.reason_codes)
         response = {**response, "matchId": match_id, "generationId": generation_id,
                     "inputEvidenceDigest": package.digest,
                     "policy": {"provider": policy.provider, "reasonCodes": list(policy.reason_codes)}}
-        # A stale/malformed result never refunds a possibly incurred reservation.
-        # C04 owns settlement; C03 does not invent a no-charge determination.
+        # Report publication cannot erase an invoice or imply an unknown request was free.
         record = ReportStore(self.storage).publish(match_id, generation_id, task_type, response,
             evidence_digest=package.digest, policy=policy, expected_policy_revision=revision,
             settings=self.settings, metadata={"title": live_match.name,
                 "homeTeam": live_match.config.homeTeam, "awayTeam": live_match.config.awayTeam})
-        return {**response, "reportId": record["reportId"], "status": record["status"],
-                "validationDisposition": record["validationDisposition"]}
+        result = {**response, "reportId": record["reportId"], "status": record["status"],
+                  "validationDisposition": record["validationDisposition"]}
+        if ticket is not None:
+            result.update(requestId=request_id, costSummary=self.budget_ledger.ledger.cost_for(request_id))
+            self.budget_ledger.save_result(request_id, result)
+        return result
 
 
 def validate_output(raw: Any, package: ApprovedEvidencePackage) -> ValidatedOutput:

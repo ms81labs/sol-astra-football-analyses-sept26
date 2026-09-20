@@ -6,7 +6,10 @@ import re
 from dataclasses import dataclass, field
 from ipaddress import IPv6Address
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
+
+if TYPE_CHECKING:
+    from .provider_billing import ProviderSpendPolicy
 from urllib.parse import urlsplit
 
 from backend.release.daytona_policy import (
@@ -68,6 +71,7 @@ class ProcessingSettings:
     provider_deadline_seconds: float = 30.0
     provider_call_reservation: float = 0.0
     provider_budget_limit: float = 0.0
+    provider_spend_policy: ProviderSpendPolicy | None = None
     trusted_bin_dirs: tuple[str, ...] = DEFAULT_TRUSTED_BIN_DIRS
     ffmpeg_sha256: str | None = None
     ffprobe_sha256: str | None = None

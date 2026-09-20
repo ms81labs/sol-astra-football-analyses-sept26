@@ -28,7 +28,7 @@ import PlaylistBuilder from './components/PlaylistBuilder';
 import MatchPackagePanel from './components/MatchPackagePanel';
 import FourRatesPanel from './components/FourRatesPanel';
 import LoadedMatchSetupPanel from './components/LoadedMatchSetupPanel';
-import OperationsView from './components/OperationsView';
+import MatchCosts from './components/MatchCosts';
 import MatchMetricInspectorPanel from './components/MatchMetricInspectorPanel';
 import MatchCoveragePanel from './components/MatchCoveragePanel';
 import TypedSearchPanel from './components/TypedSearchPanel';
@@ -1514,7 +1514,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
             </Suspense>
           )}
           <div className="mb-3 shrink-0">
-            <OperationsView />
+            <MatchCosts matchId={activeMatch?.id} />
           </div>
           <div className="mb-3 shrink-0">
             <TypedSearchPanel key={`${activeMatch?.id}:${activeMatch?.detail.generationId}`}
