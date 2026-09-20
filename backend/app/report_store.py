@@ -12,7 +12,7 @@ from pathlib import Path
 import uuid
 
 from .generations import GenerationRecoveryRequired, StaleGeneration, _identifier, _sync_directory
-from .report_contracts import digest, ReportDraft, MetricClaim, ObservationClaim
+from .report_contracts import digest, EvidenceRef, ReportDraft, MetricClaim, ObservationClaim
 
 TASKS = {"tactical_report", "drills"}
 
@@ -64,26 +64,80 @@ def validate_record(document, match_id: str, generation_id: str, task: str) -> N
     schema = payload.get("schemaVersion", "legacy_referenced_report_v0")
     if schema != document["outputSchema"]:
         raise ValueError("Stored output schema mismatch")
-    if schema == "report_draft_v1":
-        # The gateway adds server-owned validation fields to each checked claim.
-        # Recheck the underlying shape without mistaking these for provider fields.
-        base = {key: value for key, value in payload.items() if key in ReportDraft.model_fields}
-        for name, model in (("metricClaims", MetricClaim), ("observations", ObservationClaim)):
-            items = base.get(name, [])
-            if not isinstance(items, list) or any(not isinstance(item, dict) for item in items):
-                raise ValueError("Malformed report collection")
-            base[name] = [{key: value for key, value in item.items() if key in model.model_fields} for item in items]
-        ReportDraft.model_validate(base)
-        if payload.get("taskType") != task or grounding not in {"grounded", "referenced", "interpretive"}:
-            raise ValueError("Report task/disposition mismatch")
+    if schema in {"report_draft_v1", "legacy_referenced_report_v0"}:
+        _validate_narrative_payload(payload, match_id, generation_id, task, schema, disposition)
     elif schema == "deterministic_report_v1":
         if grounding != "deterministic" or disposition not in {"deterministic", "validation_failed"}:
             raise ValueError("Invalid deterministic report")
+        if not isinstance(payload.get("summary"), str):
+            raise ValueError("Malformed deterministic summary")
         for name in ("metrics", "events"):
             if not isinstance(payload.get(name), list) or any(not isinstance(item, dict) for item in payload[name]):
                 raise ValueError("Malformed deterministic report")
-    elif schema != "legacy_referenced_report_v0":
+    else:
         raise ValueError("Unsupported output schema")
+
+
+def _validate_narrative_payload(payload, match_id, generation_id, task, schema, disposition):
+    """Check the renderer's entire stored shape, including compatibility output.
+
+    Provider aliases must already have been resolved before persistence. This
+    checks shape, scope and label consistency, not free-text truth or protection
+    against an attacker rewriting both the trusted store and its checksums.
+    """
+    server_fields = {"inputEvidenceDigest", "policy", "grounding", "validationDisposition",
+                     "interpretationLabel", "requiresAnalyst"}
+    if schema == "report_draft_v1":
+        if set(payload) - (ReportDraft.model_fields.keys() | server_fields):
+            raise ValueError("Unknown stored report fields")
+        base = {key: value for key, value in payload.items() if key in ReportDraft.model_fields}
+    else:
+        allowed = {"schemaVersion", "matchId", "generationId", "summary", "interpretation",
+                   "recommendations", "measurements", "evidence"} | server_fields
+        if set(payload) - allowed:
+            raise ValueError("Unknown compatibility report fields")
+        summary = payload.get("summary", "")
+        if not isinstance(summary, str):
+            raise ValueError("Malformed compatibility summary")
+        base = {"schemaVersion": "report_draft_v1", "matchId": match_id,
+                "generationId": generation_id, "taskType": task,
+                "metricClaims": payload.get("measurements", []),
+                "observations": ([{"text": summary, "evidence": payload.get("evidence", []),
+                                   "grounding": "referenced"}] if summary else []),
+                "interpretation": payload.get("interpretation", ""),
+                "recommendations": payload.get("recommendations", []),
+                "evidence": payload.get("evidence", [])}
+    for name, model in (("metricClaims", MetricClaim), ("observations", ObservationClaim)):
+        items = base.get(name, [])
+        if not isinstance(items, list) or any(not isinstance(item, dict) for item in items):
+            raise ValueError("Malformed stored report collection")
+        extra = {"grounding", "availability", "publishedLabel"} if name == "metricClaims" else {"grounding"}
+        for item in items:
+            if set(item) - (model.model_fields.keys() | extra):
+                raise ValueError("Unknown stored claim fields")
+            expected = "grounded" if name == "metricClaims" else "referenced"
+            if item.get("grounding") != expected:
+                raise ValueError("Stored claim disposition mismatch")
+            if name == "metricClaims" and item.get("availability") not in {"available", "experimental"}:
+                raise ValueError("Stored metric claim is not publishable")
+        base[name] = [{key: value for key, value in item.items() if key in model.model_fields} for item in items]
+    parsed = ReportDraft.model_validate(base)
+    if parsed.taskType != task or payload.get("requiresAnalyst") is not True:
+        raise ValueError("Report task/review requirement mismatch")
+    advice = bool(parsed.interpretation.strip() or parsed.recommendations or parsed.drills)
+    expected = "referenced" if parsed.observations else "interpretive" if advice else "grounded"
+    if not (parsed.metricClaims or parsed.observations or advice):
+        raise ValueError("Empty stored report")
+    if payload.get("grounding") != expected or disposition != expected:
+        raise ValueError("Stored report disposition mismatch")
+    refs = [*parsed.evidence]
+    for item in [*parsed.metricClaims, *parsed.observations]:
+        refs.extend(item.evidence)
+    for item in refs:
+        # Parsed union still allows request aliases; persisted records do not.
+        if not isinstance(item, EvidenceRef) or (item.matchId, item.generationId) != (match_id, generation_id):
+            raise ValueError("Stored evidence reference scope mismatch")
+
 
 
 class ReportStore:
