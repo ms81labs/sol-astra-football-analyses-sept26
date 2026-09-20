@@ -1,0 +1,42 @@
+name: C05 scorer dependency provenance
+on:
+  push:
+    branches: [agent/c05-identity-evaluation]
+  pull_request:
+    paths:
+      - 'backend/**'
+      - '.github/workflows/c05-regressions.yml'
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: JonathonLuiten/TrackEval
+          ref: 12c8791b303e0a0b50f753af204249e622d0281a
+          path: .deps/trackeval
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Retain exact scorer source without executing models
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C .deps/trackeval rev-parse HEAD)" = 12c8791b303e0a0b50f753af204249e622d0281a
+          mkdir -p .c05-evidence
+          git -C .deps/trackeval bundle create "$GITHUB_WORKSPACE/.c05-evidence/trackeval.bundle" HEAD
+          git rev-parse HEAD > .c05-evidence/source-sha.txt
+          git rev-parse HEAD^{tree} > .c05-evidence/source-tree.txt
+          git bundle create .c05-evidence/repository.bundle HEAD origin/main
+          cd .c05-evidence
+          sha256sum *.bundle > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: c05-source-and-scorer
+          path: .c05-evidence/
+          if-no-files-found: error
