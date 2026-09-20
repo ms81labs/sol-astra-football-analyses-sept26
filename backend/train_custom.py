@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+from backend.app.workbench.hashing import stream_sha256
 from pathlib import Path
 
 from ultralytics import YOLO
@@ -105,7 +106,12 @@ def fine_tune(
         "lastWeightsPath": str(last_weights_path),
         "resultsCsvPath": str(results_csv_path),
         "metrics": metrics,
+        # Compatibility aliases are CSV diagnostics, not the epoch of best.pt.
         "bestEpoch": best_epoch,
+        "bestEpochSource": "training_csv_diagnostic_not_checkpoint_binding",
+        "checkpointBindingStatus": "unverified",
+        "bestWeightsSha256": stream_sha256(best_weights_path).sha256
+            if best_weights_path.is_file() else None,
         "bestFitness": best_fitness,
         "epochs": int(epochs),
         "imgsz": int(imgsz),

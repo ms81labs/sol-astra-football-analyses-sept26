@@ -1,0 +1,66 @@
+name: C05 identity and evaluation evidence
+on:
+  push:
+    branches: [agent/c05-identity-evaluation]
+  pull_request:
+    paths:
+      - 'backend/**'
+      - '.github/workflows/c05-regressions.yml'
+permissions:
+  contents: read
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: JonathonLuiten/TrackEval
+          ref: 12c8791b303e0a0b50f753af204249e622d0281a
+          path: .deps/trackeval
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Retain exact scorer source without executing models
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C .deps/trackeval rev-parse HEAD)" = 12c8791b303e0a0b50f753af204249e622d0281a
+          mkdir -p .c05-evidence
+          git -C .deps/trackeval bundle create "$GITHUB_WORKSPACE/.c05-evidence/trackeval.bundle" HEAD
+          git rev-parse HEAD > .c05-evidence/source-sha.txt
+          git rev-parse HEAD^{tree} > .c05-evidence/source-tree.txt
+          git bundle create .c05-evidence/repository.bundle HEAD origin/main
+          cd .c05-evidence
+          sha256sum *.bundle > SHA256SUMS.txt
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements/dev.lock
+      - name: Install declared hash-locked profile
+        run: |
+          pip install --require-hashes -r backend/requirements/dev.lock
+          pip install -e . --no-deps
+      - name: Verify C05 with the actual pinned scorer and synthetic inputs
+        shell: bash
+        env:
+          C05_TRACKEVAL_ROOT: ${{ github.workspace }}/.deps/trackeval
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
+          VERIFY_DAYTONA: '0'
+          ALLOW_DAYTONA_MUTATION: '0'
+        run: |
+          set -euo pipefail
+          python --version | tee .c05-evidence/python-version.txt
+          sha256sum backend/requirements/dev.lock frontend/package-lock.json > .c05-evidence/lock-sha256.txt
+          python -m pytest -q backend/tests/test_audit_v3_c05*.py --junitxml=.c05-evidence/c05.xml 2>&1 | tee .c05-evidence/c05.log
+          (cd .c05-evidence && sha256sum *.log *.xml *.txt *.bundle > evidence-sha256.txt)
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: c05-source-and-scorer
+          path: .c05-evidence/
+          include-hidden-files: true
+          if-no-files-found: error

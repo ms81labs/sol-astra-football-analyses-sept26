@@ -7,6 +7,7 @@ import math
 from pathlib import Path
 import re
 from typing import Literal
+from pydantic import Field
 
 from .contracts import StrictModel
 
@@ -19,6 +20,15 @@ EvaluationStatus = Literal["unknown", "prerequisites_unmet", "prerequisites_ok",
 
 class EvaluationGate(StrictModel):
     status: EvaluationStatus
+    inventoryStatus: Literal["missing", "incomplete", "verified"] = "incomplete"
+    executionStatus: Literal["not_run", "completed", "failed"] = "not_run"
+    scoreStatus: Literal["unavailable", "valid", "invalid"] = "unavailable"
+    acceptanceStatus: Literal["not_evaluated", "passed", "failed"] = "not_evaluated"
+    scope: str | None = None
+    namespace: str | None = None
+    scores: dict = Field(default_factory=dict)
+    executionEvidence: dict = Field(default_factory=dict)
+    acceptancePolicyIdentity: str | None = None
     protocolVersion: str
     completeTasks: int | None
     requiredTasks: int
@@ -66,81 +76,32 @@ def evaluate_protocol_prerequisites(
         nativePredictionsPresent=native_predictions_present,
         teamDeclarationsPresent=team_declarations_present,
         replayable=scorer_replayable,
-        accepted=accepted,
+        accepted=False,
         reasonCodes=reasons,
     )
 
 
 def current_repository_evaluation_gate(*, manifest_path: Path | None = None) -> EvaluationGate:
+    """Read-only inventory. Manifest declarations are never scorer execution proof."""
     path = manifest_path or Path(__file__).parents[2] / "evaluation" / "manifest.json"
+    gate = EvaluationGate(status="unknown", protocolVersion=PROTOCOL_VERSION,
+        completeTasks=None, requiredTasks=FROZEN_TASK_COUNT, completeMinutes=None,
+        requiredMinutes=REQUIRED_MINUTES, lockedLabelsPresent=False,
+        nativePredictionsPresent=False, teamDeclarationsPresent=False,
+        replayable=False, accepted=False, reasonCodes=[])
     if not path.is_file():
-        return EvaluationGate(
-            status="unknown",
-            protocolVersion=PROTOCOL_VERSION,
-            completeTasks=None,
-            requiredTasks=FROZEN_TASK_COUNT,
-            completeMinutes=None,
-            requiredMinutes=REQUIRED_MINUTES,
-            lockedLabelsPresent=False,
-            nativePredictionsPresent=False,
-            teamDeclarationsPresent=False,
-            replayable=False,
-            accepted=False,
-            reasonCodes=["EVALUATION_MANIFEST_MISSING"],
-        )
+        return gate.model_copy(update={"inventoryStatus": "missing",
+            "reasonCodes": ["EVALUATION_MANIFEST_MISSING"]})
     try:
         manifest = json.loads(path.read_text(encoding="utf-8"))
-        if manifest.get("schemaVersion") != 1:
-            raise ValueError("unsupported evaluation manifest version")
-        artifacts = {
-            str(item.get("kind")): str(item.get("sha256"))
-            for item in manifest.get("artifacts", [])
-            if isinstance(item, dict)
-        }
-        prediction_digest = artifacts.get("predictions") or artifacts.get("prediction")
-        label_digest = artifacts.get("labels") or artifacts.get("label")
-        result = dict(manifest.get("results") or {})
-        score = score_hota_idf1(
-            label_space="image_space",
-            hand_edited_summary=False,
-            native_predictions_present=bool(manifest.get("nativePredictionsPresent")),
-            scorer_executed=bool(result),
-            hota=result.get("hota"),
-            idf1=result.get("idf1"),
-            prediction_digest=prediction_digest,
-            label_digest=label_digest,
-            scorer_version=manifest.get("scorerVersion"),
-            source_identity=manifest.get("sourceIdentity"),
-        )
-        prerequisites = evaluate_protocol_prerequisites(
-            complete_tasks=int(manifest.get("completeTasks", 0)),
-            complete_minutes=float(manifest.get("completeMinutes", 0.0)),
-            locked_labels_present=bool(manifest.get("lockedLabelsPresent")),
-            native_predictions_present=bool(manifest.get("nativePredictionsPresent")),
-            team_declarations_present=bool(manifest.get("teamDeclarationsPresent")),
-            scorer_replayable=bool(manifest.get("scorerReplayable")),
-        )
-    except (OSError, TypeError, ValueError, json.JSONDecodeError):
-        return EvaluationGate(
-            status="unknown",
-            protocolVersion=PROTOCOL_VERSION,
-            completeTasks=None,
-            requiredTasks=FROZEN_TASK_COUNT,
-            completeMinutes=None,
-            requiredMinutes=REQUIRED_MINUTES,
-            lockedLabelsPresent=False,
-            nativePredictionsPresent=False,
-            teamDeclarationsPresent=False,
-            replayable=False,
-            accepted=False,
-            reasonCodes=["EVALUATION_MANIFEST_INVALID"],
-        )
-    status: EvaluationStatus = prerequisites.status
-    reasons = list(prerequisites.reasonCodes)
-    if prerequisites.status == "prerequisites_ok":
-        status = score["status"]  # type: ignore[assignment]
-        reasons.extend(str(reason) for reason in score["reasonCodes"])
-    return prerequisites.model_copy(update={"status": status, "accepted": status == "scored", "reasonCodes": reasons})
+        if not isinstance(manifest, dict):
+            raise ValueError("invalid manifest")
+        if manifest.get("schemaVersion") == 1:
+            return gate.model_copy(update={"reasonCodes": ["LEGACY_EVALUATION_UNVERIFIED"]})
+        from ..evaluation_verifier import inspect_evaluation_manifest
+        return inspect_evaluation_manifest(path)
+    except (OSError, TypeError, ValueError):
+        return gate.model_copy(update={"reasonCodes": ["EVALUATION_MANIFEST_INVALID"]})
 
 
 def evaluation_measures() -> dict[str, object]:
@@ -180,6 +141,7 @@ def score_hota_idf1(
     label_digest: str | None = None,
     scorer_version: str | None = None,
     source_identity: str | None = None,
+    units: str | None = None,
 ) -> dict[str, object]:
     reasons: list[str] = []
     if label_space != "image_space":
@@ -195,6 +157,11 @@ def score_hota_idf1(
             isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(float(value))
             for value in (hota, idf1)
         )
+        if units not in {"fraction", "percentage"}:
+            reasons.append("SCORE_UNITS_REQUIRED")
+        elif numeric_results and any(not 0 <= float(value) <= (1 if units == "fraction" else 100)
+                                     for value in (hota, idf1)):
+            reasons.append("SCORE_OUT_OF_RANGE")
         if not numeric_results:
             reasons.append("EVALUATION_RESULT_NOT_RECORDED")
             hota = idf1 = None
@@ -211,6 +178,10 @@ def score_hota_idf1(
     return {
         "status": status,
         "scored": status == "scored",
+        "units": units,
+        "accepted": False,
+        "acceptanceStatus": "not_evaluated",
+        "verification": "numeric_and_declared_provenance_only",
         "hota": hota,
         "idf1": idf1,
         "predictionDigest": prediction_digest,

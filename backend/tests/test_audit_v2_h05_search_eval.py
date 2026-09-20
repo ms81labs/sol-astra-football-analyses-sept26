@@ -86,6 +86,7 @@ def test_evaluation_states_require_execution_and_numeric_provenance(tmp_path) ->
         native_predictions_present=True,
         scorer_executed=True,
         hota=0.61,
+        units="fraction",
         idf1=0.72,
         prediction_digest="a" * 64,
         label_digest="b" * 64,
@@ -118,7 +119,8 @@ def test_evaluation_states_require_execution_and_numeric_provenance(tmp_path) ->
             }
         )
     )
-    assert current_repository_evaluation_gate(manifest_path=manifest).status == "scored"
+    assert current_repository_evaluation_gate(manifest_path=manifest).status == "unknown"
+    assert not current_repository_evaluation_gate(manifest_path=manifest).accepted
 
 
 def test_placeholder_promotion_measurements_are_explicitly_not_recorded() -> None:

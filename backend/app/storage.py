@@ -1266,51 +1266,49 @@ class Storage:
     def publish_generation(self, match_id: str, **payload):
         return self.generations.publish(match_id, **payload)
 
-    def _generation_layer_identities(
-        self,
-        match_id: str,
-        *,
-        calibration_revision: str | None,
-        correction_head: str,
-    ) -> dict[str, dict]:
-        from .workbench.cache import (
-            DetectionIdentity,
-            ProjectionIdentity,
-            ReportIdentity,
-            ReviewedIdentity,
-            TrackingIdentity,
-        )
-
+    def _generation_layer_identities(self, match_id: str, *, calibration_revision: str | None,
+                                     correction_head: str, observations=None, effective_config=None,
+                                     identity_context=None, command_digest=None, calibration_data=None) -> dict[str, dict]:
+        from .workbench.cache import DetectionIdentity, TrackingIdentity
+        from .perception_identity import canonical_digest, envelope
+        from .generations import semantic_config
+        layers = {}
+        # Sidecar declarations must reconstruct to their own digests and source.
         try:
-            detection_payload = self.load_analysis_artifact(match_id, "detection_identity")
-            tracking_payload = self.load_analysis_artifact(match_id, "tracking_identity")
-            tracking_components = tracking_payload["components"]
-            detection = DetectionIdentity(**tracking_components["detection"])
-            tracking = TrackingIdentity(detection, tracking_components["tracker_config_id"])
+            dp = self.load_analysis_artifact(match_id, "detection_identity")
+            tp = self.load_analysis_artifact(match_id, "tracking_identity")
+            detection = DetectionIdentity(**dp["components"])
+            tracking = TrackingIdentity(DetectionIdentity(**tp["components"]["detection"]),
+                                        tp["components"]["tracker_config_id"])
+            source = observations["source"]["sha256"] if observations else None
+            for name, identity, stored in (("detection", detection, dp), ("tracking", tracking, tp)):
+                key = identity.digest()
+                if (not key or stored.get("reusable") is not True or key != stored.get("digest")
+                        or detection.source_sha256 != source):
+                    key = None
+                layers[name] = envelope(key, identity.components(), ["INPUT_IDENTITY_UNVERIFIED"])
         except (FileNotFoundError, KeyError, TypeError, ValueError):
-            return {}
-        projection = ProjectionIdentity(tracking, calibration_revision)
-        reviewed = ReviewedIdentity(projection, correction_head)
-        report = ReportIdentity(reviewed, "match-report-v1")
-        layers = {
-            "detection": detection_payload,
-            "tracking": tracking_payload,
-            "projection": {
-                "digest": projection.digest(),
-                "reusable": projection.reusable,
-                "components": projection.components(),
-            },
-            "reviewed": {
-                "digest": reviewed.digest(),
-                "reusable": reviewed.reusable,
-                "components": reviewed.components(),
-            },
-            "report": {
-                "digest": report.digest(),
-                "reusable": report.reusable,
-                "components": report.components(),
-            },
-        }
+            pass
+        if not observations or observations.get("matchId") != match_id:
+            return layers
+        # This observed content can be reused only inside this match. It is not a
+        # claim that an unqualified perception run matches a future inference key.
+        observation = canonical_digest(observations)
+        layers["observation"] = envelope(observation, observations)
+        projection_inputs = {"observations": observation, "calibrationRevision": calibration_revision,
+            "calibration": calibration_data, "coordinates": (effective_config or {}).get("coordinateConvention"),
+            "algorithm": "c02-source-projection-v1"}
+        projection = canonical_digest(projection_inputs)
+        reviewed_inputs = {"projection": projection,
+            "semanticConfig": semantic_config(effective_config or {}),
+            "identityRevision": (identity_context or {}).get("identityRevision"),
+            "commands": command_digest, "correctionHead": correction_head, "algorithm": "c02-materializer-v1"}
+        reviewed = canonical_digest(reviewed_inputs) if command_digest and identity_context else None
+        layers["projection"] = envelope(projection, projection_inputs)
+        layers["reviewed"] = envelope(reviewed, reviewed_inputs, ["REVIEW_INPUT_IDENTITY_INCOMPLETE"])
+        report_inputs = {"reviewed": reviewed, "task": "deterministic_summary", "schema": "match-summary-v1"}
+        layers["report"] = envelope(canonical_digest(report_inputs) if reviewed else None,
+                                    report_inputs, ["REVIEW_INPUT_IDENTITY_INCOMPLETE"])
         return layers
 
     def _publish_generation_unlocked(self, match_id: str, **payload):
@@ -2019,7 +2017,14 @@ class Storage:
                 json.dumps(calibration.model_dump(mode="json"), sort_keys=True, separators=(",", ":")).encode()
             ).hexdigest()
 
-        output = ReviewService(self).rebuild_generation(match_id, reason=change)
+        from .semantic_commands import SemanticCommandError
+        try:
+            output = ReviewService(self).rebuild_generation(match_id, reason=change)
+        except SemanticCommandError as exc:
+            return RecomputeRefusal(reasonCodes=[exc.code])
+        manifest, _ = self.generations.manifest(match_id, output.generationId)
+        if manifest.observationDigest:
+            artifacts["observations"] = manifest.observationDigest
         return RecomputeReceipt(
             change=change,
             inputArtifacts=artifacts,

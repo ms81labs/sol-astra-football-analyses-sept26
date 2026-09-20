@@ -218,6 +218,8 @@ class GenerationManifest(StrictModel):
     generationId: str
     matchId: str
     observationDigest: str | None
+    observationInputs: dict[str, Any] | None = None
+    observationIdentity: str | None = None
     detectionIdentity: str | None = None
     trackingIdentity: str | None = None
     projectionIdentity: str | None = None

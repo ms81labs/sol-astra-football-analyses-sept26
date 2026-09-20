@@ -818,13 +818,13 @@ def reprocess_match_for_change(
     )
 
 
-def load_video_source_frames(storage: Storage, match_id: str, *, config: MatchConfig, team_clusters=None):
+def load_video_source_frames(storage: Storage, match_id: str, *, config: MatchConfig, team_clusters=None, source_rows=None):
     """Post-perception inputs only. Reprojection never dispatches a detector."""
     from .coordinates import project_video_rows, refused
     match = storage.get_match(match_id)
     revision = storage.calibration_revision(match_id)
     try:
-        raw_rows = storage.load_raw_rows(match_id)
+        raw_rows = storage.load_raw_rows(match_id) if source_rows is None else source_rows
     except FileNotFoundError:
         raw_rows = []
     if raw_rows:
@@ -959,6 +959,7 @@ def _persist_prepared_video_outputs(
         for key, artifact_name in (
             ("detectionIdentity", "detection_identity"),
             ("trackingIdentity", "tracking_identity"),
+            ("observationIdentity", "observation_identity"),
         ):
             identity = video_result.get(key)
             if isinstance(identity, dict):

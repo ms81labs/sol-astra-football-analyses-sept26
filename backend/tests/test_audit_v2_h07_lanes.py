@@ -146,8 +146,11 @@ def test_t25_gate_binds_checkpoint_epoch_and_hashes_inputs(tmp_path: Path) -> No
         model_factory=lambda _path: _Model(),
     )
 
-    assert summary["checkpointEpoch"] == 9
-    assert summary["checkpointValidationMetrics"]["map50"] == 0.55
+    assert summary["checkpointEpoch"] is None
+    assert summary["checkpointBindingStatus"] == "unverified"
+    assert summary["diagnosticEpoch"] == 9
+    assert summary["checkpointValidationMetrics"] is None
+    assert summary["diagnosticValidationMetrics"]["map50"] == 0.55
     assert summary["trainingProgressDiagnostics"]["maxMap50"] == 0.9
     assert summary["datasetConfigSha256"] == hashlib.sha256(dataset_yaml.read_bytes()).hexdigest()
     assert summary["datasetManifestSha256"] == hashlib.sha256(b'{"version":1}\n').hexdigest()
