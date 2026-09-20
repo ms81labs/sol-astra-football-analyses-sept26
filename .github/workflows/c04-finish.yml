@@ -1,0 +1,50 @@
+name: C04 reviewed finishing patch
+on:
+  push:
+    branches: [agent/c04-integration]
+    paths: [.github/workflows/c04-finish.yml]
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify reviewed patch and candidate tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/agent/c04-integration
+          test "$(git rev-parse HEAD^)" = c1fb7abd2e5608077a2f4dc25e7303651cdfb7b9
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = 7daf99458695b3541769e276256a640584daef71
+          test "$(git ls-remote origin refs/heads/agent/c04-integration | cut -f1)" = "$GITHUB_SHA"
+          python - <<'PY'
+          import base64, hashlib, lzma, os, shutil, subprocess
+          from pathlib import Path
+          compressed = base64.b64decode(Path('.c04-finish.b64').read_bytes(), validate=True)
+          dec = lzma.LZMADecompressor(memlimit=100*1024*1024)
+          patch = dec.decompress(compressed, max_length=100000)
+          assert dec.eof and not dec.unused_data and len(patch) == 9310
+          assert hashlib.sha256(patch).hexdigest() == 'c5d92b4520e4a684597ac08dc8cff2debf991ce0e0d5b450d517735d125fa7dc'
+          p = Path(os.environ['RUNNER_TEMP']) / 'finish.patch'
+          p.write_bytes(patch)
+          subprocess.run(['git','apply','--check',str(p)],check=True)
+          subprocess.run(['git','apply','--index',str(p)],check=True)
+          subprocess.run(['git','rm','.c04-finish.b64'],check=True)
+          subprocess.run(['git','diff','--cached','--check'],check=True)
+          index = Path(os.environ['RUNNER_TEMP']) / 'product-index'
+          shutil.copyfile('.git/index',index)
+          env = dict(os.environ,GIT_INDEX_FILE=str(index))
+          subprocess.run(['git','update-index','--force-remove','.github/workflows/c04-finish.yml'],env=env,check=True)
+          tree = subprocess.check_output(['git','write-tree'],env=env,text=True).strip()
+          assert tree == '7c837f4eb04786039814a588f6ceb17b2284193d', tree
+          print('Verified reviewed product tree:',tree)
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'C04 R07: refuse lossy admission amounts and retain exact invoices' -m '63 local C04 cases passed, including UTF-8 price and stale-report invoice controls. Product tree checksum verified. Full final supported-profile acceptance still required. No main merge or provider/paid execution.'
+          test "$(git ls-remote origin refs/heads/agent/c04-integration | cut -f1)" = "$GITHUB_SHA"
+          git push origin HEAD:refs/heads/agent/c04-integration
