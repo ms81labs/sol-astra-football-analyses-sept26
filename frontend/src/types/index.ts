@@ -185,6 +185,9 @@ export interface TeamCluster {
 }
 
 export interface MatchRecord {
+  generationId?: string | null;
+  commandVersion?: number;
+  includedCommandIds?: string[];
     id: string;
     name: string;
     inputMode: string;

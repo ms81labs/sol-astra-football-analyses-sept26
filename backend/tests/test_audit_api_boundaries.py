@@ -97,16 +97,21 @@ def test_direction_update_reprocesses_with_candidate_before_config_publication(a
     match = make_match(storage, input_mode)
     received = []
 
-    def reprocess(inner_storage, match_id, *, config):
-        # The materialiser sees its proposed inputs, but no live SQL publication
-        # may have occurred yet. These are distinct views in C01.
-        assert inner_storage.get_match(match_id).config.attackDirection == 'right_to_left'
-        with inner_storage._connect() as connection:
+    publish_minimal_generation(storage, match.id, [])
+    from backend.app.review_service import ReviewService
+    original = ReviewService._materialize
+
+    def materialize(service, match_id, config, commands):
+        # Candidate analytical inputs are visible only within the candidate;
+        # the authoritative SQL projection still belongs to the old generation.
+        assert service.storage.get_match(match_id).config.attackDirection == 'right_to_left'
+        with service.storage._connect() as connection:
             row = connection.execute("SELECT config_json FROM matches WHERE id=?", (match_id,)).fetchone()
         assert json.loads(row["config_json"])["attackDirection"] == "left_to_right"
         received.append(config.attackDirection)
+        return original(service, match_id, config, commands)
 
-    monkeypatch.setattr('backend.app.main.reprocess_video_match', reprocess)
+    monkeypatch.setattr(ReviewService, '_materialize', materialize)
     response = client.patch(f'/api/matches/{match.id}/config', json={'attackDirection': 'right_to_left'})
     assert response.status_code == 200
     assert received == ['right_to_left']
@@ -220,13 +225,13 @@ def test_invalid_provider_result_does_not_replace_saved_report(api, monkeypatch)
 def test_coach_reports_are_invalidated_only_after_successful_reprocessing(api, monkeypatch, fail_publication):
     storage, client, _ = api
     match = make_match(storage)
+    publish_minimal_generation(storage, match.id, [])
     for name in ('tactical_report', 'drills'):
         storage.save_analysis_artifact(match.id, name, {'previous': True})
-    monkeypatch.setattr('backend.app.main.reprocess_video_match', lambda *args, **kwargs: None)
     if fail_publication:
         def fail(*args):
             raise OSError('config write failed')
-        monkeypatch.setattr(storage, 'update_match_config', fail)
+        monkeypatch.setattr(storage.generations, '_commit_pointer', fail)
     result = client.patch(f'/api/matches/{match.id}/config', json={'attackDirection': 'right_to_left'})
     assert result.status_code == (500 if fail_publication else 200)
     for name in ('tactical_report', 'drills'):
@@ -259,6 +264,7 @@ def test_concurrent_config_update_waits_for_failed_reprocess_rollback(api, monke
 
     storage, client, _ = api
     match = make_match(storage)
+    publish_minimal_generation(storage, match.id, [])
     entered = threading.Event()
     release = threading.Event()
     second_started = threading.Event()
@@ -268,7 +274,8 @@ def test_concurrent_config_update_waits_for_failed_reprocess_rollback(api, monke
         assert release.wait(2)
         raise FileNotFoundError('missing late artifact')
 
-    monkeypatch.setattr('backend.app.main.reprocess_video_match', reprocess)
+    from backend.app.review_service import ReviewService
+    monkeypatch.setattr(ReviewService, '_materialize', reprocess)
 
     def change_provider():
         second_started.set()
@@ -306,7 +313,6 @@ def test_late_analysis_cannot_republish_after_config_change(api, monkeypatch):
         assert release.wait(5)
         return {'summary':'stale'}
     monkeypatch.setattr('backend.app.main.run_analysis', slow_analysis)
-    monkeypatch.setattr('backend.app.main.reprocess_video_match', lambda *args, **kwargs: None)
     with ThreadPoolExecutor() as pool:
         request = pool.submit(client.post, f'/api/matches/{match.id}/analysis/tactical_report', json={})
         try:

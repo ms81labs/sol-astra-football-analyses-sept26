@@ -1,3 +1,5 @@
+import { commandState, type CommandReceipt } from './commandLifecycle';
+
 export interface PlaylistClip {
   start: number;
   end: number;
@@ -10,22 +12,22 @@ export function clipKey(clip: PlaylistClip): string {
 }
 
 export function playlistClipsFromCorrections(
-  items: Array<{
-    correctionId: string;
-    kind: string;
-    saveState: string;
-    undoOf?: string | null;
-    payload?: Record<string, unknown> | null;
-  }>,
+  items: CommandReceipt[],
+  includedCommandIds?: readonly string[],
 ): PlaylistClip[] {
+  if (includedCommandIds) {
+    const included = new Set(includedCommandIds);
+    items = items.filter((item) => included.has(item.commandId ?? item.correctionId));
+  }
   const undone = new Set(
     items
+      .filter((item) => commandState(item) === 'applied')
       .map((item) => item.undoOf)
       .filter((undoOf): undoOf is string => typeof undoOf === 'string' && undoOf.length > 0),
   );
   const clips: PlaylistClip[] = [];
   for (const item of items) {
-    if (item.kind !== 'playlist_item' || item.saveState !== 'saved' || item.undoOf || undone.has(item.correctionId)) {
+    if (item.kind !== 'playlist_item' || commandState(item) !== 'applied' || item.undoOf || undone.has(item.correctionId)) {
       continue;
     }
     const payload = item.payload ?? {};

@@ -132,30 +132,32 @@ def test_t09_recompute_plan_execute_and_cache_miss_are_truthful(tmp_path: Path) 
 
 
 def test_t09_calibration_execution_reprojects_immutable_tracking_observations(tmp_path: Path) -> None:
+    # Explicit image-space envelope. The named legacy format is normalized
+    # pitch data and must not be run through an image homography.
     storage = Storage(tmp_path / "storage")
     fixture = Path(__file__).parent / "fixtures" / "sample_tracking.json"
-    match = storage.create_match("tracking recompute", "tracking_json", fixture.name, fixture, MatchConfig())
+    source = tmp_path / "source-pixels.json"
+    source.write_text(json.dumps({"format": "guerilla_tracking_v2", "schemaVersion": 2,
+        "coordinates": {"space": "source_pixels", "sourceWidth": 100, "sourceHeight": 100, "streamId": "video:0"},
+        "frames": json.loads(fixture.read_text())}))
+    match = storage.create_match("tracking recompute", "tracking_json", source.name, source, MatchConfig())
+    def calibrated(dx):
+        return {"calibrationId": f"shift-{dx}", "cameraModel": "planar_homography",
+            "pitchLengthM": 100.0, "pitchWidthM": 100.0,
+            "homography": [[1.0, 0.0, dx], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+            "landmarks": [{"name": f"holdout-{i}", "imageX": x, "imageY": y,
+                "pitchX": x + dx, "pitchY": y, "independentHoldout": True}
+                for i, (x, y) in enumerate(((10, 10), (90, 10), (10, 90), (90, 90)))]}
+    assert storage.commit_calibration_for_match(match.id, calibrated(0.0))["committed"]
     process_match(storage, storage.create_job(match.id).id)
     before_x = storage.load_frames(match.id)[0].myTeam[0].x
-    profile = {
-        "calibrationId": "shift-five",
-        "cameraModel": "planar_homography",
-        "pitchLengthM": 105.0,
-        "pitchWidthM": 68.0,
-        "homography": [[1.0, 0.0, 5.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
-    }
-    revision = storage._new_calibration_revision(
-        match.id,
-        profile=profile,
-        evaluation={"accepted": True, "measured": True},
-    )
-    # C01 stages calibration explicitly; a mutable flat file may not override
-    # the committed generation. Keep the original geometric/detector assertions.
-    with storage.generations.candidate(match.id, storage.get_match(match.id).config, revision):
-        receipt = storage.execute_recompute(match.id, "calibration").model_dump(mode="json")
+    source_before = source.read_bytes()
+    assert storage.commit_calibration_for_match(match.id, calibrated(5.0))["committed"]
+    receipt = storage.execute_recompute(match.id, "calibration").model_dump(mode="json")
     assert receipt["kind"] == "executed"
     assert receipt["detectorCalls"] == 0
-    assert storage.load_frames(match.id)[0].myTeam[0].x != before_x
+    assert storage.load_frames(match.id)[0].myTeam[0].x == pytest.approx(before_x + 5.0)
+    assert source.read_bytes() == source_before
     assert storage.current_generation(match.id).generationId == receipt["outputGeneration"]
 
 

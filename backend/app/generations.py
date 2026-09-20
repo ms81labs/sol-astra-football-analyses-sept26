@@ -45,7 +45,7 @@ _UNSET = object()
 _REQUIRED = {"frames.json", "events.json", "analytics.json", "shots.json", "summary.json"}
 _ANALYTICAL = {
     "attackDirection", "manualHomographyPoints", "myTeamCluster", "autoHomography",
-    "cameraProfile", "pitchLengthM", "pitchWidthM", "periods", "calibrationCommitted",
+    "cameraProfile", "pitchLengthM", "pitchWidthM", "periods", "calibrationCommitted", "coordinateConvention",
 }
 _ID = re.compile(r"[A-Za-z0-9_-]{1,160}\Z")
 
@@ -430,17 +430,22 @@ class GenerationStore:
                 match_id, generation_id=manifest.generationId
             )[0]
         with self.storage._connect() as connection:
-            row = connection.execute("SELECT config_json FROM matches WHERE id=?", (match_id,)).fetchone()
+            row = connection.execute("SELECT config_json, team_clusters_json, requires_team_selection FROM matches WHERE id=?", (match_id,)).fetchone()
             if row is None:
                 return
             config = json.loads(row["config_json"])
             if manifest.effectiveConfig is not None:
                 config.update(manifest.effectiveConfig)
+            from .storage import _utcnow
+            requires_selection = row["requires_team_selection"]
+            clusters = json.loads(row["team_clusters_json"] or "[]")
+            if clusters and manifest.effectiveConfig is not None:
+                requires_selection = int(config.get("myTeamCluster") not in {c["clusterId"] for c in clusters})
             connection.execute(
                 "UPDATE matches SET analytics_summary_json=?, analytical_generation_id=?, "
-                "semantic_config_revision=?, config_json=? WHERE id=?",
+                "semantic_config_revision=?, config_json=?, requires_team_selection=?, updated_at=? WHERE id=?",
                 (summary.model_dump_json(), manifest.generationId, manifest.semanticConfigRevision,
-                 json.dumps(config), match_id))
+                 json.dumps(config), requires_selection, _utcnow().isoformat(), match_id))
 
     def command_metadata(self, match_id):
         history = [item for item in self.storage._load_correction_log(match_id).history(match_id)
@@ -452,7 +457,7 @@ class GenerationStore:
     def publish(self, match_id, *, frames, summary, assignments, formation_timeline,
                 shots, events, correction_head, stale=None, orphaned_decisions=None,
                 calibration_revision=None, effective_config=None, calibration_data=_UNSET,
-                expected_parent=_UNSET, provenance=None, include_pending_commands=False):
+                expected_parent=_UNSET, provenance=None, include_pending_commands=False, identity_context=None):
         from .storage import _utcnow
         from .workbench.events import with_stable_event_id
         self.prepare(match_id)
@@ -510,6 +515,8 @@ class GenerationStore:
                     if path.is_file():
                         observation_digest = self.storage._sha256_file(path)
                         break
+            if observation_digest is None and identity_context is not None:
+                observation_digest = identity_context.get("observationDigest")
             source_identity = previous.get("sourceIdentity")
             if source_identity is None:
                 try:
@@ -530,6 +537,8 @@ class GenerationStore:
                       "observationDigest": observation_digest, "effectiveConfig": effective,
                       "semanticConfigRevision": _digest(effective) if effective is not None else None,
                       "calibrationRevision": calibration_revision, "calibrationData": calibration_data,
+                      "identityRevision": identity_context.get("identityRevision") if identity_context else previous.get("identityRevision"),
+                      "identityContext": identity_context if identity_context is not None else previous.get("identityContext"),
                       "correctionHead": commands[-1].correctionId if commands else correction_head,
                       "commandSetDigest": command_digest, "includedCommandIds": [c.commandId for c in commands],
                       "algorithmVersions": {**previous.get("algorithmVersions", {}), "generation_protocol": "2"},

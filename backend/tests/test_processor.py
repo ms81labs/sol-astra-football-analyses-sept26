@@ -1622,7 +1622,7 @@ def test_reprocess_video_match_reuses_image_space_detections_for_team_mapping(tm
     storage.save_raw_rows(
         match.id,
         [
-            {"Frame_ID": 0, "Timestamp": 0.0, "Entity_Type": "my_team", "Track_ID": 7, "X": 19.0, "Y": 30.0, "Conf": 0.9},
+            {"Frame_ID": 0, "Timestamp": 0.0, "Entity_Type": "player", "Track_ID": 7, "X": 19.0, "Y": 30.0, "Conf": 0.9},
             {"Frame_ID": 0, "Timestamp": 0.0, "Entity_Type": "ball", "Track_ID": -1, "X": 20.0, "Y": 30.0, "Conf": 0.95},
         ],
     )
@@ -1641,11 +1641,13 @@ def test_reprocess_video_match_reuses_image_space_detections_for_team_mapping(tm
 
     monkeypatch.setattr(processor, "process_video_input", fail_vision)
 
+    reprocess_video_match(storage, match.id)
+    source_before = (storage._match_dir(match.id) / "raw_rows.json").read_bytes()
+    old_generation = storage.current_generation(match.id).generationId
     reprocess_video_match(storage, match.id, config=MatchConfig(myTeamCluster=1))
-    plan = storage.load_analysis_artifact(match.id, "reprocess_plan")
-    assert plan["visionInvoked"] is False
-    assert plan["imageSpaceDetectionsReused"] is True
-    assert plan["reused"] is True
+    assert storage.current_generation(match.id).generationId != old_generation
+    assert storage.load_frames(match.id)[0].enemies[0].id == 7
+    assert (storage._match_dir(match.id) / "raw_rows.json").read_bytes() == source_before
 
 
 def test_persist_video_outputs_preserves_producer_sample_interval_for_sparse_ball_rows(tmp_path, monkeypatch):

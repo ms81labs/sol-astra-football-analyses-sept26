@@ -9,9 +9,14 @@ import type {
     SpeedData,
 } from '../types';
 
-// Standard pitch dimensions in meters
-const PITCH_LENGTH_M = 105;
-const PITCH_WIDTH_M = 68;
+export interface PitchDimensions { pitchLengthM: number; pitchWidthM: number }
+// Legacy standalone utility callers retain their documented default. The
+// production workbench only calls physical calculations with validated dimensions.
+const STANDARD_PITCH: PitchDimensions = { pitchLengthM: 105, pitchWidthM: 68 };
+function validDimensions(dimensions: PitchDimensions): boolean {
+    return Number.isFinite(dimensions.pitchLengthM) && dimensions.pitchLengthM > 0
+        && Number.isFinite(dimensions.pitchWidthM) && dimensions.pitchWidthM > 0;
+}
 
 /**
  * Compute a heat map density grid from all frames for a given team.
@@ -96,10 +101,11 @@ function physicalTotalsAvailability(identityContinuous: boolean) {
  */
 export function computeSpeedsForFrame(
     frames: FrameData[],
-    frameIdx: number
+    frameIdx: number,
+    dimensions: PitchDimensions = STANDARD_PITCH,
 ): Map<number, SpeedData> {
     const result = new Map<number, SpeedData>();
-    if (frameIdx <= 0 || frameIdx >= frames.length) return result;
+    if (!validDimensions(dimensions) || frameIdx <= 0 || frameIdx >= frames.length) return result;
 
     const prev = frames[frameIdx - 1];
     const curr = frames[frameIdx];
@@ -110,8 +116,8 @@ export function computeSpeedsForFrame(
     for (const cp of curr.My_Team) {
         const pp = prev.My_Team.find(p => p.id === cp.id);
         if (!pp) continue;
-        const dx = (cp.x - pp.x) / 100 * PITCH_LENGTH_M;
-        const dy = (cp.y - pp.y) / 100 * PITCH_WIDTH_M;
+        const dx = (cp.x - pp.x) / 100 * dimensions.pitchLengthM;
+        const dy = (cp.y - pp.y) / 100 * dimensions.pitchWidthM;
         const distM = Math.sqrt(dx * dx + dy * dy);
         const speedKmh = (distM / dt) * 3.6;
         result.set(cp.id, { speed: Math.round(speedKmh * 10) / 10, isSprinting: speedKmh > 25 });
@@ -121,8 +127,8 @@ export function computeSpeedsForFrame(
     for (const ce of curr.Enemies) {
         const pe = prev.Enemies.find(p => p.enemy_id === ce.enemy_id);
         if (!pe) continue;
-        const dx = (ce.x - pe.x) / 100 * PITCH_LENGTH_M;
-        const dy = (ce.y - pe.y) / 100 * PITCH_WIDTH_M;
+        const dx = (ce.x - pe.x) / 100 * dimensions.pitchLengthM;
+        const dy = (ce.y - pe.y) / 100 * dimensions.pitchWidthM;
         const distM = Math.sqrt(dx * dx + dy * dy);
         const speedKmh = (distM / dt) * 3.6;
         result.set(-ce.enemy_id, { speed: Math.round(speedKmh * 10) / 10, isSprinting: speedKmh > 25 });
@@ -382,7 +388,9 @@ export function buildPlayerProfiles(
     events: BackendEvent[],
     shotMarkers: ShotMarker[] = [],
     identityContinuous = false,
+    dimensions: PitchDimensions = STANDARD_PITCH,
 ): PlayerProfile[] {
+    identityContinuous = identityContinuous && validDimensions(dimensions);
     const contributions = buildPlayerContributions(events, shotMarkers);
     type PlayerMovementMetric = {
         sumX: number;
@@ -415,8 +423,8 @@ export function buildPlayerProfiles(
             if (identityContinuous && metric.lastX !== undefined && metric.lastY !== undefined && metric.lastTimestamp !== undefined) {
                 const dt = frame.Timestamp - metric.lastTimestamp;
                 if (dt > 0) {
-                    const dx = (player.x - metric.lastX) / 100 * PITCH_LENGTH_M;
-                    const dy = (player.y - metric.lastY) / 100 * PITCH_WIDTH_M;
+                    const dx = (player.x - metric.lastX) / 100 * dimensions.pitchLengthM;
+                    const dy = (player.y - metric.lastY) / 100 * dimensions.pitchWidthM;
                     const distance = Math.sqrt(dx * dx + dy * dy);
                     metric.totalDistance += distance;
                     metric.topSpeed = Math.max(metric.topSpeed, (distance / dt) * 3.6);
@@ -436,8 +444,8 @@ export function buildPlayerProfiles(
             if (identityContinuous && metric.lastX !== undefined && metric.lastY !== undefined && metric.lastTimestamp !== undefined) {
                 const dt = frame.Timestamp - metric.lastTimestamp;
                 if (dt > 0) {
-                    const dx = (player.x - metric.lastX) / 100 * PITCH_LENGTH_M;
-                    const dy = (player.y - metric.lastY) / 100 * PITCH_WIDTH_M;
+                    const dx = (player.x - metric.lastX) / 100 * dimensions.pitchLengthM;
+                    const dy = (player.y - metric.lastY) / 100 * dimensions.pitchWidthM;
                     const distance = Math.sqrt(dx * dx + dy * dy);
                     metric.totalDistance += distance;
                     metric.topSpeed = Math.max(metric.topSpeed, (distance / dt) * 3.6);

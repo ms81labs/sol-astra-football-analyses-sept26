@@ -1,3 +1,5 @@
+import { assertGeneration, parseJson, readGeneration } from './request';
+import type { CommandControls, CommandReceipt } from './commandLifecycle';
 export interface CapabilityEntry {
   id: string;
   label: string;
@@ -74,63 +76,49 @@ export async function fetchWorkbenchDossier(): Promise<WorkbenchDossier> {
   return response.json() as Promise<WorkbenchDossier>;
 }
 
-export async function searchWorkbenchEvents(query: string, matchId: string, events: Array<Record<string, unknown>> = []) {
+export async function searchWorkbenchEvents(query: string, matchId: string, events: Array<Record<string, unknown>> = [], generationId?: string) {
   void events;
   const response = await fetch(`/api/matches/${matchId}/queries`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query }),
+    body: JSON.stringify({ query, ...(generationId ? { generationId } : {}) }),
   });
-  if (!response.ok) {
-    throw new Error(`Failed to run typed search: ${response.status}`);
-  }
-  return response.json() as Promise<{
+  const payload = await parseJson<{
     query: { unanswerable: boolean; reason: string | null; eventFamily: string };
     results: Array<{ eventId: string; timestamp: number; evidenceIds: string[] }>;
-  }>;
+  } & { generationId?: string | null }>(response);
+  assertGeneration(payload, generationId);
+  return payload;
 }
 
 export async function submitMatchCorrection(
   matchId: string,
-  body: { kind: string; payload?: Record<string, unknown>; expectedVersion?: number; author?: string },
+  body: { kind: string; payload?: Record<string, unknown>; author?: string } & CommandControls,
 ) {
   const response = await fetch(`/api/matches/${matchId}/corrections`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  if (!response.ok) {
-    throw new Error(`Failed to save correction: ${response.status}`);
-  }
-  return response.json() as Promise<{ correctionId: string; saveState: string; version?: number }>;
+  return parseJson<CommandReceipt>(response);
 }
 
 export async function fetchPendingCorrections(matchId: string) {
-  const response = await fetch(`/api/matches/${matchId}/corrections?state=pending`);
-  if (!response.ok) {
-    throw new Error(`Failed to load pending corrections: ${response.status}`);
-  }
-  return response.json() as Promise<{ items: Array<{ correctionId: string; kind: string; saveState: string; payload?: Record<string, unknown> | null }> }>;
+  return parseJson<{ items: CommandReceipt[] }>(await fetch(`/api/matches/${matchId}/corrections?state=pending`));
 }
 
 export async function recoverMatchCorrection(matchId: string, correctionId: string) {
   const response = await fetch(`/api/matches/${matchId}/corrections/${correctionId}/recover`, {
     method: 'POST',
   });
-  if (!response.ok) {
-    throw new Error(`Failed to recover correction: ${response.status}`);
-  }
-  return response.json() as Promise<{ correctionId: string; saveState: string }>;
+  return parseJson<CommandReceipt>(response);
 }
 
-export async function undoMatchCorrection(matchId: string, correctionId: string) {
+export async function undoMatchCorrection(matchId: string, correctionId: string, controls: CommandControls = {}) {
   const response = await fetch(`/api/matches/${matchId}/corrections/${correctionId}/undo`, {
-    method: 'POST',
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(controls),
   });
-  if (!response.ok) {
-    throw new Error(`Failed to undo correction: ${response.status}`);
-  }
-  return response.json() as Promise<{ correctionId: string; undoOf: string }>;
+  return parseJson<CommandReceipt>(response);
 }
 
 export async function exportPlaylistInterval(timestampStart: number, timestampEnd: number, sourceFps: number) {
@@ -173,12 +161,9 @@ export async function searchMatchLibrary(query: string) {
   return response.json() as Promise<{ results: Array<{ id: string; title?: string }> }>;
 }
 
-export async function fetchPlayerObservations(matchId: string) {
-  const response = await fetch(`/api/matches/${matchId}/players`);
-  if (!response.ok) {
-    throw new Error(`Failed to load player observations: ${response.status}`);
-  }
-  return response.json() as Promise<{ intervalLimited: boolean; totalsWithheld: boolean; reasonCodes: string[]; rows?: Array<{ trackId?: string }> }>;
+export async function fetchPlayerObservations(matchId: string, generationId?: string) {
+  return readGeneration<{ intervalLimited: boolean; totalsWithheld: boolean; reasonCodes: string[]; rows?: Array<{ trackId?: string }> }>(
+    `/api/matches/${matchId}/players`, generationId);
 }
 
 export async function postPlayerObservations(matchId: string) {
@@ -194,6 +179,9 @@ export async function postPlayerObservations(matchId: string) {
 }
 
 export interface MatchSetup {
+  generationId?: string | null;
+  cloudPermission?: boolean;
+  periods?: Array<{ name: string; startSeconds: number; endSeconds: number }>;
   cameraProfile: string;
   automationAdmitted: boolean;
   manualTaggingPermitted: boolean;
@@ -216,29 +204,17 @@ export interface MetricInspect {
   publishedValue: number | null;
 }
 
-export async function fetchMatchSetup(matchId: string) {
-  const response = await fetch(`/api/matches/${matchId}/setup`);
-  if (!response.ok) {
-    throw new Error(`Failed to load match setup: ${response.status}`);
-  }
-  return response.json() as Promise<MatchSetup>;
+export async function fetchMatchSetup(matchId: string, generationId?: string) {
+  return readGeneration<MatchSetup>(`/api/matches/${matchId}/setup`, generationId);
 }
 
-export async function fetchMetricInspect(metric: string, matchId?: string) {
+export async function fetchMetricInspect(metric: string, matchId?: string, generationId?: string) {
   const url = matchId ? `/api/matches/${matchId}/metrics/inspect/${metric}` : `/api/metrics/inspect/${metric}`;
-  const response = await fetch(url);
-  if (!response.ok) {
-    throw new Error(`Failed to inspect metric: ${response.status}`);
-  }
-  return response.json() as Promise<MetricInspect>;
+  return readGeneration<MetricInspect>(url, generationId);
 }
 
-export async function fetchMatchMetrics(matchId: string) {
-  const response = await fetch(`/api/matches/${matchId}/metrics`);
-  if (!response.ok) {
-    throw new Error(`Failed to load match metrics: ${response.status}`);
-  }
-  return response.json() as Promise<{ metrics: MetricAvailability[] }>;
+export async function fetchMatchMetrics(matchId: string, generationId?: string) {
+  return readGeneration<{ metrics: MetricAvailability[] }>(`/api/matches/${matchId}/metrics`, generationId);
 }
 
 export async function postMatchMetrics(matchId: string) {
@@ -309,18 +285,14 @@ export async function fetchMatchClock(matchId: string) {
   }>;
 }
 
-export async function fetchIncidentReview(matchId: string) {
-  const response = await fetch(`/api/matches/${matchId}/incidents/review`);
-  if (!response.ok) {
-    throw new Error(`Failed to load incident review: ${response.status}`);
-  }
-  return response.json() as Promise<{
+export async function fetchIncidentReview(matchId: string, generationId?: string) {
+  return readGeneration<{
     level: number;
     decision: string | null;
     validatedMeasurement: boolean;
     touchInterval?: [number, number];
     samples: Array<{ time: number; attackerX: number; offsideLineX: number; indeterminate: boolean }>;
-  }>;
+  }>(`/api/matches/${matchId}/incidents/review`, generationId);
 }
 
 export async function postIncidentReview(matchId: string) {
@@ -514,20 +486,7 @@ export async function fetchMatchCalibration(matchId: string) {
 }
 
 export async function fetchCorrectionHistory(matchId: string) {
-  const response = await fetch(`/api/matches/${matchId}/corrections`);
-  if (!response.ok) {
-    throw new Error(`Failed to load correction history: ${response.status}`);
-  }
-  return response.json() as Promise<{
-    items: Array<{
-      correctionId: string;
-      kind: string;
-      saveState: string;
-      undoOf?: string | null;
-      author?: string;
-      payload?: Record<string, unknown> | null;
-    }>;
-  }>;
+  return parseJson<{ items: CommandReceipt[] }>(await fetch(`/api/matches/${matchId}/corrections`));
 }
 
 export interface RecoverySnapshot {
@@ -589,6 +548,7 @@ export async function requestAccessDeletion() {
 }
 
 export interface LandmarkPreview {
+  profile?: Record<string, unknown>;
   residualP95M: number | null;
   accepted: boolean;
   committed: boolean;
@@ -598,12 +558,8 @@ export interface LandmarkPreview {
   reasonCodes?: string[];
 }
 
-export async function fetchLandmarkPreview(matchId: string) {
-  const response = await fetch(`/api/matches/${matchId}/setup/preview`);
-  if (!response.ok) {
-    throw new Error(`Failed to load landmark preview: ${response.status}`);
-  }
-  return response.json() as Promise<LandmarkPreview>;
+export async function fetchLandmarkPreview(matchId: string, generationId?: string) {
+  return readGeneration<LandmarkPreview>(`/api/matches/${matchId}/setup/preview`, generationId);
 }
 
 export async function commitMatchCalibration(
@@ -615,10 +571,7 @@ export async function commitMatchCalibration(
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
-  if (!response.ok) {
-    throw new Error(`Failed to commit calibration: ${response.status}`);
-  }
-  return response.json() as Promise<{ committed: boolean; certified: boolean }>;
+  return parseJson<{ committed: boolean; certified: boolean; correction?: CommandReceipt }>(response);
 }
 
 export interface QualityTimelinePayload {
@@ -628,12 +581,8 @@ export interface QualityTimelinePayload {
   items: Array<{ id: string; label: string; impact: string; accepted?: boolean }>;
 }
 
-export async function fetchQualityTimeline(matchId: string) {
-  const response = await fetch(`/api/matches/${matchId}/quality`);
-  if (!response.ok) {
-    throw new Error(`Failed to load quality timeline: ${response.status}`);
-  }
-  return response.json() as Promise<QualityTimelinePayload>;
+export async function fetchQualityTimeline(matchId: string, generationId?: string) {
+  return readGeneration<QualityTimelinePayload>(`/api/matches/${matchId}/quality`, generationId);
 }
 
 export interface AssistanceSnapshot {
@@ -704,12 +653,8 @@ export interface FormationAvailability {
   value?: string | null;
 }
 
-export async function fetchMatchFormation(matchId: string) {
-  const response = await fetch(`/api/matches/${matchId}/formation`);
-  if (!response.ok) {
-    throw new Error(`Failed to load formation availability: ${response.status}`);
-  }
-  return response.json() as Promise<FormationAvailability>;
+export async function fetchMatchFormation(matchId: string, generationId?: string) {
+  return readGeneration<FormationAvailability>(`/api/matches/${matchId}/formation`, generationId);
 }
 
 export async function postMatchFormation(matchId: string) {
@@ -3044,12 +2989,8 @@ export interface MatchReportCoverage {
   representsWholeMatch: boolean;
 }
 
-export async function fetchMatchCoverage(matchId: string) {
-  const response = await fetch(`/api/matches/${matchId}/reports/coverage`);
-  if (!response.ok) {
-    throw new Error(`Failed to load match coverage: ${response.status}`);
-  }
-  return response.json() as Promise<MatchReportCoverage>;
+export async function fetchMatchCoverage(matchId: string, generationId?: string) {
+  return readGeneration<MatchReportCoverage>(`/api/matches/${matchId}/reports/coverage`, generationId);
 }
 
 export interface MatchReportProvenance {
@@ -3981,6 +3922,8 @@ export async function fetchChallengers() {
 }
 
 export interface HeatmapSnapshot {
+  pitchDimensions?: { pitchLengthM: number; pitchWidthM: number } | null;
+  geometryEligible?: boolean;
   identityContinuous?: boolean;
   wholeMatch?: boolean;
   intervalLimited?: boolean;
@@ -3988,16 +3931,11 @@ export interface HeatmapSnapshot {
   reasonCodes?: string[];
 }
 
-export async function fetchHeatmap(matchId?: string) {
-  const response = await fetch(matchId ? `/api/matches/${matchId}/heatmap` : '/api/heatmap', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({}),
-  });
-  if (!response.ok) {
-    throw new Error(`Failed to load heatmap availability: ${response.status}`);
-  }
-  return response.json() as Promise<HeatmapSnapshot>;
+export async function fetchHeatmap(matchId?: string, generationId?: string) {
+  if (matchId) return readGeneration<HeatmapSnapshot>(`/api/matches/${matchId}/heatmap`, generationId);
+  return parseJson<HeatmapSnapshot>(await fetch('/api/heatmap', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
+  }));
 }
 
 export interface AssembleReportSnapshot {
@@ -4022,47 +3960,41 @@ export async function assembleMatchReport(matchId: string) {
   return response.json() as Promise<AssembleReportSnapshot>;
 }
 
-export async function promoteMatchIdentity(matchId: string) {
+export async function promoteMatchIdentity(matchId: string, controls: CommandControls & { trackIds?: string[]; teamScope?: string; intervalStart?: number; intervalEnd?: number; identityRevision?: string } = {}) {
   const response = await fetch(`/api/matches/${matchId}/identity/promote`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ reviewed: true }),
+    body: JSON.stringify({ reviewed: true, ...controls }),
   });
-  if (!response.ok) {
-    throw new Error(`Failed to promote match identity: ${response.status}`);
-  }
-  return response.json() as Promise<{
+  return parseJson<{
     committed: boolean;
     preview: boolean;
     identityContinuous: boolean;
     silentlyReconnected: boolean;
     visionRerun: boolean;
     reasonCodes: string[];
-    correction?: { correctionId?: string; kind?: string; saveState?: string };
-  }>;
+    correction?: CommandReceipt;
+  }>(response);
 }
 
 export async function repairMatchIdentity(
   matchId: string,
-  body: { kind?: string; trackId?: string; atFrame?: number; leftTrackId?: string; rightTrackId?: string } = {},
+  body: { kind?: string; trackId?: string; atFrame?: number; leftTrackId?: string; rightTrackId?: string } & CommandControls = {},
 ) {
   const response = await fetch(`/api/matches/${matchId}/identity/repair`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
-  if (!response.ok) {
-    throw new Error(`Failed to repair match identity: ${response.status}`);
-  }
-  return response.json() as Promise<{
+  return parseJson<{
     committed: boolean;
     preview: boolean;
     identityContinuous: boolean;
     silentlyReconnected: boolean;
     visionRerun: boolean;
     reasonCodes: string[];
-    correction?: { correctionId?: string; kind?: string; saveState?: string };
-  }>;
+    correction?: CommandReceipt;
+  }>(response);
 }
 
 export async function submitMatchCalibration(
@@ -4095,18 +4027,14 @@ export async function submitMatchCalibration(
   }>;
 }
 
-export async function fetchMatchDerivedDistance(matchId: string) {
-  const response = await fetch(`/api/matches/${matchId}/geometry/distance`);
-  if (!response.ok) {
-    throw new Error(`Failed to load derived distance: ${response.status}`);
-  }
-  return response.json() as Promise<{
+export async function fetchMatchDerivedDistance(matchId: string, generationId?: string) {
+  return readGeneration<{
     availability?: string;
     value?: number | null;
     uncertaintyM?: number;
     bridged?: boolean;
     reasonCodes?: string[];
-  }>;
+  }>(`/api/matches/${matchId}/geometry/distance`, generationId);
 }
 
 export async function fetchAssembleReport() {

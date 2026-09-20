@@ -4,17 +4,18 @@ import { searchWorkbenchEvents } from '../utils/workbench';
 
 interface TypedSearchPanelProps {
   matchId?: string;
+  generationId?: string;
   onSeek?: (timestamp: number) => void;
 }
 
-export default function TypedSearchPanel({ matchId, onSeek }: TypedSearchPanelProps) {
+export default function TypedSearchPanel({ matchId, onSeek, generationId }: TypedSearchPanelProps) {
   const [query, setQuery] = useState('');
   const [message, setMessage] = useState<string | null>(null);
 
   async function runSearch() {
     if (!matchId) return;
     try {
-      const result = await searchWorkbenchEvents(query, matchId);
+      const result = await searchWorkbenchEvents(query, matchId, [], generationId);
       if (result.query.unanswerable) {
         setMessage(`Unanswerable: ${result.query.reason ?? 'unknown'}`);
         return;

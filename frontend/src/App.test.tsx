@@ -38,7 +38,7 @@ beforeEach(() => {
 type Workspace = Awaited<ReturnType<typeof api.fetchMatchWorkspace>>;
 
 function readyMatch(id: string, name: string): MatchRecord {
-  return { id, name, status: 'ready', inputMode: 'tracking_json', originalFilename: `${id}.json` };
+  return { id, name, generationId: `g-${id}`, includedCommandIds: [], status: 'ready', inputMode: 'tracking_json', originalFilename: `${id}.json` };
 }
 
 function workspace(id: string, name: string, eventLabel?: string, possession = 50): Workspace {
@@ -54,6 +54,19 @@ function workspace(id: string, name: string, eventLabel?: string, possession = 5
     benchmark: null,
     evidence: null,
   };
+}
+
+function stubSnapshotWorkspace(value: Workspace, reviewedEvents = false) {
+  const commandIds = ['accept-1', 'undo-1', 'c-pending', 'clip-1', 'clip-2', 'clip-pending', 'undo-clip-1',
+    'undo-clip-2', 'swap-1', 'swap-old', 'undo-swap-1', 'join-1', 'validate-1'];
+  vi.mocked(api.fetchMatchWorkspace).mockImplementation(async (_matchId, signal, generationId) => {
+    const chosen = generationId ?? value.detail.generationId;
+    if (chosen !== value.detail.generationId && chosen !== 'g-match-a-next') throw new Error('Unknown fixture generation');
+    const events = generationId && reviewedEvents
+      ? await api.fetchMatchEvents(value.detail.id, signal, generationId) : value.events;
+    return { ...value, events, generationId: chosen,
+      detail: { ...value.detail, generationId: chosen, includedCommandIds: commandIds } };
+  });
 }
 
 function loadedWorkspace(id: string, name: string, eventLabel?: string, possession = 50): Workspace {
@@ -111,7 +124,7 @@ function reviewWorkspace(): Workspace {
   };
   return {
     detail: {
-      id: 'match-review',
+      id: 'match-review', generationId: 'g-match-review', includedCommandIds: [],
       name: 'Review Match',
       status: 'ready',
       inputMode: 'tracking_json',
@@ -210,14 +223,14 @@ describe('App match workspace loading', () => {
   it('loads heatmap availability from production HTTP and ignores claimed identity continuity', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
-    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    stubSnapshotWorkspace(loadedWorkspace('match-a', 'Match A'));
     const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
       void init;
       const url = String(input);
       if (url.includes('/api/matches/match-a/heatmap')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             identityContinuous: false,
             wholeMatch: false,
             intervalLimited: true,
@@ -236,23 +249,24 @@ describe('App match workspace loading', () => {
       expect(fetchMock.mock.calls.some(([input]) => String(input).includes('/api/matches/match-a/heatmap'))).toBe(true);
     });
     const heatmapCall = fetchMock.mock.calls.find(([input]) => String(input).includes('/api/matches/match-a/heatmap'));
-    expect(heatmapCall?.[1]?.method).toBe('POST');
-    expect(heatmapCall?.[1]?.body).not.toContain('"identityContinuous":true');
+    expect(heatmapCall?.[1]?.method ?? 'GET').toBe('GET');
+    expect(String(heatmapCall?.[0])).toContain('generationId=g-match-a');
+    expect(heatmapCall?.[1]?.body ?? '').not.toContain('"identityContinuous":true');
     expect(screen.getByText(/whole-match heatmap withheld until identity continuity/i)).toBeTruthy();
   });
 
   it('derives speed and player-total overlays from production identity continuity', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
-    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    stubSnapshotWorkspace(loadedWorkspace('match-a', 'Match A'));
     vi.stubGlobal('fetch', vi.fn((input: RequestInfo, init?: RequestInit) => {
       void init;
       const url = String(input);
       if (url.includes('/api/matches/match-a/heatmap')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
-            identityContinuous: true,
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
+            identityContinuous: true, geometryEligible: true, pitchDimensions: { pitchLengthM: 100, pitchWidthM: 60 },
             wholeMatch: true,
             intervalLimited: false,
             withheld: false,
@@ -275,7 +289,7 @@ describe('App match workspace loading', () => {
   it('passes production identity continuity into the selected player detail panel', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
-    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue({
+    stubSnapshotWorkspace({
       ...loadedWorkspace('match-a', 'Match A'),
       frames: [{
         Frame_ID: 0,
@@ -300,8 +314,8 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/heatmap')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
-            identityContinuous: true,
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
+            identityContinuous: true, geometryEligible: true, pitchDimensions: { pitchLengthM: 100, pitchWidthM: 60 },
             wholeMatch: true,
             intervalLimited: false,
             withheld: false,
@@ -325,7 +339,7 @@ describe('App match workspace loading', () => {
   it('posts match-scoped identity join through production HTTP', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
-    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue({
+    stubSnapshotWorkspace({
       ...loadedWorkspace('match-a', 'Match A'),
       frames: [{
         Frame_ID: 0,
@@ -349,8 +363,8 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/heatmap')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
-            identityContinuous: true,
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
+            identityContinuous: true, geometryEligible: true, pitchDimensions: { pitchLengthM: 100, pitchWidthM: 60 },
             wholeMatch: true,
             intervalLimited: false,
             withheld: false,
@@ -361,14 +375,14 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/identity/repair') && init?.method === 'POST') {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             committed: true,
             preview: true,
             identityContinuous: false,
             silentlyReconnected: false,
             visionRerun: false,
             reasonCodes: [],
-            correction: { correctionId: 'join-1', kind: 'track_join', saveState: 'saved' },
+            correction: { correctionId: 'join-1', kind: 'track_join', saveState: 'saved', applyState: 'applied', appliedGeneration: 'g-match-a-next' },
           }),
         } as Response);
       }
@@ -399,7 +413,7 @@ describe('App match workspace loading', () => {
   it('posts match-scoped identity validation through production HTTP', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
-    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue({
+    stubSnapshotWorkspace({
       ...loadedWorkspace('match-a', 'Match A'),
       frames: [{
         Frame_ID: 0,
@@ -407,7 +421,8 @@ describe('App match workspace loading', () => {
         Ball: null,
         My_Team: [{ id: 7, x: 25, y: 40, conf: 1 }],
         Enemies: [],
-      }],
+      }, { Frame_ID: 1, Timestamp: 0.2, Ball: null, My_Team: [{ id: 7, x: 26, y: 40, conf: 1 }], Enemies: [] }],
+      frameCount: 2,
       events: [{
         type: 'pass',
         frameId: 0,
@@ -423,7 +438,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/heatmap')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             identityContinuous: false,
             wholeMatch: false,
             intervalLimited: true,
@@ -435,14 +450,14 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/identity/promote') && init?.method === 'POST') {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             committed: true,
             preview: true,
-            identityContinuous: true,
+            identityContinuous: true, geometryEligible: true, pitchDimensions: { pitchLengthM: 100, pitchWidthM: 60 },
             silentlyReconnected: false,
             visionRerun: false,
             reasonCodes: [],
-            correction: { correctionId: 'validate-1', kind: 'identity_validate', saveState: 'saved' },
+            correction: { correctionId: 'validate-1', kind: 'identity_validate', saveState: 'saved', applyState: 'applied', appliedGeneration: 'g-match-a-next' },
           }),
         } as Response);
       }
@@ -457,7 +472,7 @@ describe('App match workspace loading', () => {
     });
     fireEvent.click(screen.getByRole('img'), { clientX: 25, clientY: 40 });
     expect(screen.getByText('Track 7')).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: /validate identity/i }));
+    fireEvent.click(screen.getByRole('button', { name: /approve visible track interval/i }));
     await waitFor(() => {
       const promoteCall = fetchMock.mock.calls.find(([url]) => String(url).includes('/identity/promote'));
       expect(promoteCall?.[1]?.body).toContain('"reviewed":true');
@@ -468,13 +483,13 @@ describe('App match workspace loading', () => {
   it('runs typed tactical search on stored match events without client-injected rows', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
-    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    stubSnapshotWorkspace(loadedWorkspace('match-a', 'Match A'));
     const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
       const url = String(input);
       if (url.includes('/api/matches/match-a/heatmap')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             identityContinuous: false,
             wholeMatch: false,
             intervalLimited: true,
@@ -486,7 +501,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/queries') && init?.method === 'POST') {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             query: { unanswerable: false, reason: null, eventFamily: 'turnover' },
             results: [{ eventId: 'ev-1', timestamp: 12.4, evidenceIds: ['e-1'] }],
           }),
@@ -514,7 +529,7 @@ describe('App match workspace loading', () => {
   it('refreshes stored events after accept without rewriting the playhead or injecting event ids', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
-    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue({
+    stubSnapshotWorkspace({
       ...loadedWorkspace('match-a', 'Match A'),
       events: [{
         type: 'pass',
@@ -526,13 +541,13 @@ describe('App match workspace loading', () => {
         description: 'Pass by track 7',
         reviewStatus: 'unreviewed',
       }],
-    });
+    }, true);
     const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
       const url = String(input);
       if (url.includes('/api/matches/match-a/heatmap')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             identityContinuous: false,
             wholeMatch: false,
             intervalLimited: true,
@@ -544,13 +559,13 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/corrections') && init?.method === 'POST' && !String(url).includes('/undo')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({ correctionId: 'accept-1', saveState: 'saved', kind: 'event_accept' }),
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a', correctionId: 'accept-1', saveState: 'saved', applyState: 'applied', appliedGeneration: 'g-match-a-next', kind: 'event_accept' }),
         } as Response);
       }
       if (url.includes('/api/matches/match-a/events') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             events: [{
               type: 'pass',
               frameId: 0,
@@ -589,14 +604,14 @@ describe('App match workspace loading', () => {
         && (!init?.method || init.method === 'GET')
       ))).toBe(true);
     });
-    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(2);
     expect(await screen.findByText('accepted')).toBeTruthy();
   });
 
   it('posts stored undo from keyboard z after accept without rewriting the playhead', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
-    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue({
+    stubSnapshotWorkspace({
       ...loadedWorkspace('match-a', 'Match A'),
       events: [{
         type: 'pass',
@@ -608,14 +623,14 @@ describe('App match workspace loading', () => {
         description: 'Pass by track 7',
         reviewStatus: 'unreviewed',
       }],
-    });
+    }, true);
     let undone = false;
     const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
       const url = String(input);
       if (url.includes('/api/matches/match-a/heatmap')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             identityContinuous: false,
             wholeMatch: false,
             intervalLimited: true,
@@ -628,19 +643,19 @@ describe('App match workspace loading', () => {
         undone = true;
         return Promise.resolve({
           ok: true,
-          json: async () => ({ correctionId: 'undo-1', saveState: 'saved', undoOf: 'accept-1' }),
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a', correctionId: 'undo-1', saveState: 'saved', applyState: 'applied', appliedGeneration: 'g-match-a-next', undoOf: 'accept-1' }),
         } as Response);
       }
       if (url.includes('/api/matches/match-a/corrections') && init?.method === 'POST' && !String(url).includes('/undo')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({ correctionId: 'accept-1', saveState: 'saved', kind: 'event_accept' }),
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a', correctionId: 'accept-1', saveState: 'saved', applyState: 'applied', appliedGeneration: 'g-match-a-next', kind: 'event_accept' }),
         } as Response);
       }
       if (url.includes('/api/matches/match-a/events') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             events: [{
               type: 'pass',
               frameId: 0,
@@ -677,14 +692,14 @@ describe('App match workspace loading', () => {
       ));
       expect(eventGets.length).toBeGreaterThanOrEqual(2);
     });
-    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(3);
     expect(await screen.findByText('unreviewed')).toBeTruthy();
   });
 
   it('recovers a pending event correction on the loaded match without rewriting the playhead', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
-    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue({
+    stubSnapshotWorkspace({
       ...loadedWorkspace('match-a', 'Match A'),
       events: [{
         type: 'pass',
@@ -696,13 +711,13 @@ describe('App match workspace loading', () => {
         description: 'Pass by track 7',
         reviewStatus: 'unreviewed',
       }],
-    });
+    }, true);
     const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
       const url = String(input);
       if (url.includes('/api/matches/match-a/heatmap')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             identityContinuous: false,
             wholeMatch: false,
             intervalLimited: true,
@@ -714,7 +729,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/corrections') && url.includes('state=pending') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             items: [{ correctionId: 'c-pending', kind: 'event_accept', saveState: 'pending' }],
           }),
         } as Response);
@@ -722,13 +737,13 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/corrections/c-pending/recover') && init?.method === 'POST') {
         return Promise.resolve({
           ok: true,
-          json: async () => ({ correctionId: 'c-pending', saveState: 'saved', kind: 'event_accept' }),
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a', correctionId: 'c-pending', saveState: 'saved', applyState: 'applied', appliedGeneration: 'g-match-a-next', kind: 'event_accept' }),
         } as Response);
       }
       if (url.includes('/api/matches/match-a/events') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             events: [{
               type: 'pass',
               frameId: 0,
@@ -762,15 +777,15 @@ describe('App match workspace loading', () => {
         && (!init?.method || init.method === 'GET')
       ))).toBe(true);
     });
-    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(2);
     expect(await screen.findByText('accepted')).toBeTruthy();
-    expect(await screen.findByText('Edit saved')).toBeTruthy();
+    expect(await screen.findByText(/^Edit applied/)).toBeTruthy();
   });
 
   it('loads stored undoable correction history without requiring an in-session edit', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
-    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue({
+    stubSnapshotWorkspace({
       ...loadedWorkspace('match-a', 'Match A'),
       events: [{
         type: 'pass',
@@ -782,14 +797,14 @@ describe('App match workspace loading', () => {
         description: 'Pass by track 7',
         reviewStatus: 'accepted',
       }],
-    });
+    }, true);
     let undone = false;
     const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
       const url = String(input);
       if (url.includes('/api/matches/match-a/heatmap')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             identityContinuous: false,
             wholeMatch: false,
             intervalLimited: true,
@@ -801,24 +816,24 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/corrections') && url.includes('state=pending') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({ items: [] }),
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a', items: [] }),
         } as Response);
       }
       if (url.includes('/api/matches/match-a/corrections/accept-1/undo') && init?.method === 'POST') {
         undone = true;
         return Promise.resolve({
           ok: true,
-          json: async () => ({ correctionId: 'undo-1', saveState: 'saved', undoOf: 'accept-1' }),
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a', correctionId: 'undo-1', saveState: 'saved', applyState: 'applied', appliedGeneration: 'g-match-a-next', undoOf: 'accept-1' }),
         } as Response);
       }
       if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             items: [{
               correctionId: 'accept-1',
               kind: 'event_accept',
-              saveState: 'saved',
+              saveState: 'saved', applyState: 'applied', appliedGeneration: 'g-match-a-next',
               author: 'analyst',
               undoOf: null,
             }],
@@ -828,7 +843,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/events') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             events: [{
               type: 'pass',
               frameId: 0,
@@ -864,20 +879,20 @@ describe('App match workspace loading', () => {
         && (!init?.method || init.method === 'GET')
       ))).toBe(true);
     });
-    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(2);
     expect(await screen.findByText('unreviewed')).toBeTruthy();
   });
 
   it('exports the marked review range as a half-open source interval without claiming whole-match frequency', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
-    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    stubSnapshotWorkspace(loadedWorkspace('match-a', 'Match A'));
     const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
       const url = String(input);
       if (url.includes('/api/matches/match-a/heatmap')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             identityContinuous: false,
             wholeMatch: false,
             intervalLimited: true,
@@ -889,7 +904,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/playlists/export-interval') && init?.method === 'POST') {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             sourceStartSeconds: 0,
             sourceEndSeconds: 0.2,
             sourceEndFrameExclusive: 1,
@@ -899,7 +914,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/corrections') && init?.method === 'POST' && !String(url).includes('/undo') && !String(url).includes('/recover')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({ correctionId: 'clip-1', saveState: 'saved', kind: 'playlist_item' }),
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a', correctionId: 'clip-1', saveState: 'saved', applyState: 'applied', appliedGeneration: 'g-match-a-next', kind: 'playlist_item', payload: JSON.parse(String(init?.body)).payload }),
         } as Response);
       }
       return Promise.reject(new Error(`unexpected ${url}`));
@@ -945,13 +960,13 @@ describe('App match workspace loading', () => {
     expect(clipCall?.[1]?.body).not.toContain('"events"');
     expect(clipCall?.[1]?.body).not.toContain('"eventId"');
     expect(await screen.findByRole('button', { name: 'Undo clip-1' })).toBeTruthy();
-    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(2);
   });
 
   it('opens the exported playlist source interval on the review timeline', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
-    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue({
+    stubSnapshotWorkspace({
       ...loadedWorkspace('match-a', 'Match A'),
       frames: [0, 1, 2].map((Frame_ID) => ({
         Frame_ID,
@@ -967,7 +982,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/heatmap')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             identityContinuous: false,
             wholeMatch: false,
             intervalLimited: true,
@@ -979,7 +994,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/playlists/export-interval') && init?.method === 'POST') {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             sourceStartSeconds: 0,
             sourceEndSeconds: 0.2,
             sourceEndFrameExclusive: 1,
@@ -989,7 +1004,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/corrections') && init?.method === 'POST' && !String(url).includes('/undo') && !String(url).includes('/recover')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({ correctionId: 'clip-1', saveState: 'saved', kind: 'playlist_item' }),
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a', correctionId: 'clip-1', saveState: 'saved', applyState: 'applied', appliedGeneration: 'g-match-a-next', kind: 'playlist_item', payload: JSON.parse(String(init?.body)).payload }),
         } as Response);
       }
       return Promise.reject(new Error(`unexpected ${url}`));
@@ -1013,19 +1028,19 @@ describe('App match workspace loading', () => {
     await waitFor(() => {
       expect((screen.getByLabelText('Timeline scrubber') as HTMLInputElement).value).toBe('0');
     });
-    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(2);
   });
 
   it('recovers a pending playlist clip on the loaded match without rewriting the playhead', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
-    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    stubSnapshotWorkspace(loadedWorkspace('match-a', 'Match A'));
     const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
       const url = String(input);
       if (url.includes('/api/matches/match-a/heatmap')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             identityContinuous: false,
             wholeMatch: false,
             intervalLimited: true,
@@ -1037,7 +1052,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/corrections') && url.includes('state=pending') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             items: [{
               correctionId: 'clip-pending',
               kind: 'playlist_item',
@@ -1055,7 +1070,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/corrections/clip-pending/recover') && init?.method === 'POST') {
         return Promise.resolve({
           ok: true,
-          json: async () => ({ correctionId: 'clip-pending', saveState: 'saved', kind: 'playlist_item' }),
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a', correctionId: 'clip-pending', saveState: 'saved', applyState: 'applied', appliedGeneration: 'g-match-a-next', kind: 'playlist_item', payload: { timestampStart: 0, timestampEnd: 0.2, sourceEndFrameExclusive: 1, notes: 'recovered clip' } }),
         } as Response);
       }
       return Promise.reject(new Error(`unexpected ${url}`));
@@ -1075,7 +1090,7 @@ describe('App match workspace loading', () => {
     expect(await screen.findByText(/0s to 0.2s/)).toBeTruthy();
     expect(screen.getByText(/frame 1 exclusive/i)).toBeTruthy();
     expect(screen.getByText(/recovered clip/)).toBeTruthy();
-    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(2);
     expect(fetchMock.mock.calls.some(([url]) => (
       String(url).includes('/api/matches/match-a/events')
       && !String(url).includes('/partition')
@@ -1085,13 +1100,13 @@ describe('App match workspace loading', () => {
   it('undos a stored playlist clip without rewriting the playhead', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
-    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    stubSnapshotWorkspace(loadedWorkspace('match-a', 'Match A'));
     const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
       const url = String(input);
       if (url.includes('/api/matches/match-a/heatmap')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             identityContinuous: false,
             wholeMatch: false,
             intervalLimited: true,
@@ -1103,23 +1118,23 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/corrections') && url.includes('state=pending') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({ items: [] }),
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a', items: [] }),
         } as Response);
       }
       if (url.includes('/api/matches/match-a/corrections/clip-1/undo') && init?.method === 'POST') {
         return Promise.resolve({
           ok: true,
-          json: async () => ({ correctionId: 'undo-clip-1', saveState: 'saved', undoOf: 'clip-1' }),
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a', correctionId: 'undo-clip-1', saveState: 'saved', applyState: 'applied', appliedGeneration: 'g-match-a-next', undoOf: 'clip-1' }),
         } as Response);
       }
       if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             items: [{
               correctionId: 'clip-1',
               kind: 'playlist_item',
-              saveState: 'saved',
+              saveState: 'saved', applyState: 'applied', appliedGeneration: 'g-match-a-next',
               undoOf: null,
               author: 'analyst',
             }],
@@ -1140,7 +1155,7 @@ describe('App match workspace loading', () => {
       ))).toBe(true);
     });
     expect(await screen.findByText(/undo of clip-1/i)).toBeTruthy();
-    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(2);
     expect(fetchMock.mock.calls.some(([url]) => (
       String(url).includes('/api/matches/match-a/events')
       && !String(url).includes('/partition')
@@ -1150,13 +1165,13 @@ describe('App match workspace loading', () => {
   it('loads stored playlist clips into the review builder without undone items', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
-    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    stubSnapshotWorkspace(loadedWorkspace('match-a', 'Match A'));
     const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
       const url = String(input);
       if (url.includes('/api/matches/match-a/heatmap')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             identityContinuous: false,
             wholeMatch: false,
             intervalLimited: true,
@@ -1168,18 +1183,18 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/corrections') && url.includes('state=pending') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({ items: [] }),
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a', items: [] }),
         } as Response);
       }
       if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             items: [
               {
                 correctionId: 'clip-1',
                 kind: 'playlist_item',
-                saveState: 'saved',
+                saveState: 'saved', applyState: 'applied', appliedGeneration: 'g-match-a-next',
                 undoOf: null,
                 author: 'analyst',
                 payload: {
@@ -1192,7 +1207,7 @@ describe('App match workspace loading', () => {
               {
                 correctionId: 'clip-undone',
                 kind: 'playlist_item',
-                saveState: 'saved',
+                saveState: 'saved', applyState: 'applied', appliedGeneration: 'g-match-a-next',
                 undoOf: null,
                 payload: {
                   timestampStart: 12,
@@ -1203,7 +1218,7 @@ describe('App match workspace loading', () => {
               {
                 correctionId: 'undo-clip-undone',
                 kind: 'playlist_item',
-                saveState: 'saved',
+                saveState: 'saved', applyState: 'applied', appliedGeneration: 'g-match-a-next',
                 undoOf: 'clip-undone',
                 payload: { undo: { timestampStart: 12, timestampEnd: 14 } },
               },
@@ -1230,7 +1245,7 @@ describe('App match workspace loading', () => {
   it('opens a stored playlist clip on the review source interval', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
-    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue({
+    stubSnapshotWorkspace({
       ...loadedWorkspace('match-a', 'Match A'),
       frames: [0, 1, 2].map((Frame_ID) => ({
         Frame_ID,
@@ -1246,7 +1261,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/heatmap')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             identityContinuous: false,
             wholeMatch: false,
             intervalLimited: true,
@@ -1258,17 +1273,17 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/corrections') && url.includes('state=pending') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({ items: [] }),
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a', items: [] }),
         } as Response);
       }
       if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             items: [{
               correctionId: 'clip-1',
               kind: 'playlist_item',
-              saveState: 'saved',
+              saveState: 'saved', applyState: 'applied', appliedGeneration: 'g-match-a-next',
               undoOf: null,
               author: 'analyst',
               payload: {
@@ -1296,13 +1311,13 @@ describe('App match workspace loading', () => {
   it('loads the stored playlist as a source-linked edit list without re-encoding the match', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
-    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    stubSnapshotWorkspace(loadedWorkspace('match-a', 'Match A'));
     const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
       const url = String(input);
       if (url.includes('/api/matches/match-a/heatmap')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             identityContinuous: false,
             wholeMatch: false,
             intervalLimited: true,
@@ -1314,7 +1329,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             reencodeFullMatch: false,
             renderOnDemand: true,
             intervals: [[0, 0.2]],
@@ -1324,17 +1339,17 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/corrections') && url.includes('state=pending') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({ items: [] }),
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a', items: [] }),
         } as Response);
       }
       if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             items: [{
               correctionId: 'clip-1',
               kind: 'playlist_item',
-              saveState: 'saved',
+              saveState: 'saved', applyState: 'applied', appliedGeneration: 'g-match-a-next',
               undoOf: null,
               payload: { timestampStart: 0, timestampEnd: 0.2, sourceEndFrameExclusive: 1 },
             }],
@@ -1362,7 +1377,7 @@ describe('App match workspace loading', () => {
   it('renders a stored playlist interval on demand without re-encoding the full match', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
-    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue({
+    stubSnapshotWorkspace({
       ...loadedWorkspace('match-a', 'Match A'),
       frames: [0, 1, 2].map((Frame_ID) => ({
         Frame_ID,
@@ -1378,7 +1393,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/heatmap')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             identityContinuous: false,
             wholeMatch: false,
             intervalLimited: true,
@@ -1390,7 +1405,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/playlists/export-interval') && init?.method === 'POST') {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             sourceStartSeconds: 0,
             sourceEndSeconds: 0.2,
             sourceEndFrameExclusive: 1,
@@ -1400,7 +1415,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/edits/render') && init?.method === 'POST') {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             interval: [0, 0.2],
             reencodedFullMatch: false,
             sourceSha256: 'stored-source',
@@ -1410,20 +1425,20 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }),
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a', reencodeFullMatch: false, renderOnDemand: true }),
         } as Response);
       }
       if (url.includes('/api/matches/match-a/corrections') && init?.method === 'POST' && !String(url).includes('/undo') && !String(url).includes('/recover')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({ correctionId: 'clip-1', saveState: 'saved', kind: 'playlist_item' }),
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a', correctionId: 'clip-1', saveState: 'saved', applyState: 'applied', appliedGeneration: 'g-match-a-next', kind: 'playlist_item', payload: JSON.parse(String(init?.body)).payload }),
         } as Response);
       }
       if (url.includes('/api/matches/match-a/corrections') && url.includes('state=pending') && (!init?.method || init.method === 'GET')) {
-        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+        return Promise.resolve({ ok: true, json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a', items: [] }) } as Response);
       }
       if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
-        return Promise.resolve({ ok: true, json: async () => ({ items: [] }) } as Response);
+        return Promise.resolve({ ok: true, json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a', items: [] }) } as Response);
       }
       return Promise.reject(new Error(`unexpected ${url}`));
     });
@@ -1454,13 +1469,13 @@ describe('App match workspace loading', () => {
     const playlist = within(await screen.findByRole('region', { name: /playlist builder/i }));
     expect(playlist.getByText(/rendered interval on demand/i)).toBeTruthy();
     expect(playlist.getByText(/reencodedFullMatch is false/i)).toBeTruthy();
-    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(2);
   });
 
   it('maps source presentation time to match clock without claiming frame-accurate overlay', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
-    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue({
+    stubSnapshotWorkspace({
       ...loadedWorkspace('match-a', 'Match A'),
       frames: [{ Frame_ID: 0, Timestamp: 0.2, Ball: null, My_Team: [], Enemies: [] }],
       frameCount: 1,
@@ -1470,7 +1485,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/heatmap')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             identityContinuous: false,
             wholeMatch: false,
             intervalLimited: true,
@@ -1482,7 +1497,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/clock') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             presentationTimeSeconds: 0,
             matchClockSeconds: 45,
             explicitMapping: true,
@@ -1494,7 +1509,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/media/proxy') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             replacesOriginal: false,
             originalRetained: true,
             assets: { proxy: { kind: 'browsing_proxy' }, thumbnails: { kind: 'thumbnails' }, waveform: { kind: 'waveform' } },
@@ -1505,19 +1520,19 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }),
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a', reencodeFullMatch: false, renderOnDemand: true }),
         } as Response);
       }
       if (url.includes('/api/matches/match-a/corrections') && url.includes('state=pending') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({ items: [] }),
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a', items: [] }),
         } as Response);
       }
       if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({ items: [] }),
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a', items: [] }),
         } as Response);
       }
       return Promise.reject(new Error(`unexpected ${url}`));
@@ -1542,13 +1557,13 @@ describe('App match workspace loading', () => {
   it('loads the stored match package with coverage limitations and no credentials', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
-    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    stubSnapshotWorkspace(loadedWorkspace('match-a', 'Match A'));
     const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
       const url = String(input);
       if (url.includes('/api/matches/match-a/heatmap')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             identityContinuous: false,
             wholeMatch: false,
             intervalLimited: true,
@@ -1560,7 +1575,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/package') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             analyst: {
               playlist: [{ timestampStart: 0, timestampEnd: 0.2 }],
               events: [],
@@ -1582,13 +1597,13 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/clock') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({ presentationTimeSeconds: 0, matchClockSeconds: 0, frameAccurateOverlay: false }),
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a', presentationTimeSeconds: 0, matchClockSeconds: 0, frameAccurateOverlay: false }),
         } as Response);
       }
       if (url.includes('/api/matches/match-a/media/proxy') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             replacesOriginal: false,
             originalRetained: true,
             assets: { proxy: { kind: 'browsing_proxy' }, thumbnails: { kind: 'thumbnails' }, waveform: { kind: 'waveform' } },
@@ -1599,19 +1614,19 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }),
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a', reencodeFullMatch: false, renderOnDemand: true }),
         } as Response);
       }
       if (url.includes('/api/matches/match-a/corrections') && url.includes('state=pending') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({ items: [] }),
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a', items: [] }),
         } as Response);
       }
       if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({ items: [] }),
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a', items: [] }),
         } as Response);
       }
       return Promise.reject(new Error(`unexpected ${url}`));
@@ -1638,13 +1653,13 @@ describe('App match workspace loading', () => {
   it('inspects stored match metrics as unavailable without inventing zero', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
-    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    stubSnapshotWorkspace(loadedWorkspace('match-a', 'Match A'));
     const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
       const url = String(input);
       if (url.includes('/api/matches/match-a/heatmap')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             identityContinuous: false,
             wholeMatch: false,
             intervalLimited: true,
@@ -1656,7 +1671,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/metrics/inspect/my_team_distance_m') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             metric: 'my_team_distance_m',
             unit: 'metres',
             denominator: 'identity_continuous_eligible_seconds',
@@ -1671,7 +1686,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/setup') && !url.includes('/preview') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             cameraProfile: 'stitched_panoramic_view',
             automationAdmitted: false,
             manualTaggingPermitted: true,
@@ -1684,7 +1699,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/rates') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             exportFpsEqualsInferenceFps: false,
             notes: ['EXPORT_FPS_IS_NOT_INFERENCE_FPS'],
           }),
@@ -1693,7 +1708,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/package') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             analyst: { limitations: ['Independent labels 0/18 complete.'] },
             operator: { manifest: { schema: 'match_package_v1' }, secretsAdmitted: true },
           }),
@@ -1702,13 +1717,13 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/clock') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({ presentationTimeSeconds: 0, matchClockSeconds: 0, frameAccurateOverlay: false }),
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a', presentationTimeSeconds: 0, matchClockSeconds: 0, frameAccurateOverlay: false }),
         } as Response);
       }
       if (url.includes('/api/matches/match-a/media/proxy') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             replacesOriginal: false,
             originalRetained: true,
             assets: { proxy: { kind: 'browsing_proxy' }, thumbnails: { kind: 'thumbnails' }, waveform: { kind: 'waveform' } },
@@ -1719,19 +1734,19 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }),
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a', reencodeFullMatch: false, renderOnDemand: true }),
         } as Response);
       }
       if (url.includes('/api/matches/match-a/corrections') && url.includes('state=pending') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({ items: [] }),
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a', items: [] }),
         } as Response);
       }
       if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({ items: [] }),
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a', items: [] }),
         } as Response);
       }
       return Promise.reject(new Error(`unexpected ${url}`));
@@ -1761,13 +1776,13 @@ describe('App match workspace loading', () => {
   it('loads stored report coverage without claiming the whole match', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
-    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    stubSnapshotWorkspace(loadedWorkspace('match-a', 'Match A'));
     const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
       const url = String(input);
       if (url.includes('/api/matches/match-a/heatmap')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             identityContinuous: false,
             wholeMatch: false,
             intervalLimited: true,
@@ -1779,7 +1794,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/reports/coverage') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             coverageAware: true,
             representsWholeMatch: false,
           }),
@@ -1788,7 +1803,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/metrics/inspect/my_team_distance_m') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             metric: 'my_team_distance_m',
             unit: 'metres',
             denominator: 'identity_continuous_eligible_seconds',
@@ -1803,7 +1818,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/setup') && !url.includes('/preview') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             cameraProfile: 'stitched_panoramic_view',
             automationAdmitted: false,
             manualTaggingPermitted: true,
@@ -1816,7 +1831,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/rates') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             exportFpsEqualsInferenceFps: false,
             notes: ['EXPORT_FPS_IS_NOT_INFERENCE_FPS'],
           }),
@@ -1825,7 +1840,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/package') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             analyst: { limitations: ['Independent labels 0/18 complete.'] },
             operator: { manifest: { schema: 'match_package_v1' }, secretsAdmitted: true },
           }),
@@ -1834,13 +1849,13 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/clock') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({ presentationTimeSeconds: 0, matchClockSeconds: 0, frameAccurateOverlay: false }),
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a', presentationTimeSeconds: 0, matchClockSeconds: 0, frameAccurateOverlay: false }),
         } as Response);
       }
       if (url.includes('/api/matches/match-a/media/proxy') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             replacesOriginal: false,
             originalRetained: true,
             assets: { proxy: { kind: 'browsing_proxy' }, thumbnails: { kind: 'thumbnails' }, waveform: { kind: 'waveform' } },
@@ -1851,19 +1866,19 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }),
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a', reencodeFullMatch: false, renderOnDemand: true }),
         } as Response);
       }
       if (url.includes('/api/matches/match-a/corrections') && url.includes('state=pending') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({ items: [] }),
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a', items: [] }),
         } as Response);
       }
       if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({ items: [] }),
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a', items: [] }),
         } as Response);
       }
       return Promise.reject(new Error(`unexpected ${url}`));
@@ -1886,13 +1901,13 @@ describe('App match workspace loading', () => {
   it('loads stored match metrics without inventing zero physical totals', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
-    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    stubSnapshotWorkspace(loadedWorkspace('match-a', 'Match A'));
     const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
       const url = String(input);
       if (url.includes('/api/matches/match-a/heatmap')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             identityContinuous: false,
             wholeMatch: false,
             intervalLimited: true,
@@ -1904,7 +1919,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/metrics/inspect/')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             metric: 'my_team_distance_m',
             unit: 'metres',
             denominator: 'identity_continuous_eligible_seconds',
@@ -1919,7 +1934,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/metrics') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             metrics: [{
               metric: 'my_team_distance_m',
               availability: 'unknown',
@@ -1935,7 +1950,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/incidents/package') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             level: 0,
             clips: [],
             notes: [],
@@ -1949,7 +1964,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/incidents/geometry') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             decision: null,
             validatedMeasurement: false,
             reasonCodes: ['IFAB_LAW_11_NOT_APPLIED'],
@@ -1959,7 +1974,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/ownership') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             mode: 'unknown',
             reasonCodes: ['NEAREST_PLAYER_INSUFFICIENT'],
           }),
@@ -1968,7 +1983,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/promotion') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             completeMatchAccepted: false,
             stageBenchmarkIsCompleteMatchAcceptance: false,
             outputQuality: 'unproven',
@@ -1978,7 +1993,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/cache') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             namespace: 'production',
             compatibleWithDevelopment: false,
           }),
@@ -1987,7 +2002,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/tracklets') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             assignment: { kind: 'tracklet', forced: false, rosterId: null },
             chunk: { silentlyReconnected: false },
             silentlyReconnected: false,
@@ -1997,7 +2012,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/privacy') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             cloudAllowed: false,
             localProcessingRequired: true,
             faceRecognition: false,
@@ -2008,7 +2023,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/history') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             undoable: true,
             rewrotePastOutcomes: false,
             items: [],
@@ -2018,7 +2033,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/shots/quality')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             publishedLabel: 'experimental_shot_quality',
             calibratedXg: false,
             items: [{ publishedLabel: 'experimental_shot_quality', availability: 'experimental', reasonCodes: ['EXPERIMENTAL_NOT_CALIBRATED_XG'] }],
@@ -2028,7 +2043,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/reports/provenance')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             accepted: true,
             reasonCodes: [],
             missingEvidenceIds: [],
@@ -2038,7 +2053,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/evaluation/workflow')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             measured: false,
             analystCompletedReviewedMatch: false,
             reasonCodes: ['ANALYST_ACCEPTANCE_MISSING'],
@@ -2048,7 +2063,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/reports/coverage') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             coverageAware: true,
             representsWholeMatch: false,
           }),
@@ -2057,7 +2072,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/setup') && !url.includes('/preview') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             cameraProfile: 'stitched_panoramic_view',
             automationAdmitted: false,
             manualTaggingPermitted: true,
@@ -2070,7 +2085,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/rates') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             exportFpsEqualsInferenceFps: false,
             notes: ['EXPORT_FPS_IS_NOT_INFERENCE_FPS'],
           }),
@@ -2079,7 +2094,7 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/package') && !url.includes('/incidents/') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             analyst: { limitations: ['Independent labels 0/18 complete.'] },
             operator: { manifest: { schema: 'match_package_v1' }, secretsAdmitted: true },
           }),
@@ -2088,13 +2103,13 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/clock') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({ presentationTimeSeconds: 0, matchClockSeconds: 0, frameAccurateOverlay: false }),
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a', presentationTimeSeconds: 0, matchClockSeconds: 0, frameAccurateOverlay: false }),
         } as Response);
       }
       if (url.includes('/api/matches/match-a/media/proxy') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             replacesOriginal: false,
             originalRetained: true,
             assets: { proxy: { kind: 'browsing_proxy' }, thumbnails: { kind: 'thumbnails' }, waveform: { kind: 'waveform' } },
@@ -2105,19 +2120,19 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/edits') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({ reencodeFullMatch: false, renderOnDemand: true }),
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a', reencodeFullMatch: false, renderOnDemand: true }),
         } as Response);
       }
       if (url.includes('/api/matches/match-a/corrections') && url.includes('state=pending') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({ items: [] }),
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a', items: [] }),
         } as Response);
       }
       if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({ items: [] }),
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a', items: [] }),
         } as Response);
       }
       return Promise.reject(new Error(`unexpected ${url}`));
@@ -2147,13 +2162,13 @@ describe('App match workspace loading', () => {
   it('swaps stored teams on the loaded match without a vision rerun', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
-    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    stubSnapshotWorkspace(loadedWorkspace('match-a', 'Match A'));
     const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
       const url = String(input);
       if (url.includes('/api/matches/match-a/heatmap')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             identityContinuous: false,
             wholeMatch: false,
             intervalLimited: true,
@@ -2165,9 +2180,9 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/corrections') && init?.method === 'POST' && !String(url).includes('/undo')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             correctionId: 'swap-1',
-            saveState: 'saved',
+            saveState: 'saved', applyState: 'applied', appliedGeneration: 'g-match-a-next',
             kind: 'team_mapping',
             rebuild: ['team_state', 'events', 'metrics', 'report'],
             visionRerun: false,
@@ -2201,13 +2216,13 @@ describe('App match workspace loading', () => {
   it('reloads stored workspace after undoing a team mapping without rewriting the original correction', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
-    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(loadedWorkspace('match-a', 'Match A'));
+    stubSnapshotWorkspace(loadedWorkspace('match-a', 'Match A'));
     const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
       const url = String(input);
       if (url.includes('/api/matches/match-a/heatmap')) {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             identityContinuous: false,
             wholeMatch: false,
             intervalLimited: true,
@@ -2219,9 +2234,9 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/corrections/swap-1/undo') && init?.method === 'POST') {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             correctionId: 'undo-1',
-            saveState: 'saved',
+            saveState: 'saved', applyState: 'applied', appliedGeneration: 'g-match-a-next',
             undoOf: 'swap-1',
           }),
         } as Response);
@@ -2229,9 +2244,9 @@ describe('App match workspace loading', () => {
       if (url.includes('/api/matches/match-a/corrections') && init?.method === 'POST') {
         return Promise.resolve({
           ok: true,
-          json: async () => ({
+          json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             correctionId: 'swap-1',
-            saveState: 'saved',
+            saveState: 'saved', applyState: 'applied', appliedGeneration: 'g-match-a-next',
             kind: 'team_mapping',
             rebuild: ['team_state', 'events', 'metrics', 'report'],
             visionRerun: false,
@@ -2535,7 +2550,7 @@ describe('App match workspace loading', () => {
     const { container } = render(<App />);
     await screen.findByText('Match A', { selector: 'header span' });
     fireEvent.click(screen.getByRole('button', { name: 'Use cluster 1' }));
-    await waitFor(() => expect(api.updateMatchConfig).toHaveBeenCalledWith('match-a', { myTeamCluster: 1 }));
+    await waitFor(() => expect(api.updateMatchConfig).toHaveBeenCalledWith('match-a', expect.objectContaining({ myTeamCluster: 1, baseGeneration: 'g-match-a', commandId: expect.any(String) })));
     fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: 'match-b' } });
 
     await act(async () => configUpdate.resolve(readyMatch('match-a', 'Match A')));
@@ -2556,11 +2571,13 @@ describe('App upload polling', () => {
     vi.mocked(api.waitForJobCompletion).mockResolvedValue({ id: 'job-1', matchId: 'match-1', status: 'completed', progress: 1 });
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const requests: { signal: AbortSignal; reject: (reason: Error) => void }[] = [];
-    vi.stubGlobal('fetch', vi.fn((_url: string, init: RequestInit) => new Promise<Response>((_resolve, reject) => {
+    vi.stubGlobal('fetch', vi.fn((_url: string, init: RequestInit) => {
+      if (_url === '/api/matches/match-1') return Promise.resolve(new Response(JSON.stringify({ ...readyMatch('match-1', 'Match 1') }), { status: 200 }));
+      return new Promise<Response>((_resolve, reject) => {
       const signal = init.signal as AbortSignal;
       requests.push({ signal, reject });
       signal.addEventListener('abort', () => reject(new Error('Cancelled')), { once: true });
-    })));
+    }); }));
 
     let container: HTMLElement;
     await act(async () => {
@@ -2572,13 +2589,13 @@ describe('App upload polling', () => {
         target: { files: [new File(['[]'], 'match.json', { type: 'application/json' })] },
       });
     });
-    expect(requests).toHaveLength(6);
+    expect(requests).toHaveLength(5);
 
     await act(async () => requests[0].reject(new Error('Workspace unavailable')));
 
     expect(screen.getAllByText('Workspace unavailable').length).toBeGreaterThan(0);
     expect(input.disabled).toBe(false);
-    expect(requests.slice(1).map(({ signal }) => signal.aborted)).toEqual([true, true, true, true, true]);
+    expect(requests.slice(1).map(({ signal }) => signal.aborted)).toEqual([true, true, true, true]);
   });
 
   it('aborts terminal-poll workspace hydration on unmount', async () => {
@@ -2649,7 +2666,7 @@ describe('App review drawing', () => {
   it('ends drawing for both the toolbar and pitch after save and allows reselecting it', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([{
-      id: 'match-review',
+      id: 'match-review', generationId: 'g-match-review', includedCommandIds: [],
       name: 'Review Match',
       status: 'ready',
       inputMode: 'tracking_json',

@@ -83,7 +83,7 @@ it('recovers a pending playlist correction after a simulated crash', async () =>
       }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
     if (url.endsWith('/corrections/c-pending/recover') && init?.method === 'POST') {
-      return new Response(JSON.stringify({ correctionId: 'c-pending', saveState: 'saved' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      return new Response(JSON.stringify({ correctionId: 'c-pending', saveState: 'saved', applyState: 'applied', appliedGeneration: 'g2' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
     if (url.endsWith('/api/playlists/export-interval') && init?.method === 'POST') {
       return new Response(JSON.stringify({
@@ -96,10 +96,14 @@ it('recovers a pending playlist correction after a simulated crash', async () =>
   });
   vi.stubGlobal('fetch', fetchMock);
 
-  render(<WorkbenchPanel onClose={() => undefined} matchId="m1" events={[]} />);
+  const executeCommand = vi.fn(async (send: (controls: import('../utils/commandLifecycle').CommandControls) => Promise<import('../utils/commandLifecycle').CommandReceipt | undefined>) =>
+    (await send({ baseGeneration: 'g1', commandId: 'recover-original' })) ?? null);
+  render(<WorkbenchPanel onClose={() => undefined} matchId="m1" events={[]} executeCommand={executeCommand} />);
   expect(await screen.findByText(/pending playlist edit/i)).toBeTruthy();
   await fireEvent.click(screen.getByRole('button', { name: /recover pending edit/i }));
-  expect(await screen.findByText(/saved/i)).toBeTruthy();
+  expect(await screen.findByText(/^applied$/i)).toBeTruthy();
+  expect(executeCommand).toHaveBeenCalledWith(expect.any(Function), true);
+  expect(fetchMock.mock.calls.filter(([url, init]) => String(url).endsWith('/corrections/c-pending/recover') && init?.method === 'POST')).toHaveLength(1);
   await fireEvent.click(screen.getByRole('button', { name: /export source interval/i }));
   expect(await screen.findByText(/Source interval 3s to 5s/i)).toBeTruthy();
 });
@@ -236,6 +240,10 @@ it('loads recovery and landmark preview from production routes and posts deletio
         trackIdsDoNotAnonymise: true,
         reasonCodes: ['CONTROLLER_PROCESSOR_ROLES_REQUIRED'],
       }), { status: 200 });
+    }
+    if (url.endsWith('/api/matches/m1/setup')) {
+      return new Response(JSON.stringify({ certified: false, cameraProfile: 'stable_elevated_wide',
+        automationAdmitted: false, manualTaggingPermitted: true, cannotMeasure: ['physical_metrics'] }), { status: 200 });
     }
     if (url.endsWith('/api/matches/m1/setup/preview')) {
       return new Response(JSON.stringify({

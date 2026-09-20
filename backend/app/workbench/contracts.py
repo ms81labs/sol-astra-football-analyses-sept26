@@ -210,6 +210,7 @@ class GenerationManifest(StrictModel):
     semanticConfigRevision: str | None = None
     calibrationData: dict[str, Any] | None = None
     identityRevision: str | None = None
+    identityContext: dict[str, Any] | None = None
     commandSetDigest: str | None = None
     includedCommandIds: list[str] = Field(default_factory=list)
     fileMetadata: dict[str, dict[str, Any]] = Field(default_factory=dict)
