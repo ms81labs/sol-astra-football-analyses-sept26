@@ -40,6 +40,7 @@ jobs:
         with:
           name: c06-recovered-source
           path: .c06-source/
+          include-hidden-files: true
           retention-days: 30
           if-no-files-found: error
   media:
@@ -93,6 +94,7 @@ jobs:
         with:
           name: c06-media-evidence
           path: .c06-evidence/
+          include-hidden-files: true
           if-no-files-found: error
           retention-days: 30
   verify:
@@ -128,6 +130,7 @@ jobs:
         if: always()
         with:
           name: c06-full-verification
+          include-hidden-files: true
           path: |
             .verification/logs/
             .verification/receipt.json
