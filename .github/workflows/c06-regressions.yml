@@ -1,175 +1,79 @@
-name: C06 recovered candidate verification
+name: C06 media execution evidence
 on:
   push:
     branches: [main]
     paths:
-      - 'backend/**'
+      - 'backend/app/workbench/media.py'
+      - 'backend/app/workbench/media_execution.py'
+      - 'backend/app/workbench/_media_launcher.py'
+      - 'backend/app/storage.py'
+      - 'backend/tests/test_audit_v3_c06*.py'
+      - 'backend/tests/test_audit_v2_h06_media.py'
       - '.github/workflows/c06-regressions.yml'
   workflow_dispatch:
-    inputs:
-      source_sha:
-        description: 'Optional exact same-repository commit to verify'
-        required: false
-        type: string
 permissions:
   contents: read
-env:
-  # Recovery checkpoint; replaced by the normal main workflow on promotion.
-  C06_SOURCE_SHA: ${{ inputs.source_sha || '4ab1d37e35a34a9830237cbe8d16ea3604abf976' }}
-  VERIFY_DAYTONA: '0'
-  ALLOW_DAYTONA_MUTATION: '0'
 jobs:
-  source:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ env.C06_SOURCE_SHA }}
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Preserve exact candidate source
-        run: |
-          set -euo pipefail
-          test "$(git rev-parse HEAD)" = "$C06_SOURCE_SHA"
-          mkdir -p .c06-source
-          git rev-parse HEAD > .c06-source/source-sha.txt
-          git rev-parse HEAD^{tree} > .c06-source/source-tree.txt
-          git bundle create .c06-source/source.bundle HEAD
-          (cd .c06-source && sha256sum source.bundle > SHA256SUMS.txt)
-      - uses: actions/upload-artifact@v4
-        with:
-          name: c06-recovered-source
-          path: .c06-source/
-          include-hidden-files: true
-          retention-days: 30
-          if-no-files-found: error
   media:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ env.C06_SOURCE_SHA }}
+          fetch-depth: 0
           persist-credentials: false
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: pip
           cache-dependency-path: backend/requirements/dev.lock
-      - name: Install unchanged declared profile
+      - name: Install unchanged declared profile and media tools
         run: |
           sudo apt-get update && sudo apt-get install -y ffmpeg
           pip install --require-hashes -r backend/requirements/dev.lock
           pip install -e . --no-deps
-      - name: Record environment and source
+      - name: Retain exact source and environment
+        shell: bash
         run: |
+          set -euo pipefail
           mkdir -p .c06-evidence
           git rev-parse HEAD > .c06-evidence/source-sha.txt
           git rev-parse HEAD^{tree} > .c06-evidence/source-tree.txt
+          git bundle create .c06-evidence/source.bundle HEAD
           python --version > .c06-evidence/python-version.txt
           ffmpeg -version > .c06-evidence/ffmpeg-version.txt
           ffprobe -version > .c06-evidence/ffprobe-version.txt
           sha256sum backend/requirements/dev.lock frontend/package-lock.json > .c06-evidence/lock-sha256.txt
-      - name: Real process limits and C06 regressions
+      - name: Run actual child limits and media regressions
+        shell: bash
         env:
           PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
+          VERIFY_DAYTONA: '0'
+          ALLOW_DAYTONA_MUTATION: '0'
         run: |
-          set -o pipefail
+          set -euo pipefail
           python -m pytest -q backend/tests/test_audit_v3_c06*.py backend/tests/test_audit_v2_h06_media.py --junitxml=.c06-evidence/c06.xml 2>&1 | tee .c06-evidence/c06.log
-      - name: Decode beyond old cumulative cap
-        if: always()
+      - name: Exercise synthetic decode beyond the old cumulative cap
+        shell: bash
         env:
           PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
           C06_LONG_MEDIA: '1'
           C06_LONG_RECEIPT: ${{ github.workspace }}/.c06-evidence/long-execution.json
         run: |
-          set -o pipefail
+          set -euo pipefail
           python -m pytest -q backend/tests/test_audit_v3_c06_media.py::test_optin_beyond_old_eight_gib_total --junitxml=.c06-evidence/long.xml 2>&1 | tee .c06-evidence/long.log
-      - name: Hash evidence
+      - name: Hash retained evidence
         if: always()
+        shell: bash
         run: |
-          (cd .c06-evidence && find . -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt)
+          if [ -d .c06-evidence ]; then
+            (cd .c06-evidence && find . -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS.txt)
+          fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: c06-media-evidence
+          name: c06-media-source-evidence
           path: .c06-evidence/
           include-hidden-files: true
           if-no-files-found: error
-          retention-days: 30
-  verify:
-    runs-on: ubuntu-latest
-    timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ env.C06_SOURCE_SHA }}
-          persist-credentials: false
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: pip
-          cache-dependency-path: backend/requirements/dev.lock
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
-      - name: Install unchanged profiles
-        run: |
-          sudo apt-get update && sudo apt-get install -y ffmpeg
-          pip install --require-hashes -r backend/requirements/dev.lock
-          pip install -e . --no-deps
-          pip install -e ./research-addon
-          npm ci --prefix frontend
-      - name: Original full code-only verifier
-        env:
-          VERIFY_CODE_ONLY: '1'
-        run: scripts/verify.sh
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: c06-full-verification
-          include-hidden-files: true
-          path: |
-            .verification/logs/
-            .verification/receipt.json
-          if-no-files-found: warn
-          retention-days: 30
-  integration:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ env.C06_SOURCE_SHA }}
-          persist-credentials: false
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: pip
-          cache-dependency-path: backend/requirements/dev.lock
-      - name: Install unchanged integration profile
-        run: |
-          sudo apt-get update && sudo apt-get install -y ffmpeg
-          pip install --dry-run --require-hashes -r backend/requirements/dev.lock
-          pip install --require-hashes -r backend/requirements/dev.lock
-          pip install -e '.[cv]' --no-deps
-      - name: Original integration and real-media selection
-        env:
-          GA_VERIFICATION_RUN: '1'
-          GA_VERIFICATION_PROFILE: cv+dev
-        run: |
-          set -o pipefail
-          mkdir -p .verification/logs
-          pytest -m "integration or real_media" backend/tests 2>&1 | tee .verification/logs/integration.log
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: c06-integration-evidence
-          include-hidden-files: true
-          path: |
-            .verification/logs/
-            .verification/receipt.json
-          if-no-files-found: warn
           retention-days: 30

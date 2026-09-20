@@ -320,10 +320,13 @@ def test_t16_decoder_handles_delayed_or_missing_stderr_and_failures(tmp_path: Pa
 def test_t16_cancel_terminates_decoder(tmp_path: Path, monkeypatch) -> None:
     path, source = _fake_source(tmp_path)
     process = _FakeProcess(bytes(range(12)), b"")
-    monkeypatch.setattr("backend.app.workbench.media.subprocess.Popen", lambda *args, **kwargs: process)
     cancelled = threading.Event()
-    cancelled.set()
 
+    def launched_then_cancelled(*args, **kwargs):
+        cancelled.set()  # Exercise cancellation after launch, not an unstarted fake.
+        return process
+
+    monkeypatch.setattr("backend.app.workbench.media.subprocess.Popen", launched_then_cancelled)
     with pytest.raises(DecodeCancelled):
         list(source.iter_frames(path, cancel_event=cancelled))
     assert process.poll() is not None
@@ -369,7 +372,10 @@ def test_t16_live_child_output_cap_and_mid_export_cancellation(tmp_path: Path, m
     ffmpeg.write_text("#!/bin/sh\nexec sleep 30\n", encoding="utf-8")
     ffmpeg.chmod(0o755)
     source = tmp_path / "source.mp4"
-    source.write_bytes(b"fixture")
+    # C06 admits the real source before launching the controlled export child.
+    subprocess.run([shutil.which("ffmpeg"), "-loglevel", "error", "-f", "lavfi",
+                    "-i", "color=black:size=32x24:rate=4:duration=1", "-threads", "1",
+                    "-y", str(source)], check=True, timeout=15)
     settings = SimpleNamespace(
         trusted_bin_dirs=(str(tmp_path),), ffmpeg_sha256=None, ffprobe_sha256=None
     )
@@ -401,8 +407,8 @@ def test_t16_live_child_output_cap_and_mid_export_cancellation(tmp_path: Path, m
     finally:
         timer.cancel()
     assert time.monotonic() - started < 5
-    assert len(processes) == 1
-    assert processes[0].poll() is not None
+    assert len(processes) == 2  # source admission probe, then controlled export
+    assert all(process.poll() is not None for process in processes)
 
 
 def test_t18_duplicate_decoder_pts_are_flagged(tmp_path: Path, monkeypatch) -> None:

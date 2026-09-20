@@ -255,7 +255,7 @@ def test_proxy_ffmpeg_job_runs_constrained_argv(tmp_path: Path, monkeypatch: pyt
 
     def runner(argv, **kwargs):  # noqa: ANN001
         seen.append([str(item) for item in argv])
-        dest.write_bytes(b"proxy")
+        Path(argv[-1]).write_bytes(b"proxy")  # Honour the command's staged destination.
         return SimpleNamespace(returncode=0, stdout=b"", stderr=b"")
 
     receipt = run_proxy_ffmpeg_job(original, dest, original_sha256=__import__("hashlib").sha256(b"orig").hexdigest(), runner=runner)
@@ -484,10 +484,13 @@ def test_proxy_assets_attempt_constrained_ffmpeg_job(tmp_path: Path, monkeypatch
         seen.append([str(item) for item in argv])
         dest = tmp_path / "matches" / match.id / "proxy.mp4"
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(b"proxy")
+        Path(argv[-1]).write_bytes(b"proxy")  # Honour the command's staged destination.
         return SimpleNamespace(returncode=0, stdout=b"", stderr=b"")
 
-    monkeypatch.setattr("backend.app.workbench.media.subprocess.run", runner)
+    from backend.app.workbench import media
+    proxy_job = media.run_proxy_ffmpeg_job
+    monkeypatch.setattr(media, "run_proxy_ffmpeg_job",
+                        lambda *args, **kwargs: proxy_job(*args, runner=runner, **kwargs))
     receipt = storage.proxy_assets_for_match(match.id)
     assert receipt["replacesOriginal"] is False
     assert receipt["ranFfmpeg"] is True

@@ -2554,7 +2554,8 @@ class Storage:
             )
             receipt["ranFfmpeg"] = True
             return receipt
-        except (FileNotFoundError, ValueError, OSError, Exception):
+        except Exception as error:
+            from .workbench.media_execution import media_failure_receipt
             receipt = dict(
                 derive_proxy_assets(
                     original,
@@ -2564,7 +2565,12 @@ class Storage:
                     hash_cache=self.hash_cache,
                 )
             )
-            receipt["ranFfmpeg"] = False
+            receipt["ranFfmpeg"] = False  # Legacy field: no completed FFmpeg proxy.
+            receipt["mediaExecution"] = media_failure_receipt(error)
+            receipt["mediaExecution"]["fallback"] = "not_attempted"
+            receipt["reasonCodes"] = [receipt["mediaExecution"]["outcome"]]
+            receipt["assetsAvailability"] = "planned_only"
+            receipt["frameExactExport"]["validatedDecodeReencode"] = False
             return receipt
 
     @_generation_reader
