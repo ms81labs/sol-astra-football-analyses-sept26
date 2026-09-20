@@ -11,6 +11,29 @@ concurrency:
   group: c02-regressions-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Retain exact source for isolated verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/c02-source"
+          git bundle create "$RUNNER_TEMP/c02-source/repository.bundle" HEAD refs/remotes/origin/main
+          git rev-parse HEAD > "$RUNNER_TEMP/c02-source/source-sha.txt"
+          git rev-parse HEAD^{tree} > "$RUNNER_TEMP/c02-source/source-tree.txt"
+          (cd "$RUNNER_TEMP/c02-source" && sha256sum repository.bundle > SHA256SUMS.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: c02-source-evidence
+          path: ${{ runner.temp }}/c02-source/
+          if-no-files-found: error
+          retention-days: 14
   focused:
     runs-on: ubuntu-latest
     timeout-minutes: 15
