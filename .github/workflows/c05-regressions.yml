@@ -39,4 +39,5 @@ jobs:
         with:
           name: c05-source-and-scorer
           path: .c05-evidence/
+          include-hidden-files: true
           if-no-files-found: error
