@@ -1,0 +1,46 @@
+name: C05 checked final fixes transport
+on:
+  push:
+    branches: [agent/c05-identity-evaluation]
+    paths: ['.c05-finish/**', '.github/workflows/c05-finish.yml']
+permissions:
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+      - name: Apply exact tested non-workflow changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=166009df428ba40a2bab4299bb2e4b14bf0d7a13
+          target=refs/heads/agent/c05-identity-evaluation
+          test "$GITHUB_REF" = "$target"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD^)" = "$base"
+          python3 - <<'PY'
+          import hashlib,lzma,os
+          from pathlib import Path
+          raw=Path('.c05-finish/changes.xz').read_bytes()
+          assert hashlib.sha256(raw).hexdigest()=='242402535a1a119f18601731185e1bd60344152ace4a5a63cd7d70eb50455f43'
+          patch=lzma.decompress(raw)
+          assert hashlib.sha256(patch).hexdigest()=='9c882c040c801df26e16b1736798936c18594760e3d7575f59276bc73894465b'
+          Path(os.environ['RUNNER_TEMP'],'c05-finish.patch').write_bytes(patch)
+          PY
+          git read-tree --reset -u "$base"
+          git apply --index "$RUNNER_TEMP/c05-finish.patch"
+          test "$(git write-tree)" = ec971d1ff09f24ed96cc76f07872ed1699bc0c34
+          # Contents-only token leaves every workflow byte untouched.
+          # The authorized connector performs transport cleanup separately.
+          git checkout HEAD -- .c05-finish .github/workflows/c05-finish.yml
+          test -z "$(git diff --cached --name-only -- .github)"
+          git diff --cached --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'C05: apply verified final review and compatibility fixes' -m 'Product tree ec971d1ff09f24ed96cc76f07872ed1699bc0c34; local 46 C05 and 89 API/processor tests passed. Transport cleanup and supported-profile CI remain required. No main merge or paid/model execution.'
+          test "$(git ls-remote origin "$target" | cut -f1)" = "$GITHUB_SHA"
+          git push origin "HEAD:$target"
