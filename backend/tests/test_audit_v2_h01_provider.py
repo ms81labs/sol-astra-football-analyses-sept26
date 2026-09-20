@@ -126,7 +126,10 @@ async def _assert_authorised_cloud_call(tmp_path: Path, monkeypatch) -> None:
         return {"evidence": [], "summary": "grounded"}
 
     monkeypatch.setattr("backend.app.main.run_analysis", adapter)
+    from backend.tests.provider_billing_fixtures import fake_spend_policy
+    adapter.billing_contract_id = 'synthetic-byte-token-v1'
     settings = ProcessingSettings(
+        provider_spend_policy=fake_spend_policy(),
         cloud_provider_enabled=True,
         cloud_provider_api_key="test-only",
         allowed_model_ids=("test-model",),
@@ -193,13 +196,15 @@ async def _assert_cloud_fallback(tmp_path: Path, calls: list[str]) -> None:
 
 
 def test_t13_budget_rejection_falls_back_unless_cloud_is_required() -> None:
+    from backend.tests.provider_billing_fixtures import fake_spend_policy
     class ExhaustedLedger:
-        def reserve(self, **_values):
+        def admit(self, **_values):
             return None
 
     gateway = ProviderGateway(
         None,
         ProcessingSettings(
+            provider_spend_policy=fake_spend_policy(),
             cloud_provider_enabled=True,
             cloud_provider_api_key="test-only",
             allowed_model_ids=("test-model",),
@@ -207,7 +212,7 @@ def test_t13_budget_rejection_falls_back_unless_cloud_is_required() -> None:
             provider_call_reservation=0.25,
             provider_budget_limit=1.0,
         ),
-        adapter_factory=lambda: None,
+        adapter_factory=lambda: SimpleNamespace(billing_contract_id='synthetic-byte-token-v1'),
         budget_ledger=ExhaustedLedger(),
     )
     match = SimpleNamespace(
@@ -223,6 +228,7 @@ def test_t13_budget_rejection_falls_back_unless_cloud_is_required() -> None:
         requested_provider="cloud",
         task_type="report",
         generation_id="gen_1",
+        prompt="test-only bounded request",
         require_provider=False,
     )
     assert policy.provider == "local"
@@ -233,6 +239,7 @@ def test_t13_budget_rejection_falls_back_unless_cloud_is_required() -> None:
             requested_provider="cloud",
             task_type="report",
             generation_id="gen_1",
+            prompt="test-only bounded request",
             require_provider=True,
         )
 

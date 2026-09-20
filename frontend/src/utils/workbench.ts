@@ -1,3 +1,4 @@
+import { normaliseCostSummary, type CostSummary } from './costs';
 import { assertGeneration, parseJson, readGeneration } from './request';
 import type { CommandControls, CommandReceipt } from './commandLifecycle';
 export interface CapabilityEntry {
@@ -62,10 +63,10 @@ export interface WorkbenchFlags {
   embeddings_search: boolean;
 }
 
-export interface JobCostSummary {
-  reservedTotal: number;
-  actualTotal: number;
-  p50Reserved: number;
+export interface JobCostSummary extends CostSummary {
+  p50Reserved?: number | null;
+  p95Reserved?: number | null;
+  requestId?: string;
 }
 
 export async function fetchWorkbenchDossier(): Promise<WorkbenchDossier> {
@@ -146,7 +147,7 @@ export async function fetchJobCost(jobId: string) {
   if (!response.ok) {
     throw new Error(`Failed to load job cost: ${response.status}`);
   }
-  return response.json() as Promise<JobCostSummary>;
+  return normaliseCostSummary(await response.json()) as JobCostSummary;
 }
 
 export async function searchMatchLibrary(query: string) {
@@ -246,7 +247,8 @@ export async function fetchJobView(jobId: string) {
     status?: string;
     durablePhase?: string | null;
     costReserved?: number;
-    costActual?: number;
+    costActual?: number | null;
+    costSummary?: CostSummary;
     cleanupResult?: string;
     cancelRequested?: boolean;
   }>;
@@ -1075,8 +1077,8 @@ export async function postExperimentPause() {
 
 export interface JobBudgetSnapshot {
   reserve?: { authorised?: boolean; reserved?: number; estimate?: number; currency?: string };
-  reconcile?: { reserved?: number; actual?: number; variance?: number; exceeded?: boolean; alert?: boolean };
-  cost?: { reservedTotal?: number; actualTotal?: number };
+  reconcile?: { reserved?: number; actual?: number | null; variance?: number | null; exceeded?: boolean; alert?: boolean };
+  cost?: { reservedTotal?: number; actualTotal?: number | null };
 }
 
 export async function fetchJobBudget(jobId: string) {
@@ -1088,6 +1090,12 @@ export async function fetchJobBudget(jobId: string) {
 }
 
 export interface JobChargesSnapshot {
+  actualTotal?: number | null;
+  billingComplete?: boolean;
+  settledTotal?: number;
+  outstandingReserved?: number;
+  unsettledTotal?: number;
+  costSummary?: CostSummary;
   cancelled?: boolean;
   incurred?: number;
   chargesErased?: boolean;

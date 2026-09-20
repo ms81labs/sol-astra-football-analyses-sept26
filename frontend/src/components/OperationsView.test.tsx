@@ -17,7 +17,7 @@ it('shows job phase, spend, retries and cleanup without treating cancel as termi
   expect(screen.getByText(/operations/i)).toBeTruthy();
   expect(screen.getByText(/running/i)).toBeTruthy();
   expect(screen.getByText(/estimated 2/i)).toBeTruthy();
-  expect(screen.getByText(/actual 0.4/i)).toBeTruthy();
+  expect(screen.getByText(/legacy reported charge 0.4/i)).toBeTruthy();
   expect(screen.getByText(/retries 1/i)).toBeTruthy();
   expect(screen.getByText(/cleanup unknown/i)).toBeTruthy();
   expect(screen.getByText(/cancellation is a request, not proof of termination/i)).toBeTruthy();

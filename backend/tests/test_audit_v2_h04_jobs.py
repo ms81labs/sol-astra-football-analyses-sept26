@@ -390,7 +390,7 @@ def test_t12_reservations_never_exceed_authorised_budget(tmp_path: Path) -> None
     assert receipt.settledTotal == 1.0
     assert receipt.unsettledTotal == 0.25
     assert receipt.actualTotal is None
-    assert receipt.settledTotal + receipt.reservedTotal + receipt.unsettledTotal <= request.budget
+    assert receipt.settledTotal + receipt.outstandingReserved + receipt.unsettledTotal <= request.budget
     assert all(ledger.charges_for(item.attemptId) for item in ledger.attempts[request.requestId])
 
     charge_count = sum(len(ledger.charges_for(item.attemptId)) for item in ledger.attempts[request.requestId])
