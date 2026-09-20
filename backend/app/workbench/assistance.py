@@ -416,7 +416,7 @@ class AssistanceRouter:
                 digest="",
             ),
         )
-        if validated.grounding != "grounded":
+        if validated.grounding not in {"grounded", "referenced", "interpretive"}:
             return AssistanceDisposition(
                 route="template",
                 reasonCodes=list(validated.reason_codes),

@@ -349,6 +349,7 @@ class ReviewService:
                 calibration_data=calibration_data, effective_config=effective_config,
                 expected_parent=current.generationId if current else None, include_pending_commands=True,
                 identity_context=output["identityContext"],
+                accepted_match_state=output["acceptedMatchState"],
             )
             return ref, output
 

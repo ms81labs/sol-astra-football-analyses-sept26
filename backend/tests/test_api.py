@@ -419,6 +419,7 @@ async def _test_analysis_route_passes_persisted_summary_and_events_to_backend(tm
             gateway_token=None,
             model_id=None,
             deadline_seconds=120.0,
+        approved_evidence=None,
         ):
             captured["analysis_type"] = analysis_type
             captured["provider"] = provider
@@ -428,6 +429,7 @@ async def _test_analysis_route_passes_persisted_summary_and_events_to_backend(tm
             captured["events"] = events
             captured["formation_timeline"] = formation_timeline
             captured["shots"] = shots
+            captured["approved_evidence"] = approved_evidence
             return {"ok": True}
 
         monkeypatch.setattr("backend.app.main.run_analysis", fake_run_analysis)
@@ -447,6 +449,8 @@ async def _test_analysis_route_passes_persisted_summary_and_events_to_backend(tm
         assert captured["formation_timeline"] is not None
         assert captured["shots"] is not None
         assert isinstance(captured["shots"], list)
+        assert captured["approved_evidence"]["matchId"] == match_id
+        assert analysis_response.json()["validationDisposition"] == "validation_failed"
 
 
 def test_analysis_route_persists_latest_report_payload(tmp_path: Path, monkeypatch):
@@ -461,13 +465,10 @@ async def _test_analysis_route_persists_latest_report_payload(tmp_path: Path, mo
         monkeypatch.setattr(
             "backend.app.main.run_analysis",
             lambda *args, **kwargs: {
-                "summary": "Positive attacking output",
-                "rating": 8,
-                "attacking": "Strong wide progression",
-                "defensive": "Compact block",
-                "pressing": "Aggressive counterpress",
-                "weaknesses": "Rest defense after turnovers",
-                "key_player": 7,
+                "schemaVersion": "report_draft_v1", "taskType": "tactical_report",
+                "matchId": kwargs["approved_evidence"]["matchId"],
+                "generationId": kwargs["approved_evidence"]["generationId"],
+                "interpretation": "Positive attacking output",
             },
         )
 
@@ -479,7 +480,12 @@ async def _test_analysis_route_persists_latest_report_payload(tmp_path: Path, mo
         assert analysis_response.status_code == 200
 
         storage = app.state.storage
-        assert storage.load_analysis_artifact(match_id, "tactical_report")["rating"] == 8
+        from backend.app.report_store import ReportStore
+        stored = ReportStore(storage).view(match_id)["reports"]["tactical_report"]
+        assert stored["payload"]["interpretation"] == "Positive attacking output"
+        assert stored["payload"]["grounding"] == "interpretive"
+        assert stored["generationId"] == analysis_response.json()["generationId"]
+        assert not (storage._match_dir(match_id) / "tactical_report.json").exists()
 
 
 def test_report_export_route_returns_html_with_stored_report_and_drills(tmp_path: Path):
@@ -523,8 +529,14 @@ async def _test_report_export_route_returns_html_with_stored_report_and_drills(t
 
         assert export_response.status_code == 200
         assert export_response.headers["content-type"].startswith("text/html")
-        assert "Positive attacking output" in export_response.text
-        assert "Wave Press" in export_response.text
+        # C03: old flat documents remain accessible, but are not current facts.
+        assert "Positive attacking output" not in export_response.text
+        assert "Wave Press" not in export_response.text
+        assert "LEGACY_REPORTS_UNVERIFIED" in export_response.text
+        for task, text in (("tactical_report", "Positive attacking output"), ("drills", "Wave Press")):
+            old = await client.get(f"/api/matches/{match_id}/reports/legacy/{task}")
+            assert old.status_code == 200 and old.json()["validationDisposition"] == "unverified"
+            assert text in old.text
 
 
 def test_report_export_route_falls_back_without_stored_analyses(tmp_path: Path):
@@ -634,8 +646,10 @@ async def _test_benchmark_route_can_include_selected_cluster_probe_without_recom
         benchmark_payload = benchmark_response.json()
         assert benchmark_payload["saved"]["matchId"] == match_id
         assert benchmark_payload["selectedClusterProbe"]["clusterId"] == selected_cluster
-        assert [probe["clusterId"] for probe in benchmark_payload["selectedClusters"]] == [0, 1]
-        assert benchmark_payload["recommendedCluster"]["clusterId"] == selected_cluster
+        assert [probe["clusterId"] for probe in benchmark_payload["selectedClusters"]] == [selected_cluster]
+        assert benchmark_payload["recommendedCluster"] is None
+        assert benchmark_payload["probeStatus"] == "not_run"
+        assert "SNAPSHOT_READ_CANNOT_RUN_CLUSTER_PROBES" in benchmark_payload["reasonCodes"]
         assert benchmark_payload["selectedClusterProbe"]["withBallFrames"] == benchmark_payload["saved"]["withBallFrames"]
         assert benchmark_payload["selectedClusterProbe"]["trackedPossessionFrames"] == benchmark_payload["saved"]["trackedPossessionFrames"]
         assert benchmark_payload["selectedClusterProbe"]["controlledPossessionFrames"] == benchmark_payload["saved"]["controlledPossessionFrames"]
@@ -695,9 +709,9 @@ async def _test_match_json_export_route_returns_canonical_bundle(tmp_path: Path)
         assert bundle["artifactAvailability"]["events"] is True
         assert bundle["artifactAvailability"]["acceptedMatchState"] is True
         assert bundle["provenance"]["deterministicCore"] is True
-        assert bundle["exports"]["framesCsv"] == f"/api/matches/{match_id}/export/frames.csv"
-        assert bundle["exports"]["eventsCsv"] == f"/api/matches/{match_id}/export/events.csv"
-        assert bundle["exports"]["reportHtml"] == f"/api/matches/{match_id}/report/html"
+        assert bundle["exports"]["framesCsv"] == f"/api/matches/{match_id}/export/frames.csv?generationId={bundle['generationId']}"
+        assert bundle["exports"]["eventsCsv"] == f"/api/matches/{match_id}/export/events.csv?generationId={bundle['generationId']}"
+        assert bundle["exports"]["reportHtml"] == f"/api/matches/{match_id}/report/html?generationId={bundle['generationId']}"
 
 
 def test_video_route_serves_uploaded_file_for_video_matches(tmp_path: Path, monkeypatch):
@@ -1033,7 +1047,7 @@ async def _test_match_reports_assemble_from_stored_evidence(tmp_path: Path):
         evidence_page = await client.get(f"/api/matches/{match_id}/evidence")
         assert evidence_page.status_code == 200
         evidence_id = next(
-            item["evidenceId"]
+            item["reference"]
             for item in evidence_page.json()["items"]
             if item["payload"].get("kind") == "event"
         )

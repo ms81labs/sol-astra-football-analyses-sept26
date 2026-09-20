@@ -282,6 +282,8 @@ class MatchEventsResponse(BaseModel):
 
 # Review Bundle / Playlist schemas
 class ReviewBundleItem(BaseModel):
+    generationId: str | None = None
+    sourceStatus: Literal["generation_bound", "unverified"] = "unverified"
     annotationId: str
     matchId: str
     frameStart: int

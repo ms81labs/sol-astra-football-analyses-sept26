@@ -438,3 +438,19 @@ it('maps source event IDs to displayed indices with a timestamp fallback', () =>
     { type: 'shot', frameId: 999, timestamp: 1.9, description: 'Nearest' },
   ], frames).map(tag => tag.frame)).toEqual([100, 999]);
 });
+
+it('C03 report export URL is explicitly bound to the displayed generation', () => {
+  expect(buildMatchReportExportUrl('m', 'gen_N')).toBe('/api/matches/m/report/html?generationId=gen_N');
+});
+
+it('C03 sends report generation provenance and reads the same report snapshot', async () => {
+  const { runMatchAnalysis, fetchGenerationReports } = await import('./api');
+  const response = { matchId: 'm', generationId: 'N', status: 'current', reports: {}, notices: [] };
+  const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify(response), { status: 200, headers: { 'content-type': 'application/json' } }));
+  vi.stubGlobal('fetch', fetcher);
+  await runMatchAnalysis('m', 'tactical_report', 'local', 0, 'N');
+  expect(JSON.parse(fetcher.mock.calls[0][1].body).generationId).toBe('N');
+  fetcher.mockResolvedValue(new Response(JSON.stringify(response), { status: 200 }));
+  await fetchGenerationReports('m', 'N');
+  expect(fetcher.mock.calls[1][0]).toBe('/api/matches/m/reports?generationId=N');
+});

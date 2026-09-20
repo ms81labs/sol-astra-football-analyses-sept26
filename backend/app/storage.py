@@ -1358,8 +1358,9 @@ class Storage:
         self._write_json(receipt_path, receipt)
 
     def invalidate_coach_analysis(self, match_id: str) -> None:
-        for analysis_type in ("tactical_report", "drills"):
-            (self._match_dir(match_id) / f"{analysis_type}.json").unlink(missing_ok=True)
+        # C03: report freshness is derived from its source generation. Preserve
+        # flat legacy narratives as historical/unverified rather than deleting them.
+        return None
 
     def append_analysis_artifact_jsonl(self, match_id: str, analysis_type: str, payload: dict) -> None:
         path = self._match_dir(match_id) / f"{analysis_type}.jsonl"
@@ -1399,22 +1400,24 @@ class Storage:
     ) -> dict:
         from .workbench.evidence import query_match_evidence
 
+        from .report_contracts import digest
         with self.generation_snapshot(match_id) as generation:
             frames = self.load_frames(match_id, generation_id=generation.generationId)
-            try:
-                events = self.load_events(match_id, generation_id=generation.generationId)
-            except FileNotFoundError:
-                events = []
-        page = query_match_evidence(
-            frames,
-            events,
-            interval_start=interval_start,
-            interval_end=interval_end,
-            cursor=cursor,
-            limit=limit,
-            match_id=match_id,
-        )
-        return page.model_dump(mode="json")
+            events = self.load_events(match_id, generation_id=generation.generationId)
+            page = query_match_evidence(frames, events, interval_start=interval_start,
+                interval_end=interval_end, cursor=cursor, limit=limit, match_id=match_id)
+            result = page.model_dump(mode="json")
+            result["generationId"] = generation.generationId
+            for item in result["items"]:
+                kind, _, local_id = item["evidenceId"].partition(":")
+                ref = {"matchId": match_id, "generationId": generation.generationId,
+                       "kind": kind, "localId": local_id}
+                item["reference"] = ref
+                # The legacy evidenceId remains for history/cursors only. New
+                # factual submissions use this scoped reference or approved alias.
+                item["reportAlias"] = ("ref_" + digest({"task": "tactical_report", **ref})
+                    if item["reviewStatus"] not in {"rejected", "superseded"} and not item["supersededBy"] else None)
+            return result
 
     def _corrections_path(self, match_id: str) -> Path:
         self.get_match(match_id)
@@ -1470,26 +1473,16 @@ class Storage:
         return [item.model_dump(mode="json") for item in items]
 
     def _active_playlist_payloads(self, match_id: str) -> list[dict]:
-        corrections = self.list_corrections(match_id)
-        undone = {
-            item.get("undoOf")
-            for item in corrections
-            if isinstance(item.get("undoOf"), str) and item.get("undoOf")
-        }
-        payloads: list[dict] = []
-        for item in corrections:
-            if item.get("kind") != "playlist_item":
-                continue
-            if item.get("undoOf"):
-                continue
-            if item.get("correctionId") in undone:
-                continue
-            if item.get("saveState") != "saved":
-                continue
-            payload = item.get("payload") or {}
-            if isinstance(payload, dict):
-                payloads.append(payload)
-        return payloads
+        ref = self.current_generation(match_id)
+        manifest, _ = self.generations.manifest(match_id, ref.generationId)
+        included = set(manifest.includedCommandIds)
+        corrections = [item for item in self.list_corrections(match_id)
+                       if item.get("commandId", item.get("correctionId")) in included
+                       and item.get("applyState") == "applied"]
+        undone = {item.get("undoOf") for item in corrections if item.get("undoOf")}
+        return [item["payload"] for item in corrections
+                if item.get("kind") == "playlist_item" and not item.get("undoOf")
+                and item.get("correctionId") not in undone and isinstance(item.get("payload"), dict)]
 
     def _event_review_snapshot(self, match_id: str, payload: dict) -> list[dict]:
         from .workbench.events import event_matches_review_payload
@@ -1580,52 +1573,37 @@ class Storage:
         self,
         match_id: str,
         *,
-        claimed_evidence_ids: list[str] | None = None,
+        claimed_evidence_ids: list[str | dict] | None = None,
         narrative: dict | None = None,
+        generation_id: str | None = None,
     ) -> dict:
-        from .workbench.assistance import events_as_query_rows
-        from .workbench.evidence import records_from_match, summarize_legacy_match
-        from .workbench.reports import assemble_report
-
-        with self.generation_snapshot(match_id) as generation:
-            summary, _, _, _ = self.load_analytics(match_id, generation_id=generation.generationId)
-            try:
-                events = self.load_events(match_id, generation_id=generation.generationId)
-            except FileNotFoundError:
-                events = []
-            frames = self.load_frames(match_id, generation_id=generation.generationId)
-        records = records_from_match(frames, events)
-        known = {record.evidenceId for record in records}
-        controlled = sum(
-            1
-            for frame in frames
-            if frame.possession is not None and frame.possession.team in {"my_team", "enemy"}
-        )
-        metrics = [
-            metric.model_dump(mode="json")
-            for metric in summarize_legacy_match(
-                summary.model_dump(mode="json"),
-                identity_continuous=self._stored_identity_continuous(match_id),
-                calibration_accepted=self._stored_calibration_accepted(match_id),
-                controlled_frames=controlled,
-            )
-        ]
-        event_rows = [
-            row
-            for row in events_as_query_rows(events, match_id=match_id)
-            if row.get("reviewStatus") != "rejected"
-        ]
-        if claimed_evidence_ids is None:
-            claimed = [evidence_id for row in event_rows for evidence_id in row.get("evidenceIds") or []]
-        else:
-            claimed = list(claimed_evidence_ids)
-        return assemble_report(
-            metrics=metrics,
-            events=event_rows,
-            claimed_evidence_ids=claimed,
-            known_evidence_ids=known,
-            narrative=narrative,
-        )
+        from .provider_gateway import ProviderGateway, validate_output
+        from .report_contracts import validate_declared_references, deterministic_fallback
+        from .settings import ProcessingSettings
+        with self.generation_snapshot(match_id, generation_id=generation_id) as generation:
+            package, _ = ProviderGateway(self, ProcessingSettings(), adapter_factory=None).build_evidence(
+                match_id, generation.generationId, "tactical_report")
+            reasons = []
+            references = []
+            if claimed_evidence_ids is not None:
+                try:
+                    references = validate_declared_references({"evidence": claimed_evidence_ids}, package)
+                except (ValueError, TypeError) as exc:
+                    reasons.append("FABRICATED_EVIDENCE")
+            validated = validate_output(narrative, package) if narrative is not None else None
+            if validated is not None and validated.grounding not in {"grounded", "referenced", "interpretive"}:
+                reasons.extend(validated.reason_codes)
+            accepted = not reasons
+            return {"matchId": match_id, "generationId": generation.generationId,
+                    "evidenceSelection": {"evidenceIds": references, "exclusions": reasons},
+                    "factPackage": {"metrics": list(package.metrics), "events": list(package.events),
+                                    "template": deterministic_fallback(package, tuple(reasons), failed=bool(reasons)),
+                                    "inputEvidenceDigest": package.digest, "aliases": package.aliases},
+                    "narrativeDraft": {"optional": True, "payload": validated.payload if validated and accepted else {},
+                                       "separatedFromFacts": True},
+                    "factualCheck": {"accepted": accepted, "reasonCodes": reasons},
+                    "publication": {"accepted": accepted, "requiresAnalyst": True, "wholeMatchFrequency": False,
+                                    "frequencyRequiresDenominator": True}}
 
     @_generation_reader
     def player_observations_for_match(self, match_id: str) -> dict:
@@ -2584,26 +2562,29 @@ class Storage:
             receipt["ranFfmpeg"] = False
             return receipt
 
-    def edit_list_for_match(self, match_id: str) -> dict:
+    @_generation_reader
+    def edit_list_for_match(self, match_id: str, *, generation_id: str | None = None) -> dict:
         from .workbench.media import store_edit_list
-
+        ref = self.current_generation(match_id)
         sha = self.source_sha256(match_id)
-        intervals: list[dict[str, float]] = []
+        intervals = []
         for payload in self._active_playlist_payloads(match_id):
             start = payload.get("timestampStart", payload.get("start"))
             end = payload.get("timestampEnd", payload.get("end"))
-            if start is None or end is None:
-                continue
-            intervals.append({"start": float(start), "end": float(end)})
-        if not intervals:
-            intervals = [{"start": 0.0, "end": 0.0}]
-        return store_edit_list(source_sha256=sha, intervals=intervals)
+            if start is not None and end is not None:
+                intervals.append({"start": float(start), "end": float(end)})
+        return {**store_edit_list(source_sha256=sha, intervals=intervals),
+                "matchId": match_id, "generationId": ref.generationId,
+                "provenance": "generation_bound_analyst_selection"}
 
-    def render_edit_for_match(self, match_id: str, *, start: float, end: float) -> dict:
+    @_generation_reader
+    def render_edit_for_match(self, match_id: str, *, start: float, end: float,
+                              generation_id: str | None = None) -> dict:
         from .workbench.media import render_on_demand
-
-        edits = self.edit_list_for_match(match_id)
-        return render_on_demand(edits, start=start, end=end)
+        edits = self.edit_list_for_match(match_id, generation_id=generation_id)
+        return {**render_on_demand(edits, start=start, end=end),
+                "matchId": match_id, "generationId": edits["generationId"],
+                "executionStatus": "not_run"}
 
     def write_alongside_for_match(self, match_id: str) -> dict:
         from .workbench.artifacts import ArtifactStore, write_alongside
@@ -3015,7 +2996,18 @@ class Storage:
         payload = self.generations.payload(match_id, "events.json", generation_id)
         return [DetectedEvent.model_validate(item) for item in payload]
 
+    def load_accepted_match_state(self, match_id: str, *, generation_id: str | None = None) -> dict:
+        with self.generation_snapshot(match_id, generation_id=generation_id) as ref:
+            manifest, _ = self.generations.manifest(match_id, ref.generationId)
+            if "accepted_match_state.json" in manifest.files:
+                return self.generations.payload(match_id, "accepted_match_state.json", ref.generationId)
+            from .accepted_state import bind_state
+            return bind_state(match_id, ref.generationId, None)
+
     def load_analysis_artifact(self, match_id: str, analysis_type: str) -> dict:
+        if analysis_type == "accepted_match_state" and any((self.generations.root(match_id) / name).exists()
+                for name in ("current_generation.json", ".generation-format.json", "generations")):
+            return self.load_accepted_match_state(match_id)
         payload = self._read_json(self._match_dir(match_id) / f"{analysis_type}.json")
         return dict(payload)
 
@@ -3158,26 +3150,54 @@ class Storage:
         data = self._read_json(bundle_path)
         return ReviewBundle.model_validate(data)
 
+    @contextmanager
+    def _bound_bundle_items(self, items):
+        """Pin every referenced match until the playlist document is durable.
+
+        Legacy links with no resolvable match remain explicitly unverified. A
+        supplied historical generation must resolve; it can never silently fall
+        back to a different current snapshot.
+        """
+        from contextlib import ExitStack
+        from .schemas import ReviewBundleItem
+        normalised = [ReviewBundleItem.model_validate(item) for item in items]
+        with ExitStack() as pins:
+            refs = {}
+            for mid, gid in sorted({(item.matchId, item.generationId) for item in normalised},
+                                   key=lambda pair: (pair[0], pair[1] or "")):
+                try:
+                    self.get_match(mid)
+                    refs[mid, gid] = pins.enter_context(self.generation_snapshot(mid, generation_id=gid)).generationId
+                except (KeyError, FileNotFoundError):
+                    if gid is not None:
+                        from .generations import GenerationRecoveryRequired
+                        raise GenerationRecoveryRequired("Playlist source generation is unavailable")
+                    refs[mid, gid] = None
+            yield [item.model_copy(update={"generationId": refs[item.matchId, item.generationId],
+                "sourceStatus": "generation_bound" if refs[item.matchId, item.generationId] else "unverified"})
+                for item in normalised]
+
     def create_review_bundle(self, name: str, description: str = "", items: list = None, tags: list[str] | None = None) -> ReviewBundle:
         """Create a new review bundle."""
-        bundle_id = uuid.uuid4().hex
-        now = _utcnow().isoformat()
-        bundle = ReviewBundle(
-            id=bundle_id,
-            name=name,
-            description=description,
-            items=items or [],
-            tags=tags or [],
-            createdAt=now,
-            updatedAt=now,
-        )
-        bundle_path = self._bundle_dir() / f"{bundle_id}.json"
-        self._write_json(bundle_path, bundle.model_dump(mode="json"))
-        return bundle
+        with self._bound_bundle_items(items or []) as bound_items:
+            bundle_id = uuid.uuid4().hex
+            now = _utcnow().isoformat()
+            bundle = ReviewBundle(
+                id=bundle_id,
+                name=name,
+                description=description,
+                items=bound_items,
+                tags=tags or [],
+                createdAt=now,
+                updatedAt=now,
+            )
+            bundle_path = self._bundle_dir() / f"{bundle_id}.json"
+            self._write_json(bundle_path, bundle.model_dump(mode="json"))
+            return bundle
 
     def update_review_bundle(self, bundle_id: str, name: str | None = None, description: str | None = None, items: list | None = None, tags: list[str] | None = None) -> ReviewBundle:
         """Update an existing bundle."""
-        with self._review_bundle_lock:
+        with self._review_bundle_lock, self._bound_bundle_items(items or []) as bound_items:
             bundle = self.get_review_bundle(bundle_id)
             now = _utcnow().isoformat()
             if name is not None:
@@ -3185,7 +3205,7 @@ class Storage:
             if description is not None:
                 bundle.description = description
             if items is not None:
-                bundle.items = items
+                bundle.items = bound_items
             if tags is not None:
                 bundle.tags = tags
             bundle.updatedAt = now

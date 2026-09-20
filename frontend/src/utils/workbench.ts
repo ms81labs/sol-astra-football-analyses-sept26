@@ -2847,13 +2847,15 @@ export async function fetchMatchProxy(matchId: string) {
 }
 
 export interface EditListSnapshot {
+  generationId?: string;
   reencodeFullMatch?: boolean;
   renderOnDemand?: boolean;
   intervals?: Array<[number, number] | { start: number; end: number }>;
 }
 
-export async function fetchMatchEdits(matchId: string) {
-  const response = await fetch(`/api/matches/${matchId}/edits`);
+export async function fetchMatchEdits(matchId: string, generationId?: string) {
+  const path = `/api/matches/${matchId}/edits`;
+  const response = await fetch(generationId ? path + '?generationId=' + encodeURIComponent(generationId) : path);
   if (!response.ok) {
     throw new Error(`Failed to load edit list: ${response.status}`);
   }
@@ -2861,16 +2863,18 @@ export async function fetchMatchEdits(matchId: string) {
 }
 
 export interface MatchEditRender {
+  generationId?: string;
+  executionStatus?: string;
   interval?: [number, number] | { start: number; end: number };
   reencodedFullMatch: boolean;
   sourceSha256?: string;
 }
 
-export async function renderMatchEdit(matchId: string, start: number, end: number) {
+export async function renderMatchEdit(matchId: string, start: number, end: number, generationId?: string) {
   const response = await fetch(`/api/matches/${matchId}/edits/render`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ start, end }),
+    body: JSON.stringify({ start, end, ...(generationId ? { generationId } : {}) }),
   });
   if (!response.ok) {
     throw new Error(`Failed to render match edit: ${response.status}`);
@@ -3939,6 +3943,7 @@ export async function fetchHeatmap(matchId?: string, generationId?: string) {
 }
 
 export interface AssembleReportSnapshot {
+  generationId?: string;
   factualCheck?: { accepted?: boolean; reasonCodes?: string[] };
   publication?: {
     accepted?: boolean;
@@ -3948,11 +3953,11 @@ export interface AssembleReportSnapshot {
   };
 }
 
-export async function assembleMatchReport(matchId: string) {
+export async function assembleMatchReport(matchId: string, generationId?: string) {
   const response = await fetch(`/api/matches/${matchId}/reports`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({}),
+    body: JSON.stringify(generationId ? { generationId } : {}),
   });
   if (!response.ok) {
     throw new Error(`Failed to assemble match report: ${response.status}`);

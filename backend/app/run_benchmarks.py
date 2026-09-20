@@ -735,9 +735,6 @@ def _load_recovery_profile_matrix(storage: Storage, match_id: str) -> dict[str, 
 
 
 def _load_accepted_match_state(storage: Storage, match_id: str) -> dict[str, object] | None:
-    accepted_match_state_path = storage._match_dir(match_id) / "accepted_match_state.json"
-    if not accepted_match_state_path.exists():
-        return None
     try:
         payload = storage.load_analysis_artifact(match_id, "accepted_match_state")
     except (json.JSONDecodeError, OSError, TypeError, ValueError):
@@ -2085,6 +2082,20 @@ def recommend_selected_cluster_benchmark(
             probe.clusterId,
         ),
     )[0]
+
+
+
+def build_snapshot_cluster_payload(summary: MatchBenchmarkSummary, match) -> dict[str, object]:
+    """Describe only the selected, committed result. GET cannot run live probes.
+
+    Alternative-cluster experimentation remains an explicit diagnostic operation,
+    not a hidden mutation/rebuild inside a snapshot export.
+    """
+    selected = None if match.config.myTeamCluster is None else _selected_cluster_summary_from_benchmark(
+        match.config.myTeamCluster, summary).model_dump(mode="json")
+    return {"selectedClusterProbe": selected, "selectedClusters": [] if selected is None else [selected],
+            "recommendedCluster": None, "probeStatus": "not_run",
+            "reasonCodes": ["SNAPSHOT_READ_CANNOT_RUN_CLUSTER_PROBES"]}
 
 
 def build_selected_cluster_payload(storage: Storage, match_id: str) -> dict[str, object]:

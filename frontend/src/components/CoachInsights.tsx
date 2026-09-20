@@ -1,7 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 import { useState } from 'react';
 import { buildMatchReportExportUrl } from '../utils/api';
-import type { ReviewBundleItem, EventTag, FocusPlayer, TacticalReport, DrillResponse } from '../types';
+import type { ReviewBundleItem, EventTag, FocusPlayer, TacticalReport, DrillResponse, ScopedCoachReport, ReportEvidenceRef } from '../types';
 import SaveBundleButton from './SaveBundleButton';
 import BundleListPanel from './BundleListPanel';
 
@@ -9,6 +9,8 @@ interface CoachInsightsProps {
   activeTab: 'report' | 'drills';
   llmThinking: boolean;
   matchId: string | null;
+  generationId?: string | null;
+  reportNotice?: string | null;
   onSwitchMatch?: (matchId: string) => Promise<boolean | void>;
   currentFrame: number;
   events: EventTag[];
@@ -17,6 +19,24 @@ interface CoachInsightsProps {
   ballSignalStatus?: string | null;
   onGenerateReport: () => void;
   onGenerateDrills: () => void;
+}
+
+function referenceText(item: string | ReportEvidenceRef): string {
+  return typeof item === 'string' ? item : `${item.kind}:${item.localId} · ${item.matchId}/${item.generationId}`;
+}
+
+function ScopedReportDetails({ report }: { report: ScopedCoachReport }) {
+  return <div className="space-y-2 text-xs text-slate-300">
+    <p role="status">{report.status ?? 'historical/unverified'} · {report.grounding ?? 'unverified'} · Generation: {report.generationId ?? 'unknown'}</p>
+    <p>Only validated structured measurements are grounded. Observations are referenced, not semantically certified; advice is interpretive.</p>
+    {report.validationDisposition === 'validation_failed' && <p className="text-amber-200">Provider response failed validation. Deterministic stored facts remain available; no automatic provider retry was sent.</p>}
+    {([...(report.metricClaims ?? []), ...(report.metrics ?? [])]).map((claim, index) => <p key={`${claim.metric}-${index}`}>
+      {claim.metric}: {claim.value == null ? 'unavailable' : claim.value} {claim.unit} · {claim.teamScope ?? 'match'} · {claim.availability}
+    </p>)}
+    {report.observations?.map((claim, index) => <p key={index}>Referenced observation: {claim.text}</p>)}
+    {report.interpretation && <p>Interpretation: {report.interpretation}</p>}
+    {report.recommendations?.map((text, index) => <p key={index}>Recommendation: {text}</p>)}
+  </div>;
 }
 
 function FocusCard({ title, player, accent }: { title: string; player?: FocusPlayer; accent: string }) {
@@ -74,13 +94,14 @@ export interface PlaylistLoadResult {
 
 export interface PlaylistLoadOptions {
   currentMatchId: string | null;
+  currentGenerationId?: string | null;
   onSwitchMatch?: (matchId: string) => Promise<boolean | void> | boolean | void;
   dispatchEvent?: (event: Event) => boolean;
 }
 
 export async function loadPlaylistItemsForMatch(
   items: ReviewBundleItem[],
-  { currentMatchId, onSwitchMatch, dispatchEvent = window.dispatchEvent.bind(window) }: PlaylistLoadOptions,
+  { currentMatchId, currentGenerationId, onSwitchMatch, dispatchEvent = window.dispatchEvent.bind(window) }: PlaylistLoadOptions,
 ): Promise<PlaylistLoadResult> {
   const matchIds = Array.from(
     new Set(
@@ -98,6 +119,9 @@ export async function loadPlaylistItemsForMatch(
   }
 
   const targetMatchId = matchIds[0] ?? currentMatchId;
+  if (currentGenerationId && items.some((item) => item.matchId !== currentMatchId || item.generationId !== currentGenerationId)) {
+    return { success: false, error: 'Playlist source is historical or unverified. Open its exact source generation before loading these clips.' };
+  }
   if (targetMatchId && currentMatchId && targetMatchId !== currentMatchId) {
     if (!onSwitchMatch) {
       return {
@@ -133,6 +157,7 @@ export default function CoachInsights({
   activeTab,
   llmThinking,
   matchId,
+  generationId, reportNotice,
   onSwitchMatch,
   currentFrame,
   events,
@@ -143,10 +168,11 @@ export default function CoachInsights({
   onGenerateDrills,
 }: CoachInsightsProps) {
   const [showBundleList, setShowBundleList] = useState(false);
-  const exportHref = matchId ? buildMatchReportExportUrl(matchId) : null;
+  const exportHref = matchId ? buildMatchReportExportUrl(matchId, generationId) : null;
   const handleLoadPlaylist = async (items: ReviewBundleItem[]) => {
     return loadPlaylistItemsForMatch(items, {
       currentMatchId: matchId,
+      currentGenerationId: generationId,
       onSwitchMatch,
     });
   };
@@ -155,6 +181,7 @@ export default function CoachInsights({
     return events.map((event) => ({
       annotationId: `frame-${event.frame}-${event.type}-${event.timestamp}`,
       matchId: matchId ?? '',
+      generationId: generationId ?? undefined,
       frameStart: event.frame,
       frameEnd: event.frame,
       timestampStart: event.timestamp,
@@ -167,6 +194,7 @@ export default function CoachInsights({
   if (activeTab === 'report') {
     return (
       <>
+        {reportNotice && <p role="status" className="text-xs text-amber-200">{reportNotice}</p>}
         <div className="grid grid-cols-2 gap-2">
           {ballSignalStatus === 'untrusted' && (
             <div className="col-span-2 flex items-center gap-2 rounded border border-amber-600/60 bg-amber-900/30 px-3 py-2 text-xs text-amber-300">
@@ -207,10 +235,11 @@ export default function CoachInsights({
         {tacticalReport ? (
           <div className="space-y-3">
             <p className="text-[11px] text-amber-200">Reviewed passages do not establish a whole-match frequency.</p>
-            <div className="flex items-center justify-between">
-              <span className="text-xs text-slate-400">Overall Rating</span>
+            <ScopedReportDetails report={tacticalReport} />
+            {tacticalReport.rating != null && <div className="flex items-center justify-between">
+              <span className="text-xs text-slate-400">Overall Rating (interpretation)</span>
               <span className="text-xl font-bold text-emerald-400">{tacticalReport.rating}/10</span>
-            </div>
+            </div>}
 
             {[
               { label: 'Attacking', text: tacticalReport.attacking },
@@ -218,17 +247,17 @@ export default function CoachInsights({
               { label: 'Pressing', text: tacticalReport.pressing },
               { label: 'Weaknesses', text: tacticalReport.weaknesses },
               { label: 'Summary', text: tacticalReport.summary },
-            ].map(({ label, text }) => (
+            ].filter(({ text }) => Boolean(text)).map(({ label, text }) => (
               <div key={label} className="p-2 bg-slate-900 rounded border border-slate-700">
                 <h4 className="text-xs font-semibold text-emerald-500 mb-1">{label}</h4>
                 <p className="text-xs text-slate-300 leading-relaxed">{text}</p>
               </div>
             ))}
 
-            <div className="p-2 bg-slate-900 rounded border border-emerald-700">
+            {tacticalReport.key_player != null && <div className="p-2 bg-slate-900 rounded border border-emerald-700">
               <span className="text-xs text-slate-400">Key Player: </span>
               <span className="text-xs font-bold text-blue-400">#{tacticalReport.key_player}</span>
-            </div>
+            </div>}
 
             <PlayerFocusSection playerFocus={tacticalReport.player_focus} />
 
@@ -267,7 +296,7 @@ export default function CoachInsights({
                 <div className="space-y-1">
                   {tacticalReport.evidence.map((item, index) => (
                     <p key={`${item}-${index}`} className="text-xs text-slate-300 leading-relaxed">
-                      {item}
+                      {referenceText(item)}
                     </p>
                   ))}
                 </div>
@@ -291,6 +320,7 @@ export default function CoachInsights({
 
   return (
     <>
+      {reportNotice && <p role="status" className="text-xs text-amber-200">{reportNotice}</p>}
       <div className="grid grid-cols-2 gap-2">
         <button
           disabled={llmThinking || ballSignalStatus === 'untrusted'}
@@ -329,9 +359,10 @@ export default function CoachInsights({
             <span className="text-xs font-semibold text-emerald-400">{drillResponse.focus_area}</span>
           </div>
 
+          <ScopedReportDetails report={drillResponse} />
           <PlayerFocusSection playerFocus={drillResponse.player_focus} />
 
-          {drillResponse.drills.map((drill, index) => (
+          {(drillResponse.drills ?? []).map((drill, index) => (
             <div key={`${drill.name}-${index}`} className="p-3 bg-slate-900 rounded border border-slate-700">
               <div className="flex items-center gap-2 mb-2">
                 <span className="w-5 h-5 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-bold text-xs">{index + 1}</span>
@@ -349,7 +380,7 @@ export default function CoachInsights({
               <div className="space-y-1">
                 {drillResponse.evidence.map((item, index) => (
                   <p key={`${item}-${index}`} className="text-xs text-slate-300 leading-relaxed">
-                    {item}
+                    {referenceText(item)}
                   </p>
                 ))}
               </div>

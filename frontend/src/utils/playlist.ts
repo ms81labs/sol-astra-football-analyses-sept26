@@ -1,6 +1,7 @@
 import { commandState, type CommandReceipt } from './commandLifecycle';
 
 export interface PlaylistClip {
+  generationId?: string;
   start: number;
   end: number;
   notes: string;
@@ -14,6 +15,7 @@ export function clipKey(clip: PlaylistClip): string {
 export function playlistClipsFromCorrections(
   items: CommandReceipt[],
   includedCommandIds?: readonly string[],
+  generationId?: string,
 ): PlaylistClip[] {
   if (includedCommandIds) {
     const included = new Set(includedCommandIds);
@@ -36,6 +38,7 @@ export function playlistClipsFromCorrections(
     if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) continue;
     const exclusive = Number(payload.sourceEndFrameExclusive);
     clips.push({
+      ...(generationId ? { generationId } : {}),
       start,
       end,
       notes: typeof payload.notes === 'string' ? payload.notes : '',

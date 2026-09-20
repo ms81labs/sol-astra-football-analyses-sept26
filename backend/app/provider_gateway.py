@@ -4,11 +4,12 @@ import hashlib
 import json
 import math
 import sqlite3
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from .settings import ProcessingSettings
+from .provider_adapters import LOCAL_MODEL_ID
 from .workbench.evidence import records_from_match
 
 
@@ -55,6 +56,9 @@ class ApprovedEvidencePackage:
     metrics: tuple[dict[str, Any], ...]
     events: tuple[dict[str, Any], ...]
     digest: str
+    aliases: dict[str, dict] = field(default_factory=dict)
+    task_type: str | None = None
+    frame_samples: tuple[dict[str, Any], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -167,7 +171,7 @@ class ProviderGateway:
             match_id=match.id,
             generation_id=generation_id,
             provider=requested,
-            model_id=self.settings.cloud_model_id,
+            model_id=self.settings.cloud_model_id if requested == "cloud" else LOCAL_MODEL_ID,
             processing_scope=rights.processingScope,
             cloud_permitted=requested == "cloud",
             budget_reserved=reserved,
@@ -175,134 +179,103 @@ class ProviderGateway:
             reason_codes=tuple(policy_reasons),
         )
 
-    def build_evidence(self, match_id: str, generation_id: str) -> tuple[ApprovedEvidencePackage, dict[str, Any]]:
-        frames = self.storage.load_frames(match_id, generation_id=generation_id)
-        try:
+    def build_evidence(self, match_id: str, generation_id: str, task_type: str | None = None) -> tuple[ApprovedEvidencePackage, dict[str, Any]]:
+        from .report_contracts import digest
+        with self.storage.generation_snapshot(match_id, generation_id=generation_id):
+            frames = self.storage.load_frames(match_id, generation_id=generation_id)
             events = self.storage.load_events(match_id, generation_id=generation_id)
-        except FileNotFoundError:
-            events = []
-        try:
-            summary, _, formation_timeline, shots = self.storage.load_analytics(
-                match_id, generation_id=generation_id
-            )
-            metrics = tuple(item.model_dump(mode="json") for item in summary.metricAvailability)
-        except FileNotFoundError:
-            summary, formation_timeline, shots, metrics = None, None, None, ()
-        event_payloads = tuple(item.model_dump(mode="json") for item in events)
-        evidence = records_from_match(frames, events)
-        canonical = {
-            "matchId": match_id,
-            "generationId": generation_id,
-            "evidenceIds": sorted(item.evidenceId for item in evidence),
-            "metrics": metrics,
-            "events": event_payloads,
-        }
-        package = ApprovedEvidencePackage(
-            match_id=match_id,
-            generation_id=generation_id,
-            evidence_ids=frozenset(canonical["evidenceIds"]),
-            metrics=metrics,
-            events=event_payloads,
-            digest=hashlib.sha256(json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode()).hexdigest(),
-        )
-        return package, {
-            "frames": frames,
-            "summary": summary,
-            "events": events,
-            "formation_timeline": formation_timeline,
-            "shots": shots,
-        }
+            summary, _, formation_timeline, shots = self.storage.load_analytics(match_id, generation_id=generation_id)
+            records = records_from_match(frames, events)
+            # Duplicate local IDs cannot be treated as unambiguous evidence.
+            # Preserve the legacy cursor format, but refuse provider dispatch
+            # rather than silently merging two different observations.
+            ids = [record.evidenceId for record in records]
+            if len(ids) != len(set(ids)):
+                raise ProviderDenied(["AMBIGUOUS_EVIDENCE_IDS"])
+            aliases: dict[str, dict] = {}
+            def permit(kind, local_id):
+                ref = {"matchId": match_id, "generationId": generation_id, "kind": kind, "localId": local_id}
+                alias = "ref_" + digest({"task": task_type, **ref})
+                aliases[alias] = ref
+                return ref, alias
+            for record in records:
+                if record.reviewStatus in {"rejected", "superseded"} or record.supersededBy:
+                    continue
+                kind, _, local_id = record.evidenceId.partition(":")
+                if kind in {"event", "frame"}:
+                    permit(kind, local_id)
+            start = float(frames[0].timestamp) if frames else 0.0
+            end = math.nextafter(float(frames[-1].timestamp), math.inf) if frames else 0.0
+            metrics = []
+            for index, record in enumerate(summary.metricAvailability):
+                item = record.model_dump(mode="json")
+                # Never expose withheld backing values as publishable evidence.
+                if item["availability"] not in {"available", "experimental"}:
+                    item["value"] = None
+                item.update(intervalStart=start, intervalEnd=end)
+                ref, alias = permit("metric", str(index) + ":" + item["metric"])
+                item.update(reference=ref, evidence=[alias] if item["value"] is not None else [])
+                if item["value"] is None:
+                    aliases.pop(alias)
+                metrics.append(item)
+            event_payloads = tuple(item.model_dump(mode="json") for item in events if item.reviewStatus != "rejected")
+            from .llm import _sample_frames
+            samples = tuple(_sample_frames(frames))
+            canonical = {"matchId": match_id, "generationId": generation_id, "taskType": task_type,
+                         "frameSamples": samples,
+                         "aliases": aliases, "metrics": metrics, "events": event_payloads}
+            package = ApprovedEvidencePackage(match_id, generation_id, frozenset(aliases),
+                                              tuple(metrics), event_payloads, digest(canonical), aliases, task_type, samples)
+            return package, {"frames": frames, "summary": summary, "events": events,
+                             "formation_timeline": formation_timeline, "shots": shots}
 
-    def execute(
-        self,
-        match_id: str,
-        task_type: str,
-        *,
-        requested_provider: str | None = None,
-        body: dict[str, Any] | None = None,
-    ) -> dict[str, Any]:
-        match = self.storage.get_match(match_id)
+    def execute(self, match_id: str, task_type: str, *, requested_provider: str | None = None,
+                body: dict[str, Any] | None = None) -> dict[str, Any]:
+        import copy
+        from .report_contracts import deterministic_fallback
+        from .report_store import ReportStore, TASKS, StaleEvidenceGeneration, policy_revision
+        if task_type not in TASKS:
+            raise ValueError("Unsupported report task")
+        body = body or {}
         with self.storage.generation_snapshot(match_id) as generation:
             generation_id = generation.generationId
-            policy = self.resolve_policy(
-                match,
-                requested_provider=requested_provider,
-                task_type=task_type,
-                generation_id=generation_id,
-                require_provider=bool((body or {}).get("requireProvider")),
-            )
-            package, inputs = self.build_evidence(match_id, generation_id)
+            if body.get("generationId") not in (None, generation_id):
+                raise StaleEvidenceGeneration("Select the current generation before requesting a report")
+            analytical_match = self.storage.get_match(match_id)
+            package, inputs = self.build_evidence(match_id, generation_id, task_type)
+        # Live policy is read immediately before dispatch, never restored from G.
+        with self.storage.generations.guard(match_id, "publication"):
+            if self.storage.generations.resolve(match_id).generationId != generation_id:
+                raise StaleEvidenceGeneration("Evidence changed before dispatch")
+            live_match = self.storage.get_match(match_id)
+        revision = policy_revision(live_match, self.settings)
+        policy = self.resolve_policy(live_match, requested_provider=requested_provider, task_type=task_type,
+                                     generation_id=generation_id, require_provider=bool(body.get("requireProvider")))
         raw = self.adapter_factory()(
-            task_type,
-            inputs["frames"],
-            provider=policy.provider,
-            attack_direction=match.config.attackDirection,
-            current_frame_index=(body or {}).get("currentFrameIndex"),
-            summary=inputs["summary"],
-            events=inputs["events"],
-            formation_timeline=inputs["formation_timeline"],
-            shots=inputs["shots"],
-            gateway_token=self._token,
-            model_id=policy.model_id,
-            deadline_seconds=policy.deadline_seconds,
-        )
+            task_type, inputs["frames"], provider=policy.provider,
+            attack_direction=analytical_match.config.attackDirection,
+            current_frame_index=body.get("currentFrameIndex"), summary=inputs["summary"],
+            events=inputs["events"], formation_timeline=inputs["formation_timeline"], shots=inputs["shots"],
+            gateway_token=self._token, model_id=policy.model_id, deadline_seconds=policy.deadline_seconds,
+            approved_evidence=copy.deepcopy({"matchId": match_id, "generationId": generation_id,
+                "taskType": task_type, "inputEvidenceDigest": package.digest,
+                "aliases": package.aliases, "metrics": package.metrics, "events": package.events,
+                "frameSamples": package.frame_samples}))
         validated = validate_output(raw, package)
-        response = validated.payload if validated.grounding == "grounded" else {
-            "kind": "deterministic_template",
-            "reasonCodes": list(validated.reason_codes),
-            "grounding": "ungrounded",
-        }
-        return {
-            **response,
-            "policy": {"provider": policy.provider, "reasonCodes": list(policy.reason_codes)},
-        }
-
-
-def _walk(value: Any):
-    yield value
-    if isinstance(value, dict):
-        for child in value.values():
-            yield from _walk(child)
-    elif isinstance(value, list):
-        for child in value:
-            yield from _walk(child)
+        response = validated.payload if validated.grounding in {"grounded", "referenced", "interpretive"} else deterministic_fallback(package, validated.reason_codes)
+        response = {**response, "matchId": match_id, "generationId": generation_id,
+                    "inputEvidenceDigest": package.digest,
+                    "policy": {"provider": policy.provider, "reasonCodes": list(policy.reason_codes)}}
+        # A stale/malformed result never refunds a possibly incurred reservation.
+        # C04 owns settlement; C03 does not invent a no-charge determination.
+        record = ReportStore(self.storage).publish(match_id, generation_id, task_type, response,
+            evidence_digest=package.digest, policy=policy, expected_policy_revision=revision,
+            settings=self.settings, metadata={"title": live_match.name,
+                "homeTeam": live_match.config.homeTeam, "awayTeam": live_match.config.awayTeam})
+        return {**response, "reportId": record["reportId"], "status": record["status"],
+                "validationDisposition": record["validationDisposition"]}
 
 
 def validate_output(raw: Any, package: ApprovedEvidencePackage) -> ValidatedOutput:
-    if not isinstance(raw, dict) or not isinstance(raw.get("evidence", []), list):
-        return ValidatedOutput({}, "ungrounded", ("MALFORMED_PROVIDER_OUTPUT",))
-
-    references = {
-        item
-        for item in _walk(raw)
-        if isinstance(item, str) and item.startswith(("ev_", "event:", "frame:"))
-    }
-    if not references.issubset(package.evidence_ids):
-        return ValidatedOutput({}, "ungrounded", ("UNKNOWN_EVIDENCE_REFERENCE",))
-
-    known_metrics = {
-        str(item["metric"]): item.get("value")
-        for item in package.metrics
-        if item.get("metric") is not None
-    }
-    for node in _walk(raw):
-        if not isinstance(node, dict):
-            continue
-        metric = node.get("metric")
-        value = node.get("value")
-        if metric is not None and isinstance(value, (int, float)):
-            expected = known_metrics.get(str(metric))
-            if expected is None or abs(float(value) - float(expected)) > 1e-6:
-                return ValidatedOutput({}, "ungrounded", ("NUMERIC_CLAIM_MISMATCH",))
-        for metric_name, expected in known_metrics.items():
-            direct_value = node.get(metric_name)
-            if isinstance(direct_value, (int, float)) and (
-                expected is None or abs(float(direct_value) - float(expected)) > 1e-6
-            ):
-                return ValidatedOutput({}, "ungrounded", ("NUMERIC_CLAIM_MISMATCH",))
-
-    payload = dict(raw)
-    if "interpretation" in payload:
-        payload["interpretationLabel"] = "interpretive"
-    payload["grounding"] = "grounded"
-    return ValidatedOutput(payload, "grounded", ("GROUNDED",))
+    from .report_contracts import check_output
+    return ValidatedOutput(*check_output(raw, package))

@@ -1,4 +1,4 @@
-import { assertGeneration, parseJson, readGeneration, ApiError } from './request';
+import { assertGeneration, parseJson, readGeneration, generationUrl, ApiError } from './request';
 import type { CommandReceipt } from './commandLifecycle';
 import { findNearestFrameIndex } from './videoSync';
 import type {
@@ -205,8 +205,8 @@ export function buildMatchVideoUrl(matchId: string): string {
   return `/api/matches/${matchId}/video`;
 }
 
-export function buildMatchReportExportUrl(matchId: string): string {
-  return `/api/matches/${matchId}/report/html`;
+export function buildMatchReportExportUrl(matchId: string, generationId?: string | null): string {
+  return generationUrl(`/api/matches/${matchId}/report/html`, generationId);
 }
 
 export async function fetchMatches(): Promise<MatchRecord[]> {
@@ -355,13 +355,14 @@ export async function runMatchAnalysis(
   analysisType: string,
   provider: 'local' | 'cloud',
   currentFrameIndex: number,
+  generationId?: string,
 ): Promise<Record<string, unknown>> {
   const response = await fetch(`/api/matches/${matchId}/analysis/${analysisType}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ provider, currentFrameIndex }),
+    body: JSON.stringify({ provider, currentFrameIndex, generationId }),
   });
   return parseJson<Record<string, unknown>>(response);
 }
@@ -488,4 +489,8 @@ export async function deleteMatchIssue(matchId: string, issueId: string): Promis
   if (!response.ok) {
     throw new Error(`Failed to delete match issue: ${response.status}`);
   }
+}
+
+export async function fetchGenerationReports(matchId: string, generationId: string, signal?: AbortSignal) {
+  return readGeneration<import('./reportLifecycle').ReportView>(`/api/matches/${matchId}/reports`, generationId, signal);
 }

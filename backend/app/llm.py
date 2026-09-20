@@ -15,7 +15,7 @@ CREATION_FRAME_WINDOW = 12
 
 
 class _ProviderPayload(BaseModel):
-    model_config = ConfigDict(strict=True, allow_inf_nan=False)
+    model_config = ConfigDict(strict=True, allow_inf_nan=False, extra="forbid")
 
 
 class _FocusPlayer(_ProviderPayload):
@@ -73,6 +73,9 @@ class _Drills(_ProviderPayload):
 
 
 def _validate_provider_output(analysis_type: str, payload: object) -> dict:
+    if isinstance(payload, dict) and payload.get("schemaVersion") == "report_draft_v1":
+        from .report_contracts import ReportDraft
+        return ReportDraft.model_validate(payload).model_dump(mode="json", exclude_unset=True)
     schema = {"tactical_report": _TacticalReport, "drills": _Drills}[analysis_type]
     return schema.model_validate(payload).model_dump(mode="json", exclude_unset=True)
 
@@ -422,7 +425,21 @@ def build_prompt(
     formation_timeline: list[FormationSegment] | None = None,
     shots: list[ShotAnalytics] | None = None,
     attack_direction: Literal["left_to_right", "right_to_left"] = "left_to_right",
+    approved_evidence: dict | None = None,
 ) -> str:
+    if approved_evidence is not None:
+        from .report_contracts import ReportDraft
+        return (
+            "Return only JSON conforming to the report_draft_v1 schema below for the supplied task, match and generation. "
+            "Only use server-approved aliases or exact typed references from this package. "
+            "Metric claims must copy the metric definition, team, interval, unit and publishable value with its metric reference. "
+            "Withheld/unknown metrics cannot be claimed. Preserve experimental labels. "
+            "Observation prose with references is not semantically certified. Put tactical opinions and recommendations "
+            "in interpretation/recommendations (or drills); do not describe them as measured facts. "
+            "No unsupported metrics, scores or factual top-player rankings. Pure interpretation is allowed. "
+            f"Attack direction: {attack_direction}. Schema: {json.dumps(ReportDraft.model_json_schema())} "
+            f"Approved evidence (including source-bound sampled frames): {json.dumps(approved_evidence, allow_nan=False)}"
+        )
     direction_context = (
         f"My team attacks {attack_direction} toward "
         f"{'decreasing' if attack_direction == 'right_to_left' else 'increasing'} x; "
@@ -464,6 +481,7 @@ def _run_analysis_unguarded(
     shots: list[ShotAnalytics] | None = None,
     model_id: str | None = None,
     deadline_seconds: float = 120.0,
+    approved_evidence: dict | None = None,
 ) -> dict:
     current_frame = frames[current_frame_index] if current_frame_index is not None and frames else None
     prompt = build_prompt(
@@ -475,6 +493,7 @@ def _run_analysis_unguarded(
         formation_timeline=formation_timeline,
         shots=shots,
         attack_direction=attack_direction,
+        approved_evidence=approved_evidence,
     )
 
     if provider == "local":
@@ -506,6 +525,7 @@ def run_analysis(
     shots: list[ShotAnalytics] | None = None,
     model_id: str | None = None,
     deadline_seconds: float = 120.0,
+    approved_evidence: dict | None = None,
 ) -> dict:
     if not is_valid_gateway_token(gateway_token):
         raise PermissionError("provider gateway token required")
@@ -521,4 +541,5 @@ def run_analysis(
         shots=shots,
         model_id=model_id,
         deadline_seconds=deadline_seconds,
+        approved_evidence=approved_evidence,
     )

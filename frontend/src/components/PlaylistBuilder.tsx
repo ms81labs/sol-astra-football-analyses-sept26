@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { clipKey, type PlaylistClip } from '../utils/playlist';
 import { assembleMatchReport, exportPlaylistInterval, fetchMatchEdits, renderMatchEdit } from '../utils/workbench';
 
 interface PlaylistBuilderProps {
   matchId?: string;
+  generationId?: string;
   reviewRange?: { startFrame: number; endFrame: number } | null;
   frames?: Array<{ Frame_ID: number; Timestamp: number }>;
   sourceFps?: number;
@@ -30,7 +31,7 @@ function markedIntervalSeconds(
 }
 
 export default function PlaylistBuilder({
-  matchId,
+  matchId, generationId,
   reviewRange = null,
   frames = [],
   sourceFps = 25,
@@ -38,6 +39,8 @@ export default function PlaylistBuilder({
   onClipSaved,
   onOpenInterval,
 }: PlaylistBuilderProps) {
+  const scopeVersion = useRef(0);
+  useLayoutEffect(() => { scopeVersion.current += 1; return () => { scopeVersion.current += 1; }; }, [matchId, generationId]);
   const rangeKey = reviewRange ? `${reviewRange.startFrame}:${reviewRange.endFrame}:${sourceFps}` : '';
   const marked = reviewRange ? markedIntervalSeconds(reviewRange, frames, sourceFps) : null;
   const [draft, setDraft] = useState({ key: '', start: '12', end: '14' });
@@ -54,7 +57,7 @@ export default function PlaylistBuilder({
   useEffect(() => {
     if (!matchId) return;
     let cancelled = false;
-    fetchMatchEdits(matchId)
+    fetchMatchEdits(matchId, generationId)
       .then((payload) => {
         if (cancelled) return;
         if (payload.reencodeFullMatch === false && payload.renderOnDemand === true) {
@@ -69,16 +72,19 @@ export default function PlaylistBuilder({
     return () => {
       cancelled = true;
     };
-  }, [matchId, storedClips.length]);
+  }, [matchId, generationId, storedClips.length]);
 
   async function addClip() {
+    const operation = scopeVersion.current;
     const from = Number(start);
     const to = Number(end);
     if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) return;
     try {
       const interval = await exportPlaylistInterval(from, to, sourceFps);
+      if (operation !== scopeVersion.current) return;
       setExportError(null);
       const clip: PlaylistClip = {
+        ...(generationId ? { generationId } : {}),
         start: interval.sourceStartSeconds,
         end: interval.sourceEndSeconds,
         notes,
@@ -89,28 +95,35 @@ export default function PlaylistBuilder({
       } else {
         setClips((current) => [...current, clip]);
       }
+      if (operation !== scopeVersion.current) return;
       onOpenInterval?.(clip.start);
       if (matchId) {
         try {
-          const rendered = await renderMatchEdit(matchId, clip.start, clip.end);
+          const rendered = await renderMatchEdit(matchId, clip.start, clip.end, generationId);
+          if (operation !== scopeVersion.current) return;
+          if (generationId && rendered.generationId !== generationId) throw new Error('Playlist generation changed; refresh before rendering.');
           if (rendered.reencodedFullMatch === false) {
-            setRenderNote('Rendered interval on demand. reencodedFullMatch is false.');
+            setRenderNote(rendered.executionStatus === 'not_run' ? 'Source interval prepared; media rendering has not run.' : 'Rendered interval on demand. reencodedFullMatch is false.');
           } else {
             setRenderNote(null);
           }
         } catch {
-          setRenderNote(null);
+          if (operation === scopeVersion.current) setRenderNote(null);
         }
       }
     } catch (error) {
+      if (operation !== scopeVersion.current) return;
       setExportError(error instanceof Error ? error.message : 'Failed to export playlist interval');
     }
   }
 
   async function assembleReport() {
+    const operation = scopeVersion.current;
     if (!matchId) return;
     try {
-      const report = await assembleMatchReport(matchId);
+      const report = await assembleMatchReport(matchId, generationId);
+      if (operation !== scopeVersion.current) return;
+      if (generationId && report.generationId !== generationId) throw new Error('Report generation changed; refresh before retrying.');
       setReportError(null);
       const notesForReport: string[] = [];
       if (report.publication?.wholeMatchFrequency === false) {
@@ -121,6 +134,7 @@ export default function PlaylistBuilder({
       }
       setReportNote(notesForReport.join('. ') || 'Report assembled');
     } catch (error) {
+      if (operation !== scopeVersion.current) return;
       setReportError(error instanceof Error ? error.message : 'Failed to assemble report');
     }
   }
@@ -158,7 +172,7 @@ export default function PlaylistBuilder({
       ) : null}
       {exportError && <p className="text-xs text-amber-200">{exportError}</p>}
       {reportError && <p className="text-xs text-amber-200">{reportError}</p>}
-      {[...storedClips, ...clips].filter((clip, index, all) => all.findIndex((other) => clipKey(other) === clipKey(clip)) === index).map((clip) => (
+      {[...storedClips, ...clips.filter((clip) => !generationId || clip.generationId === generationId)].filter((clip, index, all) => all.findIndex((other) => clipKey(other) === clipKey(clip)) === index).map((clip) => (
         <button
           key={clipKey(clip)}
           type="button"
