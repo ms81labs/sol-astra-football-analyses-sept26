@@ -3357,6 +3357,13 @@ class Storage:
             "availability": "withheld", "value": None,
             "reasonCodes": list(dict.fromkeys([*item.reasonCodes, *reasons])),
         }) if item.metric in physical_names else item for item in summary.metricAvailability]
+        # Old summaries may contain no availability entries at all. Publish an
+        # explicit withheld disposition on the read view, without editing history.
+        from .schemas import MetricAvailabilityRecord
+        present = {item.metric for item in availability}
+        availability.extend(MetricAvailabilityRecord(
+            metric=metric, value=None, availability="withheld", reasonCodes=reasons,
+        ) for metric in sorted(physical_names - present))
         return summary.model_copy(update={
             **{name: None for name in ("myTeamDistance", "enemyDistance", "myTeamTopSpeed",
                                       "enemyTopSpeed", "myTeamSprints", "enemySprints")},

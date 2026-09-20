@@ -128,7 +128,10 @@ class TestDashboardEndpoint:
         assert s["avgMyTeamXg"] == 1.05           # (1.2+0.9)/2
         assert s["avgEnemyXg"] == 0.95           # (0.8+1.1)/2
         assert s["avgXgDiff"] == 0.1              # 1.05-0.95
-        assert s["avgMyTeamSprints"] == 10.5       # (12+9)/2
+        # These are unscoped legacy aggregates, not reviewed physical observations.
+        # C02 must withhold them; numeric/zero aggregation has separate positive controls.
+        assert s["avgMyTeamSprints"] is None
+        assert s["avgEnemySprints"] is None
         assert s["mostUsedFormation"] in ("4-3-3", "4-4-2")
 
     def test_ready_matches_are_included_in_dashboard_aggregation(self, tmp_path: Path) -> None:

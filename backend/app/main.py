@@ -742,27 +742,30 @@ VIDEO_TO_ANALYSIS_BOUNDED_NEXT_SAMPLE_REPORT_BINDING_DIR = (
 )
 
 
-def _dashboard_metric_measured(summary: dict, metric: str) -> bool:
-    records = summary.get("metricAvailability") or []
-    record = next((item for item in records if item.get("metric") == metric), None)
-    if record is None:
-        return True
-    return record.get("availability") in {"available", "experimental"}
+def _dashboard_metric_value(summary: dict, *, field: str, metric: str) -> float | None:
+    """A missing/withheld measurement is not zero, including historical summaries."""
+    record = next(
+        (item for item in summary.get("metricAvailability") or [] if item.get("metric") == metric),
+        None,
+    )
+    if record is not None and record.get("availability") not in {"available", "experimental"}:
+        return None
+    value = summary.get(field) if record is None else record.get("value")
+    if type(value) not in (int, float) or not math.isfinite(value):
+        return None
+    return float(value)
 
 
 def _dashboard_average(summaries: list[dict], *, field: str, metric: str, digits: int = 1) -> float | None:
-    values: list[float] = []
-    for summary in summaries:
-        record = next(
-            (item for item in summary.get("metricAvailability") or [] if item.get("metric") == metric),
-            None,
-        )
-        value = summary.get(field) if record is None else record.get("value")
-        if value is not None and (record is None or record.get("availability") in {"available", "experimental"}):
-            values.append(float(value))
-    if not values:
-        return None
-    return round(sum(values) / len(values), digits)
+    values = [value for summary in summaries
+              if (value := _dashboard_metric_value(summary, field=field, metric=metric)) is not None]
+    return round(sum(values) / len(values), digits) if values else None
+
+
+def _dashboard_difference(latest: dict, previous: dict, *, field: str, metric: str) -> float | None:
+    left = _dashboard_metric_value(latest, field=field, metric=metric)
+    right = _dashboard_metric_value(previous, field=field, metric=metric)
+    return round(left - right, 1) if left is not None and right is not None else None
 
 
 def _xg_balance(summary: dict) -> float | None:
@@ -2194,17 +2197,11 @@ def create_app(
                     and (previous_balance := _xg_balance(s_prev)) is not None
                     else None
                 ),
-                myTeamSprintsDelta=(
-                    round(s_latest.get("myTeamSprints", 0) - s_prev.get("myTeamSprints", 0), 1)
-                    if _dashboard_metric_measured(s_latest, "my_team_sprints")
-                    and _dashboard_metric_measured(s_prev, "my_team_sprints")
-                    else None
+                myTeamSprintsDelta=_dashboard_difference(
+                    s_latest, s_prev, field="myTeamSprints", metric="my_team_sprints",
                 ),
-                enemySprintsDelta=(
-                    round(s_latest.get("enemySprints", 0) - s_prev.get("enemySprints", 0), 1)
-                    if _dashboard_metric_measured(s_latest, "enemy_sprints")
-                    and _dashboard_metric_measured(s_prev, "enemy_sprints")
-                    else None
+                enemySprintsDelta=_dashboard_difference(
+                    s_latest, s_prev, field="enemySprints", metric="enemy_sprints",
                 ),
             )
 
