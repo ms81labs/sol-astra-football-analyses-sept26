@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from .workbench.errors import BudgetExhausted, ReconciliationRequired
+from .workbench.errors import BudgetExhausted, IdempotencyConflict, ReconciliationRequired
 from .workbench.jobs import DurableJobLedger, JobAttempt, JobRequest
 from .workbench.money import admission_money, money, text, total
 
@@ -118,8 +118,16 @@ class ProviderBudgetLedger:
                 return
             rows = connection.execute('SELECT id,match_id,task_type,amount FROM provider_reservations ORDER BY id').fetchall()
         for ident, match, task, amount in rows:
-            key = 'legacy-provider:' + hashlib.sha256(json.dumps([str(source.resolve()), ident]).encode()).hexdigest()
+            # A database move must not turn the same historical reservation into
+            # another attempt. The old ledger assigned a stable reservation ID.
+            key = 'legacy-provider:' + hashlib.sha256(str(ident).encode()).hexdigest()
             if self.ledger.has_request(key):
+                existing = self.ledger.request(key)
+                previous = existing.executionBound or {}
+                if (existing.scope != 'provider' or existing.matchId != match
+                        or existing.providerTask != task or previous.get('rowId') != ident
+                        or money(previous.get('amount')) != money(amount)):
+                    raise IdempotencyConflict(key)
                 continue
             bound = {'legacySource': str(source.resolve()), 'rowId': ident, 'amount': amount,
                      'qualification': 'unknown'}
