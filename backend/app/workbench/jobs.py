@@ -17,7 +17,7 @@ from typing import Any, Literal
 
 from pydantic import Field, field_validator
 
-from .money import ZERO, money, text, total
+from .money import ZERO, admission_money, money, text, total
 from .billing import AttemptBilling, CostSummary
 
 from .errors import (
@@ -76,7 +76,7 @@ class JobRequest(StrictModel):
     @field_validator("budget", mode="before")
     @classmethod
     def exact_budget(cls, value):
-        money(value)
+        admission_money(value)
         return value
     fallbackPolicy: str = "cpu_local"
     pixelFormat: str = "bgr24"
@@ -531,7 +531,7 @@ class DurableJobLedger:
                 raise ReconciliationRequired("billing reconciliation required before another attempt")
             settled, reserved, unsettled = self._budget_totals(connection, request.requestId)
             remaining = max(ZERO, money(request.budget) - settled - reserved - unsettled)
-            reservation = remaining if reservation is None else money(reservation)
+            reservation = admission_money(remaining if reservation is None else reservation)
             if reservation > remaining or (request.budget > 0 and reservation <= ZERO):
                 raise BudgetExhausted("authorised budget exhausted")
             if request.authorisedLocation != "local":

@@ -36,3 +36,15 @@ def total(values) -> Decimal:
 
 def text(value: Decimal) -> str:
     return format(value, "f")
+
+
+def admission_money(value: Any) -> Decimal:
+    """Reject ceilings/reservations the legacy numeric envelope cannot preserve.
+
+    This guard is not used for invoices: a truthful charge keeps its exact text
+    even when its numeric presentation is rounded or it exceeds the budget.
+    """
+    exact = money(value)
+    if money(float(exact)) != exact:
+        raise ValueError("MONEY_REPRESENTATION_UNSUPPORTED")
+    return exact

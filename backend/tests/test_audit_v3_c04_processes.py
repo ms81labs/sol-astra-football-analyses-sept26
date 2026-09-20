@@ -152,7 +152,7 @@ def test_v3t29_compatibility_budget_and_charges_do_not_invent_incurring(tmp_path
         assert client.get(f'/api/jobs/{job.id}/budget').json()['reconcile']['actual']==0
 
 
-@pytest.mark.parametrize('value',[True,False,'NaN',None])
+@pytest.mark.parametrize('value',[True,False,'NaN',None,'100000000000.000000000001'])
 def test_v3t31_job_admission_rejects_invalid_money_before_creating_job(tmp_path,value):
     from backend.tests.test_audit_v3_c03_reports import FIXTURE
     from backend.app.main import create_app

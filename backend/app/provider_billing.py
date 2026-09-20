@@ -16,7 +16,7 @@ from typing import Any
 
 from .workbench.errors import BudgetExhausted, ReconciliationRequired
 from .workbench.jobs import DurableJobLedger, JobAttempt, JobRequest
-from .workbench.money import money, text, total
+from .workbench.money import admission_money, money, text, total
 
 
 @dataclass(frozen=True)
@@ -135,12 +135,12 @@ class ProviderBudgetLedger:
             sourceSha256=source or hashlib.sha256(json.dumps([match, task]).encode()).hexdigest(),
             intervalStart=0, intervalEnd=0, temporalPolicy='provider-request-v2',
             decoderVersion='not-applicable', modelHash=model or 'legacy-unknown',
-            outputSchema='provider-result-v2', budget=float(budget), authorisedLocation='cloud',
+            outputSchema='provider-result-v2', budget=float(admission_money(budget)), authorisedLocation='cloud',
             currency=currency, scope='provider', providerTask=task, executionBound=bound)
         owner = 'provider:' + str(uuid.uuid4())
         attempt = self.ledger.admit(request, mode='retry' if retry_of_attempt_id is not None else 'submit',
             owner_id=owner, lease_seconds=120, retry_of_attempt_id=retry_of_attempt_id,
-            reservation=float(amount), group_limit=float(self.limit) if enforce_limit else None)
+            reservation=admission_money(amount), group_limit=self.limit if enforce_limit else None)
         return ProviderTicket(request, attempt, owner)
 
     def admit(self, *, match_id: str, task_type: str, request_id: str, source_identity: str,
