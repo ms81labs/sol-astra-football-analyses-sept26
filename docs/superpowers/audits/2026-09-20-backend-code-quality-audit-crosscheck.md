@@ -17,8 +17,9 @@ Where this pass differs, it is to sharpen:
 - **The audit's PR 1 (Ruff, "fix only unambiguous violations") before PR 3 (remove the `_main` namespace) is unsafe in the stated order.** 173 of `main.py`'s 175 "unused" imports are consumed only through `_main.<name>` aliasing in the leftover routers, and those routers are built on every `create_app()` call. `ruff --fix` on F401 would break startup (N02).
 - **Q6 understates the observability gap.** "Logging is sparse" is generous: the entire `backend/app` package contains one logging call (N03).
 - **Q4 understates existing consolidation and misdiagnoses the gap.** The common helper module the audit mentions is already imported by 221 of 322 scripts; the problem is that 115 of those scripts still carry an identical local copy of a helper the module already exports (N05).
+- **The "3,583 passed" figure the audit cites (§3.4) is the code-only selection, not the full suite.** The full selection collects 4,181 tests; the 594 in the six code-only-excluded modules run in no routine CI lane, and 22 of them fail at `main` under `dev.lock` — several for environment-independent reasons (N09).
 
-Disposition: proceed with the audit's remediation direction. Reorder PR 1 and PR 3 as described in §6.
+Disposition: proceed with the audit's remediation direction. Reorder PR 1 and PR 3 as described in §7, and add the N09 repair as a Phase A guardrail item, since the audit's later refactors of `run_guerilla.py` and the benchmark scripts would otherwise be protected by tests that nothing runs.
 
 ## 2. Objective metrics — audit claim vs. measured
 
@@ -83,9 +84,21 @@ Reading: the audit's prediction that tests do not catch "undefined names in unex
 
 Environment: Python 3.12.3, `backend/requirements/dev.lock` installed with `--require-hashes`, `pip install -e . --no-deps`, `pip install -e ./research-addon`, `QT_QPA_PLATFORM=offscreen`. `pandas` and `cv2` real; `ultralytics` stubbed (`stubs_active: ultralytics`).
 
-Command: `python3 -m pytest -q backend/tests`
+Command: `python3 -m pytest -q backend/tests` (no `--ignore` flags, i.e. the *full* selection, not the code-only one)
 
-Result: **TEST_RESULT_PLACEHOLDER**
+Result: **22 failed, 4,153 passed, 6 skipped in 29m 23s.**
+
+All 22 failures are in the six modules that `scripts/verify.sh` excludes under `VERIFY_CODE_ONLY=1`:
+
+| Module | Failures | Observed cause |
+|---|---:|---|
+| `test_run_guerilla.py` | 9 | 1× `ModuleNotFoundError: ultralytics` in a subprocess import (the conftest stub does not reach child processes). 3× `AttributeError: 'FakeModel' object has no attribute 'predict'` — the test's fake defines only `track`, while `process_video` (L8364) guards on `hasattr(probe_model, "predict")` against the `_CountingPredictor` wrapper and then calls `predict` on the wrapped fake (L5224). 2× `_CountingPredictor is not FakeAuxiliary...` identity assertions, 2× heartbeat assertions, 1× `TypeError: only 0-dimensional arrays can be converted to Python scalars` at `workbench/perception.py` L206 under numpy 2.4.6 (the version `dev.lock` pins). |
+| `test_operational_docs.py` | 8 | `test_historical_provider_recipe_module_cli_exits_nonzero[...]`: the CLI exits nonzero as required, but `"retired"` is absent from stderr — the script fails on an import before it reaches its retirement guard, so the test cannot distinguish "retired" from "broken". |
+| `test_gpu_worker.py` | 3 | `PermissionError` on `os.rename`/`open` inside the test's own fixture setup against `tmp_path`; filesystem-sensitive, not diagnosed further. |
+| `test_evaluate_football_analysis_pilot_soccertrack_events.py` | 1 | `FileNotFoundError` under `backend/storage/trained_detector_candidates/...` — needs restored artifacts. |
+| `test_convert_football_analysis_pilot_cvat_labels.py` | 1 | `FileNotFoundError` under `backend/storage/cvat-manifest-test-...` — needs restored artifacts. |
+
+Reconciliation with the merge commit message ("Full backend 3583 passed/4 skipped"): the six excluded modules collect **594** tests; 4,181 collected − 594 = **3,587 = 3,583 passed + 4 skipped**. The number the commit message labels "Full backend" is the **code-only** selection. The audit's §3.4 repeats that label. The genuinely full suite at `312cb5a` does not pass in a `dev.lock` environment — see N09.
 
 ## 6. Additional findings (not in the audit)
 
@@ -143,6 +156,19 @@ The audit's "one shared helper module and thin wrappers are enough" is correct, 
 
 **Path (observed, not traced):** Ruff `B023` fires 43 times; the densest cluster is `run_guerilla.py` L1986–1999 (`selected_windows`, `sampled_frame_id`, `seed_mode`, `seed_center*` captured by inner functions defined in a loop). B023 is a late-binding hazard only if the closure is called after the loop advances. At the `run_guerilla.py` cluster the inner function is a `nonlocal`-heavy per-frame helper that appears to be invoked within the same iteration that defines it, which would make the capture benign; that was not traced to completion in this pass, and it is algorithmic code the audit says not to touch casually. Recording it so PR 1's rule selection can include `B023` as a report-only rule and the algorithm owner can confirm each site.
 
+### N09 — 594 tests in six modules are excluded from every routine CI lane, and 22 of them fail at `main` (P1 for the audit's "well-tested" premise)
+
+**Path (verified):** `scripts/verify.sh` L100–107 `--ignore`s `test_convert_football_analysis_pilot_cvat_labels.py`, `test_evaluate_football_analysis_pilot_soccertrack_events.py`, `test_gpu_worker.py`, `test_operational_docs.py`, `test_run_guerilla.py`, `test_run_source_robustness_batch.py` when `VERIFY_CODE_ONLY=1`, which is how the CI `verify` job runs (`ci.yml` L50). The `integration` and `real-media` jobs select by marker only (`-m "integration or real_media"`, `-m real_media`). The `gpu-acceptance` job runs `test_gpu_worker.py` and `test_run_guerilla.py`, but only on `workflow_dispatch` with two approval inputs. Consequently:
+
+- `test_operational_docs.py`, `test_run_source_robustness_batch.py`, `test_convert_football_analysis_pilot_cvat_labels.py`, `test_evaluate_football_analysis_pilot_soccertrack_events.py` are run by **no** CI lane on push or PR.
+- `test_run_guerilla.py` and `test_gpu_worker.py` run only when a human dispatches the GPU lane.
+
+Running the full selection locally under `dev.lock` (§5) shows 22 failures, all in these modules. Two are artifact-dependent by design (`backend/storage/...` restore), one is dependency-dependent (`ultralytics` in a subprocess), and eight in `test_operational_docs.py` are a test that cannot tell "retired" from "import failed". But the `FakeModel`/`predict` failures in `test_run_guerilla.py` are environment-independent: the fake and the production guard disagree, and both were introduced in the same commit (`d557702`). `test_run_source_robustness_batch.py` (the audit's Q3 example, 178 KB) happened to pass here, but nothing in CI would notice if it stopped.
+
+**Why it matters for the audit:** the audit's overall assessment rests on "Runtime correctness discipline: Strong — extensive pytest suite". The suite is extensive, but 14% of it (594/4,181) is outside the routine gate, and the part that guards the largest production file (`run_guerilla.py`, 8,907 lines) is in that 14%. The audit's Q9 observation that the verifier's thresholds are "historically shaped" is a symptom of the same thing: the 1,486 full-mode minimum was set when the full selection was much smaller, and no lane has exercised full mode since.
+
+**Repair (bounded, no product change):** (1) fix the `hasattr(probe_model, "predict")` guard or the three fakes so the recovery-path tests pass without ultralytics; (2) make `test_historical_provider_recipe_module_cli_exits_nonzero` assert the retirement message from a controlled import environment or skip when the module's imports are unavailable; (3) add a CI lane — or extend `integration` — that runs the four never-run modules with the artifact-dependent tests marked and skipped explicitly rather than excluded by filename; (4) relabel the verifier's output so "full" and "code-only" counts are never conflated in commit messages again.
+
 ## 7. Adjustments to the audit's PR sequence
 
 | Audit PR | Adjustment |
@@ -155,11 +181,14 @@ The audit's "one shared helper module and thin wrappers are enough" is correct, 
 | PR 6 — Storage seam extraction | No change. Add the `_admit_durable_job` log line and the 5 `storage.py` S110 log lines here or in Phase A (N03). |
 | Phase A item 4 (log suppressed errors) | Scope is 24 S110 sites + 1 sentinel; see N03. |
 | Q9 (verifier count gate) | Include `tests/test_verify_script.py` in scope (N06). |
+| Phase A (new item) | Bring the six code-only-excluded modules under a routine lane before Phase C/D touch `run_guerilla.py` or the benchmark/robustness scripts; fix the environment-independent `test_run_guerilla.py` failures first (N09). |
 
 ## 8. What this pass did not verify
 
 - Whether any of the 43 `B023` sites is a live bug (N08 is report-only).
 - The ~170 `BLE001` blind catches individually. The audit's §10 caution that most are legitimate boundary translation was spot-checked in `daytona.py` and `remote_contracts.py` and holds for the sampled sites; it was not exhaustively traced.
 - The frontend and sidecar suites (audit scope is `backend/` only; the merge commit's frontend/sidecar counts were not rerun).
+- Root cause of the three `test_gpu_worker.py` `PermissionError` failures and the two heartbeat/two identity-assertion failures in `test_run_guerilla.py` (§5). They are recorded as observed; only the `FakeModel`/`predict` trio was traced to a specific code/test disagreement.
+- Whether the `numpy 2.4.6` `TypeError` in `workbench/perception.py` L206 also reproduces under the `cpu-cv` lock's `numpy==2.4.2`.
 - The "low thousands of lines" deletion estimate in §9. The identical-helper duplication alone accounts for roughly 180×2 + 114×3 + 76×4 ≈ 1,000 lines; script archival was not assessed because it requires per-script caller validation the audit itself defers.
 - CI artifact contents for `312cb5a` (the receipt's `stubsActive` was inferred from a local run with the same lock, not downloaded).
