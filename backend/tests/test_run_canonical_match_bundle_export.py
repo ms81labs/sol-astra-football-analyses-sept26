@@ -111,7 +111,7 @@ def test_canonical_match_bundle_export_attempt_plan_has_three_failsafes(tmp_path
 
     payload = bundle_batch.run_canonical_match_bundle_export(storage_root=tmp_path)
 
-    assert [item["attemptApproachFamily"] for item in payload["attemptPlan"] == [
+    assert [item["attemptApproachFamily"] for item in payload["attemptPlan"]] == [
         "persisted_artifact_bundle_contract",
         "bundle_schema_or_api_contract_repair",
         "bundle_export_blocker_summary",
