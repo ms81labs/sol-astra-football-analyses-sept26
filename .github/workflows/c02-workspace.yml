@@ -1,0 +1,42 @@
+name: C02 locked frontend workspace
+on:
+  push:
+    branches: [agent/c02-integration]
+    paths: [.github/workflows/c02-workspace.yml]
+permissions:
+  contents: read
+jobs:
+  workspace:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install exact frontend lock
+        run: npm ci --prefix frontend
+      - name: Export source and dependency workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/c02-workspace"
+          git bundle create "$RUNNER_TEMP/c02-workspace/repository.bundle" HEAD refs/remotes/origin/main
+          tar -czf "$RUNNER_TEMP/c02-workspace/frontend-node-modules.tar.gz" -C frontend node_modules
+          git rev-parse HEAD > "$RUNNER_TEMP/c02-workspace/source-sha.txt"
+          node --version > "$RUNNER_TEMP/c02-workspace/node-version.txt"
+          npm --version > "$RUNNER_TEMP/c02-workspace/npm-version.txt"
+          sha256sum frontend/package-lock.json > "$RUNNER_TEMP/c02-workspace/lock-sha256.txt"
+          cd "$RUNNER_TEMP/c02-workspace"
+          sha256sum repository.bundle frontend-node-modules.tar.gz > SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: c02-locked-frontend-workspace
+          path: ${{ runner.temp }}/c02-workspace/
+          retention-days: 7
+          if-no-files-found: error
