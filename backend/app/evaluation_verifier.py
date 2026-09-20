@@ -195,7 +195,9 @@ def _replay(inputs, root):
         result = subprocess.run(command, cwd=Path(__file__).parents[2], text=True, capture_output=True,
                                 timeout=120, check=False)
         _require(result.returncode == 0, "SCORER_EXECUTION_FAILED")
-        return parse_unique_json(result.stdout)
+        return parse_unique_json(result.stdout), {"command": command, "exitCode": result.returncode,
+            "stdoutSha256": hashlib.sha256(result.stdout.encode()).hexdigest(),
+            "inputSha256": hashlib.sha256(path.read_bytes()).hexdigest()}
 
 
 def _accept(policy, manifest, inputs, scores, minutes):
@@ -236,7 +238,7 @@ def verify_evaluation_manifest(path: Path, *, trackeval_root: Path, acceptance_p
     policy = deepcopy(acceptance_policy)
     try:
         scorer_digest = _check_scorer(trackeval_root)
-        scores = _replay(inputs, trackeval_root)
+        scores, execution = _replay(inputs, trackeval_root)
         _, _, after, _ = _load_inputs(path)
         _require(after == digest and _check_scorer(trackeval_root) == scorer_digest, "INPUT_CHANGED_DURING_SCORING")
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as exc:
@@ -246,7 +248,7 @@ def verify_evaluation_manifest(path: Path, *, trackeval_root: Path, acceptance_p
         "executionEvidence": {"manifestSha256": digest, "scorerCommit": TRACKEVAL_COMMIT,
             "scorerSourceSha256": scorer_digest, "scorerEntryPoint": "evaluate_football_analysis_pilot.evaluate_tracking",
             "checkpointSha256": manifest["checkpoint"]["sha256"], "protocolSha256": manifest["protocol"]["sha256"],
-            "exitCode": 0, "units": "fraction", "modelInferenceExecuted": False,
+            **execution, "units": "fraction", "modelInferenceExecuted": False,
             "checkpointAssociation": "verified_declared_artifact_binding_not_inference_replay"}})
     if not isinstance(scores, dict) or set(scores) != {item["task"]["taskId"] for item in inputs["cases"]}:
         return gate.model_copy(update={"scoreStatus": "invalid", "reasonCodes": ["SCORER_OUTPUT_INVALID"]})
@@ -293,7 +295,7 @@ def main():
     policy = parse_unique_json(args.policy.read_bytes()) if args.policy else None
     gate = verify_evaluation_manifest(args.manifest, trackeval_root=args.trackeval_root, acceptance_policy=policy)
     print(gate.model_dump_json(indent=2))
-    return 0 if gate.scoreStatus == "valid" and gate.acceptanceStatus != "failed" else 1
+    return 0 if gate.scoreStatus == "valid" and (args.policy is None or gate.accepted) else 1
 
 
 if __name__ == "__main__":

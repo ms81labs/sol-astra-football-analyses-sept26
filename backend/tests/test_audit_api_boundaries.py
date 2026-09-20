@@ -27,6 +27,9 @@ def make_match(storage, input_mode='video'):
 
 
 def publish_minimal_generation(storage, match_id, frames):
+    # Seed observations before publication: C05 refuses missing post-perception inputs.
+    if storage.get_match(match_id).inputMode == "video":
+        storage.save_raw_rows(match_id, [])
     # C01 fixture admission is explicit; ordinary provider reads never migrate.
     storage.publish_generation(
         match_id, frames=frames,

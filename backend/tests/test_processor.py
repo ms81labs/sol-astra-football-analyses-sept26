@@ -68,6 +68,8 @@ def test_remote_stream_persists_the_same_rows_and_frames(tmp_path, selected_clus
     from backend.app.remote_worker import ProcessorResultStream
 
     storage = Storage(tmp_path)
+    # Synthetic source bytes, not a model/video decoding fixture.
+    (tmp_path / "clip.mp4").write_bytes(b"video")
     match = storage.create_match(
         name="stream parity", input_mode="video", original_filename="clip.mp4",
         input_path=tmp_path / "clip.mp4", config=MatchConfig(myTeamCluster=selected_cluster),
@@ -121,6 +123,8 @@ def test_remote_stream_failure_restores_existing_outputs(tmp_path, monkeypatch, 
     from backend.app.remote_worker import ProcessorResultStream
 
     storage = Storage(tmp_path)
+    # Synthetic source bytes, not a model/video decoding fixture.
+    (tmp_path / "clip.mp4").write_bytes(b"video")
     match = storage.create_match(
         name="stream rollback", input_mode="video", original_filename="clip.mp4",
         input_path=tmp_path / "clip.mp4", config=MatchConfig(),
@@ -1573,6 +1577,8 @@ def test_persist_video_outputs_keeps_normalized_frames_reprocessable(tmp_path, m
 
     raw_rows_path = storage._match_dir(match.id) / "raw_rows.json"
     assert raw_rows_path.exists()
+    original_rows = raw_rows_path.read_bytes()
+    generation = storage.current_generation(match.id).generationId
     raw_rows_path.unlink()
 
     seen_frames = {}
@@ -1602,8 +1608,16 @@ def test_persist_video_outputs_keeps_normalized_frames_reprocessable(tmp_path, m
 
     monkeypatch.setattr(processor, "_compute_outputs_and_match_state", fake_compute_outputs)
 
-    reprocess_video_match(storage, match.id)
+    from backend.app.review_service import SemanticCommandError
+    with pytest.raises(SemanticCommandError) as error:
+        reprocess_video_match(storage, match.id)
+    assert error.value.code == "CACHE_MISS"
+    assert seen_frames == {}, "missing observations must not launch analytical reuse"
+    assert storage.current_generation(match.id).generationId == generation
 
+    # The same verified normalized observations remain reprocessable when restored.
+    raw_rows_path.write_bytes(original_rows)
+    reprocess_video_match(storage, match.id)
     assert seen_frames["frame_ids"] == [0]
 
 
