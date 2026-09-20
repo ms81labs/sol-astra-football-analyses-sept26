@@ -11,7 +11,7 @@ from backend.tests.test_audit_v3_c03_reports import _store
 pytestmark = pytest.mark.integration
 
 
-@pytest.mark.parametrize("mismatch", ["other_known_controller", "missing_controller", "assignment_clock", "missing_assignment"])
+@pytest.mark.parametrize("mismatch", ["other_known_controller", "missing_controller", "assignment_clock", "missing_assignment", "noncontrolled_team"])
 def test_inconsistent_accepted_state_cannot_become_current(tmp_path, mismatch):
     storage, mid = _store(tmp_path)
     old = storage.current_generation(mid).generationId
@@ -31,6 +31,9 @@ def test_inconsistent_accepted_state_cannot_become_current(tmp_path, mismatch):
         state["frames"][index]["controllingTrackId"] = None
     elif mismatch == "assignment_clock":
         assignments[index] = assignments[index].model_copy(update={"timestamp": assignments[index].timestamp + 0.25})
+    elif mismatch == "noncontrolled_team":
+        state["frames"][index].update(mode="unknown", controllingTrackId=None, controllingTeam="my_team")
+        assignments[index] = assignments[index].model_copy(update={"team": "unassigned", "trackId": None})
     else:
         assignments = assignments[:-1]
 

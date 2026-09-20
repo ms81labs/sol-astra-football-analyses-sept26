@@ -56,8 +56,8 @@ def validate_state(
                     or (state.controllingTeam, state.controllingTrackId)
                     != (assignment.team, assignment.trackId)):
                 raise ValueError("Accepted-state controller differs from published assignment")
-        elif state.controllingTrackId is not None:
-            raise ValueError("Non-controlled accepted state cannot name a controlling track")
+        elif state.controllingTrackId is not None or state.controllingTeam in {"my_team", "enemy"}:
+            raise ValueError("Non-controlled accepted state cannot name a controlling track/team")
         if frame["frameId"] != state.frameId or frame["timestamp"] != state.timestamp:
             raise ValueError("Accepted-state clock differs from published frames")
         if state.controllingTrackId is not None and (
