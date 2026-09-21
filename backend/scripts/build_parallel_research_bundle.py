@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.scripts.football_external_real_eval_chain_common import utc_now_iso
+
 import argparse
 from contextlib import contextmanager, ExitStack
 from datetime import date, datetime, timezone
@@ -9,13 +11,10 @@ from pathlib import Path, PurePosixPath
 import secrets
 import shutil
 import stat
-import sys
 from typing import Callable
 import zipfile
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 FULL_BUNDLE_PREFIX = "fotball-analyst-research-pack"
 CORE_BUNDLE_PREFIX = "fotball-analyst-research-core-pack"
@@ -158,9 +157,6 @@ EXCLUDED_RULES = [
     "**/yolo_export/labels/**",
 ]
 
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _load_json(path: Path) -> dict[str, object]:
@@ -640,7 +636,7 @@ def build_parallel_research_bundle(
         "bundleRoot": str(bundle_root),
         "zipPath": str(zip_path),
         "bundleDate": bundle_date,
-        "generatedAtUtc": _utc_now_iso(),
+        "generatedAtUtc": utc_now_iso(),
         "includedFileCount": len(file_plan["allFiles"]),
         "includedRepoFiles": [path.as_posix() for path in file_plan["allFiles"]],
         "includedFileCountsByCategory": {

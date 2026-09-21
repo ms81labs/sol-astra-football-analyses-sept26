@@ -1,16 +1,15 @@
 from __future__ import annotations
 
+from backend.scripts.football_external_real_eval_chain_common import utc_now_iso
+
 import argparse
 from datetime import datetime, timezone
 from html import escape
 import json
 from pathlib import Path
-import sys
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from backend.scripts.football_external_real_eval_chain_common import load_json as _load_json, write_json as _write_json  # noqa: E402
 from backend.app.run_benchmarks import DEFAULT_STORAGE_ROOT  # noqa: E402
@@ -30,9 +29,6 @@ NEXT_SURFACE_CONTRACT_REPAIR = "football_external_benchmark_product_decision_sur
 NEXT_ROUTE_IMPLEMENTATION = "football_external_benchmark_product_decision_surface_route_implementation"
 NEXT_REAL_EVALUATION_DESIGN = "football_external_benchmark_real_evaluation_design"
 
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _candidate_root(storage_root: Path, candidate_name: str) -> Path:
@@ -147,7 +143,7 @@ def _recommendation_matrix(plan: dict[str, Any], gates: dict[str, Any]) -> dict[
     governance = next((row for row in milestones if row.get("nextLever") == "football_external_benchmark_dataset_governance_plan"), {})
     return {
         "schemaVersion": "external_benchmark_decision_recommendation_matrix_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "recommendedNextLever": NEXT_REAL_EVALUATION_DESIGN,
         "routeImplementationNextLever": NEXT_ROUTE_IMPLEMENTATION,
         "decisions": [
@@ -182,7 +178,7 @@ def _view_model(summary: dict[str, Any], plan: dict[str, Any], contract: dict[st
     source_coverage = plan.get("sourceCoverage") if isinstance(plan.get("sourceCoverage"), dict) else {}
     return {
         "schemaVersion": "external_benchmark_product_decision_surface_view_model_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "hero": {
             "title": "External Benchmark Decision Surface",
             "subtitle": "Read-only product context for SoccerNet and SoccerTrack generated-truth benchmark smoke.",
@@ -230,7 +226,7 @@ def _view_model(summary: dict[str, Any], plan: dict[str, Any], contract: dict[st
 def _route_contract(view_model: dict[str, Any]) -> dict[str, Any]:
     return {
         "schemaVersion": "external_benchmark_product_decision_surface_route_contract_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "routeName": "ExternalBenchmarkDecisionSurface",
         "apiRoutePath": "/api/external/benchmark/decision",
         "htmlRoutePath": "/external/benchmark/decision",
@@ -326,7 +322,7 @@ def _guardrail_audit(inputs: dict[str, Any], route_contract: dict[str, Any], vie
     }
     return {
         "schemaVersion": "external_benchmark_product_decision_surface_guardrail_audit_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         **checks,
         "allGuardrailsPassed": all(checks.values()),
     }
@@ -368,7 +364,7 @@ def _classify(operationalization_ready: bool, guardrails_clear: bool, audit: dic
 
 def _decision_matrix(primary_blocker: str | None, goal_achieved: bool, next_lever: str) -> dict[str, Any]:
     return {
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "decisions": [
             {"condition": "operationalization_plan_missing", "selected": primary_blocker == BLOCKER_OPERATIONALIZATION_MISSING, "primaryBlocker": BLOCKER_OPERATIONALIZATION_MISSING, "nextRecommendedNextLever": NEXT_OPERATIONALIZATION_PLAN},
             {"condition": "product_decision_surface_guardrail_violation", "selected": primary_blocker == BLOCKER_GUARDRAIL_VIOLATION, "primaryBlocker": BLOCKER_GUARDRAIL_VIOLATION, "nextRecommendedNextLever": NEXT_CONTRACT_REPAIR},
@@ -430,7 +426,7 @@ def run_football_external_benchmark_product_decision_surface(
     attempts = _attempt_plan()
     summary: dict[str, Any] = {
         "batchName": "football_external_benchmark_product_decision_surface",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "attemptNumber": attempt_number,
         "attemptBudget": 3,
         "attemptApproachFamily": attempt_approach_family,

@@ -1,15 +1,14 @@
 from __future__ import annotations
 
+from backend.scripts.football_external_real_eval_chain_common import utc_now_iso
+
 import argparse
 from datetime import datetime, timezone
 import json
 from pathlib import Path
-import sys
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from backend.scripts.football_external_real_eval_chain_common import load_json as _load_json, write_json as _write_json  # noqa: E402
 from backend.app.run_benchmarks import DEFAULT_STORAGE_ROOT  # noqa: E402
@@ -26,9 +25,6 @@ NEXT_REPORT_SMOKE = "football_external_soccernet_bounded_analysis_report_smoke"
 NEXT_CLOSEOUT_REPAIR = "football_external_soccernet_bounded_analysis_closeout_repair"
 NEXT_FULL_ANALYSIS_APPROVAL = "football_external_soccernet_full_analysis_execution_approval"
 
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _candidate_root(storage_root: Path, candidate_name: str) -> Path:
@@ -104,7 +100,7 @@ def _report_ready(summary: dict[str, Any] | None, payload: dict[str, Any] | None
 def _capability_matrix() -> dict[str, Any]:
     return {
         "schemaVersion": "soccernet_external_bounded_analysis_capability_matrix_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "coveredCapabilities": {
             "externalVideoMemberExtracted": True,
             "videoOpenable": True,
@@ -127,7 +123,7 @@ def _capability_matrix() -> dict[str, Any]:
 def _remaining_gap_analysis() -> dict[str, Any]:
     return {
         "schemaVersion": "soccernet_external_bounded_analysis_remaining_gap_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "closedLane": "300_frame_bounded_video_to_product_report",
         "remainingGaps": [
             "full_match_analysis_not_executed",
@@ -142,7 +138,7 @@ def _remaining_gap_analysis() -> dict[str, Any]:
 def _full_analysis_approval_prep() -> dict[str, Any]:
     return {
         "schemaVersion": "soccernet_external_full_analysis_execution_approval_prep_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "sourceBatch": "football_external_soccernet_bounded_analysis_lane_closeout",
         "fullAnalysisExecutionApprovalReady": True,
         "fullAnalysisExecutionApproved": False,
@@ -182,7 +178,7 @@ def _classify(report_ready: bool, prep: dict[str, Any]) -> tuple[str | None, str
 
 def _decision_matrix(primary_blocker: str | None, goal_achieved: bool) -> dict[str, Any]:
     return {
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "decisions": [
             {"condition": "bounded_analysis_report_missing", "selected": primary_blocker == BLOCKER_REPORT_MISSING, "primaryBlocker": BLOCKER_REPORT_MISSING, "nextRecommendedNextLever": NEXT_REPORT_SMOKE},
             {"condition": "bounded_analysis_closeout_gap", "selected": primary_blocker == BLOCKER_CLOSEOUT_GAP, "primaryBlocker": BLOCKER_CLOSEOUT_GAP, "nextRecommendedNextLever": NEXT_CLOSEOUT_REPAIR},
@@ -232,7 +228,7 @@ def run_football_external_soccernet_bounded_analysis_lane_closeout(
     if not goal_achieved:
         prep["fullAnalysisExecutionApprovalReady"] = False
     attempts = _attempt_plan()
-    generated_at = _utc_now_iso()
+    generated_at = utc_now_iso()
     reported_frame_count = (inputs["reportSummary"] or {}).get("reportedFrameCount")
     summary: dict[str, Any] = {
         "batchName": "football_external_soccernet_bounded_analysis_lane_closeout",

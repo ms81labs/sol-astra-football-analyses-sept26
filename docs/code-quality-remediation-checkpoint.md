@@ -161,3 +161,26 @@ The script-hygiene AST regression now also runs directly in the `python-quality`
 `python backend/tests/test_script_hygiene.py`.
 
 This keeps H06 failures in the fast lane instead of waiting for the full canonical verifier.
+
+
+## Resume update — H06 bulk consolidation checkpoint
+
+Bulk H06 codemod is being applied from the authoritative python-quality offender list:
+- total violations: 477
+- unique offending scripts: 297
+- `sys.path.insert/append`: 297
+- local `_utc_now_iso`: 180
+
+Progress persisted in this commit:
+- scripts with unique-offender indexes `0..83` have been rewritten;
+- next index is `84`;
+- transform removes only actual `sys.path.insert/append` bootstrap statements;
+- canonical `_utc_now_iso() -> datetime.now(timezone.utc).isoformat()` definitions are replaced by the existing shared `football_external_real_eval_chain_common.utc_now_iso` helper;
+- noncanonical helper bodies are not silently rewritten.
+
+Resume algorithm:
+1. inspect current HEAD CI;
+2. fetch python-quality job log from the H06 gate if needed;
+3. derive the ordered unique offender list from that log;
+4. continue from offender index 84;
+5. after all 297 scripts are transformed, require the fast Script hygiene gate to pass before closure.

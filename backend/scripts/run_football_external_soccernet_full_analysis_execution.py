@@ -1,18 +1,17 @@
 from __future__ import annotations
 
+from backend.scripts.football_external_real_eval_chain_common import utc_now_iso
+
 import argparse
 from datetime import datetime, timezone
 import json
 from pathlib import Path
 import statistics
-import sys
 from typing import Any
 
 import cv2
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from backend.scripts.football_external_real_eval_chain_common import load_json as _load_json, write_json as _write_json  # noqa: E402
 from backend.app.run_benchmarks import DEFAULT_STORAGE_ROOT  # noqa: E402
@@ -31,9 +30,6 @@ NEXT_VIDEO_OPEN_DEBUG = "football_external_soccernet_full_analysis_video_open_de
 NEXT_FRAME_READ_REPAIR = "football_external_soccernet_full_analysis_frame_read_repair"
 NEXT_REPORT_SMOKE = "football_external_soccernet_full_analysis_report_smoke"
 
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _candidate_root(storage_root: Path, candidate_name: str) -> Path:
@@ -216,7 +212,7 @@ def _execute_full_video(contract: dict[str, Any]) -> dict[str, Any]:
     }
     return {
         "schemaVersion": "soccernet_external_full_video_frame_signal_summary_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "videoPath": str(video_path),
         "videoExists": True,
         "videoOpenable": True,
@@ -229,7 +225,7 @@ def _product_payload(signal_summary: dict[str, Any]) -> dict[str, Any]:
     aggregate = signal_summary.get("aggregate", {})
     return {
         "schemaVersion": "soccernet_external_full_analysis_product_payload_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "sourceBatch": "football_external_soccernet_full_analysis_execution",
         "videoPath": signal_summary.get("videoPath"),
         "frameCount": aggregate.get("processedFrameCount"),
@@ -286,7 +282,7 @@ def _classify(approved: bool, signal_summary: dict[str, Any]) -> tuple[str | Non
 
 def _decision_matrix(primary_blocker: str | None, goal_achieved: bool) -> dict[str, Any]:
     return {
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "decisions": [
             {"condition": "full_analysis_execution_not_approved", "selected": primary_blocker == BLOCKER_NOT_APPROVED, "primaryBlocker": BLOCKER_NOT_APPROVED, "nextRecommendedNextLever": NEXT_APPROVAL},
             {"condition": "video_open_failed", "selected": primary_blocker == BLOCKER_VIDEO_OPEN_FAILED, "primaryBlocker": BLOCKER_VIDEO_OPEN_FAILED, "nextRecommendedNextLever": NEXT_VIDEO_OPEN_DEBUG},
@@ -333,7 +329,7 @@ def run_football_external_soccernet_full_analysis_execution(
     approved = _approval_ready(inputs["approvalSummary"], inputs["executionContract"])
     signal_summary = _execute_full_video(inputs["executionContract"] or {}) if approved else {
         "schemaVersion": "soccernet_external_full_video_frame_signal_summary_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "videoPath": (inputs["executionContract"] or {}).get("selectedVideoPath"),
         "videoExists": False,
         "videoOpenable": False,
@@ -343,7 +339,7 @@ def run_football_external_soccernet_full_analysis_execution(
     product_payload = _product_payload(signal_summary)
     primary_blocker, next_lever, goal_achieved, english = _classify(approved, signal_summary)
     attempts = _attempt_plan()
-    generated_at = _utc_now_iso()
+    generated_at = utc_now_iso()
     aggregate = signal_summary.get("aggregate", {})
     summary: dict[str, Any] = {
         "batchName": "football_external_soccernet_full_analysis_execution",

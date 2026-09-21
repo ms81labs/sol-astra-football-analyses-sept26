@@ -3,11 +3,8 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-import sys
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from backend.app.run_benchmarks import DEFAULT_STORAGE_ROOT, summarize_match_benchmark  # noqa: E402
 from backend.app.storage import Storage  # noqa: E402

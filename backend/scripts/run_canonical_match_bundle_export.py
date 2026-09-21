@@ -1,15 +1,14 @@
 from __future__ import annotations
 
+from backend.scripts.football_external_real_eval_chain_common import utc_now_iso
+
 import argparse
 from datetime import datetime, timezone
 import json
 from pathlib import Path
-import sys
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from backend.scripts.football_external_real_eval_chain_common import write_json as _write_json  # noqa: E402
 from backend.app.match_bundle import build_match_bundle  # noqa: E402
@@ -24,9 +23,6 @@ NEXT_SCHEMA_REPAIR = "canonical_match_bundle_schema_contract_repair"
 BLOCKER_NO_READY_MATCH = "canonical_match_bundle_no_ready_match_artifacts"
 BLOCKER_SCHEMA_GAP = "canonical_match_bundle_schema_contract_gap"
 
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 
@@ -173,7 +169,7 @@ def run_canonical_match_bundle_export(*, storage_root: Path = DEFAULT_STORAGE_RO
     )
     summary = {
         "batchName": "canonical_match_bundle_export",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "attemptNumber": 1,
         "attemptBudget": 3,
         "attemptApproachFamily": "persisted_artifact_bundle_contract",

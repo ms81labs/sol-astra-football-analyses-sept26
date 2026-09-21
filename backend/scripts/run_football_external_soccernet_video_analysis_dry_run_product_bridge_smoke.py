@@ -1,15 +1,14 @@
 from __future__ import annotations
 
+from backend.scripts.football_external_real_eval_chain_common import utc_now_iso
+
 import argparse
 from datetime import datetime, timezone
 import json
 from pathlib import Path
-import sys
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from backend.scripts.football_external_real_eval_chain_common import load_json as _load_json, write_json as _write_json  # noqa: E402
 from backend.app.run_benchmarks import DEFAULT_STORAGE_ROOT  # noqa: E402
@@ -26,9 +25,6 @@ NEXT_DRY_RUN = "football_external_soccernet_video_analysis_dry_run"
 NEXT_BRIDGE_REPAIR = "football_external_soccernet_video_analysis_dry_run_product_bridge_repair"
 NEXT_BOUNDED_ANALYSIS_APPROVAL = "football_external_soccernet_bounded_analysis_execution_approval"
 
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _candidate_root(storage_root: Path, candidate_name: str) -> Path:
@@ -126,7 +122,7 @@ def _product_payload(manifest: dict[str, Any] | None, frame_audit: dict[str, Any
     manifest = manifest or {}
     return {
         "schemaVersion": "soccernet_external_video_dry_run_product_bridge_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "sourceBatch": "football_external_soccernet_video_analysis_dry_run",
         "selectedVideoPath": manifest.get("selectedVideoPath"),
         "frames": frame_audit.get("sampledFrames", []),
@@ -175,7 +171,7 @@ def _classify(dry_run_ready: bool, frame_audit: dict[str, Any]) -> tuple[str | N
 
 def _decision_matrix(primary_blocker: str | None, goal_achieved: bool) -> dict[str, Any]:
     return {
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "decisions": [
             {"condition": "dry_run_missing", "selected": primary_blocker == BLOCKER_DRY_RUN_MISSING, "primaryBlocker": BLOCKER_DRY_RUN_MISSING, "nextRecommendedNextLever": NEXT_DRY_RUN},
             {"condition": "product_bridge_gap", "selected": primary_blocker == BLOCKER_BRIDGE_GAP, "primaryBlocker": BLOCKER_BRIDGE_GAP, "nextRecommendedNextLever": NEXT_BRIDGE_REPAIR},
@@ -221,7 +217,7 @@ def run_football_external_soccernet_video_analysis_dry_run_product_bridge_smoke(
     payload = _product_payload(inputs["artifactManifest"], frame_audit)
     primary_blocker, next_lever, goal_achieved, english = _classify(ready, frame_audit)
     attempts = _attempt_plan()
-    generated_at = _utc_now_iso()
+    generated_at = utc_now_iso()
     summary: dict[str, Any] = {
         "batchName": "football_external_soccernet_video_analysis_dry_run_product_bridge_smoke",
         "generatedAt": generated_at,

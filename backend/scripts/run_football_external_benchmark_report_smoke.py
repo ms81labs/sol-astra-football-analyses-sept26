@@ -1,15 +1,14 @@
 from __future__ import annotations
 
+from backend.scripts.football_external_real_eval_chain_common import utc_now_iso
+
 import argparse
 from datetime import datetime, timezone
 import json
 from pathlib import Path
-import sys
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from backend.scripts.football_external_real_eval_chain_common import load_json as _load_json, write_json as _write_json  # noqa: E402
 from backend.app.run_benchmarks import DEFAULT_STORAGE_ROOT  # noqa: E402
@@ -26,9 +25,6 @@ NEXT_EXECUTION_SMOKE = "football_external_benchmark_bounded_execution_smoke"
 NEXT_REPORT_REPAIR = "football_external_benchmark_report_payload_repair"
 NEXT_PRODUCT_BINDING = "football_external_benchmark_product_ui_binding"
 
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _candidate_root(storage_root: Path, candidate_name: str) -> Path:
@@ -115,7 +111,7 @@ def _rows(payload: dict[str, Any] | None) -> list[dict[str, Any]]:
 def _view_model(rows: list[dict[str, Any]], ready: bool) -> dict[str, Any]:
     return {
         "schemaVersion": "football_external_benchmark_report_view_model_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "title": "External Football Benchmark Smoke",
         "reportReady": ready and len(rows) >= 2,
         "sourceCount": len(rows),
@@ -168,7 +164,7 @@ def _payload_audit(payload_ready: bool, rows: list[dict[str, Any]], markdown: st
     }
     return {
         "schemaVersion": "football_external_benchmark_report_payload_audit_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         **checks,
         "reportPayloadAuditPassed": all(checks.values()),
     }
@@ -199,7 +195,7 @@ def _classify(payload_ready: bool, audit: dict[str, Any]) -> tuple[str | None, s
 
 def _decision_matrix(primary_blocker: str | None, next_lever: str, goal_achieved: bool) -> dict[str, Any]:
     return {
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "decisions": [
             {"condition": "report_payload_missing", "selected": primary_blocker == BLOCKER_REPORT_PAYLOAD_MISSING, "primaryBlocker": BLOCKER_REPORT_PAYLOAD_MISSING, "nextRecommendedNextLever": NEXT_EXECUTION_SMOKE},
             {"condition": "report_render_gap", "selected": primary_blocker == BLOCKER_REPORT_RENDER_GAP, "primaryBlocker": BLOCKER_REPORT_RENDER_GAP, "nextRecommendedNextLever": NEXT_REPORT_REPAIR},
@@ -248,7 +244,7 @@ def run_football_external_benchmark_report_smoke(
     attempts = _attempt_plan()
     summary: dict[str, Any] = {
         "batchName": "football_external_benchmark_report_smoke",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "attemptNumber": attempt_number,
         "attemptBudget": 3,
         "attemptApproachFamily": attempt_approach_family,

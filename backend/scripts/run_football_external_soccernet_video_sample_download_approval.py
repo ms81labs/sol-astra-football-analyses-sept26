@@ -1,15 +1,14 @@
 from __future__ import annotations
 
+from backend.scripts.football_external_real_eval_chain_common import utc_now_iso
+
 import argparse
 from datetime import datetime, timezone
 import json
 from pathlib import Path
-import sys
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from backend.scripts.football_external_real_eval_chain_common import load_json as _load_json, write_json as _write_json  # noqa: E402
 from backend.app.run_benchmarks import DEFAULT_STORAGE_ROOT  # noqa: E402
@@ -26,9 +25,6 @@ NEXT_PRODUCT_INTEGRATION = "football_external_soccernet_event_report_product_int
 NEXT_MEMBER_REPAIR = "football_external_soccernet_video_member_selection_contract_repair"
 NEXT_CONTROLLED_FETCH = "football_external_soccernet_controlled_video_sample_fetch"
 
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _candidate_root(storage_root: Path, candidate_name: str) -> Path:
@@ -161,7 +157,7 @@ def _classify(product_ready: bool, selected: dict[str, Any] | None) -> tuple[str
 
 def _decision_matrix(primary_blocker: str | None, next_lever: str, goal_achieved: bool) -> dict[str, Any]:
     return {
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "decisions": [
             {"condition": "event_report_product_integration_missing", "selected": primary_blocker == BLOCKER_PRODUCT_MISSING, "primaryBlocker": BLOCKER_PRODUCT_MISSING, "nextRecommendedNextLever": NEXT_PRODUCT_INTEGRATION},
             {"condition": "video_member_selection_gap", "selected": primary_blocker == BLOCKER_VIDEO_MEMBER_MISSING, "primaryBlocker": BLOCKER_VIDEO_MEMBER_MISSING, "nextRecommendedNextLever": NEXT_MEMBER_REPAIR},
@@ -207,7 +203,7 @@ def run_football_external_soccernet_video_sample_download_approval(
     contract = _approval_contract(selected, members)
     primary_blocker, next_lever, goal_achieved, english = _classify(ready, selected)
     attempts = _attempt_plan()
-    generated_at = _utc_now_iso()
+    generated_at = utc_now_iso()
     summary: dict[str, Any] = {
         "batchName": "football_external_soccernet_video_sample_download_approval",
         "generatedAt": generated_at,

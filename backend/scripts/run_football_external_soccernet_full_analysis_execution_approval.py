@@ -1,15 +1,14 @@
 from __future__ import annotations
 
+from backend.scripts.football_external_real_eval_chain_common import utc_now_iso
+
 import argparse
 from datetime import datetime, timezone
 import json
 from pathlib import Path
-import sys
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from backend.scripts.football_external_real_eval_chain_common import load_json as _load_json, write_json as _write_json  # noqa: E402
 from backend.app.run_benchmarks import DEFAULT_STORAGE_ROOT  # noqa: E402
@@ -27,9 +26,6 @@ NEXT_CLOSEOUT = "football_external_soccernet_bounded_analysis_lane_closeout"
 NEXT_SCOPE_REPAIR = "football_external_soccernet_full_analysis_scope_repair"
 NEXT_FULL_EXECUTION = "football_external_soccernet_full_analysis_execution"
 
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _candidate_root(storage_root: Path, candidate_name: str) -> Path:
@@ -128,7 +124,7 @@ def _scope_audit(bundle: dict[str, Any] | None) -> dict[str, Any]:
     video = bundle.get("video") if isinstance(bundle.get("video"), dict) else {}
     return {
         "schemaVersion": "soccernet_external_full_analysis_scope_audit_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "selectedVideoPath": video.get("path"),
         "videoExists": video.get("exists") is True,
         "fullFrameCountApproval": int(video.get("frameCount") or 0),
@@ -215,7 +211,7 @@ def _classify(closeout_ready: bool, video_ready: bool, scope: dict[str, Any]) ->
 
 def _decision_matrix(primary_blocker: str | None, goal_achieved: bool) -> dict[str, Any]:
     return {
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "decisions": [
             {"condition": "bounded_analysis_lane_closeout_missing", "selected": primary_blocker == BLOCKER_CLOSEOUT_MISSING, "primaryBlocker": BLOCKER_CLOSEOUT_MISSING, "nextRecommendedNextLever": NEXT_CLOSEOUT},
             {"condition": "full_analysis_execution_scope_gap", "selected": primary_blocker == BLOCKER_SCOPE_GAP, "primaryBlocker": BLOCKER_SCOPE_GAP, "nextRecommendedNextLever": NEXT_SCOPE_REPAIR},
@@ -267,7 +263,7 @@ def run_football_external_soccernet_full_analysis_execution_approval(
         scope["fullAnalysisExecutionApproved"] = False
         contract["fullAnalysisExecutionApproved"] = False
     attempts = _attempt_plan()
-    generated_at = _utc_now_iso()
+    generated_at = utc_now_iso()
     summary: dict[str, Any] = {
         "batchName": "football_external_soccernet_full_analysis_execution_approval",
         "generatedAt": generated_at,

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from backend.scripts.football_external_real_eval_chain_common import utc_now_iso
+
 if __name__ == "__main__":
     from backend.scripts.runpod_session import require_retired_runpod_disabled
 
@@ -12,11 +14,8 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 import shlex
-import sys
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from backend.app.run_benchmarks import DEFAULT_STORAGE_ROOT  # noqa: E402
 import backend.scripts.run_pod_proof_cycle as run_pod_proof_cycle  # noqa: E402
@@ -36,9 +35,6 @@ FAILING_SOURCE_REMOTE_REFERENCE = {
     "ballTrackEdgeFrameShare": 0.812,
 }
 
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _safe_float(value: object, default: float = 0.0) -> float:
@@ -158,7 +154,7 @@ def _finalize_screen_payload(
             bool(winning_detector_model_path) and str(cell.get("detectorModelPath") or "") == winning_detector_model_path
         )
     return {
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "videoPath": str(video_path),
         "screenExecutionMode": screen_execution_mode,
         "detectorModels": list(detector_models),

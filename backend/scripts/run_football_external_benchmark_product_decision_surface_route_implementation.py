@@ -1,18 +1,17 @@
 from __future__ import annotations
 
+from backend.scripts.football_external_real_eval_chain_common import utc_now_iso
+
 import argparse
 from datetime import datetime, timezone
 import json
 from pathlib import Path
-import sys
 from typing import Any
 
 import anyio
 import httpx
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from backend.scripts.football_external_real_eval_chain_common import load_json as _load_json, write_json as _write_json  # noqa: E402
 from backend.app.main import create_app  # noqa: E402
@@ -30,9 +29,6 @@ NEXT_SURFACE = "football_external_benchmark_product_decision_surface"
 NEXT_ROUTE_REPAIR = "football_external_benchmark_product_decision_surface_route_contract_repair"
 NEXT_REAL_EVALUATION_DESIGN = "football_external_benchmark_real_evaluation_design"
 
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _candidate_root(storage_root: Path, candidate_name: str) -> Path:
@@ -177,7 +173,7 @@ def _route_smoke_audit(surface_ready: bool, smoke: dict[str, Any]) -> dict[str, 
     )
     return {
         "schemaVersion": "external_benchmark_product_decision_surface_route_smoke_audit_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "sourceDecisionSurfaceReady": surface_ready,
         "apiRoutePath": smoke.get("apiRoutePath"),
         "htmlRoutePath": smoke.get("htmlRoutePath"),
@@ -221,7 +217,7 @@ def _classify(surface_ready: bool, audit: dict[str, Any]) -> tuple[str | None, s
 
 def _decision_matrix(primary_blocker: str | None, goal_achieved: bool) -> dict[str, Any]:
     return {
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "decisions": [
             {"condition": "product_decision_surface_missing", "selected": primary_blocker == BLOCKER_SURFACE_MISSING, "primaryBlocker": BLOCKER_SURFACE_MISSING, "nextRecommendedNextLever": NEXT_SURFACE},
             {"condition": "product_decision_route_contract_gap", "selected": primary_blocker == BLOCKER_ROUTE_CONTRACT_GAP, "primaryBlocker": BLOCKER_ROUTE_CONTRACT_GAP, "nextRecommendedNextLever": NEXT_ROUTE_REPAIR},
@@ -274,7 +270,7 @@ def run_football_external_benchmark_product_decision_surface_route_implementatio
     attempts = _attempt_plan()
     summary: dict[str, Any] = {
         "batchName": "football_external_benchmark_product_decision_surface_route_implementation",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "attemptNumber": attempt_number,
         "attemptBudget": 3,
         "attemptApproachFamily": attempt_approach_family,

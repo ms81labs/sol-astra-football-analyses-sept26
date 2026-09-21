@@ -1,16 +1,15 @@
 from __future__ import annotations
 
+from backend.scripts.football_external_real_eval_chain_common import utc_now_iso
+
 import argparse
 from collections import Counter
 from datetime import datetime, timezone
 import json
 from pathlib import Path
-import sys
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from backend.scripts.football_external_real_eval_chain_common import load_json as _load_json, write_json as _write_json  # noqa: E402
 from backend.app.run_benchmarks import DEFAULT_STORAGE_ROOT  # noqa: E402
@@ -27,9 +26,6 @@ NEXT_PREP = "football_external_soccernet_benchmark_adapter_contract_prep"
 NEXT_REPAIR = "football_external_soccernet_event_benchmark_contract_repair"
 NEXT_REPORT = "football_external_soccernet_event_report_contract_prep"
 
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _candidate_root(storage_root: Path, candidate_name: str) -> Path:
@@ -171,7 +167,7 @@ def _classify(prep_ready: bool, metrics: dict[str, Any], report_contract: dict[s
 
 def _decision_matrix(primary_blocker: str | None, next_lever: str, goal_achieved: bool) -> dict[str, Any]:
     return {
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "decisions": [
             {"condition": "benchmark_adapter_prep_missing", "selected": primary_blocker == BLOCKER_PREP_MISSING, "primaryBlocker": BLOCKER_PREP_MISSING, "nextRecommendedNextLever": NEXT_PREP},
             {"condition": "event_benchmark_fixture_invalid", "selected": primary_blocker == BLOCKER_EVENT_FIXTURE_INVALID, "primaryBlocker": BLOCKER_EVENT_FIXTURE_INVALID, "nextRecommendedNextLever": NEXT_REPAIR},
@@ -217,7 +213,7 @@ def run_football_external_soccernet_event_benchmark_smoke(
     report_contract = _report_contract(metrics)
     primary_blocker, next_lever, goal_achieved, english = _classify(ready, metrics, report_contract)
     attempts = _attempt_plan()
-    generated_at = _utc_now_iso()
+    generated_at = utc_now_iso()
     summary: dict[str, Any] = {
         "batchName": "football_external_soccernet_event_benchmark_smoke",
         "generatedAt": generated_at,

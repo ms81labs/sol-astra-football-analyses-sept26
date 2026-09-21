@@ -1,15 +1,14 @@
 from __future__ import annotations
 
+from backend.scripts.football_external_real_eval_chain_common import utc_now_iso
+
 import argparse
 from datetime import datetime, timezone
 import json
 from pathlib import Path
-import sys
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from backend.scripts.football_external_real_eval_chain_common import load_json as _load_json, write_json as _write_json  # noqa: E402
 from backend.app.run_benchmarks import DEFAULT_STORAGE_ROOT  # noqa: E402
@@ -27,9 +26,6 @@ NEXT_APPROVAL = "football_external_benchmark_execution_approval"
 NEXT_CONTRACT_REPAIR = "football_external_benchmark_bounded_execution_contract_repair"
 NEXT_REPORT_SMOKE = "football_external_benchmark_report_smoke"
 
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _candidate_root(storage_root: Path, candidate_name: str) -> Path:
@@ -169,7 +165,7 @@ def _result_table(cases: list[dict[str, Any]]) -> dict[str, Any]:
     rows = [_result_row(case) for case in cases]
     return {
         "schemaVersion": "football_external_benchmark_bounded_execution_result_table_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "executionMode": "generated_truth_bounded_smoke",
         "rowCount": len(rows),
         "rows": rows,
@@ -182,7 +178,7 @@ def _comparison_audit(result_table: dict[str, Any]) -> dict[str, Any]:
     event_counts = {row.get("sourceId"): row.get("eventCount") for row in rows if isinstance(row, dict)}
     return {
         "schemaVersion": "football_external_benchmark_cross_source_comparison_audit_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "sourceIds": source_ids,
         "sourceCount": len(source_ids),
         "eventCountsBySource": event_counts,
@@ -194,7 +190,7 @@ def _comparison_audit(result_table: dict[str, Any]) -> dict[str, Any]:
 def _report_payload(result_table: dict[str, Any], comparison: dict[str, Any]) -> dict[str, Any]:
     return {
         "schemaVersion": "football_external_benchmark_report_payload_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "reportReady": comparison.get("comparisonSmokePassed") is True,
         "sourceBatch": "football_external_benchmark_bounded_execution_smoke",
         "resultRows": result_table.get("rows") or [],
@@ -218,7 +214,7 @@ def _guardrail_audit(approval_ready: bool, result_table: dict[str, Any], report_
     }
     return {
         "schemaVersion": "football_external_benchmark_bounded_execution_guardrail_audit_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         **checks,
         "boundedExecutionGuardrailPassed": all(checks.values()),
     }
@@ -249,7 +245,7 @@ def _classify(approval_ready: bool, guardrail: dict[str, Any]) -> tuple[str | No
 
 def _decision_matrix(primary_blocker: str | None, next_lever: str, goal_achieved: bool) -> dict[str, Any]:
     return {
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "decisions": [
             {"condition": "execution_approval_missing", "selected": primary_blocker == BLOCKER_APPROVAL_MISSING, "primaryBlocker": BLOCKER_APPROVAL_MISSING, "nextRecommendedNextLever": NEXT_APPROVAL},
             {"condition": "bounded_execution_contract_gap", "selected": primary_blocker == BLOCKER_EXECUTION_CONTRACT_GAP, "primaryBlocker": BLOCKER_EXECUTION_CONTRACT_GAP, "nextRecommendedNextLever": NEXT_CONTRACT_REPAIR},
@@ -301,7 +297,7 @@ def run_football_external_benchmark_bounded_execution_smoke(
     attempts = _attempt_plan()
     summary: dict[str, Any] = {
         "batchName": "football_external_benchmark_bounded_execution_smoke",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "attemptNumber": attempt_number,
         "attemptBudget": 3,
         "attemptApproachFamily": attempt_approach_family,

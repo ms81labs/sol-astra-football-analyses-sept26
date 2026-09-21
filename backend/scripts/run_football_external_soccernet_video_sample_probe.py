@@ -1,17 +1,16 @@
 from __future__ import annotations
 
+from backend.scripts.football_external_real_eval_chain_common import utc_now_iso
+
 import argparse
 from datetime import datetime, timezone
 import json
 from pathlib import Path
 import shutil
 import struct
-import sys
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from backend.scripts.football_external_real_eval_chain_common import load_json as _load_json, write_json as _write_json  # noqa: E402
 from backend.app.run_benchmarks import DEFAULT_STORAGE_ROOT  # noqa: E402
@@ -30,9 +29,6 @@ NEXT_PROBE_REPAIR = "football_external_soccernet_video_sample_probe_contract_rep
 NEXT_MEMBER_EXTRACT_APPROVAL = "football_external_soccernet_video_member_extract_approval"
 NEXT_FRAME_PROBE = "football_external_soccernet_video_frame_probe"
 
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _candidate_root(storage_root: Path, candidate_name: str) -> Path:
@@ -205,7 +201,7 @@ def _classify(fetch_ready: bool, sample_probe: dict[str, Any]) -> tuple[str | No
 
 def _decision_matrix(primary_blocker: str | None, next_lever: str, goal_achieved: bool, sample_probe: dict[str, Any]) -> dict[str, Any]:
     return {
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "decisions": [
             {"condition": "controlled_video_sample_fetch_missing", "selected": primary_blocker == BLOCKER_FETCH_MISSING, "primaryBlocker": BLOCKER_FETCH_MISSING, "nextRecommendedNextLever": NEXT_FETCH},
             {"condition": "video_sample_bytes_missing", "selected": primary_blocker == BLOCKER_SAMPLE_MISSING, "primaryBlocker": BLOCKER_SAMPLE_MISSING, "nextRecommendedNextLever": NEXT_FETCH},
@@ -251,7 +247,7 @@ def run_football_external_soccernet_video_sample_probe(
     sample_probe = _probe_sample(sample_path) if sample_path else {"sampleExists": False, "sampleSizeBytes": 0}
     primary_blocker, next_lever, goal_achieved, english = _classify(ready, sample_probe)
     attempts = _attempt_plan()
-    generated_at = _utc_now_iso()
+    generated_at = utc_now_iso()
     summary: dict[str, Any] = {
         "batchName": "football_external_soccernet_video_sample_probe",
         "generatedAt": generated_at,

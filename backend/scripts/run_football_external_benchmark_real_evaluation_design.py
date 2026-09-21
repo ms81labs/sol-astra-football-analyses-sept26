@@ -1,15 +1,14 @@
 from __future__ import annotations
 
+from backend.scripts.football_external_real_eval_chain_common import utc_now_iso
+
 import argparse
 from datetime import datetime, timezone
 import json
 from pathlib import Path
-import sys
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from backend.scripts.football_external_real_eval_chain_common import load_json as _load_json, write_json as _write_json  # noqa: E402
 from backend.app.run_benchmarks import DEFAULT_STORAGE_ROOT  # noqa: E402
@@ -28,9 +27,6 @@ NEXT_DECISION_ROUTE_REPAIR = "football_external_benchmark_product_decision_surfa
 NEXT_DESIGN_REPAIR = "football_external_benchmark_real_evaluation_design_contract_repair"
 NEXT_DATASET_GOVERNANCE = "football_external_benchmark_dataset_governance_plan"
 
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _candidate_root(storage_root: Path, candidate_name: str) -> Path:
@@ -117,7 +113,7 @@ def _guardrails_clear(summary: dict[str, Any] | None) -> bool:
 def _source_scope_contract(summary: dict[str, Any]) -> dict[str, Any]:
     return {
         "schemaVersion": "external_benchmark_real_evaluation_source_scope_contract_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "sourceScopeMode": "finite_bounded_design",
         "selectedExternalSourceIds": ["soccernet", "soccertrack"],
         "sourceCount": int(summary.get("externalSourceCount") or 0),
@@ -143,7 +139,7 @@ def _source_scope_contract(summary: dict[str, Any]) -> dict[str, Any]:
 def _metric_contract() -> dict[str, Any]:
     return {
         "schemaVersion": "external_benchmark_real_evaluation_metric_contract_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "metricFamilies": ["source_coverage", "ball_localization", "event_alignment", "pipeline_stability"],
         "metrics": [
             {
@@ -179,7 +175,7 @@ def _metric_contract() -> dict[str, Any]:
 def _approval_gate() -> dict[str, Any]:
     return {
         "schemaVersion": "external_benchmark_real_evaluation_approval_gate_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "executionApproved": False,
         "approvalRequiredBefore": "football_external_benchmark_bounded_real_execution",
         "requiredInputs": [
@@ -205,7 +201,7 @@ def _approval_gate() -> dict[str, Any]:
 def _storage_budget_estimate() -> dict[str, Any]:
     return {
         "schemaVersion": "external_benchmark_real_evaluation_storage_budget_estimate_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "currentRepoFootprintObserved": "17G",
         "largestObservedArtifacts": [
             {"pathHint": "football_external_soccertrack_google_drive_bounded_fixture_fetch_v1/*1st.json", "approxBytes": 2695285313},
@@ -220,7 +216,7 @@ def _storage_budget_estimate() -> dict[str, Any]:
 def _cleanup_audit() -> dict[str, Any]:
     return {
         "schemaVersion": "external_benchmark_code_sweep_cleanup_audit_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "cacheCleanupExecuted": True,
         "removedNonVenvCacheKinds": [".pytest_cache", "__pycache__"],
         "backendTestSweepPassed": True,
@@ -266,7 +262,7 @@ def _next_five_step_plan() -> dict[str, Any]:
     ]
     return {
         "schemaVersion": "external_benchmark_next_five_step_execution_plan_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "steps": steps,
     }
 
@@ -279,7 +275,7 @@ def _audit(
 ) -> dict[str, Any]:
     return {
         "schemaVersion": "external_benchmark_real_evaluation_design_audit_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "sourceScopeFinite": source_scope.get("sourceScopeMode") == "finite_bounded_design",
         "metricFamilyCount": len(metric_contract.get("metricFamilies") or []),
         "executionStillBlocked": approval_gate.get("executionApproved") is False,
@@ -329,7 +325,7 @@ def _classify(source_ready: bool, guardrails_clear: bool, audit: dict[str, Any])
 
 def _decision_matrix(primary_blocker: str | None, goal_achieved: bool, next_lever: str) -> dict[str, Any]:
     return {
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "decisions": [
             {"condition": "decision_route_missing", "selected": primary_blocker == BLOCKER_DECISION_ROUTE_MISSING, "primaryBlocker": BLOCKER_DECISION_ROUTE_MISSING, "nextRecommendedNextLever": NEXT_DECISION_ROUTE},
             {"condition": "real_evaluation_design_guardrail_violation", "selected": primary_blocker == BLOCKER_GUARDRAIL_VIOLATION, "primaryBlocker": BLOCKER_GUARDRAIL_VIOLATION, "nextRecommendedNextLever": NEXT_DECISION_ROUTE_REPAIR},
@@ -387,7 +383,7 @@ def run_football_external_benchmark_real_evaluation_design(
     attempts = _attempt_plan()
     summary: dict[str, Any] = {
         "batchName": "football_external_benchmark_real_evaluation_design",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "attemptNumber": attempt_number,
         "attemptBudget": 3,
         "attemptApproachFamily": attempt_approach_family,

@@ -1,16 +1,15 @@
 from __future__ import annotations
 
+from backend.scripts.football_external_real_eval_chain_common import utc_now_iso
+
 import argparse
 from collections import Counter
 from datetime import datetime, timezone
 import json
 from pathlib import Path
-import sys
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from backend.scripts.football_external_real_eval_chain_common import load_json as _load_json, write_json as _write_json  # noqa: E402
 from backend.app.run_benchmarks import DEFAULT_STORAGE_ROOT  # noqa: E402
@@ -31,9 +30,6 @@ NEXT_EVENT_BENCHMARK_SMOKE = "football_external_soccernet_event_benchmark_smoke"
 
 EVENT_ONLY_STAGE = "possession_event_semantics"
 
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _candidate_root(storage_root: Path, candidate_name: str) -> Path:
@@ -246,7 +242,7 @@ def _classify(smoke_ready: bool, adapter_manifest: dict[str, Any], stage_audit: 
 
 def _decision_matrix(primary_blocker: str | None, next_lever: str, goal_achieved: bool) -> dict[str, Any]:
     return {
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "decisions": [
             {"condition": "event_adapter_smoke_missing", "selected": primary_blocker == BLOCKER_SMOKE_MISSING, "primaryBlocker": BLOCKER_SMOKE_MISSING, "nextRecommendedNextLever": NEXT_SMOKE},
             {"condition": "benchmark_adapter_schema_gap", "selected": primary_blocker == BLOCKER_SCHEMA_GAP, "primaryBlocker": BLOCKER_SCHEMA_GAP, "nextRecommendedNextLever": NEXT_CONTRACT_REPAIR},
@@ -294,7 +290,7 @@ def run_football_external_soccernet_benchmark_adapter_contract_prep(
     stage_audit = _stage_coverage(inputs["stageGateContract"])
     primary_blocker, next_lever, goal_achieved, english = _classify(ready, adapter_manifest, stage_audit)
     attempts = _attempt_plan()
-    generated_at = _utc_now_iso()
+    generated_at = utc_now_iso()
 
     summary: dict[str, Any] = {
         "batchName": "football_external_soccernet_benchmark_adapter_contract_prep",

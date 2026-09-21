@@ -1,15 +1,14 @@
 from __future__ import annotations
 
+from backend.scripts.football_external_real_eval_chain_common import utc_now_iso
+
 import argparse
 from datetime import datetime, timezone
 import json
 from pathlib import Path
-import sys
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from backend.scripts.football_external_real_eval_chain_common import load_json as _load_json, write_json as _write_json  # noqa: E402
 from backend.app.run_benchmarks import DEFAULT_STORAGE_ROOT  # noqa: E402
@@ -28,9 +27,6 @@ NEXT_EVIDENCE_REPAIR = "football_external_benchmark_lane_closeout_evidence_repai
 NEXT_CONTRACT_REPAIR = "football_external_benchmark_operationalization_contract_repair"
 NEXT_PRODUCT_DECISION_SURFACE = "football_external_benchmark_product_decision_surface"
 
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _candidate_root(storage_root: Path, candidate_name: str) -> Path:
@@ -130,7 +126,7 @@ def _guardrails_clear(summary: dict[str, Any] | None, capability: dict[str, Any]
 def _operationalization_plan(summary: dict[str, Any], capability: dict[str, Any], gaps: dict[str, Any]) -> dict[str, Any]:
     return {
         "schemaVersion": "external_benchmark_operationalization_plan_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "sourceBatch": "football_external_benchmark_lane_closeout",
         "externalSourceCount": int(summary.get("externalSourceCount") or 0),
         "availableReadOnlyRoutes": [
@@ -190,7 +186,7 @@ def _operationalization_plan(summary: dict[str, Any], capability: dict[str, Any]
 def _product_decision_surface_contract(summary: dict[str, Any]) -> dict[str, Any]:
     return {
         "schemaVersion": "external_benchmark_product_decision_surface_contract_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "sourceBatch": "football_external_benchmark_lane_closeout",
         "apiRoutePath": summary.get("apiRoutePath"),
         "htmlRoutePath": summary.get("htmlRoutePath"),
@@ -215,7 +211,7 @@ def _product_decision_surface_contract(summary: dict[str, Any]) -> dict[str, Any
 def _stage_gate_transition_plan() -> dict[str, Any]:
     return {
         "schemaVersion": "external_benchmark_stage_gate_transition_plan_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "allowedNow": ["read_only_product_decision_surface"],
         "blockedUntilExplicitApproval": [
             "real_detector_benchmark_execution",
@@ -274,7 +270,7 @@ def _risk_register() -> dict[str, Any]:
     ]
     return {
         "schemaVersion": "external_benchmark_operationalization_risk_register_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "riskCount": len(risks),
         "risks": risks,
     }
@@ -283,7 +279,7 @@ def _risk_register() -> dict[str, Any]:
 def _audit(plan: dict[str, Any], contract: dict[str, Any], gates: dict[str, Any], risks: dict[str, Any]) -> dict[str, Any]:
     return {
         "schemaVersion": "external_benchmark_operationalization_audit_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "planHasMilestones": len(plan.get("recommendedMilestones") or []) >= 3,
         "contractKeepsReadinessFalse": contract.get("allowsDetectorEvaluationReadiness") is False
         and contract.get("allowsCandidateEvaluationReadiness") is False
@@ -341,7 +337,7 @@ def _classify(closeout_ready: bool, guardrails_clear: bool, audit: dict[str, Any
 
 def _decision_matrix(primary_blocker: str | None, goal_achieved: bool, next_lever: str) -> dict[str, Any]:
     return {
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "decisions": [
             {"condition": "lane_closeout_missing_or_unsafe", "selected": primary_blocker == BLOCKER_CLOSEOUT_MISSING, "primaryBlocker": BLOCKER_CLOSEOUT_MISSING, "nextRecommendedNextLever": NEXT_CLOSEOUT},
             {"condition": "operationalization_guardrail_violation", "selected": primary_blocker == BLOCKER_GUARDRAIL_VIOLATION, "primaryBlocker": BLOCKER_GUARDRAIL_VIOLATION, "nextRecommendedNextLever": NEXT_EVIDENCE_REPAIR},
@@ -401,7 +397,7 @@ def run_football_external_benchmark_operationalization_plan(
     attempts = _attempt_plan()
     summary: dict[str, Any] = {
         "batchName": "football_external_benchmark_operationalization_plan",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "attemptNumber": attempt_number,
         "attemptBudget": 3,
         "attemptApproachFamily": attempt_approach_family,

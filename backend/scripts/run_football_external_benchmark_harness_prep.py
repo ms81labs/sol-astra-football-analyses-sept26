@@ -1,15 +1,14 @@
 from __future__ import annotations
 
+from backend.scripts.football_external_real_eval_chain_common import utc_now_iso
+
 import argparse
 from datetime import datetime, timezone
 import json
 from pathlib import Path
-import sys
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from backend.scripts.football_external_real_eval_chain_common import load_json as _load_json, write_json as _write_json  # noqa: E402
 from backend.app.run_benchmarks import DEFAULT_STORAGE_ROOT  # noqa: E402
@@ -27,9 +26,6 @@ NEXT_SOCCERNET_EVENT_CLOSEOUT = "football_external_soccernet_event_lane_closeout
 NEXT_SOURCE_CONTRACT_REPAIR = "football_external_benchmark_harness_source_contract_repair"
 NEXT_HARNESS_SMOKE = "football_external_benchmark_harness_smoke"
 
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _candidate_root(storage_root: Path, candidate_name: str) -> Path:
@@ -139,7 +135,7 @@ def _source_manifest(sources: list[dict[str, Any]]) -> dict[str, Any]:
     soccertrack = next(row for row in sources if row["sourceId"] == "soccertrack")
     return {
         "schemaVersion": "football_external_benchmark_source_manifest_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "sources": [
             {
                 "sourceId": "soccernet",
@@ -185,7 +181,7 @@ def _legacy_resource_inventory(manifest: dict[str, Any]) -> dict[str, Any]:
         )
     return {
         "schemaVersion": "football_external_benchmark_resource_inventory_v2",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "resourceCount": len(resources),
         "resources": resources,
         "licensePolicy": "This prep consumes existing generated local artifacts only; no new external download is approved here.",
@@ -225,7 +221,7 @@ def _stage_gate_contract() -> dict[str, Any]:
 def _capability_matrix(manifest: dict[str, Any], ready: bool) -> dict[str, Any]:
     return {
         "schemaVersion": "football_external_benchmark_capability_matrix_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "crossSourceHarnessReady": ready,
         "sourceCount": len(manifest["sources"]),
         "sourceIds": [row["sourceId"] for row in manifest["sources"]],
@@ -242,7 +238,7 @@ def _capability_matrix(manifest: dict[str, Any], ready: bool) -> dict[str, Any]:
 def _remaining_gap_analysis(ready: bool) -> dict[str, Any]:
     return {
         "schemaVersion": "football_external_benchmark_remaining_gap_analysis_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "remainingPrimaryGap": "external_benchmark_harness_smoke_not_run" if ready else "external_source_lane_missing",
         "remainingGaps": []
         if not ready
@@ -284,7 +280,7 @@ def _classify(sources: list[dict[str, Any]]) -> tuple[str | None, str, bool, boo
 
 def _decision_matrix(primary_blocker: str | None, goal_achieved: bool, next_lever: str) -> dict[str, Any]:
     return {
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "decisions": [
             {"condition": "source_lane_missing", "selected": primary_blocker == BLOCKER_SOURCE_LANE_MISSING, "primaryBlocker": BLOCKER_SOURCE_LANE_MISSING, "nextRecommendedNextLever": next_lever},
             {"condition": "source_contract_gap", "selected": primary_blocker == BLOCKER_SOURCE_CONTRACT_GAP, "primaryBlocker": BLOCKER_SOURCE_CONTRACT_GAP, "nextRecommendedNextLever": NEXT_SOURCE_CONTRACT_REPAIR},
@@ -334,7 +330,7 @@ def run_football_external_benchmark_harness_prep(
     attempts = _attempt_plan()
     summary: dict[str, Any] = {
         "batchName": "football_external_benchmark_harness_prep",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "attemptNumber": attempt_number,
         "attemptBudget": 3,
         "attemptApproachFamily": attempt_approach_family,

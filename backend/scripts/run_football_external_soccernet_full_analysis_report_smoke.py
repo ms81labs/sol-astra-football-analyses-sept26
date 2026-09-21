@@ -1,15 +1,14 @@
 from __future__ import annotations
 
+from backend.scripts.football_external_real_eval_chain_common import utc_now_iso
+
 import argparse
 from datetime import datetime, timezone
 import json
 from pathlib import Path
-import sys
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from backend.scripts.football_external_real_eval_chain_common import load_json as _load_json, write_json as _write_json  # noqa: E402
 from backend.app.run_benchmarks import DEFAULT_STORAGE_ROOT  # noqa: E402
@@ -26,9 +25,6 @@ NEXT_EXECUTION = "football_external_soccernet_full_analysis_execution"
 NEXT_REPORT_REPAIR = "football_external_soccernet_full_analysis_report_payload_repair"
 NEXT_LANE_CLOSEOUT = "football_external_soccernet_full_analysis_lane_closeout"
 
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _candidate_root(storage_root: Path, candidate_name: str) -> Path:
@@ -105,7 +101,7 @@ def _report_payload(source_payload: dict[str, Any] | None) -> dict[str, Any]:
     signals = source_payload.get("aggregateFrameSignals") if isinstance(source_payload.get("aggregateFrameSignals"), dict) else {}
     return {
         "schemaVersion": "soccernet_external_full_analysis_report_payload_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "sourceBatch": "football_external_soccernet_full_analysis_execution",
         "reportedFrameCount": source_payload.get("frameCount"),
         "segmentCount": source_payload.get("segmentCount"),
@@ -171,7 +167,7 @@ def _classify(execution_ready: bool, payload: dict[str, Any]) -> tuple[str | Non
 
 def _decision_matrix(primary_blocker: str | None, goal_achieved: bool) -> dict[str, Any]:
     return {
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "decisions": [
             {"condition": "full_analysis_execution_missing", "selected": primary_blocker == BLOCKER_EXECUTION_MISSING, "primaryBlocker": BLOCKER_EXECUTION_MISSING, "nextRecommendedNextLever": NEXT_EXECUTION},
             {"condition": "full_analysis_report_gap", "selected": primary_blocker == BLOCKER_REPORT_GAP, "primaryBlocker": BLOCKER_REPORT_GAP, "nextRecommendedNextLever": NEXT_REPORT_REPAIR},
@@ -216,7 +212,7 @@ def run_football_external_soccernet_full_analysis_report_smoke(
     report_payload = _report_payload(inputs["productPayload"])
     primary_blocker, next_lever, goal_achieved, english = _classify(ready, report_payload)
     attempts = _attempt_plan()
-    generated_at = _utc_now_iso()
+    generated_at = utc_now_iso()
     summary: dict[str, Any] = {
         "batchName": "football_external_soccernet_full_analysis_report_smoke",
         "generatedAt": generated_at,

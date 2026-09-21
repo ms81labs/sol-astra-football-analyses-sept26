@@ -1,15 +1,14 @@
 from __future__ import annotations
 
+from backend.scripts.football_external_real_eval_chain_common import utc_now_iso
+
 import argparse
 from datetime import datetime, timezone
 import json
 from pathlib import Path
-import sys
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from backend.scripts.football_external_real_eval_chain_common import load_json as _load_json, write_json as _write_json  # noqa: E402
 from backend.app.run_benchmarks import DEFAULT_STORAGE_ROOT  # noqa: E402
@@ -28,9 +27,6 @@ NEXT_SOURCE_REPAIR = "football_external_benchmark_harness_source_contract_repair
 NEXT_SCHEMA_REPAIR = "football_external_benchmark_harness_smoke_contract_repair"
 NEXT_EXECUTION_APPROVAL = "football_external_benchmark_execution_approval"
 
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _candidate_root(storage_root: Path, candidate_name: str) -> Path:
@@ -133,7 +129,7 @@ def _artifact_presence_audit(manifest: dict[str, Any] | None) -> dict[str, Any]:
     missing = [row for row in rows if not (row["exists"] and row["isFile"])]
     return {
         "schemaVersion": "football_external_benchmark_source_artifact_presence_audit_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "artifactCount": len(rows),
         "missingArtifactCount": len(missing),
         "allSourceArtifactsPresent": len(rows) > 0 and not missing,
@@ -156,7 +152,7 @@ def _schema_audit(inputs: dict[str, Any]) -> dict[str, Any]:
     }
     return {
         "schemaVersion": "football_external_benchmark_schema_version_smoke_audit_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         **checks,
         "schemaSmokePassed": all(checks.values()),
     }
@@ -183,7 +179,7 @@ def _smoke_cases(manifest: dict[str, Any]) -> dict[str, Any]:
         )
     return {
         "schemaVersion": "football_external_benchmark_smoke_case_manifest_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "smokeCaseCount": len(smoke_cases),
         "smokeCases": smoke_cases,
     }
@@ -194,7 +190,7 @@ def _metric_family_smoke(cases: dict[str, Any]) -> dict[str, Any]:
     source_ids = [case.get("sourceId") for case in cases.get("smokeCases", [])]
     return {
         "schemaVersion": "football_external_benchmark_cross_source_metric_family_smoke_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "sourceIds": source_ids,
         "metricFamilies": families,
         "metricFamilyCoveragePassed": set(families) >= {"analysis_product_surface", "event_semantics"},
@@ -215,7 +211,7 @@ def _stage_gate_smoke(stage_contract: dict[str, Any] | None, artifact_audit: dic
     missing = [stage for stage in required if stage_results.get(stage) is not True]
     return {
         "schemaVersion": "football_external_benchmark_stage_gate_smoke_audit_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "requiredStageCoverage": required,
         "stageResults": stage_results,
         "missingRequiredStageCoverage": missing,
@@ -255,7 +251,7 @@ def _classify(prep_ready: bool, artifact_audit: dict[str, Any], schema_audit: di
 
 def _decision_matrix(primary_blocker: str | None, next_lever: str, goal_achieved: bool) -> dict[str, Any]:
     return {
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "decisions": [
             {"condition": "prep_missing", "selected": primary_blocker == BLOCKER_PREP_MISSING, "primaryBlocker": BLOCKER_PREP_MISSING, "nextRecommendedNextLever": NEXT_PREP},
             {"condition": "source_artifact_missing", "selected": primary_blocker == BLOCKER_SOURCE_ARTIFACT_MISSING, "primaryBlocker": BLOCKER_SOURCE_ARTIFACT_MISSING, "nextRecommendedNextLever": NEXT_SOURCE_REPAIR},
@@ -313,7 +309,7 @@ def run_football_external_benchmark_harness_smoke(
 
     summary: dict[str, Any] = {
         "batchName": "football_external_benchmark_harness_smoke",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "attemptNumber": attempt_number,
         "attemptBudget": 3,
         "attemptApproachFamily": attempt_approach_family,

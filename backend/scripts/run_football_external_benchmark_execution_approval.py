@@ -1,15 +1,14 @@
 from __future__ import annotations
 
+from backend.scripts.football_external_real_eval_chain_common import utc_now_iso
+
 import argparse
 from datetime import datetime, timezone
 import json
 from pathlib import Path
-import sys
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from backend.scripts.football_external_real_eval_chain_common import load_json as _load_json, write_json as _write_json  # noqa: E402
 from backend.app.run_benchmarks import DEFAULT_STORAGE_ROOT  # noqa: E402
@@ -26,9 +25,6 @@ NEXT_HARNESS_SMOKE = "football_external_benchmark_harness_smoke"
 NEXT_SCOPE_REPAIR = "football_external_benchmark_execution_scope_repair"
 NEXT_BOUNDED_EXECUTION_SMOKE = "football_external_benchmark_bounded_execution_smoke"
 
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _candidate_root(storage_root: Path, candidate_name: str) -> Path:
@@ -112,7 +108,7 @@ def _execution_scope(cases: dict[str, Any] | None) -> dict[str, Any]:
     approved_source_ids = [str(row.get("sourceId")) for row in smoke_cases]
     return {
         "schemaVersion": "football_external_benchmark_execution_scope_audit_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "approvedExecutionMode": "generated_truth_bounded_smoke",
         "approvedSourceIds": approved_source_ids,
         "approvedSmokeCaseCount": len(smoke_cases),
@@ -168,7 +164,7 @@ def _guardrail_audit(smoke_ready: bool, scope: dict[str, Any], contract: dict[st
     }
     return {
         "schemaVersion": "football_external_benchmark_execution_guardrail_audit_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         **checks,
         "executionApprovalGuardrailPassed": all(checks.values()),
     }
@@ -199,7 +195,7 @@ def _classify(smoke_ready: bool, scope: dict[str, Any], guardrail: dict[str, Any
 
 def _decision_matrix(primary_blocker: str | None, next_lever: str, goal_achieved: bool) -> dict[str, Any]:
     return {
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "decisions": [
             {"condition": "harness_smoke_missing", "selected": primary_blocker == BLOCKER_HARNESS_SMOKE_MISSING, "primaryBlocker": BLOCKER_HARNESS_SMOKE_MISSING, "nextRecommendedNextLever": NEXT_HARNESS_SMOKE},
             {"condition": "execution_scope_gap", "selected": primary_blocker == BLOCKER_EXECUTION_SCOPE_GAP, "primaryBlocker": BLOCKER_EXECUTION_SCOPE_GAP, "nextRecommendedNextLever": NEXT_SCOPE_REPAIR},
@@ -249,7 +245,7 @@ def run_football_external_benchmark_execution_approval(
     attempts = _attempt_plan()
     summary: dict[str, Any] = {
         "batchName": "football_external_benchmark_execution_approval",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "attemptNumber": attempt_number,
         "attemptBudget": 3,
         "attemptApproachFamily": attempt_approach_family,

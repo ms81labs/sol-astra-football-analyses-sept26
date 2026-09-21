@@ -1,15 +1,14 @@
 from __future__ import annotations
 
+from backend.scripts.football_external_real_eval_chain_common import utc_now_iso
+
 import argparse
 from datetime import datetime, timezone
 import json
 from pathlib import Path
-import sys
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from backend.scripts.football_external_real_eval_chain_common import load_json as _load_json, write_json as _write_json  # noqa: E402
 from backend.app.run_benchmarks import DEFAULT_STORAGE_ROOT  # noqa: E402
@@ -26,9 +25,6 @@ NEXT_ROUTE_IMPLEMENTATION = "football_external_benchmark_product_ui_route_implem
 NEXT_EVIDENCE_REPAIR = "football_external_benchmark_closeout_evidence_repair"
 NEXT_OPERATIONALIZATION_PLAN = "football_external_benchmark_operationalization_plan"
 
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _candidate_root(storage_root: Path, candidate_name: str) -> Path:
@@ -189,7 +185,7 @@ def _source_lane_next(evidence: list[dict[str, Any]]) -> str:
 def _capability_matrix(evidence: list[dict[str, Any]], lane_ready: bool) -> dict[str, Any]:
     return {
         "schemaVersion": "external_benchmark_capability_matrix_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "externalBenchmarkLaneClosed": lane_ready,
         "externalSourceCount": int(_value(evidence, "benchmark_product_ui_route_implementation", "sourceCount", _value(evidence, "benchmark_harness_prep", "externalSourceCount", 0)) or 0),
         "soccernetAnalysisProductLaneClosed": _value(evidence, "soccernet_analysis_product_lane_closeout", "analysisProductLaneClosed") is True,
@@ -219,7 +215,7 @@ def _capability_matrix(evidence: list[dict[str, Any]], lane_ready: bool) -> dict
 def _evidence_index(evidence: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "schemaVersion": "external_benchmark_evidence_index_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "requiredEvidence": [
             {
                 "stage": row["stage"],
@@ -236,7 +232,7 @@ def _evidence_index(evidence: list[dict[str, Any]]) -> dict[str, Any]:
 def _remaining_gap_analysis(lane_ready: bool) -> dict[str, Any]:
     return {
         "schemaVersion": "external_benchmark_remaining_gap_analysis_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "externalBenchmarkLaneClosed": lane_ready,
         "remainingPrimaryGap": "external_benchmark_operationalization_not_yet_planned" if lane_ready else "external_benchmark_lane_required_evidence_missing",
         "remainingGaps": []
@@ -287,7 +283,7 @@ def _classify(evidence: list[dict[str, Any]]) -> tuple[str | None, str, bool, bo
 
 def _decision_matrix(primary_blocker: str | None, goal_achieved: bool, next_lever: str) -> dict[str, Any]:
     return {
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "decisions": [
             {"condition": "required_evidence_missing", "selected": primary_blocker == BLOCKER_REQUIRED_EVIDENCE_MISSING, "primaryBlocker": BLOCKER_REQUIRED_EVIDENCE_MISSING, "nextRecommendedNextLever": next_lever},
             {"condition": "source_lane_not_closed", "selected": primary_blocker == BLOCKER_SOURCE_LANE_NOT_CLOSED, "primaryBlocker": BLOCKER_SOURCE_LANE_NOT_CLOSED, "nextRecommendedNextLever": next_lever},
@@ -339,7 +335,7 @@ def run_football_external_benchmark_lane_closeout(
     attempts = _attempt_plan()
     summary: dict[str, Any] = {
         "batchName": "football_external_benchmark_lane_closeout",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "attemptNumber": attempt_number,
         "attemptBudget": 3,
         "attemptApproachFamily": attempt_approach_family,

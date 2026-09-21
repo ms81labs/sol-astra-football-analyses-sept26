@@ -1,15 +1,14 @@
 from __future__ import annotations
 
+from backend.scripts.football_external_real_eval_chain_common import utc_now_iso
+
 import argparse
 from datetime import datetime, timezone
 import json
 from pathlib import Path
-import sys
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from backend.scripts.football_external_real_eval_chain_common import load_json as _load_json, write_json as _write_json  # noqa: E402
 from backend.app.run_benchmarks import DEFAULT_STORAGE_ROOT  # noqa: E402
@@ -26,9 +25,6 @@ NEXT_ROUTE_IMPLEMENTATION = "football_external_soccernet_analysis_product_ui_rou
 NEXT_CLOSEOUT_REPAIR = "football_external_soccernet_analysis_product_route_closeout_repair"
 NEXT_SAFE_SOURCE_ADAPTER_SMOKE = "football_external_safe_source_adapter_smoke_test"
 
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _candidate_root(storage_root: Path, candidate_name: str) -> Path:
@@ -119,7 +115,7 @@ def _capability_matrix(route_ready: bool, inputs: dict[str, Any]) -> dict[str, A
     summary = inputs.get("summary") if isinstance(inputs.get("summary"), dict) else {}
     return {
         "schemaVersion": "soccernet_analysis_product_capability_matrix_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "fullVideoAnalysisProductReady": route_ready,
         "routeCapabilityReady": route_ready,
         "apiRoutePath": summary.get("apiRoutePath"),
@@ -138,7 +134,7 @@ def _capability_matrix(route_ready: bool, inputs: dict[str, Any]) -> dict[str, A
 def _remaining_gap_analysis(route_ready: bool) -> dict[str, Any]:
     return {
         "schemaVersion": "soccernet_analysis_product_remaining_gap_analysis_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "analysisProductRouteClosed": route_ready,
         "remainingPrimaryGap": None if not route_ready else "external_safe_source_adapter_smoke_not_currently_closed",
         "remainingGaps": [] if not route_ready else [
@@ -167,7 +163,7 @@ def _classify(route_ready: bool) -> tuple[str | None, str, bool, str]:
 
 def _decision_matrix(primary_blocker: str | None, goal_achieved: bool) -> dict[str, Any]:
     return {
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "decisions": [
             {"condition": "analysis_product_ui_route_missing", "selected": primary_blocker == BLOCKER_ROUTE_MISSING, "primaryBlocker": BLOCKER_ROUTE_MISSING, "nextRecommendedNextLever": NEXT_ROUTE_IMPLEMENTATION},
             {"condition": "analysis_product_lane_closeout_gap", "selected": primary_blocker == BLOCKER_CLOSEOUT_GAP, "primaryBlocker": BLOCKER_CLOSEOUT_GAP, "nextRecommendedNextLever": NEXT_CLOSEOUT_REPAIR},
@@ -216,7 +212,7 @@ def run_football_external_soccernet_analysis_product_lane_closeout(
     gaps = _remaining_gap_analysis(route_ready)
     attempts = _attempt_plan()
     source_summary = inputs.get("summary") if isinstance(inputs.get("summary"), dict) else {}
-    generated_at = _utc_now_iso()
+    generated_at = utc_now_iso()
     summary: dict[str, Any] = {
         "batchName": "football_external_soccernet_analysis_product_lane_closeout",
         "generatedAt": generated_at,

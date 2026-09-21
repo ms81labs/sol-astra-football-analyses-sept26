@@ -599,7 +599,6 @@ def evaluate_tracking(data: Mapping[str, object], *, trackeval_root: Path) -> di
     )
     if result.returncode or result.stdout.strip() != TRACKEVAL_COMMIT:
         raise ValueError(f"trackeval_root must be the pinned TrackEval commit {TRACKEVAL_COMMIT}")
-    sys.path.insert(0, str(trackeval_root))
     try:
         with redirect_stdout(io.StringIO()):
             trackeval = importlib.import_module("trackeval")

@@ -1,16 +1,15 @@
 from __future__ import annotations
 
+from backend.scripts.football_external_real_eval_chain_common import utc_now_iso
+
 import argparse
 from datetime import datetime, timezone
 from html import escape
 import json
 from pathlib import Path
-import sys
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from backend.scripts.football_external_real_eval_chain_common import load_json as _load_json, write_json as _write_json  # noqa: E402
 from backend.app.run_benchmarks import DEFAULT_STORAGE_ROOT  # noqa: E402
@@ -27,9 +26,6 @@ NEXT_API_SMOKE = "football_external_soccernet_analysis_product_api_smoke"
 NEXT_UI_CONTRACT_REPAIR = "football_external_soccernet_analysis_product_ui_contract_repair"
 NEXT_UI_ROUTE_IMPLEMENTATION = "football_external_soccernet_analysis_product_ui_route_implementation"
 
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _candidate_root(storage_root: Path, candidate_name: str) -> Path:
@@ -117,7 +113,7 @@ def _view_model(response: dict[str, Any] | None) -> dict[str, Any]:
     signals = analysis.get("aggregateFrameSignals") if isinstance(analysis.get("aggregateFrameSignals"), dict) else {}
     return {
         "schemaVersion": "soccernet_full_analysis_ui_view_model_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "hero": {
             "title": ui.get("title") or "SoccerNet full analysis",
             "subtitle": ui.get("subtitle") or "Full external match analysis payload.",
@@ -150,7 +146,7 @@ def _view_model(response: dict[str, Any] | None) -> dict[str, Any]:
 def _route_contract(view_model: dict[str, Any]) -> dict[str, Any]:
     return {
         "schemaVersion": "soccernet_full_analysis_ui_route_contract_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "routePath": "/external/soccernet/full-analysis",
         "routeName": "SoccerNetFullAnalysis",
         "viewModelSchemaVersion": view_model.get("schemaVersion"),
@@ -222,7 +218,7 @@ def _ui_binding_audit(api_ready: bool, view_model: dict[str, Any], route_contrac
     )
     return {
         "schemaVersion": "soccernet_full_analysis_ui_binding_audit_v1",
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "sourceApiSmokeReady": api_ready,
         "uiViewModelValid": valid,
         "htmlRenderSmokeValid": "SoccerNet" in html and "Frames analyzed" in html,
@@ -263,7 +259,7 @@ def _classify(api_ready: bool, audit: dict[str, Any]) -> tuple[str | None, str, 
 
 def _decision_matrix(primary_blocker: str | None, goal_achieved: bool) -> dict[str, Any]:
     return {
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "decisions": [
             {"condition": "analysis_product_api_smoke_missing", "selected": primary_blocker == BLOCKER_API_SMOKE_MISSING, "primaryBlocker": BLOCKER_API_SMOKE_MISSING, "nextRecommendedNextLever": NEXT_API_SMOKE},
             {"condition": "analysis_product_ui_contract_gap", "selected": primary_blocker == BLOCKER_UI_CONTRACT_GAP, "primaryBlocker": BLOCKER_UI_CONTRACT_GAP, "nextRecommendedNextLever": NEXT_UI_CONTRACT_REPAIR},
@@ -312,7 +308,7 @@ def run_football_external_soccernet_analysis_product_ui_binding(
     audit = _ui_binding_audit(api_ready, view_model, route_contract, html)
     primary_blocker, next_lever, goal_achieved, english = _classify(api_ready, audit)
     attempts = _attempt_plan()
-    generated_at = _utc_now_iso()
+    generated_at = utc_now_iso()
     summary: dict[str, Any] = {
         "batchName": "football_external_soccernet_analysis_product_ui_binding",
         "generatedAt": generated_at,

@@ -1,18 +1,17 @@
 from __future__ import annotations
 
+from backend.scripts.football_external_real_eval_chain_common import utc_now_iso
+
 import argparse
 from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
-import sys
 from typing import Any
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from backend.scripts.football_external_real_eval_chain_common import load_json as _load_json, write_json as _write_json  # noqa: E402
 from backend.app.run_benchmarks import DEFAULT_STORAGE_ROOT  # noqa: E402
@@ -37,9 +36,6 @@ HUGGINGFACE_REPO_BY_TASK = {
     "spotting-ball-2025": "SoccerNet/SN-BAS-2025",
 }
 
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _candidate_root(storage_root: Path, candidate_name: str) -> Path:
@@ -218,7 +214,7 @@ def _classify(approval_ready: bool, range_contract: dict[str, Any], fetch_error:
 
 def _decision_matrix(primary_blocker: str | None, next_lever: str, goal_achieved: bool) -> dict[str, Any]:
     return {
-        "generatedAt": _utc_now_iso(),
+        "generatedAt": utc_now_iso(),
         "decisions": [
             {"condition": "video_sample_download_approval_missing", "selected": primary_blocker == BLOCKER_APPROVAL_MISSING, "primaryBlocker": BLOCKER_APPROVAL_MISSING, "nextRecommendedNextLever": NEXT_APPROVAL},
             {"condition": "video_sample_range_contract_gap", "selected": primary_blocker == BLOCKER_RANGE_CONTRACT_GAP, "primaryBlocker": BLOCKER_RANGE_CONTRACT_GAP, "nextRecommendedNextLever": NEXT_RANGE_REPAIR},
@@ -278,7 +274,7 @@ def run_football_external_soccernet_controlled_video_sample_fetch(
 
     primary_blocker, next_lever, goal_achieved, english = _classify(ready, range_contract, fetch_error)
     attempts = _attempt_plan()
-    generated_at = _utc_now_iso()
+    generated_at = utc_now_iso()
     sample_path = output_root / "video_member_sample_bytes.bin"
     if goal_achieved:
         sample_path.write_bytes(sample_bytes)
