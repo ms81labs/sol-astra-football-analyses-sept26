@@ -3384,9 +3384,7 @@ async def _test_production_decode_challengers_heatmap_and_grounding_surfaces(tmp
         )
         assert export.status_code == 200
         assert export.json()["admitted"] is False
-        assert "unconstrained decoder" in " ".join(export.json()["reasonCodes"]).lower() or any(
-            "UNCONSTRAINED" in code for code in export.json()["reasonCodes"]
-        )
+        assert export.json()["reasonCodes"] == ["unconstrained decoder"]
 
         probe = await client.post("/api/decode/probe", json={"backend": "ffmpeg", "default": True})
         assert probe.status_code == 200
