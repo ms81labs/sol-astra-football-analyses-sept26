@@ -47,12 +47,9 @@ def test_second_half_bas_truth_uses_tracker_anchor_for_video_source_frame() -> N
 def test_event_diagnostic_binds_corrected_validation_clock_metadata() -> None:
     artifact = json.loads(events.OUTPUT_PATH.read_text(encoding="utf-8"))
     corpus = json.loads(events.CORPUS_PATH.read_text(encoding="utf-8"))
-    metadata = events.REPO_ROOT / Path(
-        corpus["validationPitchReferenceMaterialization"]["resultsBySource"]
-        ["soccertrack-v2-117092"]["metadataXmlPath"]
-    )
+    source = corpus["validationPitchReferenceMaterialization"]["resultsBySource"]["soccertrack-v2-117092"]
 
-    assert artifact["sourceMetadataXmlSha256"] == hashlib.sha256(metadata.read_bytes()).hexdigest()
+    assert artifact["sourceMetadataXmlSha256"] == source["metadataXmlSha256"]
     assert artifact["truthReferenceClockOffsetsSecondsByTask"] == {
         "soccertrack-v2-117092-01": 0.0,
         "soccertrack-v2-117092-02": 0.0,
