@@ -201,6 +201,8 @@ def _ultralytics_scalar(value: Any) -> float:
 def _ultralytics_xyxy(value: Any) -> tuple[float, float, float, float]:
     if hasattr(value, "tolist"):
         value = value.tolist()
+    if isinstance(value, (list, tuple)) and value and hasattr(value[0], "tolist"):
+        value = value[0].tolist()
     if isinstance(value, (list, tuple)) and value and isinstance(value[0], (list, tuple)):
         value = value[0]
     coords = [float(item) for item in list(value)[:4]]
