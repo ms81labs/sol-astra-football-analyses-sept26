@@ -60,6 +60,43 @@ jobs:
             .verification/receipt.json
           if-no-files-found: warn
 
+  excluded-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements/dev.lock
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install excluded-suite profile
+        run: |
+          pip install --require-hashes -r backend/requirements/dev.lock
+          pip install -e '.[cv]' --no-deps
+      - name: Run tests excluded from code-only verifier
+        env:
+          GA_VERIFICATION_RUN: '1'
+          GA_VERIFICATION_PROFILE: excluded-cpu
+        run: |
+          set -o pipefail
+          mkdir -p .verification/logs
+          pytest -q \
+            backend/tests/test_convert_football_analysis_pilot_cvat_labels.py \
+            backend/tests/test_evaluate_football_analysis_pilot_soccertrack_events.py \
+            backend/tests/test_gpu_worker.py \
+            backend/tests/test_operational_docs.py \
+            backend/tests/test_run_guerilla.py \
+            backend/tests/test_run_source_robustness_batch.py \
+            2>&1 | tee .verification/logs/excluded-backend.log
+      - name: Upload excluded-suite evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: excluded-backend-evidence
+          path: .verification/logs/
+          if-no-files-found: error
+
   api-profile:
     runs-on: ubuntu-latest
     steps:
