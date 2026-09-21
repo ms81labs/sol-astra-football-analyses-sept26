@@ -24,6 +24,9 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 from .jobs import JobDispatchError, JobRunner
 from .job_routes import create_job_router
+from .match_ingest_routes import create_match_ingest_router
+from .match_runtime_routes import create_match_runtime_router
+from .system_routes import create_system_router
 from .match_detail_routes import create_match_detail_router
 from .workbench.errors import (
     BudgetExhausted,
@@ -577,7 +580,6 @@ def create_app(
     if settings.deployment_mode == "hosted":
         app.add_middleware(HostedAuthMiddleware, secret=settings.auth_secret or "", storage=storage)
 
-    @app.post("/api/matches", status_code=202)
     async def create_match(
         request: Request,
         name: str = Form(...),
@@ -724,6 +726,8 @@ def create_app(
                 )
         return response(job, outcome=dispatch_outcome, reused=False)
 
+    app.include_router(create_match_ingest_router(storage, runner, settings))
+
     def require_match(
         match_id: str,
         authorization: str | None = Header(default=None),
@@ -748,34 +752,28 @@ def create_app(
         return match
 
     app.include_router(create_job_router(storage, runner, require_match))
+    app.include_router(create_system_router(storage))
 
-    @app.get("/api/metrics/dictionary")
     def get_metric_dictionary() -> dict:
         return {"metrics": metric_dictionary()}
 
-    @app.get("/api/flags")
     def get_feature_flags() -> dict:
         return feature_flags()
 
-    @app.get("/api/dossier")
     def get_dossier() -> dict:
         payload = http_dossier()
         return {key: payload[key] for key in ("baseline", "release", "evaluation", "gpu", "native")}
 
-    @app.get("/api/capabilities")
     def get_capabilities() -> dict:
         return {"capabilities": http_dossier()["capabilities"]}
 
-    @app.post("/api/library/search")
     def post_library_search(payload: dict | None = None) -> dict:
         body = payload or {}
         return storage.search_stored_library(str(body.get("query") or ""))
 
-    @app.get("/api/metrics/inspect/{metric}")
     def get_metric_inspect(metric: str) -> dict:
         return inspect_metric(metric)
 
-    @app.post("/api/rollback")
     def post_rollback(payload: dict | None = None) -> dict:
         body = payload or {}
         return rollback_release(
@@ -783,7 +781,6 @@ def create_app(
             affected_outputs=list(body.get("affectedOutputs") or []),
         )
 
-    @app.post("/api/media/admit")
     def post_media_admit(payload: dict | None = None) -> dict:
         body = payload or {}
         identity = SourceClockIdentity(
@@ -802,7 +799,6 @@ def create_app(
             source_url=body.get("sourceUrl"),
         )
 
-    @app.post("/api/cost/estimate")
     def post_cost_estimate(payload: dict | None = None) -> dict:
         body = payload or {}
         return match_cost(
@@ -816,7 +812,6 @@ def create_app(
             export_fps=body.get("exportFps"),
         ).model_dump(mode="json")
 
-    @app.post("/api/rights/evaluate")
     def post_rights_evaluate(payload: dict | None = None) -> dict:
         body = payload or {}
         return evaluate_rights(
@@ -827,7 +822,6 @@ def create_app(
             }
         ).model_dump(mode="json")
 
-    @app.post("/api/access/deletion")
     def post_access_deletion(payload: dict | None = None) -> dict:
         body = payload or {}
         return access_deletion_procedure(
@@ -835,7 +829,6 @@ def create_app(
             controller_recorded=False,
         )
 
-    @app.post("/api/retention/delete")
     def post_retention_delete(payload: dict | None = None) -> dict:
         body = payload or {}
         kind = str(body.get("kind") or "")
@@ -846,7 +839,6 @@ def create_app(
             "protected": kind in PROTECTED,
         }
 
-    @app.post("/api/playlists/export-interval")
     def export_playlist_interval(payload: dict | None = None) -> dict:
         body = payload or {}
         try:
@@ -854,7 +846,6 @@ def create_app(
         except (KeyError, TypeError, ValueError) as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    @app.get("/api/matches")
     def list_matches(request: Request) -> list[dict]:
         matches = storage.list_matches()
         if settings.deployment_mode == "hosted":
@@ -874,7 +865,6 @@ def create_app(
             result = load()
             return {**result, "generationId": ref.generationId if ref is not None else None}
 
-    @app.get("/api/matches/{match_id}")
     def get_match(match: MatchRecord = Depends(require_match), generationId: str | None = None) -> dict:
         def detail() -> dict:
             result = storage.get_match(match.id).model_dump(mode="json")
@@ -889,7 +879,6 @@ def create_app(
             return result
         return snapshot_response(match.id, detail, generationId)
 
-    @app.post("/api/matches/{match_id}/jobs", status_code=202)
     def post_match_job(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
         body = payload or {}
         request_id = str(body.get("requestId") or uuid.uuid4().hex)
@@ -943,7 +932,6 @@ def create_app(
             "durablePhase": view["durablePhase"],
         }
 
-    @app.get("/api/matches/{match_id}/video")
     def get_match_video(match: MatchRecord = Depends(require_match)):
         if match.inputMode != "video":
             raise HTTPException(status_code=409, detail="Video playback is only available for video-backed matches.")
@@ -954,7 +942,6 @@ def create_app(
 
         return FileResponse(video_path, media_type="video/mp4", filename=match.originalFilename)
 
-    @app.get("/api/matches/{match_id}/frames")
     def get_frames(
         match: MatchRecord = Depends(require_match),
         afterFrame: int | None = None,
@@ -973,7 +960,6 @@ def create_app(
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail="Frames not ready") from exc
 
-    @app.get("/api/matches/{match_id}/evidence")
     def get_match_evidence(
         match: MatchRecord = Depends(require_match),
         intervalStart: float | None = None,
@@ -990,7 +976,6 @@ def create_app(
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail="Evidence not ready") from exc
 
-    @app.get("/api/matches/{match_id}/analytics")
     def get_analytics(match: MatchRecord = Depends(require_match), generationId: str | None = None) -> dict:
         try:
             with storage.generation_snapshot(match.id, generation_id=generationId) as ref:
@@ -1003,7 +988,6 @@ def create_app(
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail="Analytics not ready") from exc
 
-    @app.post("/api/matches/{match_id}/corrections")
     def post_match_correction(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
         body = payload or {}
         if not isinstance(body.get("payload", {}), dict):
@@ -1031,7 +1015,6 @@ def create_app(
             ) from exc
         return correction_api_payload(saved)
 
-    @app.post("/api/matches/{match_id}/corrections/{correction_id}/recover")
     def recover_match_correction(correction_id: str, match: MatchRecord = Depends(require_match)) -> dict:
         try:
             saved = storage.recover_correction(match.id, correction_id)
@@ -1039,7 +1022,6 @@ def create_app(
             raise HTTPException(status_code=404, detail="Correction not found") from exc
         return correction_api_payload(saved)
 
-    @app.post("/api/matches/{match_id}/corrections/{correction_id}/undo")
     def undo_match_correction(correction_id: str, match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
         try:
             body = payload or {}
@@ -1050,13 +1032,12 @@ def create_app(
             raise HTTPException(status_code=404, detail="Correction not found") from exc
         return correction_api_payload(saved)
 
-    @app.get("/api/matches/{match_id}/corrections")
     def list_match_corrections(match: MatchRecord = Depends(require_match), state: str | None = None) -> dict:
         return {"items": storage.list_corrections(match.id, state=state)}
 
+    app.include_router(create_match_runtime_router(storage, settings, require_match, snapshot_response))
     app.include_router(create_match_detail_router(storage, require_match, snapshot_response, provider_gateway))
 
-    @app.websocket("/ws/jobs/{job_id}")
     async def job_updates(websocket: WebSocket, job_id: str) -> None:
         await websocket.accept()
         last_payload = None

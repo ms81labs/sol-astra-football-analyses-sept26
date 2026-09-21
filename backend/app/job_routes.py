@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
+import uuid
+
 from collections.abc import Callable
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, WebSocket, WebSocketDisconnect
+
+from starlette.concurrency import run_in_threadpool
 
 from .jobs import JobRunner
 from .schemas import MatchRecord
@@ -285,4 +290,8 @@ def create_job_router(
             raise HTTPException(status_code=403, detail=decision)
         return storage.four_rates_for_match(match.id)
 
+
+    @router.post("/api/matches/{match_id}/jobs", status_code=202)
+    
+    @router.websocket("/ws/jobs/{job_id}")
     return router
