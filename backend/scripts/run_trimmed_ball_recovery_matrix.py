@@ -12,8 +12,6 @@ import cv2
 from ultralytics import YOLO, __version__ as ultralytics_version
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from backend.app.run_benchmarks import (
     DEFAULT_MANUAL_POINTS,
