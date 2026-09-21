@@ -1030,6 +1030,230 @@ def _artifact_metadata_bool(
     return default
 
 
+
+def _summarize_accepted_match_state(payload: dict[str, object] | None) -> dict[str, object]:
+    result: dict[str, object] = {
+        "accepted_match_state_frames": 0,
+        "accepted_match_state_coverage_ratio": 0.0,
+        "visible_state_frames": 0,
+        "inferred_state_frames": 0,
+        "hidden_state_frames": 0,
+        "controlled_state_frames": 0,
+        "hidden_controlled_state_frames": 0,
+        "restart_or_out_state_frames": 0,
+        "state_continuity_applied_frames": 0,
+        "match_state_mode_counts": {},
+    }
+    if payload is None:
+        return result
+
+    raw_state_frames = payload.get("frames")
+    if isinstance(raw_state_frames, list):
+        state_mode_counter: Counter[str] = Counter()
+        for item in raw_state_frames:
+            if not isinstance(item, dict):
+                continue
+            mode = item.get("mode")
+            if isinstance(mode, str):
+                state_mode_counter[mode] += 1
+            visibility = item.get("ballVisibility")
+            if visibility == "visible":
+                result["visible_state_frames"] += 1
+            elif visibility == "inferred":
+                result["inferred_state_frames"] += 1
+            elif visibility == "hidden":
+                result["hidden_state_frames"] += 1
+            if mode == "controlled_possession":
+                result["controlled_state_frames"] += 1
+                if visibility == "hidden":
+                    result["hidden_controlled_state_frames"] += 1
+            if mode == "restart_or_out":
+                result["restart_or_out_state_frames"] += 1
+
+        accepted_frames = len(raw_state_frames)
+        result["accepted_match_state_frames"] = accepted_frames
+        result["match_state_mode_counts"] = dict(sorted(state_mode_counter.items()))
+        known_frames = sum(
+            count for mode, count in state_mode_counter.items() if mode != "unknown"
+        )
+        result["accepted_match_state_coverage_ratio"] = round(
+            known_frames / accepted_frames if accepted_frames else 0.0,
+            3,
+        )
+
+    result["state_continuity_applied_frames"] = _safe_int(
+        payload.get("stateContinuityAppliedFrames", 0),
+        0,
+    )
+    return result
+
+
+def _summarize_ball_truth_layers(
+    payload: dict[str, object] | None,
+    *,
+    frame_count: int,
+    with_ball_frames: int,
+) -> dict[str, object]:
+    result: dict[str, object] = {
+        "ball_truth_layers_present": payload is not None,
+        "observed_ball_frames": 0,
+        "inferred_ball_frames": 0,
+        "accepted_ball_frames": with_ball_frames,
+        "tracking_observed_ball_frames": 0,
+        "raw_probe_observed_ball_frames": 0,
+        "filtered_probe_observed_ball_frames": 0,
+        "suppressed_probe_observed_ball_frames": 0,
+        "anchored_probe_observed_ball_frames": 0,
+        "bridge_probe_observed_ball_frames": 0,
+        "probe_observed_ball_frames": 0,
+        "probe_only_observed_ball_frames": 0,
+        "accepted_from_observed_frames": 0,
+        "accepted_from_observed_ratio": 0.0,
+        "supported_observed_ball_frames": 0,
+        "supported_accepted_ball_frames": 0,
+        "supported_accepted_ball_ratio": 0.0,
+        "unsupported_accepted_edge_frames": 0,
+        "direct_observation_breakdown_present": False,
+        "accepted_ball_ratio": (with_ball_frames / frame_count) if frame_count else 0.0,
+        "accepted_segment_count": 0,
+        "unknown_gap_count": 0,
+        "longest_unknown_gap_frames": 0,
+        "accepted_ball_rows": None,
+        "long_gap_treatment_outcome": None,
+        "controlled_possession_assignment_outcome": None,
+        "frozen_primary_acquisition_mode": None,
+        "frozen_detector_model_path": None,
+    }
+    if payload is None:
+        return result
+
+    observed = _ball_truth_layer_frame_count(payload, "observedBall")
+    inferred = _ball_truth_layer_frame_count(payload, "inferredBall")
+    accepted = _ball_truth_layer_frame_count(payload, "acceptedBall")
+    result["observed_ball_frames"] = observed
+    result["inferred_ball_frames"] = inferred
+    result["accepted_ball_frames"] = accepted
+    result["accepted_ball_ratio"] = (accepted / frame_count) if frame_count else 0.0
+
+    accepted_layer_payload = payload.get("acceptedBall")
+    if isinstance(accepted_layer_payload, dict):
+        raw_accepted_rows = accepted_layer_payload.get("rows")
+        if isinstance(raw_accepted_rows, list):
+            result["accepted_ball_rows"] = raw_accepted_rows
+
+    accepted_segments = payload.get("acceptedSegments")
+    if isinstance(accepted_segments, list):
+        result["accepted_segment_count"] = len(accepted_segments)
+
+    unknown_gaps = payload.get("unknownGaps")
+    if isinstance(unknown_gaps, list):
+        result["unknown_gap_count"] = len(unknown_gaps)
+        result["longest_unknown_gap_frames"] = max(
+            (_safe_int(gap.get("frameCount"), 0) for gap in unknown_gaps if isinstance(gap, dict)),
+            default=0,
+        )
+
+    breakdown = payload.get("directObservationBreakdown")
+    if isinstance(breakdown, dict):
+        result["direct_observation_breakdown_present"] = True
+
+        raw = breakdown.get("longGapTreatmentOutcome")
+        if isinstance(raw, str) and raw.strip():
+            result["long_gap_treatment_outcome"] = raw.strip()
+
+        raw = breakdown.get("controlledPossessionAssignmentOutcome")
+        if isinstance(raw, str) and raw.strip():
+            result["controlled_possession_assignment_outcome"] = raw.strip()
+
+        raw = breakdown.get("frozenPrimaryAcquisitionMode")
+        if isinstance(raw, str) and raw.strip():
+            result["frozen_primary_acquisition_mode"] = raw.strip()
+
+        raw = breakdown.get("frozenDetectorModelPath")
+        if isinstance(raw, str) and raw.strip():
+            result["frozen_detector_model_path"] = _redacted_runtime_reference_identity(raw)
+
+        tracking = _safe_int(breakdown.get("trackingObservedBallFrames"), observed)
+        raw_probe = _safe_int(
+            breakdown.get("rawProbeObservedBallFrames"),
+            _safe_int(breakdown.get("probeObservedBallFrames"), observed),
+        )
+        filtered_probe = _safe_int(
+            breakdown.get("filteredProbeObservedBallFrames"),
+            _safe_int(breakdown.get("probeObservedBallFrames"), observed),
+        )
+        suppressed_probe = _safe_int(
+            breakdown.get("suppressedProbeObservedBallFrames"),
+            max(raw_probe - filtered_probe, 0),
+        )
+        anchored_probe = _safe_int(breakdown.get("anchoredProbeObservedBallFrames"), 0)
+        bridge_probe = _safe_int(breakdown.get("bridgeProbeObservedBallFrames"), 0)
+        probe = _safe_int(breakdown.get("probeObservedBallFrames"), filtered_probe)
+        probe_only = _safe_int(
+            breakdown.get("probeOnlyObservedBallFrames"),
+            max(probe - tracking, 0),
+        )
+        accepted_from_observed = _safe_int(
+            breakdown.get("acceptedFromObservedFrames"),
+            observed,
+        )
+        accepted_from_observed_ratio = round(
+            _safe_float(
+                breakdown.get("acceptedFromObservedRatio"),
+                (accepted_from_observed / accepted) if accepted else 0.0,
+            ),
+            3,
+        )
+    else:
+        tracking = observed
+        raw_probe = observed
+        filtered_probe = observed
+        suppressed_probe = 0
+        anchored_probe = 0
+        bridge_probe = 0
+        probe = observed
+        probe_only = 0
+        accepted_from_observed = observed
+        accepted_from_observed_ratio = round(
+            (accepted_from_observed / accepted) if accepted else 0.0,
+            3,
+        )
+
+    result.update(
+        {
+            "tracking_observed_ball_frames": tracking,
+            "raw_probe_observed_ball_frames": raw_probe,
+            "filtered_probe_observed_ball_frames": filtered_probe,
+            "suppressed_probe_observed_ball_frames": suppressed_probe,
+            "anchored_probe_observed_ball_frames": anchored_probe,
+            "bridge_probe_observed_ball_frames": bridge_probe,
+            "probe_observed_ball_frames": probe,
+            "probe_only_observed_ball_frames": probe_only,
+            "accepted_from_observed_frames": accepted_from_observed,
+            "accepted_from_observed_ratio": accepted_from_observed_ratio,
+        }
+    )
+
+    support = payload.get("supportDiagnostics")
+    if isinstance(support, dict):
+        supported_observed = _safe_int(support.get("supportedObservedBallFrames"), 0)
+        supported_accepted = _safe_int(support.get("supportedAcceptedBallFrames"), 0)
+        result["supported_observed_ball_frames"] = supported_observed
+        result["supported_accepted_ball_frames"] = supported_accepted
+        result["supported_accepted_ball_ratio"] = round(
+            _safe_float(
+                support.get("supportedAcceptedBallRatio"),
+                (supported_accepted / accepted) if accepted else 0.0,
+            ),
+            3,
+        )
+        result["unsupported_accepted_edge_frames"] = _safe_int(
+            support.get("unsupportedAcceptedEdgeFrames"),
+            0,
+        )
+
+    return result
+
 def summarize_match_benchmark(storage: Storage, match_id: str) -> MatchBenchmarkSummary:
     artifact_metadata_sources = _artifact_metadata_sources(storage, match_id)
     artifact_only = False
@@ -1247,42 +1471,19 @@ def summarize_match_benchmark(storage: Storage, match_id: str) -> MatchBenchmark
         ball_signal_status = summary.ballSignalStatus
         tracked_possession_frames = sum(1 for assignment in assignments if assignment.team in {"my_team", "enemy", "unassigned"} and assignment.trackId is not None)
         controlled_possession_frames = sum(1 for assignment in assignments if assignment.team in {"my_team", "enemy"})
-    accepted_match_state = _load_accepted_match_state(storage, match_id)
-    if accepted_match_state is not None:
-        raw_state_frames = accepted_match_state.get("frames")
-        if isinstance(raw_state_frames, list):
-            accepted_match_state_frames = len(raw_state_frames)
-            state_mode_counter: Counter[str] = Counter()
-            for item in raw_state_frames:
-                if not isinstance(item, dict):
-                    continue
-                mode = item.get("mode")
-                if isinstance(mode, str):
-                    state_mode_counter[mode] += 1
-                visibility = item.get("ballVisibility")
-                if visibility == "visible":
-                    visible_state_frames += 1
-                elif visibility == "inferred":
-                    inferred_state_frames += 1
-                elif visibility == "hidden":
-                    hidden_state_frames += 1
-                if mode == "controlled_possession":
-                    controlled_state_frames += 1
-                    if visibility == "hidden":
-                        hidden_controlled_state_frames += 1
-                if mode == "restart_or_out":
-                    restart_or_out_state_frames += 1
-            match_state_mode_counts = dict(sorted(state_mode_counter.items()))
-            accepted_match_state_coverage_ratio = round(
-                (sum(count for mode, count in state_mode_counter.items() if mode != "unknown") / accepted_match_state_frames)
-                if accepted_match_state_frames
-                else 0.0,
-                3,
-            )
-        state_continuity_applied_frames = _safe_int(
-            accepted_match_state.get("stateContinuityAppliedFrames", 0),
-            0,
-        )
+    match_state = _summarize_accepted_match_state(
+        _load_accepted_match_state(storage, match_id)
+    )
+    accepted_match_state_frames = match_state["accepted_match_state_frames"]
+    accepted_match_state_coverage_ratio = match_state["accepted_match_state_coverage_ratio"]
+    visible_state_frames = match_state["visible_state_frames"]
+    inferred_state_frames = match_state["inferred_state_frames"]
+    hidden_state_frames = match_state["hidden_state_frames"]
+    controlled_state_frames = match_state["controlled_state_frames"]
+    hidden_controlled_state_frames = match_state["hidden_controlled_state_frames"]
+    restart_or_out_state_frames = match_state["restart_or_out_state_frames"]
+    state_continuity_applied_frames = match_state["state_continuity_applied_frames"]
+    match_state_mode_counts = match_state["match_state_mode_counts"]
     recovery_debug_path = storage._match_dir(match_id) / "recovery_debug.json"
     recovery_debug: dict[str, object] | None = None
     if recovery_debug_path.exists():
@@ -1668,171 +1869,54 @@ def summarize_match_benchmark(storage: Storage, match_id: str) -> MatchBenchmark
         warmup_wait_seconds = round(_safe_float(endpoint_lifecycle_debug.get("warmupWaitSeconds"), 0.0), 3)
 
     ball_truth_layers = _load_ball_truth_layers(storage, match_id)
-    ball_truth_layers_present = ball_truth_layers is not None
-    observed_ball_frames = 0
-    inferred_ball_frames = 0
-    accepted_ball_frames = with_ball_frames
-    tracking_observed_ball_frames = 0
-    raw_probe_observed_ball_frames = 0
-    filtered_probe_observed_ball_frames = 0
-    suppressed_probe_observed_ball_frames = 0
-    anchored_probe_observed_ball_frames = 0
-    bridge_probe_observed_ball_frames = 0
-    probe_observed_ball_frames = 0
-    probe_only_observed_ball_frames = 0
-    accepted_from_observed_frames = 0
-    accepted_from_observed_ratio = 0.0
-    supported_observed_ball_frames = 0
-    supported_accepted_ball_frames = 0
-    supported_accepted_ball_ratio = 0.0
-    unsupported_accepted_edge_frames = 0
-    direct_observation_breakdown_present = False
-    accepted_ball_ratio = (with_ball_frames / frame_count) if frame_count else 0.0
-    accepted_segment_count = 0
-    unknown_gap_count = 0
-    longest_unknown_gap_frames = 0
-    accepted_ball_rows: list[object] | None = None
-    if ball_truth_layers_present:
-        observed_ball_frames = _ball_truth_layer_frame_count(ball_truth_layers, "observedBall")
-        inferred_ball_frames = _ball_truth_layer_frame_count(ball_truth_layers, "inferredBall")
-        accepted_ball_frames = _ball_truth_layer_frame_count(ball_truth_layers, "acceptedBall")
-        accepted_ball_ratio = (accepted_ball_frames / frame_count) if frame_count else 0.0
-        accepted_layer_payload = ball_truth_layers.get("acceptedBall")
-        if isinstance(accepted_layer_payload, dict):
-            raw_accepted_rows = accepted_layer_payload.get("rows")
-            if isinstance(raw_accepted_rows, list):
-                accepted_ball_rows = raw_accepted_rows
-        accepted_segments = ball_truth_layers.get("acceptedSegments")
-        if isinstance(accepted_segments, list):
-            accepted_segment_count = len(accepted_segments)
-        unknown_gaps = ball_truth_layers.get("unknownGaps")
-        if isinstance(unknown_gaps, list):
-            unknown_gap_count = len(unknown_gaps)
-            longest_unknown_gap_frames = max(
-                (_safe_int(gap.get("frameCount"), 0) for gap in unknown_gaps if isinstance(gap, dict)),
-                default=0,
-            )
-        if accepted_ball_rows is not None:
-            (
-                ball_track_path_length,
-                ball_track_edge_frame_share,
-                ball_track_shows_meaningful_motion,
-                ball_track_viable,
-            ) = _summarize_ball_rows(accepted_ball_rows)
-        direct_observation_breakdown = ball_truth_layers.get("directObservationBreakdown")
-        if isinstance(direct_observation_breakdown, dict):
-            direct_observation_breakdown_present = True
-            raw_long_gap_treatment_outcome = direct_observation_breakdown.get("longGapTreatmentOutcome")
-            if isinstance(raw_long_gap_treatment_outcome, str) and raw_long_gap_treatment_outcome.strip():
-                long_gap_treatment_outcome = raw_long_gap_treatment_outcome.strip()
-            raw_controlled_assignment_outcome = direct_observation_breakdown.get(
-                "controlledPossessionAssignmentOutcome"
-            )
-            if (
-                isinstance(raw_controlled_assignment_outcome, str)
-                and raw_controlled_assignment_outcome.strip()
-            ):
-                controlled_possession_assignment_outcome = raw_controlled_assignment_outcome.strip()
-            raw_frozen_primary_acquisition_mode = direct_observation_breakdown.get(
-                "frozenPrimaryAcquisitionMode"
-            )
-            if (
-                isinstance(raw_frozen_primary_acquisition_mode, str)
-                and raw_frozen_primary_acquisition_mode.strip()
-            ):
-                frozen_primary_acquisition_mode = raw_frozen_primary_acquisition_mode.strip()
-            raw_frozen_detector_model_path = direct_observation_breakdown.get("frozenDetectorModelPath")
-            if (
-                isinstance(raw_frozen_detector_model_path, str)
-                and raw_frozen_detector_model_path.strip()
-            ):
-                frozen_detector_model_path = _redacted_runtime_reference_identity(
-                    raw_frozen_detector_model_path
-                )
-            tracking_observed_ball_frames = _safe_int(
-                direct_observation_breakdown.get("trackingObservedBallFrames"),
-                observed_ball_frames,
-            )
-            raw_probe_observed_ball_frames = _safe_int(
-                direct_observation_breakdown.get("rawProbeObservedBallFrames"),
-                _safe_int(
-                    direct_observation_breakdown.get("probeObservedBallFrames"),
-                    observed_ball_frames,
-                ),
-            )
-            filtered_probe_observed_ball_frames = _safe_int(
-                direct_observation_breakdown.get("filteredProbeObservedBallFrames"),
-                _safe_int(
-                    direct_observation_breakdown.get("probeObservedBallFrames"),
-                    observed_ball_frames,
-                ),
-            )
-            suppressed_probe_observed_ball_frames = _safe_int(
-                direct_observation_breakdown.get("suppressedProbeObservedBallFrames"),
-                max(raw_probe_observed_ball_frames - filtered_probe_observed_ball_frames, 0),
-            )
-            anchored_probe_observed_ball_frames = _safe_int(
-                direct_observation_breakdown.get("anchoredProbeObservedBallFrames"),
-                0,
-            )
-            bridge_probe_observed_ball_frames = _safe_int(
-                direct_observation_breakdown.get("bridgeProbeObservedBallFrames"),
-                0,
-            )
-            probe_observed_ball_frames = _safe_int(
-                direct_observation_breakdown.get("probeObservedBallFrames"),
-                filtered_probe_observed_ball_frames,
-            )
-            probe_only_observed_ball_frames = _safe_int(
-                direct_observation_breakdown.get("probeOnlyObservedBallFrames"),
-                max(probe_observed_ball_frames - tracking_observed_ball_frames, 0),
-            )
-            accepted_from_observed_frames = _safe_int(
-                direct_observation_breakdown.get("acceptedFromObservedFrames"),
-                observed_ball_frames,
-            )
-            accepted_from_observed_ratio = round(
-                _safe_float(
-                    direct_observation_breakdown.get("acceptedFromObservedRatio"),
-                    (accepted_from_observed_frames / accepted_ball_frames) if accepted_ball_frames else 0.0,
-                ),
-                3,
-            )
-        else:
-            tracking_observed_ball_frames = observed_ball_frames
-            raw_probe_observed_ball_frames = observed_ball_frames
-            filtered_probe_observed_ball_frames = observed_ball_frames
-            suppressed_probe_observed_ball_frames = 0
-            anchored_probe_observed_ball_frames = 0
-            bridge_probe_observed_ball_frames = 0
-            probe_observed_ball_frames = observed_ball_frames
-            probe_only_observed_ball_frames = 0
-            accepted_from_observed_frames = observed_ball_frames
-            accepted_from_observed_ratio = round(
-                (accepted_from_observed_frames / accepted_ball_frames) if accepted_ball_frames else 0.0,
-                3,
-            )
-        support_diagnostics = ball_truth_layers.get("supportDiagnostics")
-        if isinstance(support_diagnostics, dict):
-            supported_observed_ball_frames = _safe_int(
-                support_diagnostics.get("supportedObservedBallFrames"),
-                0,
-            )
-            supported_accepted_ball_frames = _safe_int(
-                support_diagnostics.get("supportedAcceptedBallFrames"),
-                0,
-            )
-            supported_accepted_ball_ratio = round(
-                _safe_float(
-                    support_diagnostics.get("supportedAcceptedBallRatio"),
-                    (supported_accepted_ball_frames / accepted_ball_frames) if accepted_ball_frames else 0.0,
-                ),
-                3,
-            )
-            unsupported_accepted_edge_frames = _safe_int(
-                support_diagnostics.get("unsupportedAcceptedEdgeFrames"),
-                0,
-            )
+    ball_truth = _summarize_ball_truth_layers(
+        ball_truth_layers,
+        frame_count=frame_count,
+        with_ball_frames=with_ball_frames,
+    )
+    ball_truth_layers_present = ball_truth["ball_truth_layers_present"]
+    observed_ball_frames = ball_truth["observed_ball_frames"]
+    inferred_ball_frames = ball_truth["inferred_ball_frames"]
+    accepted_ball_frames = ball_truth["accepted_ball_frames"]
+    tracking_observed_ball_frames = ball_truth["tracking_observed_ball_frames"]
+    raw_probe_observed_ball_frames = ball_truth["raw_probe_observed_ball_frames"]
+    filtered_probe_observed_ball_frames = ball_truth["filtered_probe_observed_ball_frames"]
+    suppressed_probe_observed_ball_frames = ball_truth["suppressed_probe_observed_ball_frames"]
+    anchored_probe_observed_ball_frames = ball_truth["anchored_probe_observed_ball_frames"]
+    bridge_probe_observed_ball_frames = ball_truth["bridge_probe_observed_ball_frames"]
+    probe_observed_ball_frames = ball_truth["probe_observed_ball_frames"]
+    probe_only_observed_ball_frames = ball_truth["probe_only_observed_ball_frames"]
+    accepted_from_observed_frames = ball_truth["accepted_from_observed_frames"]
+    accepted_from_observed_ratio = ball_truth["accepted_from_observed_ratio"]
+    supported_observed_ball_frames = ball_truth["supported_observed_ball_frames"]
+    supported_accepted_ball_frames = ball_truth["supported_accepted_ball_frames"]
+    supported_accepted_ball_ratio = ball_truth["supported_accepted_ball_ratio"]
+    unsupported_accepted_edge_frames = ball_truth["unsupported_accepted_edge_frames"]
+    direct_observation_breakdown_present = ball_truth["direct_observation_breakdown_present"]
+    accepted_ball_ratio = ball_truth["accepted_ball_ratio"]
+    accepted_segment_count = ball_truth["accepted_segment_count"]
+    unknown_gap_count = ball_truth["unknown_gap_count"]
+    longest_unknown_gap_frames = ball_truth["longest_unknown_gap_frames"]
+    accepted_ball_rows = ball_truth["accepted_ball_rows"]
+
+    if accepted_ball_rows is not None:
+        (
+            ball_track_path_length,
+            ball_track_edge_frame_share,
+            ball_track_shows_meaningful_motion,
+            ball_track_viable,
+        ) = _summarize_ball_rows(accepted_ball_rows)
+
+    if ball_truth["long_gap_treatment_outcome"] is not None:
+        long_gap_treatment_outcome = ball_truth["long_gap_treatment_outcome"]
+    if ball_truth["controlled_possession_assignment_outcome"] is not None:
+        controlled_possession_assignment_outcome = ball_truth[
+            "controlled_possession_assignment_outcome"
+        ]
+    if ball_truth["frozen_primary_acquisition_mode"] is not None:
+        frozen_primary_acquisition_mode = ball_truth["frozen_primary_acquisition_mode"]
+    if ball_truth["frozen_detector_model_path"] is not None:
+        frozen_detector_model_path = ball_truth["frozen_detector_model_path"]
     if long_gap_treatment_outcome is None:
         long_gap_treatment_outcome = _artifact_metadata_string(
             artifact_metadata_sources,

@@ -2558,3 +2558,71 @@ def test_run_local_ball_recovery_matrix_detector_breadth_screen_uses_reduced_pro
         "proposal_windows_075",
     ]
     assert payload["recommendedProfile"] == "proposal_windows_075"
+
+
+def test_benchmark_match_state_summary_is_pure_and_counts_modes() -> None:
+    result = run_benchmarks_module._summarize_accepted_match_state(
+        {
+            "frames": [
+                {"mode": "controlled_possession", "ballVisibility": "visible"},
+                {"mode": "controlled_possession", "ballVisibility": "hidden"},
+                {"mode": "restart_or_out", "ballVisibility": "inferred"},
+                {"mode": "unknown", "ballVisibility": "hidden"},
+            ],
+            "stateContinuityAppliedFrames": 2,
+        }
+    )
+
+    assert result["accepted_match_state_frames"] == 4
+    assert result["accepted_match_state_coverage_ratio"] == 0.75
+    assert result["visible_state_frames"] == 1
+    assert result["inferred_state_frames"] == 1
+    assert result["hidden_state_frames"] == 2
+    assert result["controlled_state_frames"] == 2
+    assert result["hidden_controlled_state_frames"] == 1
+    assert result["restart_or_out_state_frames"] == 1
+    assert result["state_continuity_applied_frames"] == 2
+    assert result["match_state_mode_counts"] == {
+        "controlled_possession": 2,
+        "restart_or_out": 1,
+        "unknown": 1,
+    }
+
+
+def test_benchmark_ball_truth_summary_preserves_direct_observation_fallbacks() -> None:
+    result = run_benchmarks_module._summarize_ball_truth_layers(
+        {
+            "observedBall": {"frameCount": 4},
+            "inferredBall": {"frameCount": 2},
+            "acceptedBall": {"frameCount": 5, "rows": [{"frameId": 1}]},
+            "acceptedSegments": [{}, {}],
+            "unknownGaps": [{"frameCount": 3}, {"frameCount": 1}],
+            "directObservationBreakdown": {
+                "trackingObservedBallFrames": 3,
+                "probeObservedBallFrames": 4,
+                "acceptedFromObservedFrames": 4,
+                "longGapTreatmentOutcome": " withheld ",
+            },
+            "supportDiagnostics": {
+                "supportedObservedBallFrames": 3,
+                "supportedAcceptedBallFrames": 4,
+                "unsupportedAcceptedEdgeFrames": 1,
+            },
+        },
+        frame_count=10,
+        with_ball_frames=1,
+    )
+
+    assert result["ball_truth_layers_present"] is True
+    assert result["observed_ball_frames"] == 4
+    assert result["inferred_ball_frames"] == 2
+    assert result["accepted_ball_frames"] == 5
+    assert result["accepted_ball_ratio"] == 0.5
+    assert result["accepted_segment_count"] == 2
+    assert result["unknown_gap_count"] == 2
+    assert result["longest_unknown_gap_frames"] == 3
+    assert result["tracking_observed_ball_frames"] == 3
+    assert result["probe_only_observed_ball_frames"] == 1
+    assert result["accepted_from_observed_ratio"] == 0.8
+    assert result["supported_accepted_ball_ratio"] == 0.8
+    assert result["long_gap_treatment_outcome"] == "withheld"
