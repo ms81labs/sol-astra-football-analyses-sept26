@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import ValidationError
 
 from .provider_gateway import ProviderDenied, ProviderGateway
+from .run_benchmarks import summarize_match_benchmark
 from .schemas import MatchRecord
 from .storage import Storage
 from .workbench.errors import DomainError
