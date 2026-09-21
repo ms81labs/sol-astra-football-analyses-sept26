@@ -1450,6 +1450,7 @@ def test_private_completion_source_swap_then_replacement_link_is_indeterminate(
 
     def replace_source_link_replacement_then_raise(source, target, *args, **kwargs):
         source_dir_fd = kwargs["src_dir_fd"]
+        worker.os.fchmod(source_dir_fd, 0o700)
         worker.os.rename(
             source,
             renamed_name,
@@ -1518,6 +1519,7 @@ def test_link_failure_after_private_completion_source_disappears_is_indeterminat
 
     def rename_source_then_raise(source, _target, *args, **kwargs):
         source_dir_fd = kwargs["src_dir_fd"]
+        worker.os.fchmod(source_dir_fd, 0o700)
         worker.os.rename(
             source,
             renamed_name,
@@ -2619,7 +2621,10 @@ def test_concurrent_progress_replacement_uses_one_open_descriptor_snapshot(
         b'"message":"frame"', b'"message":"other"', 1,
     )
     assert replacement_bytes != original_bytes
+    generation_dir = progress_path.parent
+    generation_dir.chmod(0o700)
     replacement_path.write_bytes(replacement_bytes)
+    generation_dir.chmod(0o500)
     real_open = Path.open
     target_opens = 0
     replacement_count = 0
@@ -2639,7 +2644,11 @@ def test_concurrent_progress_replacement_uses_one_open_descriptor_snapshot(
             chunk = self.handle.read(size)
             if chunk and replacement_count == 0:
                 replacement_count += 1
-                os.replace(replacement_path, progress_path)
+                generation_dir.chmod(0o700)
+                try:
+                    os.replace(replacement_path, progress_path)
+                finally:
+                    generation_dir.chmod(0o500)
             return chunk
 
     def replacing_open(path, *args, **kwargs):
