@@ -65,6 +65,18 @@ def create_match_runtime_router(
         cursor: str | None = None,
         limit: int | None = None,
         generationId: str | None = None,
+    ) -> dict:
+        try:
+            with storage.generation_snapshot(match.id, generation_id=generationId) as ref:
+                page = storage.load_frames_page(match.id, after_frame=afterFrame, cursor=cursor, limit=limit)
+                response = MatchFramesResponse(
+                    matchId=match.id, frames=page["frames"], nextCursor=page["nextCursor"],
+                    frameCount=page["frameCount"], intervalEndpoint=page["intervalEndpoint"],
+                ).model_dump(mode="json")
+                return {**response, "generationId": ref.generationId}
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="Frames not ready") from exc
+    
     
     @router.get("/api/matches/{match_id}/evidence")
     def get_match_evidence(
@@ -74,6 +86,15 @@ def create_match_runtime_router(
         cursor: str | None = None,
         limit: int = 100,
         generationId: str | None = None,
+    ) -> dict:
+        try:
+            return snapshot_response(match.id, lambda: storage.load_evidence_page(
+                match.id, interval_start=intervalStart, interval_end=intervalEnd,
+                cursor=cursor, limit=limit,
+            ), generationId)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="Evidence not ready") from exc
+    
     
     @router.get("/api/matches/{match_id}/analytics")
     def get_analytics(match: MatchRecord = Depends(require_match), generationId: str | None = None) -> dict:
