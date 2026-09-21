@@ -14,7 +14,7 @@ from typing import Literal
 
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.routing import APIRoute
 from pydantic import ValidationError
 from starlette.concurrency import run_in_threadpool
@@ -22,15 +22,6 @@ from starlette.datastructures import Headers
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from .export_flatteners import (
-    EVENT_CSV_FIELDS,
-    FRAME_CSV_FIELDS,
-    METRIC_CSV_FIELDS,
-    flatten_events_for_csv,
-    flatten_frames_for_csv,
-    flatten_metrics_for_csv,
-    render_csv,
-)
 from .jobs import JobDispatchError, JobRunner
 from .workbench.errors import (
     BudgetExhausted,
@@ -46,8 +37,8 @@ from .workbench.errors import (
 )
 from .llm import run_analysis
 from .provider_gateway import ProviderBudgetLedger, ProviderDenied, ProviderGateway
-from .report_export import build_match_report_export
 from .review_routes import create_review_router
+from .artifact_routes import create_artifact_router
 from .insight_routes import (
     _dashboard_average,
     _dashboard_difference,
@@ -64,7 +55,6 @@ from .schemas import (
     CreateIssueRequest,
     MatchAnalyticsResponse,
     MatchConfig,
-    MatchEventsResponse,
     MatchFramesResponse,
     MatchRecord,
     ReviewBundleItem,
@@ -1559,67 +1549,6 @@ def create_app(
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail="Analytics not ready") from exc
 
-    @app.get("/api/matches/{match_id}/events")
-    def get_events(match: MatchRecord = Depends(require_match), generationId: str | None = None) -> dict:
-        try:
-            with storage.generation_snapshot(match.id, generation_id=generationId) as ref:
-                response = MatchEventsResponse(matchId=match.id, events=storage.load_events(match.id))
-                return {**response.model_dump(mode="json"), "generationId": ref.generationId}
-        except FileNotFoundError as exc:
-            raise HTTPException(status_code=404, detail="Events not ready") from exc
-
-    def snapshot_csv(match: MatchRecord, generation_id: str | None, kind: str) -> Response:
-        try:
-            with storage.generation_snapshot(match.id, generation_id=generation_id) as ref:
-                if kind == "frames":
-                    rows, fields = flatten_frames_for_csv(storage.load_frames(match.id)), FRAME_CSV_FIELDS
-                elif kind == "events":
-                    rows, fields = flatten_events_for_csv(storage.load_events(match.id)), EVENT_CSV_FIELDS
-                else:
-                    summary, _, _, _ = storage.load_analytics(match.id)
-                    rows, fields = flatten_metrics_for_csv(summary.metricAvailability), METRIC_CSV_FIELDS
-                csv_payload = render_csv(rows, fields)
-                return Response(content=csv_payload, media_type="text/csv", headers={
-                    "Content-Disposition": f'attachment; filename="{match.id}-{kind}.csv"',
-                    "X-Generation-Id": ref.generationId})
-        except FileNotFoundError as exc:
-            raise HTTPException(status_code=404, detail="Match artifacts not ready") from exc
-
-    @app.get("/api/matches/{match_id}/export/frames.csv")
-    def export_frames_csv(match: MatchRecord = Depends(require_match), generationId: str | None = None) -> Response:
-        return snapshot_csv(match, generationId, "frames")
-
-    @app.get("/api/matches/{match_id}/export/events.csv")
-    def export_events_csv(match: MatchRecord = Depends(require_match), generationId: str | None = None) -> Response:
-        return snapshot_csv(match, generationId, "events")
-
-    @app.get("/api/matches/{match_id}/export/metrics.csv")
-    def export_metrics_csv(match: MatchRecord = Depends(require_match), generationId: str | None = None) -> Response:
-        return snapshot_csv(match, generationId, "metrics")
-
-    @app.get("/api/matches/{match_id}/export/match.json")
-    def export_match_json(match: MatchRecord = Depends(require_match), generationId: str | None = None) -> dict:
-        try:
-            return build_match_bundle(storage, match.id, generation_id=generationId)
-        except FileNotFoundError as exc:
-            raise HTTPException(status_code=404, detail="Match artifacts not ready") from exc
-
-    @app.get("/api/matches/{match_id}/reports")
-    def get_generation_reports(match: MatchRecord = Depends(require_match), generationId: str | None = None) -> dict:
-        from .report_store import ReportStore
-        try:
-            return ReportStore(storage).view(match.id, generation_id=generationId)
-        except FileNotFoundError as exc:
-            raise HTTPException(status_code=404, detail="Reports not ready") from exc
-
-    @app.get("/api/matches/{match_id}/reports/legacy/{task_type}")
-    def get_legacy_report(task_type: str, match: MatchRecord = Depends(require_match)) -> dict:
-        from .report_store import ReportStore
-        try:
-            return ReportStore(storage).legacy(match.id, task_type)
-        except (FileNotFoundError, ValueError) as exc:
-            raise HTTPException(status_code=404, detail="Legacy report unavailable") from exc
-
     @app.post("/api/matches/{match_id}/analysis/{analysis_type}")
     def analyze_match(analysis_type: str, match: MatchRecord = Depends(require_match), body: dict | None = None) -> dict:
         match_id = match.id
@@ -1643,24 +1572,6 @@ def create_app(
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
         return result
-
-    @app.get("/api/matches/{match_id}/report/html")
-    def get_match_report_html(match: MatchRecord = Depends(require_match), generationId: str | None = None) -> HTMLResponse:
-        from .report_store import ReportStore
-        try:
-            with storage.generation_snapshot(match.id, generation_id=generationId) as generation:
-                summary, _, formation_timeline, shots = storage.load_analytics(match.id)
-                events = storage.load_events(match.id)
-                view = ReportStore(storage).view(match.id, generation_id=generation.generationId)
-                reports = view["reports"]
-                html = build_match_report_export(
-                    match=storage.get_match(match.id), summary=summary, formation_timeline=formation_timeline,
-                    shots=shots, events=events,
-                    tactical_report=reports.get("tactical_report", {}).get("payload"),
-                    drills=reports.get("drills", {}).get("payload"), report_context=view)
-                return HTMLResponse(content=html, headers={"X-Generation-Id": generation.generationId})
-        except FileNotFoundError as exc:
-            raise HTTPException(status_code=404, detail="Analytics not ready") from exc
 
     @app.get("/api/matches/{match_id}/benchmark")
     def get_match_benchmark(match: MatchRecord = Depends(require_match), includeSelectedClusterProbe: bool = False,
@@ -1733,6 +1644,7 @@ def create_app(
 
     app.include_router(create_review_router(storage, require_match))
     app.include_router(create_insight_router(storage, require_match))
+    app.include_router(create_artifact_router(storage, require_match, build_match_bundle))
 
     if settings.deployment_mode == "local":
         _retire_default_frontend_routes(app)
