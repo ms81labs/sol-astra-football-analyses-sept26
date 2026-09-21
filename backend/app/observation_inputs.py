@@ -24,9 +24,9 @@ def _signature(stat):
 
 
 def _read(path: Path, *, parse=False):
-    from .storage import _open_regular_file
+    from .storage_remote import open_regular_file
     try:
-        fd = _open_regular_file(path)
+        fd = open_regular_file(path)
         with os.fdopen(fd, "rb") as handle:
             before = os.fstat(handle.fileno())
             digest = hashlib.sha256()

@@ -31,7 +31,7 @@ _REMOTE_RESULT_FILENAMES = (
 _COPY_CHUNK_BYTES = 64 * 1024
 
 
-def _open_regular_file(path: Path, flags: int = os.O_RDONLY) -> int:
+def open_regular_file(path: Path, flags: int = os.O_RDONLY) -> int:
     descriptor = -1
     try:
         descriptor = os.open(
@@ -54,9 +54,9 @@ def _open_regular_file(path: Path, flags: int = os.O_RDONLY) -> int:
 def _copy_to_snapshot(source: Path, destination: Path) -> tuple[int, tuple[int, int, int]]:
     source_fd = snapshot_fd = -1
     try:
-        source_fd = _open_regular_file(source)
+        source_fd = open_regular_file(source)
         before = os.fstat(source_fd)
-        snapshot_fd = _open_regular_file(
+        snapshot_fd = open_regular_file(
             destination,
             os.O_RDWR | os.O_CREAT | os.O_EXCL,
         )
