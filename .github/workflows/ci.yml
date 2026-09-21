@@ -162,6 +162,8 @@ jobs:
           pip install --dry-run --require-hashes -r backend/requirements/dev.lock
           pip install --require-hashes -r backend/requirements/dev.lock
           pip install -e '.[cv]' --no-deps
+      - name: Smoke real CV imports
+        run: python -c "import cv2, pandas, ultralytics"
       - name: Run integration tests
         env:
           GA_VERIFICATION_RUN: '1'
