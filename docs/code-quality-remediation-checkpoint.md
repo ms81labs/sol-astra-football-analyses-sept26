@@ -86,3 +86,25 @@ This checkpoint batch restores those defaults.
 - Do not remove hardened filesystem, rollback, fsync, bounded-read, or fail-closed behavior for simplicity.
 - M08 stays until compatibility tests/callers are intentionally retired.
 - M09 stays unless concrete duplicated setup is found.
+
+
+## Resume update — 2026-09-21 after `6f846f3`
+
+Current observed head before this repair: `6f846f371736f6c659bfcd69db3a399588cc9b28`.
+
+That CI run failed for one shared root cause plus targeted F401 cleanup:
+- canonical verify / integration / real-media all failed during collection because
+  `backend/tests/test_audit_v2_h03_calibration.py` intentionally imports
+  `_dashboard_average` from `backend.app.main`;
+- targeted `main.py` F401 found three genuinely dead imports:
+  `StaleGeneration`, `GenerationRecoveryRequired`, and `deployment_mode`.
+
+Ruling:
+- retain `_dashboard_average` as an explicit compatibility export pointing at
+  `insight_routes._dashboard_average`;
+- remove the three truly dead imports;
+- do not restore the historical broad import surface.
+
+After this repair, the next action is **CI verification only**. Do not start a new
+structural refactor unless the final-head lanes are green and the finding register
+shows a concrete remaining issue.

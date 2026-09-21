@@ -51,11 +51,8 @@ from .provider_gateway import (
 )
 from .review_routes import create_review_router
 from .artifact_routes import create_artifact_router
+from . import insight_routes as _insight_routes
 from .insight_routes import create_insight_router
-from .generations import (
-    StaleGeneration,
-    GenerationRecoveryRequired,
-)
 from .settings import (
     ProcessingSettings,
     SettingsError,
@@ -70,8 +67,11 @@ from .workbench.access import (
     object_access_decision,
     verify_hosted_token,
 )
-from .workbench.jobs import deployment_mode
 from .workbench.routes import create_workbench_router
+
+# Compatibility export retained for tests/internal callers that historically imported
+# this helper from backend.app.main. The implementation now lives with insight routes.
+_dashboard_average = _insight_routes._dashboard_average
 
 STORAGE_ROOT_ENV = "GUERILLA_STORAGE_ROOT"
 LOGGER = logging.getLogger(__name__)
