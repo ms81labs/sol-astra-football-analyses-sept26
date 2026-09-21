@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+if __name__ == "__main__":
+    from backend.scripts.runpod_session import require_retired_runpod_disabled
+
+    require_retired_runpod_disabled()
+
 import argparse
 import copy
 from datetime import datetime, timezone
