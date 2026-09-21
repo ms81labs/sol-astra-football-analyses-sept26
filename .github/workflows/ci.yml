@@ -60,6 +60,32 @@ jobs:
             .verification/receipt.json
           if-no-files-found: warn
 
+
+  python-quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements/quality-linux.lock
+      - name: Install Python quality tool
+        run: pip install --require-hashes -r backend/requirements/quality-linux.lock
+      - name: Ruff correctness gate
+        run: ruff check backend --select F821,F822,F823,E999
+      - name: Report Ruff legacy debt
+        run: |
+          mkdir -p .verification/logs
+          ruff check backend --select RUF100,B023 --exit-zero --output-format=concise | tee .verification/logs/ruff-debt.log
+      - name: Upload Ruff debt report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ruff-debt-evidence
+          path: .verification/logs/ruff-debt.log
+          if-no-files-found: error
+
   excluded-backend:
     runs-on: ubuntu-latest
     steps:

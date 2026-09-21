@@ -642,6 +642,7 @@ def test_ci_keeps_canonical_verifier_and_declares_acceptance_lanes() -> None:
         "pyproject.toml",
         "backend/requirements/api.lock",
         "backend/requirements/dev.lock",
+        "backend/requirements/quality-linux.lock",
         "backend/requirements/cpu-cv-macos.lock",
         "backend/requirements/cuda-linux.lock",
         "research-addon/pyproject.toml",
@@ -671,5 +672,8 @@ def test_ci_keeps_canonical_verifier_and_declares_acceptance_lanes() -> None:
     assert 'pytest -m "integration or real_media" backend/tests' in workflow
     assert "pytest -m real_media backend/tests" in workflow
     assert workflow.count("set -o pipefail") == 4
+    assert "ruff check backend --select F821,F822,F823,E999" in workflow
+    assert "ruff check backend --select RUF100,B023 --exit-zero" in workflow
+    assert "pip install --require-hashes -r backend/requirements/quality-linux.lock" in workflow
     assert "github.event_name == 'workflow_dispatch'" in workflow
     assert "npm test" not in workflow

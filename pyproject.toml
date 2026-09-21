@@ -90,3 +90,11 @@ markers = [
   "integration: exercises multiple processes or external process boundaries",
   "real_media: requires local ffmpeg and ffprobe executables",
 ]
+
+
+[tool.ruff]
+target-version = "py311"
+
+[tool.ruff.lint]
+# Roll out correctness first. Broader legacy debt is reported separately in CI.
+select = ["F821", "F822", "F823", "E999"]
