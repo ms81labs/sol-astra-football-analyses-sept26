@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from contextlib import contextmanager
 import hashlib
 import os
@@ -35,6 +36,9 @@ from .schemas import (
     ShotAnalytics,
     TacticalAnnotationRecord,
 )
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 _REMOTE_RESULT_FILENAMES = (
@@ -713,7 +717,13 @@ class Storage:
             return
         try:
             sha = self.source_sha256(match_id)
-        except Exception:
+        except Exception as exc:
+            LOGGER.warning(
+                "source hash unavailable; admitting fallback identity match=%s job=%s error=%s",
+                match_id,
+                job_id,
+                type(exc).__name__,
+            )
             sha = "0" * 64
         self.job_ledger.admit(
             JobRequest(

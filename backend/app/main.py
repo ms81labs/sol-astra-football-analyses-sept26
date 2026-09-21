@@ -700,20 +700,36 @@ def create_app(
             else:
                 dispatch_outcome = "failed"
                 dispatch_error = _DISPATCH_FAILED
-        except Exception:
+        except Exception as exc:
+            LOGGER.warning(
+                "job dispatch outcome uncertain match=%s job=%s error=%s",
+                match.id,
+                job.id,
+                type(exc).__name__,
+            )
             dispatch_outcome = "uncertain"
             dispatch_error = _DISPATCH_UNCERTAIN
 
         if dispatch_error is None:
             try:
                 job = await run_in_threadpool(storage.mark_dispatched, job.id)
-            except Exception:
-                pass
+            except Exception as exc:
+                LOGGER.warning(
+                    "failed to persist dispatched state match=%s job=%s error=%s",
+                    match.id,
+                    job.id,
+                    type(exc).__name__,
+                )
         else:
             try:
                 job = await run_in_threadpool(storage.mark_dispatch_failed, match.id, job.id, error=dispatch_error)
-            except Exception:
-                pass
+            except Exception as exc:
+                LOGGER.warning(
+                    "failed to persist dispatch failure match=%s job=%s error=%s",
+                    match.id,
+                    job.id,
+                    type(exc).__name__,
+                )
         return response(job, outcome=dispatch_outcome, reused=False)
 
     def require_match(
