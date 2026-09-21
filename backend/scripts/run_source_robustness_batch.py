@@ -2535,8 +2535,11 @@ def _first_existing_failing_source_video_path(
         video_path = entry.get("videoPath")
         if isinstance(video_path, str) and video_path.strip():
             candidate = Path(video_path).expanduser()
-            if candidate.exists():
-                return candidate
+            try:
+                if candidate.exists():
+                    return candidate
+            except OSError:
+                continue
     return None
 
 
