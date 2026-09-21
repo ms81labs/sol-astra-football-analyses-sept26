@@ -8337,8 +8337,9 @@ def process_video(
     filtered_probe_observed_ball_rows = []
     probe_observed_pass_started_at = time.monotonic()
     emit_worker_heartbeat("probeObservedPass", "started")
+    probe_source_model = auxiliary_ball_model or primary_model
     probe_model = _CountingPredictor(
-        auxiliary_ball_model or primary_model,
+        probe_source_model,
         sampling_audit.record_recovery_inference,
     )
     probe_detector_profile = resolved_auxiliary_ball_model_profile or resolved_primary_detector_profile
@@ -8361,7 +8362,7 @@ def process_video(
             profile["directSeedRetryScales"] = [256]
     ball_pipeline_trace["probeRecoveryConf"] = probe_recovery_settings["recoveryConf"]
     ball_pipeline_trace["probeRecoveryImgsz"] = probe_recovery_settings["recoveryImgsz"]
-    if hasattr(probe_model, "predict"):
+    if hasattr(probe_source_model, "predict"):
         probe_observed_ball_rows = recover_ball_rows(
             video_path,
             model=probe_model,
