@@ -48,7 +48,13 @@ from .llm import run_analysis
 from .provider_gateway import ProviderBudgetLedger, ProviderDenied, ProviderGateway
 from .report_export import build_match_report_export
 from .review_routes import create_review_router
-from .insight_routes import create_insight_router
+from .insight_routes import (
+    _dashboard_average,
+    _dashboard_difference,
+    _dashboard_metric_value,
+    _xg_balance,
+    create_insight_router,
+)
 from .generations import StaleGeneration, GenerationRecoveryRequired
 from .settings import ProcessingSettings, SettingsError, canonicalize_origin
 from .trust_crops import compute_trust_crops
