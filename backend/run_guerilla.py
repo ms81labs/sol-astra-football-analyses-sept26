@@ -1970,7 +1970,19 @@ def _build_player_proposal_crop_windows_by_frame(
         frame_has_direct_seed_context_window = False
         frame_has_touchline_escape_window = False
 
-        def _append_selected_spec(window, kind, **extra_fields):
+        def _append_selected_spec(
+            window,
+            kind,
+            *,
+            selected_windows=selected_windows,
+            sampled_frame_id=sampled_frame_id,
+            selected_specs=selected_specs,
+            seed_mode=seed_mode,
+            seed_center=seed_center,
+            seed_center_x=seed_center_x,
+            seed_center_y=seed_center_y,
+            **extra_fields,
+        ):
             nonlocal frame_has_player_ranked_window
             nonlocal frame_has_direct_seed_tight_window
             nonlocal frame_has_direct_seed_context_window
@@ -5219,7 +5231,25 @@ def recover_ball_rows(
                     elif str(proposal_window_kind or "") == "player_ranked":
                         player_ranked_crop_areas.append(crop_area)
 
-                def _predict_candidate_rows(*, imgsz, inference_mode):
+                def _predict_candidate_rows(
+                    *,
+                    imgsz,
+                    inference_mode,
+                    prediction_frame=prediction_frame,
+                    frame_count=frame_count,
+                    timestamp=timestamp,
+                    H=H,
+                    pitch_points=pitch_points,
+                    x_offset=x_offset,
+                    y_offset=y_offset,
+                    crop_window=crop_window,
+                    proposal_seed_center=proposal_seed_center,
+                    proposal_seed_mode=proposal_seed_mode,
+                    proposal_window_kind=proposal_window_kind,
+                    rescue_mode=rescue_mode,
+                    frame=frame,
+                    decoded=decoded,
+                ):
                     attempt_started_at = time.monotonic()
                     prediction = model.predict(
                         prediction_frame,
@@ -6781,7 +6811,7 @@ def run_ball_recovery_experiment(
             ],
         }
 
-        def emit_profile_progress(stage_status, **extra_fields):
+        def emit_profile_progress(stage_status, profile_progress_context=profile_progress_context, **extra_fields):
             if progress_callback is None:
                 return
             try:

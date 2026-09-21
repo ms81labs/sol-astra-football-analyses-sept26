@@ -2380,7 +2380,7 @@ def test_calibration_team_and_track_edits_reuse_image_space_detections() -> None
             change=change,
             previous_identity="old-cal",
             current_identity="new-cal",
-            vision=lambda: calls.append(change) or {"rows": [{"Frame_ID": 1}]},
+            vision=lambda change=change: calls.append(change) or {"rows": [{"Frame_ID": 1}]},
         )
         assert result["visionInvoked"] is False
         assert result["kind"] == "plan"

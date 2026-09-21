@@ -146,12 +146,12 @@ def test_compare_local_remote_proof_sets_all_supported_diagnoses(tmp_path, monke
         monkeypatch.setattr(
             compare_local_remote_proof,
             "run_local_ball_recovery_matrix",
-            lambda **kwargs: local_result,
+            lambda local_result=local_result, **kwargs: local_result,
         )
         monkeypatch.setattr(
             compare_local_remote_proof,
             "summarize_match_benchmark",
-            lambda storage, match_id: FakeSummary(
+            lambda storage, match_id, remote_payload=remote_payload: FakeSummary(
                 {
                     "matchId": match_id,
                     "jobId": "job-123",

@@ -230,7 +230,7 @@ def test_workbench_corrections_search_jobs_and_unknown_metrics(tmp_path: Path) -
 def test_workbench_concurrent_requests_do_not_change_factual_measurements(tmp_path: Path) -> None:
     async def body():
         async for client in _client(tmp_path):
-            async def post_search(suffix: str):
+            async def post_search(suffix: str, client=client):
                 return await client.post(
                     "/api/workbench/search",
                     json={
