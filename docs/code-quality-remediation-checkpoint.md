@@ -318,3 +318,70 @@ the local `_generation_reader` decorator; moving them would require an unnecessa
 A focused AST seam regression prevents the eight extracted methods from drifting back into `Storage`.
 
 Next action: inspect CI on this head. If any lane is red, debug that exact regression before another H03 extraction.
+
+## Final closure checkpoint — 2026-09-21
+
+Verified code head before this docs-only closure commit:
+`c64fb87a671d88275d29991e488dad68314b72e0` (`CQA H03: extract identity state seam`).
+
+Fresh verification on CI run 610:
+- python-quality: green;
+- api-profile: green;
+- integration: green;
+- real-media: green;
+- excluded-backend: green;
+- macOS profile: green;
+- canonical verify: green;
+- GPU acceptance: skipped as expected for a normal push.
+
+Separate C06 media execution-evidence workflow run 11: green.
+
+### H03 closure ruling
+
+H03 is materially addressed and closed for this remediation program.
+The audit required preserving the public `Storage` API and extracting cohesive seams incrementally,
+not a repository-pattern rewrite. The resulting facade now delegates to focused seams for:
+- job/admission persistence;
+- review persistence;
+- correction-log persistence;
+- remote-result publication/rollback;
+- calibration state/revisions;
+- identity state/mutations.
+
+Current structural evidence at `c64fb87a671d88275d29991e488dad68314b72e0`:
+- `backend/app/storage.py`: 2,035 total lines, ~1,888 lines from `class Storage` onward;
+- audit baseline: ~3,140-line `Storage` class;
+- public facade preserved;
+- latest calibration and identity method bodies were byte-identical to their preceding green heads;
+- focused seam regressions protect job, review, calibration, and identity ownership boundaries.
+
+Further extraction is intentionally not part of this closure because the remaining surface is dominated by
+core filesystem/generation persistence and domain-facing read/assembly methods; another split without a
+clear responsibility boundary would be LOC-driven rather than evidence-driven.
+
+### Final register disposition
+
+Closed / materially addressed:
+C01, C02, C03, H01, H02, H03, H04, H05, H06, H07, H08,
+M01, M02, M03, M04, M05, M06, M07, M10.
+
+Intentionally retained with explicit rulings:
+- M08: retired/compatibility routes remain because tests assert 410 `ROUTE_RETIRED` behavior; deletion would change a public compatibility contract.
+- M09: no forced test-file split because no concrete duplicated setup justified a cosmetic reorganization.
+
+Positive properties preserved:
+- hardened filesystem / rollback semantics;
+- hash-locked dependency profiles;
+- explicit uncertainty contracts;
+- extensive regression coverage, now with improved execution topology.
+
+### Final structural snapshot
+
+- `backend/app/main.py`: 399 lines, zero inline `@app.<method>` route decorators;
+- `backend/app/run_benchmarks.py::summarize_match_benchmark`: ~448 lines, down from ~1,003;
+- `backend/app/storage.py`: 2,035 lines, with focused mixin/component seams;
+- `backend/tests/test_script_hygiene.py`: repo-wide AST guard for H06 bootstrap/UTC-helper regressions;
+- CI has automatic homes for the formerly excluded backend tests.
+
+No further code-quality refactor is queued by this audit. Reopen a finding only on new regression evidence
+or an explicitly approved contract/product change.
