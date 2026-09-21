@@ -108,3 +108,17 @@ Ruling:
 After this repair, the next action is **CI verification only**. Do not start a new
 structural refactor unless the final-head lanes are green and the finding register
 shows a concrete remaining issue.
+
+
+## Resume update — final cleanup after `0eb9258`
+
+The compatibility-export repair on `0eb9258` restored
+`backend.app.main._dashboard_average` explicitly and removed the remaining dead
+top-level imports. During final Ponytail review, three private ingest constants
+(`_IDEMPOTENCY_KEY`, `_DISPATCH_FAILED`, `_DISPATCH_UNCERTAIN`) were found
+stranded in `main.py` after ingest routing moved to `match_ingest_routes.py`.
+They and the now-unused `re` import are removed in the next commit.
+
+Next action after a fresh resume: inspect the latest HEAD CI only. No new structural
+refactor is planned unless a red lane or final register check provides concrete
+evidence.

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import logging
 import os
-import re
 import time
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -75,9 +74,6 @@ _dashboard_average = _insight_routes._dashboard_average
 
 STORAGE_ROOT_ENV = "GUERILLA_STORAGE_ROOT"
 LOGGER = logging.getLogger(__name__)
-_IDEMPOTENCY_KEY = re.compile(r"[A-Za-z0-9._:-]{1,128}\Z")
-_DISPATCH_FAILED = "Job dispatch failed before processing started."
-_DISPATCH_UNCERTAIN = "Job dispatch outcome is uncertain; automatic retry is disabled."
 
 
 class BrowserOriginMiddleware:
