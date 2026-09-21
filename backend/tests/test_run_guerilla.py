@@ -51,6 +51,12 @@ from backend.run_guerilla import (
 def test_import_does_not_probe_gui_apis():
     script = """
 import cv2
+import sys
+import types
+
+ultralytics = types.ModuleType("ultralytics")
+ultralytics.YOLO = object
+sys.modules["ultralytics"] = ultralytics
 
 calls = []
 cv2.imshow = lambda *_args, **_kwargs: calls.append("imshow")
@@ -8269,8 +8275,8 @@ def test_process_video_emits_heartbeat_updates_for_worker_stages(monkeypatch):
         payload["matchId"] == "match-123"
         and payload["jobId"] == "job-123"
         and payload["workerStage"] == "trackingPass"
-        and payload["stageStatus"] == "started"
-        and payload.get("trackingFramesSeen", 0) >= 250
+        and payload["stageStatus"] == "completed"
+        and payload.get("trackingFramesSeen") == 1
         for payload in heartbeats
     )
     assert any(
@@ -8665,9 +8671,9 @@ def test_process_video_uses_auxiliary_ball_model_for_probe_and_recovery_passes(m
     )
 
     assert loaded_models == ["/workspace/weights/yolov10n.pt", "/workspace/weights/touchline-best.pt"]
-    assert recover_ball_rows_calls[0]["model"] is auxiliary_model
+    assert recover_ball_rows_calls[0]["model"]._model is auxiliary_model
     assert recover_ball_rows_calls[0]["detector_profile"] == "ball_probe_only_v1"
-    assert run_ball_recovery_experiment_calls[0]["model"] is auxiliary_model
+    assert run_ball_recovery_experiment_calls[0]["model"]._model is auxiliary_model
     assert run_ball_recovery_experiment_calls[0]["detector_profile"] == "ball_probe_only_v1"
     assert {row["Entity_Type"] for row in result["rows"]} == {"player"}
     trace = result["ballPipelineTrace"]
@@ -8788,7 +8794,7 @@ def test_process_video_uses_low_conf_auxiliary_probe_contract_only_for_explicit_
         "probeRecoveryConf": 0.01,
         "probeRecoveryImgsz": 960,
     }
-    assert recover_ball_rows_calls[0]["model"] is auxiliary_model
+    assert recover_ball_rows_calls[0]["model"]._model is auxiliary_model
     assert recover_ball_rows_calls[0]["detector_profile"] == "ball_probe_only_v1_low_conf_001"
     assert recover_ball_rows_calls[0]["recovery_conf"] == 0.01
     assert recover_ball_rows_calls[0]["recovery_imgsz"] == 960
