@@ -25,3 +25,7 @@ def test_scripts_do_not_bootstrap_sys_path_or_redefine_utc_helper() -> None:
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "_utc_now_iso":
                 violations.append(f"{path.name}:{node.lineno}: local _utc_now_iso")
     assert violations == [], "\n".join(violations)
+
+
+if __name__ == "__main__":
+    test_scripts_do_not_bootstrap_sys_path_or_redefine_utc_helper()

@@ -153,3 +153,11 @@ Ruling:
 - do not restore any other legacy `main.py` import surface.
 
 After this commit, priorities remain: H06 hygiene gate first, then exact current-head CI closure.
+
+
+## Resume update — fast H06 gate
+
+The script-hygiene AST regression now also runs directly in the `python-quality` job via:
+`python backend/tests/test_script_hygiene.py`.
+
+This keeps H06 failures in the fast lane instead of waiting for the full canonical verifier.

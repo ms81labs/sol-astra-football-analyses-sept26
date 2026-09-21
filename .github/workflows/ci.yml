@@ -75,6 +75,8 @@ jobs:
       - name: Ruff correctness gate
         run: ruff check backend --select F821,F822,F823
       - run: ruff check backend/app/main.py --select F401
+      - name: Script hygiene gate
+        run: python backend/tests/test_script_hygiene.py
       - name: Report Ruff legacy debt
         if: always()
         run: |
