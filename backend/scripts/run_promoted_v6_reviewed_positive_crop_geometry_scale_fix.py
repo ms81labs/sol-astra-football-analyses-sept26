@@ -1,16 +1,14 @@
 from __future__ import annotations
 
+from backend.scripts.football_external_real_eval_chain_common import utc_now_iso as _utc_now_iso
+
 import argparse
 from collections import Counter
-from datetime import datetime, timezone
 import json
 from pathlib import Path
-import sys
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from backend.app.run_benchmarks import DEFAULT_STORAGE_ROOT  # noqa: E402
 
@@ -30,10 +28,6 @@ BUCKET_SELECTED_NOT_ACCEPTED = "reviewed_positive_selected_not_accepted"
 BUCKET_ACCEPTED = "reviewed_positive_accepted"
 
 AUDIT_RESCUE_BUCKET = "reviewed_positive_crop_geometry_scale_rescue_available"
-
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _load_json_dict(path: Path) -> dict[str, Any]:
