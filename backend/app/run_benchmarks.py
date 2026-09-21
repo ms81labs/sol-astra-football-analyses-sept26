@@ -737,9 +737,9 @@ def _ball_truth_layer_frame_count(ball_truth_layers: dict[str, object], layer_na
     if not isinstance(layer_payload, dict):
         return 0
     summary_payload = layer_payload.get("summary")
-    if not isinstance(summary_payload, dict):
-        return 0
-    return _safe_int(summary_payload.get("frameCount"), 0)
+    if isinstance(summary_payload, dict):
+        return _safe_int(summary_payload.get("frameCount"), 0)
+    return _safe_int(layer_payload.get("frameCount"), 0)
 
 
 def _latest_job_for_match(storage: Storage, match_id: str) -> str | None:

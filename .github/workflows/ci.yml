@@ -162,8 +162,8 @@ jobs:
           pip install --dry-run --require-hashes -r backend/requirements/dev.lock
           pip install --require-hashes -r backend/requirements/dev.lock
           pip install -e '.[cv]' --no-deps
-      - name: Smoke real CV imports
-        run: python -c "import cv2, pandas, ultralytics"
+      - name: Smoke real CPU CV imports
+        run: python -c "import cv2, pandas"
       - name: Run integration tests
         env:
           GA_VERIFICATION_RUN: '1'
@@ -229,6 +229,8 @@ jobs:
           pip install --dry-run --require-hashes -r backend/requirements/cuda-linux.lock
           pip install --require-hashes -r backend/requirements/cuda-linux.lock
           pip install -e '.[cv,cuda]' --no-deps
+      - name: Smoke real GPU CV imports
+        run: python -c "import cv2, pandas, ultralytics"
       - name: Run GPU and football evaluation acceptance
         env:
           FOOTBALL_EVALUATION_APPROVED: '1'

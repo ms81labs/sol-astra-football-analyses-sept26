@@ -282,7 +282,7 @@ async def _test_trust_crops_endpoint_returns_serialized_crops(tmp_path: Path, mo
         match_id = response.json()["matchId"]
 
         monkeypatch.setattr(
-            "backend.app.main.compute_trust_crops",
+            "backend.app.review_routes.compute_trust_crops",
             lambda frames, assignments, max_crops=20: [
                 SimpleNamespace(
                     frameStart=3,

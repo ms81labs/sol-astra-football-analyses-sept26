@@ -642,6 +642,7 @@ def test_ci_keeps_canonical_verifier_and_declares_acceptance_lanes() -> None:
     assert "if: always()" in workflow
     assert ".verification/logs/" in workflow
     assert 'pytest -m "integration or real_media" backend/tests' in workflow
+    assert 'python -c "import cv2, pandas"' in workflow
     assert 'python -c "import cv2, pandas, ultralytics"' in workflow
     assert "pytest -m real_media backend/tests" in workflow
     assert workflow.count("set -o pipefail") == 4
