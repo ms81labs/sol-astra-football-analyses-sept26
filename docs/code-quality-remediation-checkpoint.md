@@ -282,3 +282,20 @@ The canonical verifier failures are separate structural-extraction regressions. 
 
 This repair changes only those three roots. Next action: inspect CI on the new head; do not
 restart H06 or begin another structural refactor while any current-head lane is red.
+
+## Resume update — H03 calibration seam
+
+Base head `d0a655bed8c18dc1d038f89f34e8598cdfe373ae` completed all applicable CI lanes green before this refactor.
+
+H03 next cohesive extraction:
+- calibration preview/commit workflow;
+- calibration evaluation persistence;
+- calibration revision load/save/migration helpers.
+
+The public `Storage` facade is preserved via `_CalibrationStorageMixin` in
+`backend/app/storage_calibration.py`. Eleven existing methods move without behavior changes.
+A focused AST seam regression asserts those methods no longer live in `Storage` and remain
+owned by the calibration mixin.
+
+Next action: inspect CI on the new head. If any lane is red, debug that exact regression before
+starting another H03 extraction.
