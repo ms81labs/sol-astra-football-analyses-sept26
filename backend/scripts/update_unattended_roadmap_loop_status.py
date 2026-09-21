@@ -5,11 +5,8 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-import sys
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from backend.app.unattended_roadmap_loop import ACTIVE_CHECKLIST_RELATIVE_PATH
 from backend.app.unattended_roadmap_loop import STATUS_ARTIFACT_RELATIVE_PATH

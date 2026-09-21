@@ -236,3 +236,21 @@ Progress persisted in this commit:
 Resume from original index `252` only. After the final 45 are transformed,
 run the fast python-quality script-hygiene gate and treat its output as authoritative.
 
+## Resume update — H06 transformation complete
+
+All original H06 unique-offender indexes `0..296` (297 scripts) have now been transformed.
+
+The authoritative source that originally reported the debt had:
+- 297 scripts with `sys.path.insert/append`;
+- 180 canonical local `_utc_now_iso` copies;
+- 477 total violations.
+
+State after this commit:
+- transformation phase: complete;
+- next action: **verification only**;
+- run/inspect the fast `python-quality` job and its `test_script_hygiene.py` gate;
+- if the gate reports any offender, fix exactly the reported residuals;
+- do not restart the bulk codemod or redo already transformed scripts.
+
+H06 is not declared closed until the fast hygiene gate is green on this exact head.
+

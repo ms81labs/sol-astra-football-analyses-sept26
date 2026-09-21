@@ -7,13 +7,10 @@ import json
 import mimetypes
 from pathlib import Path
 import socket
-import sys
 from typing import Any
 from urllib.parse import quote, unquote, urlparse
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from backend.app.run_benchmarks import DEFAULT_STORAGE_ROOT
 from backend.scripts.review_io import (
