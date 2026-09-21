@@ -1,16 +1,14 @@
 from __future__ import annotations
 
+from backend.scripts.football_external_real_eval_chain_common import utc_now_iso as _utc_now_iso
+
 # ruff: noqa: E402
 
 import argparse
-from datetime import datetime, timezone
 import json
 from pathlib import Path
-import sys
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from backend.app.run_benchmarks import DEFAULT_STORAGE_ROOT
 
@@ -19,10 +17,6 @@ DEFAULT_SUITE_NAME = "frozen-viable-baseline-slice-suite"
 PROMOTION_BATCH_NAME = "touchline_detector_candidate_promotion_validation_v1"
 NEXT_LEVER = "promote_touchline_detector_candidate"
 DEFAULT_RUNTIME_CHANGE_BLOCKERS = ["failing_source_not_viable"]
-
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _load_json(path: Path) -> dict[str, object]:

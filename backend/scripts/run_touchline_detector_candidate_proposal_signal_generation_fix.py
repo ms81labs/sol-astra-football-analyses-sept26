@@ -2,25 +2,23 @@
 
 from __future__ import annotations
 
+from backend.scripts.football_external_real_eval_chain_common import utc_now_iso as _utc_now_iso
+
 if __name__ == "__main__":
     from backend.scripts.runpod_session import require_retired_runpod_disabled
 
     require_retired_runpod_disabled()
 
 import argparse
-from datetime import datetime, timezone
 import json
 import os
 from pathlib import Path
 import shlex
-import sys
 import tempfile
 
 import cv2
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from backend.app.run_benchmarks import DEFAULT_STORAGE_ROOT  # noqa: E402
 from backend.app.storage import Storage  # noqa: E402
@@ -53,10 +51,6 @@ PLATEAU_BASELINE = {
     "ballTrackViable": False,
     "ballTrackEdgeFrameShare": 0.812,
 }
-
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _load_json(path: Path) -> dict[str, object]:
