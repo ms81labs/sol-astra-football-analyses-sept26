@@ -225,3 +225,14 @@ The same guarded transform remains in force. On resume, do not redo `0..211`.
 Continue from original index `212` (equivalently authoritative remainder offset `128`),
 then require the fast python-quality script-hygiene gate to report zero offenders.
 
+## Resume update — H06 bulk consolidation checkpoint #4
+
+Progress persisted in this commit:
+- original unique-offender indexes `0..251` are now rewritten and durable;
+- newly completed in this tranche: original indexes `212..251` (40 scripts);
+- next original offender index: `252`;
+- remaining scripts: 45.
+
+Resume from original index `252` only. After the final 45 are transformed,
+run the fast python-quality script-hygiene gate and treat its output as authoritative.
+
