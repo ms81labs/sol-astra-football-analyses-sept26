@@ -184,3 +184,32 @@ Resume algorithm:
 3. derive the ordered unique offender list from that log;
 4. continue from offender index 84;
 5. after all 297 scripts are transformed, require the fast Script hygiene gate to pass before closure.
+
+## Resume update — H06 bulk consolidation checkpoint #2
+
+Base durable checkpoint was `e8cc02fc54c91ee1983259eeb4eabcf0ea1f39a8`.
+
+Authoritative fast-gate remainder at that checkpoint:
+- remaining offending scripts: 213
+- these correspond to original offender indexes `84..296`
+
+Progress persisted in this commit:
+- original unique-offender indexes `0..147` are now rewritten and durable;
+- newly completed in this tranche: original indexes `84..147` (64 scripts);
+- next original offender index: `148`;
+- remaining scripts after this checkpoint: 149.
+
+Transform remains guarded:
+- remove only actual `sys.path.insert/append` bootstrap statements (and their empty guard);
+- remove `import sys` only when no other `sys.*` use remains;
+- replace only canonical local `_utc_now_iso() -> datetime.now(timezone.utc).isoformat()` with
+  `football_external_real_eval_chain_common.utc_now_iso as _utc_now_iso`;
+- noncanonical UTC helper bodies must be left for manual review, never silently rewritten.
+
+Resume algorithm:
+1. inspect current HEAD and this checkpoint;
+2. use the python-quality script-hygiene gate as authority;
+3. continue from original offender index `148` (equivalently remainder offset `64`);
+4. do not redo `0..147`;
+5. after the final offender is transformed, require the fast H06 gate green before audit closure.
+
