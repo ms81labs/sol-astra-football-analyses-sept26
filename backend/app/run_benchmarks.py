@@ -174,16 +174,6 @@ class MatchBenchmarkSummary(BaseModel):
     proposalInterpolatedSeedFrames: int = 0
     proposalSingleSeedFrames: int = 0
     proposalUnseededFrames: int = 0
-    acceptedMatchStateFrames: int = 0
-    acceptedMatchStateCoverageRatio: float = 0.0
-    visibleStateFrames: int = 0
-    inferredStateFrames: int = 0
-    hiddenStateFrames: int = 0
-    controlledStateFrames: int = 0
-    hiddenControlledStateFrames: int = 0
-    restartOrOutStateFrames: int = 0
-    stateContinuityAppliedFrames: int = 0
-    matchStateModeCounts: dict[str, int] = Field(default_factory=dict)
     proposalMeanWindowWidth: float = 0.0
     bestProposalRawDetectedFrames: int = 0
     bestProposalAfterSeedCollapseFrames: int = 0
