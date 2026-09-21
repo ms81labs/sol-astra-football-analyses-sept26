@@ -1,12 +1,9 @@
 from __future__ import annotations
 
 from pathlib import Path
-import sys
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from backend.scripts.football_external_real_eval_chain_common import main_for  # noqa: E402
 from backend.scripts.video_to_analysis_operational_sprint_common import (  # noqa: E402
