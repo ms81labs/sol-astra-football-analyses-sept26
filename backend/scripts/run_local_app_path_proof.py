@@ -4,11 +4,8 @@ import argparse
 import json
 from pathlib import Path
 import time
-import sys
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from backend.app.jobs import JobRunner  # noqa: E402
 from backend.app.proof_summary import build_canonical_proof_summary  # noqa: E402
