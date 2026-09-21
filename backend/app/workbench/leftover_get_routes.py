@@ -12,6 +12,224 @@ from fastapi.responses import HTMLResponse
 from ..storage import Storage
 from .leftover_http import leftover_http_enabled
 
+from .leftover_support import (
+    EXTERNAL_BENCHMARK_DECISION_SURFACE_DIR,
+    EXTERNAL_BENCHMARK_UI_BINDING_DIR,
+    EXTERNAL_SOCCERNET_UI_BINDING_DIR,
+    EXTERNAL_SOCCERTRACK_MATCH_BUNDLE_BRIDGE_DIR,
+    EXTERNAL_SOCCERTRACK_UI_BINDING_DIR,
+    VIDEO_TO_ANALYSIS_ACCEPTANCE_REPORT_BINDING_DIR,
+    VIDEO_TO_ANALYSIS_BOUNDED_NEXT_SAMPLE_REPORT_BINDING_DIR,
+    VIDEO_TO_ANALYSIS_DETECTOR_EVALUATION_REPORT_BINDING_DIR,
+    VIDEO_TO_ANALYSIS_FINISH_LINE_PRODUCT_BINDING_DIR,
+    VIDEO_TO_ANALYSIS_OPERATOR_DASHBOARD_BINDING_DIR,
+    VIDEO_TO_ANALYSIS_OPERATOR_HANDOFF_BINDING_DIR,
+    VIDEO_TO_ANALYSIS_POST_RELEASE_MONITORING_BINDING_DIR,
+    VIDEO_TO_ANALYSIS_PROMOTED_RUNTIME_MONITORING_BINDING_DIR,
+    VIDEO_TO_ANALYSIS_PROMOTION_REVIEW_REPORT_BINDING_DIR,
+    VIDEO_TO_ANALYSIS_REAL_VIDEO_SCALEOUT_REPORT_BINDING_DIR,
+    VIDEO_TO_ANALYSIS_RELEASE_READOUT_BINDING_DIR,
+    _challenger_adapters_view,
+    _decoder_challengers_view,
+    _four_rates_view,
+    _legacy_geometry,
+    _legacy_geometry_profile,
+    _production_decode_frames,
+    _stale_permissions_view,
+    _unmeasured_landmark_preview,
+    _unpromoted_receipt,
+)
+from .access import (
+    access_deletion_procedure,
+    constrained_decoder,
+    deployment_encryption,
+    least_privilege_storage,
+    protocol_network_allowlist,
+    public_exposure_gate,
+    signed_scoped_object_access,
+    untrusted_model_output,
+)
+from .admission import (
+    admit_camera,
+)
+from .adoption import (
+    dependency_register,
+)
+from .artifacts import (
+    columnar_observation_store,
+    cross_tenant_cache_reuse,
+    object_storage_adapter,
+    secrets_in_artifacts,
+)
+from .assistance import (
+    dual_budgets,
+    embeddings_retrieve,
+    escalation_requires_quality_gap,
+    network_failure_preserves_unknown,
+    preemptible_allowed,
+    providers_disabled_fallback,
+)
+from .benchmarks import (
+    experiment_receipt,
+)
+from .contracts import (
+    unknown_metric,
+)
+from .costs import (
+    credit_allocation,
+    decimal_gb_to_gib,
+    historical_capacity_seconds,
+    scale_scenario,
+)
+from .decisions import (
+    architecture_decisions,
+)
+from .dossier import (
+    build_baseline_dossier,
+    build_release_dossier,
+)
+from .evaluation import (
+    analyst_workflow_measures,
+    current_repository_evaluation_gate,
+    evaluate_protocol_prerequisites,
+    evaluation_measures,
+    score_hota_idf1,
+)
+from .events import (
+    learned_temporal,
+)
+from .evidence import (
+    DEFINITION_VERSION,
+    round_trip_unknown,
+)
+from .executables import (
+    resolve_trusted_executable,
+)
+from .flags import (
+    feature_enabled,
+    shadow_metric,
+)
+from .geometry import (
+    evaluate_landmarks,
+    ground_contact_point,
+)
+from .identity import (
+    appearance_embedding_policy,
+    candidate_rejoin,
+    cluster_mapping,
+    cross_season_identity,
+    face_recognition,
+    reconnect_across_cut,
+)
+from .incidents import (
+    broadcast_replay_not_simultaneous,
+    elevated_body_part_homography,
+    invisible_entity_not_repaired_by_larger_model,
+    level0_incident_package,
+    level1_positional_aid,
+    level2_schematic_replay,
+    level3_multiview,
+    vlm_confidence_is_not_referee,
+)
+from .jobs import (
+    deployment_mode,
+    distributed_broker,
+    egress_policy,
+    signed_scoped_job_access,
+    vector_database,
+)
+from .media import (
+    decode_memory_policy,
+    vid_stride_policy,
+)
+from .milestones import (
+    milestone_plan,
+    owners,
+    progress_signal,
+)
+from .native import (
+    cuda_visibility_is_not_video_capability,
+    custom_native_justification,
+    ffmpeg_build_review,
+    native_gate,
+    no_rpc_fleet,
+    pinned_native_artifacts,
+    probe_gpu,
+    qualified_os_profiles,
+    quantized_weight_memory,
+)
+from .privacy import (
+    dpia_screen,
+    residency_claim,
+)
+from .providers import (
+    cloud_adapter,
+    local_adapter,
+    provider_roster,
+)
+from .quantities import (
+    heatmap_availability,
+    pitch_axes,
+    split_scores,
+    transform_legacy_display,
+)
+from .recovery import (
+    full_disk,
+    recovery_objectives,
+    support_bundle,
+    unresolved_incidents,
+)
+from .reports import (
+    held_out_questions,
+)
+from .repository import (
+    http_may_run_gpu,
+    RepositoryAdapter,
+    vector_broker_required,
+)
+from .research import (
+    research_lane,
+)
+from .review import (
+    collaboration_lock,
+)
+from .rights import (
+    dataset_manifest,
+    incident_response,
+    licence_register,
+    rights_register,
+)
+from .risks import (
+    independent_reviewer,
+    risk_register,
+    telestration_before_3d,
+    worked_match_flow,
+)
+from .roster import (
+    frontier_provider_role,
+    label_products,
+    model_roster,
+    promotion_gate,
+    video_model_roster,
+)
+from .shot_model import (
+    tree_challenger,
+)
+from .targets import (
+    metadata_api_targets,
+)
+from .timing import (
+    gpu_timing_scope,
+    stage_timing,
+)
+from .training import (
+    data_pools,
+    drill_library,
+    sampling_policy,
+)
+from .xt import (
+    xt_deferred_plan,
+)
 
 def create_leftover_get_router(storage: Storage) -> APIRouter:
     json_router, _html_router = create_leftover_get_routers(storage)
@@ -19,149 +237,6 @@ def create_leftover_get_router(storage: Storage) -> APIRouter:
 
 
 def create_leftover_get_routers(storage: Storage) -> tuple[APIRouter, APIRouter]:
-    import backend.app.main as _main
-
-    DEFINITION_VERSION = _main.DEFINITION_VERSION
-    RepositoryAdapter = _main.RepositoryAdapter
-    access_deletion_procedure = _main.access_deletion_procedure
-    admit_camera = _main.admit_camera
-    analyst_workflow_measures = _main.analyst_workflow_measures
-    appearance_embedding_policy = _main.appearance_embedding_policy
-    architecture_decisions = _main.architecture_decisions
-    broadcast_replay_not_simultaneous = _main.broadcast_replay_not_simultaneous
-    build_baseline_dossier = _main.build_baseline_dossier
-    build_release_dossier = _main.build_release_dossier
-    candidate_rejoin = _main.candidate_rejoin
-    cloud_adapter = _main.cloud_adapter
-    cluster_mapping = _main.cluster_mapping
-    collaboration_lock = _main.collaboration_lock
-    columnar_observation_store = _main.columnar_observation_store
-    constrained_decoder = _main.constrained_decoder
-    credit_allocation = _main.credit_allocation
-    cross_season_identity = _main.cross_season_identity
-    cross_tenant_cache_reuse = _main.cross_tenant_cache_reuse
-    cuda_visibility_is_not_video_capability = _main.cuda_visibility_is_not_video_capability
-    current_repository_evaluation_gate = _main.current_repository_evaluation_gate
-    custom_native_justification = _main.custom_native_justification
-    data_pools = _main.data_pools
-    decimal_gb_to_gib = _main.decimal_gb_to_gib
-    decode_memory_policy = _main.decode_memory_policy
-    dependency_register = _main.dependency_register
-    deployment_encryption = _main.deployment_encryption
-    deployment_mode = _main.deployment_mode
-    distributed_broker = _main.distributed_broker
-    dpia_screen = _main.dpia_screen
-    drill_library = _main.drill_library
-    dual_budgets = _main.dual_budgets
-    egress_policy = _main.egress_policy
-    elevated_body_part_homography = _main.elevated_body_part_homography
-    embeddings_retrieve = _main.embeddings_retrieve
-    escalation_requires_quality_gap = _main.escalation_requires_quality_gap
-    evaluate_landmarks = _main.evaluate_landmarks
-    evaluate_protocol_prerequisites = _main.evaluate_protocol_prerequisites
-    evaluation_measures = _main.evaluation_measures
-    experiment_receipt = _main.experiment_receipt
-    face_recognition = _main.face_recognition
-    feature_enabled = _main.feature_enabled
-    ffmpeg_build_review = _main.ffmpeg_build_review
-    frontier_provider_role = _main.frontier_provider_role
-    full_disk = _main.full_disk
-    ground_contact_point = _main.ground_contact_point
-    gpu_timing_scope = _main.gpu_timing_scope
-    heatmap_availability = _main.heatmap_availability
-    held_out_questions = _main.held_out_questions
-    historical_capacity_seconds = _main.historical_capacity_seconds
-    http_may_run_gpu = _main.http_may_run_gpu
-    independent_reviewer = _main.independent_reviewer
-    incident_response = _main.incident_response
-    invisible_entity_not_repaired_by_larger_model = _main.invisible_entity_not_repaired_by_larger_model
-    label_products = _main.label_products
-    learned_temporal = _main.learned_temporal
-    least_privilege_storage = _main.least_privilege_storage
-    level0_incident_package = _main.level0_incident_package
-    level1_positional_aid = _main.level1_positional_aid
-    level2_schematic_replay = _main.level2_schematic_replay
-    level3_multiview = _main.level3_multiview
-    licence_register = _main.licence_register
-    local_adapter = _main.local_adapter
-    metadata_api_targets = _main.metadata_api_targets
-    milestone_plan = _main.milestone_plan
-    model_roster = _main.model_roster
-    native_gate = _main.native_gate
-    network_failure_preserves_unknown = _main.network_failure_preserves_unknown
-    no_rpc_fleet = _main.no_rpc_fleet
-    object_storage_adapter = _main.object_storage_adapter
-    owners = _main.owners
-    pinned_native_artifacts = _main.pinned_native_artifacts
-    pitch_axes = _main.pitch_axes
-    preemptible_allowed = _main.preemptible_allowed
-    probe_gpu = _main.probe_gpu
-    progress_signal = _main.progress_signal
-    promotion_gate = _main.promotion_gate
-    protocol_network_allowlist = _main.protocol_network_allowlist
-    provider_roster = _main.provider_roster
-    providers_disabled_fallback = _main.providers_disabled_fallback
-    public_exposure_gate = _main.public_exposure_gate
-    qualified_os_profiles = _main.qualified_os_profiles
-    quantized_weight_memory = _main.quantized_weight_memory
-    reconnect_across_cut = _main.reconnect_across_cut
-    recovery_objectives = _main.recovery_objectives
-    research_lane = _main.research_lane
-    residency_claim = _main.residency_claim
-    rights_register = _main.rights_register
-    risk_register = _main.risk_register
-    round_trip_unknown = _main.round_trip_unknown
-    sampling_policy = _main.sampling_policy
-    scale_scenario = _main.scale_scenario
-    score_hota_idf1 = _main.score_hota_idf1
-    secrets_in_artifacts = _main.secrets_in_artifacts
-    shadow_metric = _main.shadow_metric
-    signed_scoped_job_access = _main.signed_scoped_job_access
-    signed_scoped_object_access = _main.signed_scoped_object_access
-    split_scores = _main.split_scores
-    stage_timing = _main.stage_timing
-    support_bundle = _main.support_bundle
-    telestration_before_3d = _main.telestration_before_3d
-    transform_legacy_display = _main.transform_legacy_display
-    tree_challenger = _main.tree_challenger
-    unknown_metric = _main.unknown_metric
-    unresolved_incidents = _main.unresolved_incidents
-    untrusted_model_output = _main.untrusted_model_output
-    vector_broker_required = _main.vector_broker_required
-    vector_database = _main.vector_database
-    vid_stride_policy = _main.vid_stride_policy
-    video_model_roster = _main.video_model_roster
-    vlm_confidence_is_not_referee = _main.vlm_confidence_is_not_referee
-    worked_match_flow = _main.worked_match_flow
-    xt_deferred_plan = _main.xt_deferred_plan
-    dataset_manifest = _main.dataset_manifest
-    _challenger_adapters_view = _main._challenger_adapters_view
-    _decoder_challengers_view = _main._decoder_challengers_view
-    _four_rates_view = _main._four_rates_view
-    _legacy_geometry = _main._legacy_geometry
-    _legacy_geometry_profile = _main._legacy_geometry_profile
-    _production_decode_frames = _main._production_decode_frames
-    _stale_permissions_view = _main._stale_permissions_view
-    _unmeasured_landmark_preview = _main._unmeasured_landmark_preview
-    _unpromoted_receipt = _main._unpromoted_receipt
-    EXTERNAL_SOCCERNET_UI_BINDING_DIR = _main.EXTERNAL_SOCCERNET_UI_BINDING_DIR
-    EXTERNAL_SOCCERTRACK_MATCH_BUNDLE_BRIDGE_DIR = _main.EXTERNAL_SOCCERTRACK_MATCH_BUNDLE_BRIDGE_DIR
-    EXTERNAL_SOCCERTRACK_UI_BINDING_DIR = _main.EXTERNAL_SOCCERTRACK_UI_BINDING_DIR
-    EXTERNAL_BENCHMARK_UI_BINDING_DIR = _main.EXTERNAL_BENCHMARK_UI_BINDING_DIR
-    EXTERNAL_BENCHMARK_DECISION_SURFACE_DIR = _main.EXTERNAL_BENCHMARK_DECISION_SURFACE_DIR
-    VIDEO_TO_ANALYSIS_FINISH_LINE_PRODUCT_BINDING_DIR = _main.VIDEO_TO_ANALYSIS_FINISH_LINE_PRODUCT_BINDING_DIR
-    VIDEO_TO_ANALYSIS_ACCEPTANCE_REPORT_BINDING_DIR = _main.VIDEO_TO_ANALYSIS_ACCEPTANCE_REPORT_BINDING_DIR
-    VIDEO_TO_ANALYSIS_OPERATOR_HANDOFF_BINDING_DIR = _main.VIDEO_TO_ANALYSIS_OPERATOR_HANDOFF_BINDING_DIR
-    VIDEO_TO_ANALYSIS_RELEASE_READOUT_BINDING_DIR = _main.VIDEO_TO_ANALYSIS_RELEASE_READOUT_BINDING_DIR
-    VIDEO_TO_ANALYSIS_POST_RELEASE_MONITORING_BINDING_DIR = _main.VIDEO_TO_ANALYSIS_POST_RELEASE_MONITORING_BINDING_DIR
-    VIDEO_TO_ANALYSIS_DETECTOR_EVALUATION_REPORT_BINDING_DIR = _main.VIDEO_TO_ANALYSIS_DETECTOR_EVALUATION_REPORT_BINDING_DIR
-    VIDEO_TO_ANALYSIS_PROMOTION_REVIEW_REPORT_BINDING_DIR = _main.VIDEO_TO_ANALYSIS_PROMOTION_REVIEW_REPORT_BINDING_DIR
-    VIDEO_TO_ANALYSIS_PROMOTED_RUNTIME_MONITORING_BINDING_DIR = _main.VIDEO_TO_ANALYSIS_PROMOTED_RUNTIME_MONITORING_BINDING_DIR
-    VIDEO_TO_ANALYSIS_OPERATOR_DASHBOARD_BINDING_DIR = _main.VIDEO_TO_ANALYSIS_OPERATOR_DASHBOARD_BINDING_DIR
-    VIDEO_TO_ANALYSIS_REAL_VIDEO_SCALEOUT_REPORT_BINDING_DIR = _main.VIDEO_TO_ANALYSIS_REAL_VIDEO_SCALEOUT_REPORT_BINDING_DIR
-    VIDEO_TO_ANALYSIS_BOUNDED_NEXT_SAMPLE_REPORT_BINDING_DIR = _main.VIDEO_TO_ANALYSIS_BOUNDED_NEXT_SAMPLE_REPORT_BINDING_DIR
-    DEFINITION_VERSION = _main.DEFINITION_VERSION
-
     def _external_soccernet_ui_binding_root() -> Path:
         return storage.storage_root / EXTERNAL_SOCCERNET_UI_BINDING_DIR
 
