@@ -2,19 +2,17 @@
 
 from __future__ import annotations
 
+from backend.scripts.football_external_real_eval_chain_common import utc_now_iso as _utc_now_iso
+
 import argparse
-from datetime import datetime, timezone
 import json
 from pathlib import Path
 import re
 import shlex
-import sys
 import tempfile
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 import backend.scripts.runpod_session as runpod_session  # noqa: E402
 
@@ -45,10 +43,6 @@ PLATEAU_BASELINE = {
 }
 
 _SAFE_STEM_RE = re.compile(r"[^A-Za-z0-9_.-]+")
-
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _safe_int(value: object, default: int = 0) -> int:

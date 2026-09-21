@@ -1,15 +1,13 @@
 from __future__ import annotations
 
+from backend.scripts.football_external_real_eval_chain_common import utc_now_iso as _utc_now_iso
+
 import argparse
-from datetime import datetime, timezone
 import json
 from pathlib import Path
-import sys
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from backend.app.run_benchmarks import DEFAULT_STORAGE_ROOT  # noqa: E402
 
@@ -23,10 +21,6 @@ DEFAULT_REFUTED_SEED_PATH = (
     DEFAULT_SUITE_ROOT / "gold_truth_seed_refuted_refresh_v1" / "rejected_seed_refutation_manifest.json"
 )
 DEFAULT_OUTPUT_ROOT = DEFAULT_SUITE_ROOT / "v7_training_data_lane_v1"
-
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _load_json_dict(path: Path) -> dict[str, Any]:
