@@ -83,7 +83,8 @@ def test_v3t21_report_referencing_accepted_shot_is_omitted_after_rejection(tmp_p
         for entity, tid, x in [('ball',-1,ball_x),('my_team',9,90.),('enemy',4,10.)]:
             rows.append({'Frame_ID':fid,'Timestamp':fid*.2,'Entity_Type':entity,'Track_ID':tid,'X':x,'Y':34.,'Conf':.95})
     source=tmp_path/'shot.json';source.write_text(json.dumps(rows))
-    storage=Storage(tmp_path/'store');match=storage.create_match('Shot','tracking_json',source.name,source,MatchConfig())
+    storage = Storage(tmp_path / 'store')
+    match = storage.create_match('Shot', 'tracking_json', source.name, source, MatchConfig())
     process_match(storage,storage.create_job(match.id).id)
     event=next(e for e in storage.load_events(match.id) if e.type=='shot')
     local_id=f'{event.frameId}:{event.type}:{event.timestamp}'

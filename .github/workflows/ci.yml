@@ -78,7 +78,7 @@ jobs:
         if: always()
         run: |
           mkdir -p .verification/logs
-          ruff check backend --select RUF100,B023 --exit-zero --output-format=concise | tee .verification/logs/ruff-debt.log
+          ruff check backend --select RUF100,B023,ANN001,ANN003,ANN202,BLE001,E402,F401,N802,S310 --exit-zero --output-format=concise | grep -E 'RUF100|B023' | tee .verification/logs/ruff-debt.log
       - name: Upload Ruff debt report
         if: always()
         uses: actions/upload-artifact@v4
