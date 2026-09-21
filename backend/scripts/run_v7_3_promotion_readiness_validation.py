@@ -1,15 +1,13 @@
 from __future__ import annotations
 
+from backend.scripts.football_external_real_eval_chain_common import utc_now_iso as _utc_now_iso
+
 import argparse
-from datetime import datetime, timezone
 import json
 from pathlib import Path
-import sys
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from backend.scripts.football_external_real_eval_chain_common import load_json as _load_json, write_json as _write_json  # noqa: E402
 from backend.app.run_benchmarks import DEFAULT_STORAGE_ROOT  # noqa: E402
@@ -35,14 +33,6 @@ NEXT_HARD_NEGATIVE = "v7_3_hard_negative_expansion"
 NEXT_TRAINING_DEBUG = "v7_3_training_signal_regression_debug"
 NEXT_CONTROLLED_SOURCE_ROBUSTNESS = "promoted_v7_3_source_robustness_validation"
 NEXT_RUNTIME_DEFAULT = "v7_3_runtime_default_change_validation"
-
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-
-
 
 
 def _candidate_root(storage_root: Path, candidate_name: str) -> Path:
