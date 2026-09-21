@@ -1647,6 +1647,153 @@ def _summarize_ball_truth_layers(
 
     return result
 
+def _summarize_remote_runtime(storage: Storage, match_id: str, latest_job) -> dict[str, object]:
+    remote_run_id = latest_job.remoteRunId if latest_job is not None else None
+    requested_transport: str | None = None
+    resolved_transport: str | None = None
+    used_object_storage = False
+    transport_timed_out = False
+    runtime_outcome: str | None = None
+    stage_download_seconds = 0.0
+    stage_process_video_seconds = 0.0
+    stage_return_seconds = 0.0
+    worker_started_processing = False
+    worker_returned_result = False
+    worker_heartbeat_enabled = False
+    worker_current_stage: str | None = None
+    worker_stage_status: str | None = None
+    worker_last_heartbeat_at: str | None = None
+    worker_heartbeat_age_seconds = 0.0
+    worker_tracking_frames_seen = 0
+    worker_blocking_stage: str | None = None
+    warm_proof_mode = False
+    warm_ready_observed = False
+    warmup_wait_seconds = 0.0
+
+    transport_debug = _load_remote_artifact(
+        storage,
+        match_id,
+        "remote_transport_debug",
+        "runpod_transport_debug",
+    )
+    if transport_debug is not None:
+        raw_requested_transport = transport_debug.get("requestedTransport")
+        if isinstance(raw_requested_transport, str) and raw_requested_transport.strip():
+            requested_transport = raw_requested_transport.strip()
+        raw_resolved_transport = transport_debug.get("resolvedTransport")
+        if isinstance(raw_resolved_transport, str) and raw_resolved_transport.strip():
+            resolved_transport = raw_resolved_transport.strip()
+        raw_initial_run_id = transport_debug.get("initialRunId")
+        if remote_run_id is None and isinstance(raw_initial_run_id, str) and raw_initial_run_id.strip():
+            remote_run_id = raw_initial_run_id.strip()
+        used_object_storage = _safe_bool(transport_debug.get("usedObjectStorage"), False)
+        transport_timed_out = _safe_bool(transport_debug.get("transportTimedOut"), False)
+        raw_runtime_outcome = transport_debug.get("runtimeOutcome")
+        if isinstance(raw_runtime_outcome, str) and raw_runtime_outcome.strip():
+            runtime_outcome = raw_runtime_outcome.strip()
+        stage_download_seconds = round(_safe_float(transport_debug.get("stageDownloadSeconds"), 0.0), 6)
+        stage_process_video_seconds = round(_safe_float(transport_debug.get("stageProcessVideoSeconds"), 0.0), 6)
+        stage_return_seconds = round(_safe_float(transport_debug.get("stageReturnSeconds"), 0.0), 6)
+        worker_started_processing = _safe_bool(transport_debug.get("workerStartedProcessing"), False)
+        worker_returned_result = _safe_bool(transport_debug.get("workerReturnedResult"), False)
+        worker_heartbeat_enabled = _safe_bool(transport_debug.get("workerHeartbeatEnabled"), False)
+        worker_current_stage = transport_debug.get("workerCurrentStage") if isinstance(transport_debug.get("workerCurrentStage"), str) else None
+        worker_stage_status = transport_debug.get("workerStageStatus") if isinstance(transport_debug.get("workerStageStatus"), str) else None
+        raw_worker_last_heartbeat_at = transport_debug.get("workerLastHeartbeatAt")
+        if isinstance(raw_worker_last_heartbeat_at, str) and raw_worker_last_heartbeat_at.strip():
+            worker_last_heartbeat_at = raw_worker_last_heartbeat_at.strip()
+        worker_heartbeat_age_seconds = round(_safe_float(transport_debug.get("workerHeartbeatAgeSeconds"), 0.0), 3)
+        worker_tracking_frames_seen = _safe_int(transport_debug.get("workerTrackingFramesSeen"), 0)
+        raw_worker_blocking_stage = transport_debug.get("workerBlockingStage")
+        if isinstance(raw_worker_blocking_stage, str) and raw_worker_blocking_stage.strip():
+            worker_blocking_stage = raw_worker_blocking_stage.strip()
+        raw_worker_progress = transport_debug.get("workerProgress")
+        if isinstance(raw_worker_progress, dict):
+            worker_heartbeat_enabled = True
+            if worker_current_stage is None:
+                raw_worker_stage = raw_worker_progress.get(
+                    "workerStage", raw_worker_progress.get("stage")
+                )
+                if isinstance(raw_worker_stage, str) and raw_worker_stage.strip():
+                    worker_current_stage = raw_worker_stage.strip()
+            if worker_stage_status is None:
+                raw_worker_stage_status = raw_worker_progress.get(
+                    "stageStatus", raw_worker_progress.get("message")
+                )
+                if isinstance(raw_worker_stage_status, str) and raw_worker_stage_status.strip():
+                    worker_stage_status = raw_worker_stage_status.strip()
+            if worker_last_heartbeat_at is None:
+                raw_worker_last_heartbeat_at = raw_worker_progress.get(
+                    "heartbeatAt", raw_worker_progress.get("timestamp")
+                )
+                if isinstance(raw_worker_last_heartbeat_at, str) and raw_worker_last_heartbeat_at.strip():
+                    worker_last_heartbeat_at = raw_worker_last_heartbeat_at.strip()
+            worker_heartbeat_age_seconds = max(
+                worker_heartbeat_age_seconds,
+                round(_safe_float(raw_worker_progress.get("workerHeartbeatAgeSeconds"), worker_heartbeat_age_seconds), 3),
+            )
+            worker_tracking_frames_seen = max(
+                worker_tracking_frames_seen,
+                _safe_int(raw_worker_progress.get("trackingFramesSeen"), worker_tracking_frames_seen),
+            )
+
+    worker_progress = _load_remote_worker_progress(storage, match_id)
+    if worker_progress is not None:
+        worker_heartbeat_enabled = True
+        raw_worker_stage = worker_progress.get("workerStage", worker_progress.get("stage"))
+        if worker_current_stage is None and isinstance(raw_worker_stage, str) and raw_worker_stage.strip():
+            worker_current_stage = raw_worker_stage.strip()
+        raw_worker_stage_status = worker_progress.get(
+            "stageStatus", worker_progress.get("message")
+        )
+        if worker_stage_status is None and isinstance(raw_worker_stage_status, str) and raw_worker_stage_status.strip():
+            worker_stage_status = raw_worker_stage_status.strip()
+        raw_worker_last_heartbeat_at = worker_progress.get(
+            "heartbeatAt", worker_progress.get("timestamp")
+        )
+        if worker_last_heartbeat_at is None and isinstance(raw_worker_last_heartbeat_at, str) and raw_worker_last_heartbeat_at.strip():
+            worker_last_heartbeat_at = raw_worker_last_heartbeat_at.strip()
+        worker_heartbeat_age_seconds = max(
+            worker_heartbeat_age_seconds,
+            round(_safe_float(worker_progress.get("workerHeartbeatAgeSeconds"), worker_heartbeat_age_seconds), 3),
+        )
+        worker_tracking_frames_seen = max(
+            worker_tracking_frames_seen,
+            _safe_int(worker_progress.get("trackingFramesSeen"), worker_tracking_frames_seen),
+        )
+
+    endpoint_lifecycle_debug_path = storage._match_dir(match_id) / "endpoint_lifecycle_debug.json"
+    if endpoint_lifecycle_debug_path.exists():
+        endpoint_lifecycle_debug = storage.load_analysis_artifact(match_id, "endpoint_lifecycle_debug")
+        warm_proof_mode = _safe_bool(endpoint_lifecycle_debug.get("warmProofMode"), False)
+        warm_ready_observed = _safe_bool(endpoint_lifecycle_debug.get("warmReadyObserved"), False)
+        warmup_wait_seconds = round(_safe_float(endpoint_lifecycle_debug.get("warmupWaitSeconds"), 0.0), 3)
+
+    return {
+        "remote_run_id": remote_run_id,
+        "requested_transport": requested_transport,
+        "resolved_transport": resolved_transport,
+        "used_object_storage": used_object_storage,
+        "transport_timed_out": transport_timed_out,
+        "runtime_outcome": runtime_outcome,
+        "stage_download_seconds": stage_download_seconds,
+        "stage_process_video_seconds": stage_process_video_seconds,
+        "stage_return_seconds": stage_return_seconds,
+        "worker_started_processing": worker_started_processing,
+        "worker_returned_result": worker_returned_result,
+        "worker_heartbeat_enabled": worker_heartbeat_enabled,
+        "worker_current_stage": worker_current_stage,
+        "worker_stage_status": worker_stage_status,
+        "worker_last_heartbeat_at": worker_last_heartbeat_at,
+        "worker_heartbeat_age_seconds": worker_heartbeat_age_seconds,
+        "worker_tracking_frames_seen": worker_tracking_frames_seen,
+        "worker_blocking_stage": worker_blocking_stage,
+        "warm_proof_mode": warm_proof_mode,
+        "warm_ready_observed": warm_ready_observed,
+        "warmup_wait_seconds": warmup_wait_seconds,
+    }
+
+
 def summarize_match_benchmark(storage: Storage, match_id: str) -> MatchBenchmarkSummary:
     artifact_metadata_sources = _artifact_metadata_sources(storage, match_id)
     artifact_only = False
@@ -1725,29 +1872,6 @@ def summarize_match_benchmark(storage: Storage, match_id: str) -> MatchBenchmark
     detector_model_name: str | None = None
     direct_seed_retry_policy: str | None = None
     direct_seed_retry_scales: list[int] = []
-    requested_transport: str | None = None
-    resolved_transport: str | None = None
-    remote_run_id = latest_job.remoteRunId if latest_job is not None else None
-    used_object_storage = False
-    transport_timed_out = False
-    runtime_outcome: str | None = None
-    stage_download_seconds = 0.0
-    stage_process_video_seconds = 0.0
-    stage_return_seconds = 0.0
-    worker_started_processing = False
-    worker_returned_result = False
-    worker_heartbeat_enabled = False
-    worker_current_stage: str | None = None
-    worker_stage_status: str | None = None
-    worker_last_heartbeat_at: str | None = None
-    worker_heartbeat_age_seconds = 0.0
-    worker_tracking_frames_seen = 0
-    worker_blocking_stage: str | None = None
-    warm_proof_mode = False
-    warm_ready_observed = False
-    warmup_wait_seconds = 0.0
-    long_gap_treatment_outcome: str | None = None
-    controlled_possession_assignment_outcome: str | None = None
     proof_runtime_options = load_proof_runtime_options(
         storage, match_id, manifest_path=RUNTIME_MANIFEST_PATH
     )
@@ -1865,102 +1989,7 @@ def summarize_match_benchmark(storage: Storage, match_id: str) -> MatchBenchmark
             _artifact_metadata_string(artifact_metadata_sources, "detectorModelName")
             or detector_model_path
         )
-    transport_debug = _load_remote_artifact(
-        storage,
-        match_id,
-        "remote_transport_debug",
-        "runpod_transport_debug",
-    )
-    if transport_debug is not None:
-        raw_requested_transport = transport_debug.get("requestedTransport")
-        if isinstance(raw_requested_transport, str) and raw_requested_transport.strip():
-            requested_transport = raw_requested_transport.strip()
-        raw_resolved_transport = transport_debug.get("resolvedTransport")
-        if isinstance(raw_resolved_transport, str) and raw_resolved_transport.strip():
-            resolved_transport = raw_resolved_transport.strip()
-        raw_initial_run_id = transport_debug.get("initialRunId")
-        if remote_run_id is None and isinstance(raw_initial_run_id, str) and raw_initial_run_id.strip():
-            remote_run_id = raw_initial_run_id.strip()
-        used_object_storage = _safe_bool(transport_debug.get("usedObjectStorage"), False)
-        transport_timed_out = _safe_bool(transport_debug.get("transportTimedOut"), False)
-        raw_runtime_outcome = transport_debug.get("runtimeOutcome")
-        if isinstance(raw_runtime_outcome, str) and raw_runtime_outcome.strip():
-            runtime_outcome = raw_runtime_outcome.strip()
-        stage_download_seconds = round(_safe_float(transport_debug.get("stageDownloadSeconds"), 0.0), 6)
-        stage_process_video_seconds = round(_safe_float(transport_debug.get("stageProcessVideoSeconds"), 0.0), 6)
-        stage_return_seconds = round(_safe_float(transport_debug.get("stageReturnSeconds"), 0.0), 6)
-        worker_started_processing = _safe_bool(transport_debug.get("workerStartedProcessing"), False)
-        worker_returned_result = _safe_bool(transport_debug.get("workerReturnedResult"), False)
-        worker_heartbeat_enabled = _safe_bool(transport_debug.get("workerHeartbeatEnabled"), False)
-        worker_current_stage = transport_debug.get("workerCurrentStage") if isinstance(transport_debug.get("workerCurrentStage"), str) else None
-        worker_stage_status = transport_debug.get("workerStageStatus") if isinstance(transport_debug.get("workerStageStatus"), str) else None
-        raw_worker_last_heartbeat_at = transport_debug.get("workerLastHeartbeatAt")
-        if isinstance(raw_worker_last_heartbeat_at, str) and raw_worker_last_heartbeat_at.strip():
-            worker_last_heartbeat_at = raw_worker_last_heartbeat_at.strip()
-        worker_heartbeat_age_seconds = round(_safe_float(transport_debug.get("workerHeartbeatAgeSeconds"), 0.0), 3)
-        worker_tracking_frames_seen = _safe_int(transport_debug.get("workerTrackingFramesSeen"), 0)
-        raw_worker_blocking_stage = transport_debug.get("workerBlockingStage")
-        if isinstance(raw_worker_blocking_stage, str) and raw_worker_blocking_stage.strip():
-            worker_blocking_stage = raw_worker_blocking_stage.strip()
-        raw_worker_progress = transport_debug.get("workerProgress")
-        if isinstance(raw_worker_progress, dict):
-            worker_heartbeat_enabled = True
-            if worker_current_stage is None:
-                raw_worker_stage = raw_worker_progress.get(
-                    "workerStage", raw_worker_progress.get("stage")
-                )
-                if isinstance(raw_worker_stage, str) and raw_worker_stage.strip():
-                    worker_current_stage = raw_worker_stage.strip()
-            if worker_stage_status is None:
-                raw_worker_stage_status = raw_worker_progress.get(
-                    "stageStatus", raw_worker_progress.get("message")
-                )
-                if isinstance(raw_worker_stage_status, str) and raw_worker_stage_status.strip():
-                    worker_stage_status = raw_worker_stage_status.strip()
-            if worker_last_heartbeat_at is None:
-                raw_worker_last_heartbeat_at = raw_worker_progress.get(
-                    "heartbeatAt", raw_worker_progress.get("timestamp")
-                )
-                if isinstance(raw_worker_last_heartbeat_at, str) and raw_worker_last_heartbeat_at.strip():
-                    worker_last_heartbeat_at = raw_worker_last_heartbeat_at.strip()
-            worker_heartbeat_age_seconds = max(
-                worker_heartbeat_age_seconds,
-                round(_safe_float(raw_worker_progress.get("workerHeartbeatAgeSeconds"), worker_heartbeat_age_seconds), 3),
-            )
-            worker_tracking_frames_seen = max(
-                worker_tracking_frames_seen,
-                _safe_int(raw_worker_progress.get("trackingFramesSeen"), worker_tracking_frames_seen),
-            )
-    worker_progress = _load_remote_worker_progress(storage, match_id)
-    if worker_progress is not None:
-        worker_heartbeat_enabled = True
-        raw_worker_stage = worker_progress.get("workerStage", worker_progress.get("stage"))
-        if worker_current_stage is None and isinstance(raw_worker_stage, str) and raw_worker_stage.strip():
-            worker_current_stage = raw_worker_stage.strip()
-        raw_worker_stage_status = worker_progress.get(
-            "stageStatus", worker_progress.get("message")
-        )
-        if worker_stage_status is None and isinstance(raw_worker_stage_status, str) and raw_worker_stage_status.strip():
-            worker_stage_status = raw_worker_stage_status.strip()
-        raw_worker_last_heartbeat_at = worker_progress.get(
-            "heartbeatAt", worker_progress.get("timestamp")
-        )
-        if worker_last_heartbeat_at is None and isinstance(raw_worker_last_heartbeat_at, str) and raw_worker_last_heartbeat_at.strip():
-            worker_last_heartbeat_at = raw_worker_last_heartbeat_at.strip()
-        worker_heartbeat_age_seconds = max(
-            worker_heartbeat_age_seconds,
-            round(_safe_float(worker_progress.get("workerHeartbeatAgeSeconds"), worker_heartbeat_age_seconds), 3),
-        )
-        worker_tracking_frames_seen = max(
-            worker_tracking_frames_seen,
-            _safe_int(worker_progress.get("trackingFramesSeen"), worker_tracking_frames_seen),
-        )
-    endpoint_lifecycle_debug_path = storage._match_dir(match_id) / "endpoint_lifecycle_debug.json"
-    if endpoint_lifecycle_debug_path.exists():
-        endpoint_lifecycle_debug = storage.load_analysis_artifact(match_id, "endpoint_lifecycle_debug")
-        warm_proof_mode = _safe_bool(endpoint_lifecycle_debug.get("warmProofMode"), False)
-        warm_ready_observed = _safe_bool(endpoint_lifecycle_debug.get("warmReadyObserved"), False)
-        warmup_wait_seconds = round(_safe_float(endpoint_lifecycle_debug.get("warmupWaitSeconds"), 0.0), 3)
+    remote_runtime = _summarize_remote_runtime(storage, match_id, latest_job)
 
     ball_truth_layers = _load_ball_truth_layers(storage, match_id)
     ball_truth = _summarize_ball_truth_layers(
@@ -2179,27 +2208,27 @@ def summarize_match_benchmark(storage: Storage, match_id: str) -> MatchBenchmark
         candidateEdgeShare=recovery_diagnostics["candidate_edge_share"],
         selectedEdgeFrameShare=recovery_diagnostics["selected_edge_frame_share"],
         runtimeFingerprint=runtime_fingerprint,
-        requestedTransport=requested_transport,
-        resolvedTransport=resolved_transport,
-        remoteRunId=remote_run_id,
-        usedObjectStorage=used_object_storage,
-        transportTimedOut=transport_timed_out,
-        runtimeOutcome=runtime_outcome,
-        stageDownloadSeconds=stage_download_seconds,
-        stageProcessVideoSeconds=stage_process_video_seconds,
-        stageReturnSeconds=stage_return_seconds,
-        workerStartedProcessing=worker_started_processing,
-        workerReturnedResult=worker_returned_result,
-        workerHeartbeatEnabled=worker_heartbeat_enabled,
-        workerCurrentStage=worker_current_stage,
-        workerStageStatus=worker_stage_status,
-        workerLastHeartbeatAt=worker_last_heartbeat_at,
-        workerHeartbeatAgeSeconds=worker_heartbeat_age_seconds,
-        workerTrackingFramesSeen=worker_tracking_frames_seen,
-        workerBlockingStage=worker_blocking_stage,
-        warmProofMode=warm_proof_mode,
-        warmReadyObserved=warm_ready_observed,
-        warmupWaitSeconds=warmup_wait_seconds,
+        requestedTransport=remote_runtime["requested_transport"],
+        resolvedTransport=remote_runtime["resolved_transport"],
+        remoteRunId=remote_runtime["remote_run_id"],
+        usedObjectStorage=remote_runtime["used_object_storage"],
+        transportTimedOut=remote_runtime["transport_timed_out"],
+        runtimeOutcome=remote_runtime["runtime_outcome"],
+        stageDownloadSeconds=remote_runtime["stage_download_seconds"],
+        stageProcessVideoSeconds=remote_runtime["stage_process_video_seconds"],
+        stageReturnSeconds=remote_runtime["stage_return_seconds"],
+        workerStartedProcessing=remote_runtime["worker_started_processing"],
+        workerReturnedResult=remote_runtime["worker_returned_result"],
+        workerHeartbeatEnabled=remote_runtime["worker_heartbeat_enabled"],
+        workerCurrentStage=remote_runtime["worker_current_stage"],
+        workerStageStatus=remote_runtime["worker_stage_status"],
+        workerLastHeartbeatAt=remote_runtime["worker_last_heartbeat_at"],
+        workerHeartbeatAgeSeconds=remote_runtime["worker_heartbeat_age_seconds"],
+        workerTrackingFramesSeen=remote_runtime["worker_tracking_frames_seen"],
+        workerBlockingStage=remote_runtime["worker_blocking_stage"],
+        warmProofMode=remote_runtime["warm_proof_mode"],
+        warmReadyObserved=remote_runtime["warm_ready_observed"],
+        warmupWaitSeconds=remote_runtime["warmup_wait_seconds"],
         longGapTreatmentOutcome=long_gap_treatment_outcome,
         controlledPossessionAssignmentOutcome=controlled_possession_assignment_outcome,
         frozenPrimaryAcquisitionMode=frozen_primary_acquisition_mode,
