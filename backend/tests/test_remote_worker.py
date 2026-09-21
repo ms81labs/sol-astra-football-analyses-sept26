@@ -14,6 +14,7 @@ import pytest
 from backend.app import daytona as daytona_adapter
 from backend.app import gpu_worker
 from backend.app import remote_worker
+from backend.app import storage as storage_module
 from backend.app import storage_remote as storage_remote_module
 from backend.app.remote_contracts import (
     CompletionReceipt,
