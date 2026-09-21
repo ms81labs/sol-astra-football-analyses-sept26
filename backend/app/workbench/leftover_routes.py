@@ -507,7 +507,7 @@ def create_leftover_post_router(storage: Storage) -> APIRouter:
     def post_tracker_associate(payload: dict | None = None) -> dict:
         body = payload or {}
         detections = [_as_detection(item) for item in list(body.get("detections") or [])]
-        tracks = _main.IouAssociationFallback().associate(
+        tracks = IouAssociationFallback().associate(
             detections,
             cut_detected=bool(body.get("cutDetected")),
             broadcast_replay=bool(body.get("broadcastReplay")),
