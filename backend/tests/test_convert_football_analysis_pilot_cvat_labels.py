@@ -304,7 +304,7 @@ def test_live_repository_rejects_test_manifest_override(tmp_path) -> None:
     tasks_path = tmp_path / "forged-tasks.json"
     tasks_path.write_text(json.dumps({"tasks": [TASK]}))
     repository = Path(__file__).resolve().parents[2]
-    with TemporaryDirectory(prefix="cvat-manifest-test-", dir=repository / "backend/storage") as scratch:
+    with TemporaryDirectory(prefix="cvat-manifest-test-", dir=repository / "backend") as scratch:
         template_path = Path(scratch) / "review.json"
         result = subprocess.run(
             [
