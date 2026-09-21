@@ -931,7 +931,7 @@ def create_leftover_get_routers(storage: Storage) -> tuple[APIRouter, APIRouter]
             "encryption": deployment_encryption(boundary=bound),
             "allowlist": protocol_network_allowlist(url="http://127.0.0.1/"),
             "decoder": constrained_decoder(
-                argv=[str(_main.resolve_trusted_executable("ffmpeg")), "-i", "local.mp4"],
+                argv=[str(resolve_trusted_executable("ffmpeg")), "-i", "local.mp4"],
                 network_enabled=False,
             ),
             "storage": least_privilege_storage(credential_scope="object"),
