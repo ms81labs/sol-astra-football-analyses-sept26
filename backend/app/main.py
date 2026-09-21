@@ -1,28 +1,32 @@
 from __future__ import annotations
 
-import asyncio
-import json
 import logging
-import math
 import os
 import re
 import time
-import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Literal
 
-from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, Request, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import (
+    FastAPI,
+    Header,
+    HTTPException,
+    Request,
+    WebSocket,
+)
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, Response
+from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
-from pydantic import ValidationError
-from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import Headers
 from starlette.middleware.trustedhost import TrustedHostMiddleware
-from starlette.types import ASGIApp, Receive, Scope, Send
+from starlette.types import (
+    ASGIApp,
+    Receive,
+    Scope,
+    Send,
+)
 
-from .jobs import JobDispatchError, JobRunner
+from .jobs import JobRunner
 from .job_routes import create_job_router
 from .match_ingest_routes import create_match_ingest_router
 from .match_runtime_routes import create_match_runtime_router
@@ -41,272 +45,33 @@ from .workbench.errors import (
     StaleTransition,
 )
 from .llm import run_analysis
-from .provider_gateway import ProviderBudgetLedger, ProviderDenied, ProviderGateway
+from .provider_gateway import (
+    ProviderBudgetLedger,
+    ProviderGateway,
+)
 from .review_routes import create_review_router
 from .artifact_routes import create_artifact_router
-from .insight_routes import (
-    _dashboard_average,
-    _dashboard_difference,
-    _dashboard_metric_value,
-    _xg_balance,
-    create_insight_router,
+from .insight_routes import create_insight_router
+from .generations import (
+    StaleGeneration,
+    GenerationRecoveryRequired,
 )
-from .generations import StaleGeneration, GenerationRecoveryRequired
-from .settings import ProcessingSettings, SettingsError, canonicalize_origin
-from .trust_crops import compute_trust_crops
+from .settings import (
+    ProcessingSettings,
+    SettingsError,
+    canonicalize_origin,
+)
 from .schemas import (
-    CreateAnnotationRequest,
-    CreateBundleRequest,
-    CreateIssueRequest,
-    MatchAnalyticsResponse,
     MatchConfig,
-    MatchFramesResponse,
     MatchRecord,
-    ReviewBundleItem,
-    TrustCropSchema,
-    TrustCropsResponse,
-    UpdateBundleRequest,
-    DashboardSummary,
-    DashboardResponse,
-    DashboardComparison,
-    SeasonTrendPoint,
 )
-from .semantic_search import search_matches_by_tactical_themes, search_bundles_by_tactical_themes, detect_themes_for_match
-from .storage import AdmissionOutcomeUncertainError, Storage, UploadTooLargeError
-from .ai_policy import ground_output, select_evidence
+from .storage import Storage
 from .workbench.access import (
-    access_deletion_procedure,
-    authorize_object,
-    constrained_decoder,
-    deployment_encryption,
-    least_privilege_storage,
-    mint_sharing_link,
     object_access_decision,
-    protocol_network_allowlist,
-    public_exposure_gate,
-    signed_scoped_object_access,
-    stale_permissions,
-    untrusted_model_output,
-    upload_quota,
     verify_hosted_token,
 )
-from .workbench.challengers import (
-    gstreamer_adapter,
-    kloppy_boundary,
-    mcbyte_adapter,
-    onnx_runtime_adapter,
-    pynv_adapter,
-    roboflow_trackers_adapter,
-    tensorrt_adapter,
-    trackeval_adapter,
-)
-from .workbench.admission import admit_camera, admit_media
-from .workbench.artifacts import (
-    columnar_observation_store,
-    cross_tenant_cache_reuse,
-    import_worker_output,
-    object_storage_adapter,
-    secrets_in_artifacts,
-)
-from .workbench.assistance import (
-    dual_budgets,
-    embeddings_retrieve,
-    escalation_requires_quality_gap,
-    json_repair_chain,
-    network_failure_preserves_unknown,
-    policy_log,
-    preemptible_allowed,
-    providers_disabled_fallback,
-    template_report,
-)
-from .workbench.incidents import (
-    broadcast_replay_not_simultaneous,
-    elevated_body_part_homography,
-    invisible_entity_not_repaired_by_larger_model,
-    level0_incident_package,
-    level1_positional_aid,
-    level2_schematic_replay,
-    level3_multiview,
-    vlm_confidence_is_not_referee,
-)
-from .workbench.jobs import (
-    JobRequest,
-    attach_durable_job_view,
-    cancellation_does_not_erase_charges,
-    cleanup_failure_is_complete,
-    deployment_mode,
-    distributed_broker,
-    egress_policy,
-    pause_experiment,
-    signed_scoped_job_access,
-    vector_database,
-    worker_environment,
-)
-from .workbench.contracts import SourceClockIdentity, migrate_legacy_zero, unknown_metric
-from .workbench.costs import (
-    credit_allocation,
-    decimal_gb_to_gib,
-    deployment_choice,
-    historical_capacity_seconds,
-    match_cost,
-    scale_scenario,
-)
-from .workbench.benchmarks import experiment_receipt, quality_gate_holds
-from .workbench.decisions import architecture_decisions
-from .workbench.dossier import build_baseline_dossier, build_release_dossier, http_dossier
-from .workbench.evaluation import (
-    analyst_workflow_measures,
-    current_repository_evaluation_gate,
-    evaluate_protocol_prerequisites,
-    evaluation_measures,
-    score_hota_idf1,
-)
-from .workbench.events import learned_temporal, ownership_invalidation, propose_event, score_events
-from .workbench.geometry import (
-    CalibrationProfile,
-    detect_zoom_or_cut,
-    evaluate_landmarks,
-    from_legacy_four_points,
-    ground_contact_point,
-    preview_landmark_fit,
-    project_to_pitch,
-    withhold_if_invalid,
-)
-from .workbench.evidence import DEFINITION_VERSION, evaluate_metric_spec, inspect_metric, metric_dictionary, round_trip_unknown
-from .workbench.cache import recompute_plan
-from .workbench.flags import feature_enabled, feature_flags, shadow_metric
-from .workbench.identity import (
-    IdentityRecord,
-    appearance_embedding_policy,
-    candidate_rejoin,
-    cluster_mapping,
-    cross_season_identity,
-    face_recognition,
-    promote_identity,
-    reconnect_across_cut,
-)
-from .workbench.executables import resolve_trusted_executable
-from .workbench.milestones import milestone_plan, owners, progress_signal
-from .workbench.native import (
-    cuda_visibility_is_not_video_capability,
-    custom_native_justification,
-    ffmpeg_build_review,
-    native_gate,
-    no_rpc_fleet,
-    pinned_native_artifacts,
-    probe_gpu,
-    qualified_os_profiles,
-    quantized_weight_memory,
-)
-from .workbench.privacy import dpia_screen, residency_claim
-from .workbench.perception import (
-    Detection,
-    DetectorAdapter,
-    IdentityRepair,
-    IouAssociationFallback,
-    Label,
-    PreprocessPlan,
-    TrackerAdapter,
-    merge_tiled_detections,
-    preview_identity_change,
-    score_detections,
-    score_detections_by_stratum,
-    separate_ball_states,
-    tile_to_source,
-)
-from .workbench.quantities import heatmap_availability, pitch_axes, split_scores, transform_legacy_display
-from .workbench.recovery import full_disk, recovery_objectives, support_bundle, unresolved_incidents
-from .workbench.repository import RepositoryAdapter, http_may_run_gpu, vector_broker_required
-from .workbench.reports import assemble_report, held_out_questions
-from .workbench.research import execute_track, may_write_product_paths, research_lane
-from .workbench.retention import PROTECTED, may_delete
-from .workbench.media import (
-    DecodedFrame,
-    FfmpegFrameSource,
-    FfmpegProbe,
-    FixtureFrameSource,
-    OpenCvFrameSource,
-    PyAvFrameSource,
-    SamplingAudit,
-    TorchCodecFrameSource,
-    apply_crop_and_rotation,
-    align_clip_start_to_grid,
-    colour_round_trip,
-    cpu_fallback,
-    decode_memory_policy,
-    detect_camera_cuts,
-    first_bgr_frame,
-    four_rates_receipt,
-    frame_interval_for_target_fps,
-    iter_bgr_frames,
-    map_decoded_to_sample,
-    map_original_to_proxy_pts,
-    pixels_from_decoded_frame,
-    pts_to_seconds,
-    resolve_declared_interval,
-    sample_decode_anchors,
-    torso_colour_pixels,
-    vid_stride_policy,
-    wrap_decoded_frame,
-)
-from .workbench.leftover_support import (
-    EXTERNAL_BENCHMARK_DECISION_SURFACE_DIR,
-    EXTERNAL_BENCHMARK_UI_BINDING_DIR,
-    EXTERNAL_SOCCERNET_UI_BINDING_DIR,
-    EXTERNAL_SOCCERTRACK_MATCH_BUNDLE_BRIDGE_DIR,
-    EXTERNAL_SOCCERTRACK_UI_BINDING_DIR,
-    VIDEO_TO_ANALYSIS_ACCEPTANCE_REPORT_BINDING_DIR,
-    VIDEO_TO_ANALYSIS_BOUNDED_NEXT_SAMPLE_REPORT_BINDING_DIR,
-    VIDEO_TO_ANALYSIS_DETECTOR_EVALUATION_REPORT_BINDING_DIR,
-    VIDEO_TO_ANALYSIS_FINISH_LINE_PRODUCT_BINDING_DIR,
-    VIDEO_TO_ANALYSIS_OPERATOR_DASHBOARD_BINDING_DIR,
-    VIDEO_TO_ANALYSIS_OPERATOR_HANDOFF_BINDING_DIR,
-    VIDEO_TO_ANALYSIS_POST_RELEASE_MONITORING_BINDING_DIR,
-    VIDEO_TO_ANALYSIS_PROMOTED_RUNTIME_MONITORING_BINDING_DIR,
-    VIDEO_TO_ANALYSIS_PROMOTION_REVIEW_REPORT_BINDING_DIR,
-    VIDEO_TO_ANALYSIS_REAL_VIDEO_SCALEOUT_REPORT_BINDING_DIR,
-    VIDEO_TO_ANALYSIS_RELEASE_READOUT_BINDING_DIR,
-    _as_box,
-    _as_bytes,
-    _as_detection,
-    _as_label,
-    _challenger_adapters_view,
-    _decoder_challengers_view,
-    _fixture_frame_source,
-    _four_rates_view,
-    _legacy_geometry,
-    _legacy_geometry_profile,
-    _production_decode_frames,
-    _production_job_request,
-    _stale_permissions_view,
-    _unmeasured_landmark_preview,
-    _unpromoted_receipt,
-)
-from .workbench.review import collaboration_lock, correction_api_payload, playlist_export_interval
-from .workbench.adoption import dependency_register
-from .workbench.providers import cloud_adapter, local_adapter, provider_roster
-from .workbench.rights import dataset_manifest, evaluate_rights, incident_response, licence_register, rights_register
-from .workbench.risks import independent_reviewer, risk_register, telestration_before_3d, worked_match_flow
-from .workbench.rollback import rollback_release
-from .workbench.roster import frontier_provider_role, label_products, model_roster, promotion_gate, video_model_roster
+from .workbench.jobs import deployment_mode
 from .workbench.routes import create_workbench_router
-from .workbench.receipts import promotion_receipt
-from .workbench.ownership import OwnershipHysteresis, possession_from_states
-from .workbench.shot_model import tree_challenger
-from .workbench.timing import gpu_timing_scope, stage_timing
-from .workbench.targets import metadata_api_targets
-from .workbench.training import (
-    admit_example,
-    data_pools,
-    drill_library,
-    experiment_cycle,
-    experiment_ledger,
-    promote_candidate,
-    pseudo_label,
-    sampling_policy,
-)
-from .workbench.xt import xt_deferred_plan
-
 
 STORAGE_ROOT_ENV = "GUERILLA_STORAGE_ROOT"
 LOGGER = logging.getLogger(__name__)

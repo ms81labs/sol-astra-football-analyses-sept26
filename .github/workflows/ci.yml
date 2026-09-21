@@ -74,6 +74,7 @@ jobs:
         run: pip install --require-hashes -r backend/requirements/quality-linux.lock
       - name: Ruff correctness gate
         run: ruff check backend --select F821,F822,F823
+      - run: ruff check backend/app/main.py --select F401
       - name: Report Ruff legacy debt
         if: always()
         run: |
