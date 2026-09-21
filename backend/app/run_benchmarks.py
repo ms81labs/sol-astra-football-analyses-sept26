@@ -1038,6 +1038,392 @@ load_ball_truth_layers = _load_ball_truth_layers
 load_accepted_match_state = _load_accepted_match_state
 summarize_ball_rows = _summarize_ball_rows
 
+def _summarize_recovery_debug(recovery_debug: dict[str, object] | None) -> dict[str, object]:
+    recovery_profile_name = None
+    recovery_applied = False
+    recovered_selected_frames = 0
+    dominant_anchor_coord: list[float] | None = None
+    dominant_anchor_count = 0
+    dominant_anchor_share = 0.0
+    mean_source_center_y = 0.0
+    mean_source_box_area = 0.0
+    recovered_supported_frames = 0
+    recovered_anchored_frames = 0
+    recovered_bridge_frames = 0
+    recovered_unsupported_edge_frame_share = 0.0
+    recovered_anchored_path_length = 0.0
+    corridor_candidate_frames = 0
+    corridor_frames_with_two_anchors = 0
+    corridor_frames_with_single_anchor = 0
+    corridor_mean_width = 0.0
+    proposal_candidate_frames = 0
+    proposal_window_count = 0
+    proposal_frames_with_anchor_seed = 0
+    proposal_frames_without_anchor_seed = 0
+    proposal_exact_seed_frames = 0
+    proposal_interpolated_seed_frames = 0
+    proposal_single_seed_frames = 0
+    proposal_unseeded_frames = 0
+    proposal_mean_window_width = 0.0
+    collapsed_candidate_frames = 0
+    collapsed_segment_count = 0
+    collapsed_longest_segment_frames = 0
+    continuity_preferred_frames = 0
+    continuity_rejected_frames = 0
+    midfield_collapsed_frames = 0
+    candidate_edge_share = 0.0
+    selected_edge_frame_share = 0.0
+        if recovery_debug is not None:
+            raw_recovery_profile_name = recovery_debug.get("recoveryProfileName")
+            recovery_profile_name = raw_recovery_profile_name if isinstance(raw_recovery_profile_name, str) else None
+            recovery_applied = _safe_bool(recovery_debug.get("recoveryApplied", False))
+            recovered_selected_frames = _safe_int(recovery_debug.get("recoveredSelectedFrames", 0))
+            dominant_anchor_coord = _safe_anchor_coord(recovery_debug.get("dominantAnchorCoord"))
+            dominant_anchor_count = _safe_int(recovery_debug.get("dominantAnchorCount", 0))
+            dominant_anchor_share = round(_safe_float(recovery_debug.get("dominantAnchorShare", 0.0)), 3)
+            mean_source_center_y = round(_safe_float(recovery_debug.get("meanSourceCenterY", 0.0)), 2)
+            mean_source_box_area = round(_safe_float(recovery_debug.get("meanSourceBoxArea", 0.0)), 2)
+            recovered_supported_frames = _safe_int(recovery_debug.get("recoveredSupportedFrames", 0), 0)
+            recovered_anchored_frames = _safe_int(recovery_debug.get("recoveredAnchoredFrames", 0), 0)
+            recovered_bridge_frames = _safe_int(recovery_debug.get("recoveredBridgeFrames", 0), 0)
+            recovered_unsupported_edge_frame_share = round(
+                _safe_float(recovery_debug.get("recoveredUnsupportedEdgeFrameShare", 0.0), 0.0),
+                3,
+            )
+            recovered_anchored_path_length = round(
+                _safe_float(recovery_debug.get("recoveredAnchoredPathLength", 0.0), 0.0),
+                2,
+            )
+            corridor_candidate_frames = _safe_int(recovery_debug.get("corridorCandidateFrames", 0), 0)
+            corridor_frames_with_two_anchors = _safe_int(recovery_debug.get("corridorFramesWithTwoAnchors", 0), 0)
+            corridor_frames_with_single_anchor = _safe_int(
+                recovery_debug.get("corridorFramesWithSingleAnchor", 0),
+                0,
+            )
+            corridor_mean_width = round(_safe_float(recovery_debug.get("corridorMeanWidth", 0.0)), 2)
+            proposal_candidate_frames = _safe_int(recovery_debug.get("proposalCandidateFrames", 0), 0)
+            proposal_window_count = _safe_int(recovery_debug.get("proposalWindowCount", 0), 0)
+            proposal_frames_with_anchor_seed = _safe_int(
+                recovery_debug.get("proposalFramesWithAnchorSeed", 0),
+                0,
+            )
+            proposal_frames_without_anchor_seed = _safe_int(
+                recovery_debug.get("proposalFramesWithoutAnchorSeed", 0),
+                0,
+            )
+            proposal_exact_seed_frames = _safe_int(recovery_debug.get("proposalExactSeedFrames", 0), 0)
+            proposal_interpolated_seed_frames = _safe_int(
+                recovery_debug.get("proposalInterpolatedSeedFrames", 0),
+                0,
+            )
+            proposal_single_seed_frames = _safe_int(recovery_debug.get("proposalSingleSeedFrames", 0), 0)
+            proposal_unseeded_frames = _safe_int(recovery_debug.get("proposalUnseededFrames", 0), 0)
+            proposal_mean_window_width = round(_safe_float(recovery_debug.get("proposalMeanWindowWidth", 0.0)), 2)
+            collapsed_candidate_frames = _safe_int(recovery_debug.get("collapsedCandidateFrames", 0), 0)
+            collapsed_segment_count = _safe_int(recovery_debug.get("collapsedSegmentCount", 0), 0)
+            collapsed_longest_segment_frames = _safe_int(
+                recovery_debug.get("collapsedLongestSegmentFrames", 0),
+                0,
+            )
+            continuity_preferred_frames = _safe_int(recovery_debug.get("continuityPreferredFrames", 0), 0)
+            continuity_rejected_frames = _safe_int(recovery_debug.get("continuityRejectedFrames", 0), 0)
+            midfield_collapsed_frames = _safe_int(recovery_debug.get("midfieldCollapsedFrames", 0), 0)
+            candidate_edge_share = round(_safe_float(recovery_debug.get("candidateEdgeShare", 0.0)), 3)
+            selected_edge_frame_share = round(_safe_float(recovery_debug.get("selectedEdgeFrameShare", 0.0)), 3)
+    return {
+        "recovery_profile_name": recovery_profile_name,
+        "recovery_applied": recovery_applied,
+        "recovered_selected_frames": recovered_selected_frames,
+        "dominant_anchor_coord": dominant_anchor_coord,
+        "dominant_anchor_count": dominant_anchor_count,
+        "dominant_anchor_share": dominant_anchor_share,
+        "mean_source_center_y": mean_source_center_y,
+        "mean_source_box_area": mean_source_box_area,
+        "recovered_supported_frames": recovered_supported_frames,
+        "recovered_anchored_frames": recovered_anchored_frames,
+        "recovered_bridge_frames": recovered_bridge_frames,
+        "recovered_unsupported_edge_frame_share": recovered_unsupported_edge_frame_share,
+        "recovered_anchored_path_length": recovered_anchored_path_length,
+        "corridor_candidate_frames": corridor_candidate_frames,
+        "corridor_frames_with_two_anchors": corridor_frames_with_two_anchors,
+        "corridor_frames_with_single_anchor": corridor_frames_with_single_anchor,
+        "corridor_mean_width": corridor_mean_width,
+        "proposal_candidate_frames": proposal_candidate_frames,
+        "proposal_window_count": proposal_window_count,
+        "proposal_frames_with_anchor_seed": proposal_frames_with_anchor_seed,
+        "proposal_frames_without_anchor_seed": proposal_frames_without_anchor_seed,
+        "proposal_exact_seed_frames": proposal_exact_seed_frames,
+        "proposal_interpolated_seed_frames": proposal_interpolated_seed_frames,
+        "proposal_single_seed_frames": proposal_single_seed_frames,
+        "proposal_unseeded_frames": proposal_unseeded_frames,
+        "proposal_mean_window_width": proposal_mean_window_width,
+        "collapsed_candidate_frames": collapsed_candidate_frames,
+        "collapsed_segment_count": collapsed_segment_count,
+        "collapsed_longest_segment_frames": collapsed_longest_segment_frames,
+        "continuity_preferred_frames": continuity_preferred_frames,
+        "continuity_rejected_frames": continuity_rejected_frames,
+        "midfield_collapsed_frames": midfield_collapsed_frames,
+        "candidate_edge_share": candidate_edge_share,
+        "selected_edge_frame_share": selected_edge_frame_share,
+    }
+
+
+def _summarize_recovery_profile_matrix(recovery_profile_matrix: dict[str, object] | None) -> dict[str, object]:
+    best_proposal_profile_name: str | None = None
+    best_proposal_candidate_frames = 0
+    best_proposal_raw_detected_frames = 0
+    best_proposal_after_seed_collapse_frames = 0
+    best_proposal_after_false_ball_suppression_frames = 0
+    best_proposal_direct_seed_detected_frames = 0
+    best_proposal_direct_seed_tight_detected_frames = 0
+    best_proposal_direct_seed_context_detected_frames = 0
+    best_proposal_direct_seed_hi_res_retry_frames = 0
+    best_proposal_direct_seed_hi_res_retry_detected_frames = 0
+    best_proposal_direct_seed_zero_detect_frames = 0
+    best_proposal_direct_seed_scale_1600_raw_detection_frames = 0
+    best_proposal_direct_seed_scale_960_raw_detection_frames = 0
+    best_proposal_direct_seed_scale_1920_raw_detection_frames = 0
+    best_proposal_direct_seed_scale_1600_candidate_frames = 0
+    best_proposal_direct_seed_scale_960_candidate_frames = 0
+    best_proposal_direct_seed_scale_1920_candidate_frames = 0
+    best_proposal_direct_seed_multi_scale_retry_frames = 0
+    best_proposal_direct_seed_multi_scale_detected_frames = 0
+    best_proposal_direct_seed_raw_hit_filtered_out_frames = 0
+    best_proposal_direct_seed_crop_edge_rejected_frames = 0
+    best_proposal_direct_seed_crop_center_y_rejected_frames = 0
+    best_proposal_direct_seed_pitch_polygon_rejected_frames = 0
+    best_proposal_direct_seed_mean_crop_area = 0.0
+    best_proposal_direct_seed_tight_mean_crop_area = 0.0
+    best_proposal_direct_seed_context_mean_crop_area = 0.0
+    best_proposal_player_ranked_mean_crop_area = 0.0
+    best_proposal_direct_seed_mean_detected_ball_box_area = 0.0
+    best_proposal_player_ranked_mean_detected_ball_box_area = 0.0
+    best_proposal_direct_seed_context_window_frames = 0
+    best_proposal_direct_seed_context_eligible_frames = 0
+    best_proposal_direct_seed_context_mean_seed_to_box_distance = 0.0
+    best_proposal_direct_seed_context_expanded_frames = 0
+    best_proposal_direct_seed_context_mean_expansion_px = 0.0
+    best_proposal_player_ranked_detected_frames = 0
+    best_proposal_exact_seed_detected_frames = 0
+    best_proposal_interpolated_seed_detected_frames = 0
+    best_proposal_single_seed_detected_frames = 0
+    best_proposal_selected_frames = 0
+    best_proposal_viable = False
+        if recovery_profile_matrix is not None:
+            raw_profiles = recovery_profile_matrix.get("profiles")
+            if isinstance(raw_profiles, list):
+                proposal_profiles = [
+                    profile
+                    for profile in raw_profiles
+                    if isinstance(profile, dict) and profile.get("cropMode") == "proposal_windows"
+                ]
+                if proposal_profiles:
+                    best_proposal_profile = sorted(
+                        proposal_profiles,
+                        key=lambda profile: (
+                            -int(_safe_bool(profile.get("viable"), False)),
+                            -_safe_int(profile.get("selectedFrames", 0), 0),
+                            -_safe_int(profile.get("candidateFrames", 0), 0),
+                            str(profile.get("name", "")),
+                        ),
+                    )[0]
+                    raw_best_proposal_profile_name = best_proposal_profile.get("name")
+                    if isinstance(raw_best_proposal_profile_name, str) and raw_best_proposal_profile_name.strip():
+                        best_proposal_profile_name = raw_best_proposal_profile_name.strip()
+                    best_proposal_candidate_frames = _safe_int(
+                        best_proposal_profile.get("proposalCandidateFrames", best_proposal_profile.get("candidateFrames", 0)),
+                        0,
+                    )
+                    best_proposal_raw_detected_frames = _safe_int(
+                        best_proposal_profile.get("proposalRawDetectedFrames", 0),
+                        0,
+                    )
+                    best_proposal_after_seed_collapse_frames = _safe_int(
+                        best_proposal_profile.get("proposalAfterSeedCollapseFrames", 0),
+                        0,
+                    )
+                    best_proposal_after_false_ball_suppression_frames = _safe_int(
+                        best_proposal_profile.get("proposalAfterFalseBallSuppressionFrames", 0),
+                        0,
+                    )
+                    best_proposal_direct_seed_detected_frames = _safe_int(
+                        best_proposal_profile.get("proposalDirectSeedDetectedFrames", 0),
+                        0,
+                    )
+                    best_proposal_direct_seed_tight_detected_frames = _safe_int(
+                        best_proposal_profile.get("proposalDirectSeedTightDetectedFrames", 0),
+                        0,
+                    )
+                    best_proposal_direct_seed_context_detected_frames = _safe_int(
+                        best_proposal_profile.get("proposalDirectSeedContextDetectedFrames", 0),
+                        0,
+                    )
+                    best_proposal_direct_seed_hi_res_retry_frames = _safe_int(
+                        best_proposal_profile.get("proposalDirectSeedHiResRetryFrames", 0),
+                        0,
+                    )
+                    best_proposal_direct_seed_hi_res_retry_detected_frames = _safe_int(
+                        best_proposal_profile.get("proposalDirectSeedHiResRetryDetectedFrames", 0),
+                        0,
+                    )
+                    best_proposal_direct_seed_zero_detect_frames = _safe_int(
+                        best_proposal_profile.get("proposalDirectSeedZeroDetectFrames", 0),
+                        0,
+                    )
+                    best_proposal_direct_seed_scale_1600_raw_detection_frames = _safe_int(
+                        best_proposal_profile.get("proposalDirectSeedScale1600RawDetectionFrames", 0),
+                        0,
+                    )
+                    best_proposal_direct_seed_scale_960_raw_detection_frames = _safe_int(
+                        best_proposal_profile.get("proposalDirectSeedScale960RawDetectionFrames", 0),
+                        0,
+                    )
+                    best_proposal_direct_seed_scale_1920_raw_detection_frames = _safe_int(
+                        best_proposal_profile.get("proposalDirectSeedScale1920RawDetectionFrames", 0),
+                        0,
+                    )
+                    best_proposal_direct_seed_scale_1600_candidate_frames = _safe_int(
+                        best_proposal_profile.get("proposalDirectSeedScale1600CandidateFrames", 0),
+                        0,
+                    )
+                    best_proposal_direct_seed_scale_960_candidate_frames = _safe_int(
+                        best_proposal_profile.get("proposalDirectSeedScale960CandidateFrames", 0),
+                        0,
+                    )
+                    best_proposal_direct_seed_scale_1920_candidate_frames = _safe_int(
+                        best_proposal_profile.get("proposalDirectSeedScale1920CandidateFrames", 0),
+                        0,
+                    )
+                    best_proposal_direct_seed_multi_scale_retry_frames = _safe_int(
+                        best_proposal_profile.get("proposalDirectSeedMultiScaleRetryFrames", 0),
+                        0,
+                    )
+                    best_proposal_direct_seed_multi_scale_detected_frames = _safe_int(
+                        best_proposal_profile.get("proposalDirectSeedMultiScaleDetectedFrames", 0),
+                        0,
+                    )
+                    best_proposal_direct_seed_raw_hit_filtered_out_frames = _safe_int(
+                        best_proposal_profile.get("proposalDirectSeedRawHitFilteredOutFrames", 0),
+                        0,
+                    )
+                    best_proposal_direct_seed_crop_edge_rejected_frames = _safe_int(
+                        best_proposal_profile.get("proposalDirectSeedCropEdgeRejectedFrames", 0),
+                        0,
+                    )
+                    best_proposal_direct_seed_crop_center_y_rejected_frames = _safe_int(
+                        best_proposal_profile.get("proposalDirectSeedCropCenterYRejectedFrames", 0),
+                        0,
+                    )
+                    best_proposal_direct_seed_pitch_polygon_rejected_frames = _safe_int(
+                        best_proposal_profile.get("proposalDirectSeedPitchPolygonRejectedFrames", 0),
+                        0,
+                    )
+                    best_proposal_direct_seed_mean_crop_area = round(
+                        _safe_float(best_proposal_profile.get("proposalDirectSeedMeanCropArea", 0.0), 0.0),
+                        2,
+                    )
+                    best_proposal_direct_seed_tight_mean_crop_area = round(
+                        _safe_float(best_proposal_profile.get("proposalDirectSeedTightMeanCropArea", 0.0), 0.0),
+                        2,
+                    )
+                    best_proposal_direct_seed_context_mean_crop_area = round(
+                        _safe_float(best_proposal_profile.get("proposalDirectSeedContextMeanCropArea", 0.0), 0.0),
+                        2,
+                    )
+                    best_proposal_player_ranked_mean_crop_area = round(
+                        _safe_float(best_proposal_profile.get("proposalPlayerRankedMeanCropArea", 0.0), 0.0),
+                        2,
+                    )
+                    best_proposal_direct_seed_mean_detected_ball_box_area = round(
+                        _safe_float(best_proposal_profile.get("proposalDirectSeedMeanDetectedBallBoxArea", 0.0), 0.0),
+                        2,
+                    )
+                    best_proposal_player_ranked_mean_detected_ball_box_area = round(
+                        _safe_float(best_proposal_profile.get("proposalPlayerRankedMeanDetectedBallBoxArea", 0.0), 0.0),
+                        2,
+                    )
+                    best_proposal_direct_seed_context_window_frames = _safe_int(
+                        best_proposal_profile.get("proposalDirectSeedContextWindowFrames", 0),
+                        0,
+                    )
+                    best_proposal_direct_seed_context_eligible_frames = _safe_int(
+                        best_proposal_profile.get("proposalDirectSeedContextEligibleFrames", 0),
+                        0,
+                    )
+                    best_proposal_direct_seed_context_mean_seed_to_box_distance = round(
+                        _safe_float(best_proposal_profile.get("proposalDirectSeedContextMeanSeedToBoxDistance", 0.0), 0.0),
+                        2,
+                    )
+                    best_proposal_direct_seed_context_expanded_frames = _safe_int(
+                        best_proposal_profile.get("proposalDirectSeedContextExpandedFrames", 0),
+                        0,
+                    )
+                    best_proposal_direct_seed_context_mean_expansion_px = round(
+                        _safe_float(best_proposal_profile.get("proposalDirectSeedContextMeanExpansionPx", 0.0), 0.0),
+                        2,
+                    )
+                    best_proposal_player_ranked_detected_frames = _safe_int(
+                        best_proposal_profile.get("proposalPlayerRankedDetectedFrames", 0),
+                        0,
+                    )
+                    best_proposal_exact_seed_detected_frames = _safe_int(
+                        best_proposal_profile.get("proposalExactSeedDetectedFrames", 0),
+                        0,
+                    )
+                    best_proposal_interpolated_seed_detected_frames = _safe_int(
+                        best_proposal_profile.get("proposalInterpolatedSeedDetectedFrames", 0),
+                        0,
+                    )
+                    best_proposal_single_seed_detected_frames = _safe_int(
+                        best_proposal_profile.get("proposalSingleSeedDetectedFrames", 0),
+                        0,
+                    )
+                    best_proposal_selected_frames = _safe_int(best_proposal_profile.get("selectedFrames", 0), 0)
+                    best_proposal_viable = _safe_bool(best_proposal_profile.get("viable"), False)
+    return {
+        "best_proposal_profile_name": best_proposal_profile_name,
+        "best_proposal_candidate_frames": best_proposal_candidate_frames,
+        "best_proposal_raw_detected_frames": best_proposal_raw_detected_frames,
+        "best_proposal_after_seed_collapse_frames": best_proposal_after_seed_collapse_frames,
+        "best_proposal_after_false_ball_suppression_frames": best_proposal_after_false_ball_suppression_frames,
+        "best_proposal_direct_seed_detected_frames": best_proposal_direct_seed_detected_frames,
+        "best_proposal_direct_seed_tight_detected_frames": best_proposal_direct_seed_tight_detected_frames,
+        "best_proposal_direct_seed_context_detected_frames": best_proposal_direct_seed_context_detected_frames,
+        "best_proposal_direct_seed_hi_res_retry_frames": best_proposal_direct_seed_hi_res_retry_frames,
+        "best_proposal_direct_seed_hi_res_retry_detected_frames": best_proposal_direct_seed_hi_res_retry_detected_frames,
+        "best_proposal_direct_seed_zero_detect_frames": best_proposal_direct_seed_zero_detect_frames,
+        "best_proposal_direct_seed_scale_1600_raw_detection_frames": best_proposal_direct_seed_scale_1600_raw_detection_frames,
+        "best_proposal_direct_seed_scale_960_raw_detection_frames": best_proposal_direct_seed_scale_960_raw_detection_frames,
+        "best_proposal_direct_seed_scale_1920_raw_detection_frames": best_proposal_direct_seed_scale_1920_raw_detection_frames,
+        "best_proposal_direct_seed_scale_1600_candidate_frames": best_proposal_direct_seed_scale_1600_candidate_frames,
+        "best_proposal_direct_seed_scale_960_candidate_frames": best_proposal_direct_seed_scale_960_candidate_frames,
+        "best_proposal_direct_seed_scale_1920_candidate_frames": best_proposal_direct_seed_scale_1920_candidate_frames,
+        "best_proposal_direct_seed_multi_scale_retry_frames": best_proposal_direct_seed_multi_scale_retry_frames,
+        "best_proposal_direct_seed_multi_scale_detected_frames": best_proposal_direct_seed_multi_scale_detected_frames,
+        "best_proposal_direct_seed_raw_hit_filtered_out_frames": best_proposal_direct_seed_raw_hit_filtered_out_frames,
+        "best_proposal_direct_seed_crop_edge_rejected_frames": best_proposal_direct_seed_crop_edge_rejected_frames,
+        "best_proposal_direct_seed_crop_center_y_rejected_frames": best_proposal_direct_seed_crop_center_y_rejected_frames,
+        "best_proposal_direct_seed_pitch_polygon_rejected_frames": best_proposal_direct_seed_pitch_polygon_rejected_frames,
+        "best_proposal_direct_seed_mean_crop_area": best_proposal_direct_seed_mean_crop_area,
+        "best_proposal_direct_seed_tight_mean_crop_area": best_proposal_direct_seed_tight_mean_crop_area,
+        "best_proposal_direct_seed_context_mean_crop_area": best_proposal_direct_seed_context_mean_crop_area,
+        "best_proposal_player_ranked_mean_crop_area": best_proposal_player_ranked_mean_crop_area,
+        "best_proposal_direct_seed_mean_detected_ball_box_area": best_proposal_direct_seed_mean_detected_ball_box_area,
+        "best_proposal_player_ranked_mean_detected_ball_box_area": best_proposal_player_ranked_mean_detected_ball_box_area,
+        "best_proposal_direct_seed_context_window_frames": best_proposal_direct_seed_context_window_frames,
+        "best_proposal_direct_seed_context_eligible_frames": best_proposal_direct_seed_context_eligible_frames,
+        "best_proposal_direct_seed_context_mean_seed_to_box_distance": best_proposal_direct_seed_context_mean_seed_to_box_distance,
+        "best_proposal_direct_seed_context_expanded_frames": best_proposal_direct_seed_context_expanded_frames,
+        "best_proposal_direct_seed_context_mean_expansion_px": best_proposal_direct_seed_context_mean_expansion_px,
+        "best_proposal_player_ranked_detected_frames": best_proposal_player_ranked_detected_frames,
+        "best_proposal_exact_seed_detected_frames": best_proposal_exact_seed_detected_frames,
+        "best_proposal_interpolated_seed_detected_frames": best_proposal_interpolated_seed_detected_frames,
+        "best_proposal_single_seed_detected_frames": best_proposal_single_seed_detected_frames,
+        "best_proposal_selected_frames": best_proposal_selected_frames,
+        "best_proposal_viable": best_proposal_viable,
+    }
+
+
 def _summarize_accepted_match_state(payload: dict[str, object] | None) -> dict[str, object]:
     result: dict[str, object] = {
         "accepted_match_state_frames": 0,
@@ -1324,80 +1710,6 @@ def summarize_match_benchmark(storage: Storage, match_id: str) -> MatchBenchmark
     ball_track_edge_frame_share = 0.0
     ball_track_shows_meaningful_motion = False
     ball_track_viable = False
-    recovery_profile_name = None
-    recovery_applied = False
-    recovered_selected_frames = 0
-    dominant_anchor_coord: list[float] | None = None
-    dominant_anchor_count = 0
-    dominant_anchor_share = 0.0
-    mean_source_center_y = 0.0
-    mean_source_box_area = 0.0
-    recovered_supported_frames = 0
-    recovered_anchored_frames = 0
-    recovered_bridge_frames = 0
-    recovered_unsupported_edge_frame_share = 0.0
-    recovered_anchored_path_length = 0.0
-    corridor_candidate_frames = 0
-    corridor_frames_with_two_anchors = 0
-    corridor_frames_with_single_anchor = 0
-    corridor_mean_width = 0.0
-    proposal_candidate_frames = 0
-    proposal_window_count = 0
-    proposal_frames_with_anchor_seed = 0
-    proposal_frames_without_anchor_seed = 0
-    proposal_exact_seed_frames = 0
-    proposal_interpolated_seed_frames = 0
-    proposal_single_seed_frames = 0
-    proposal_unseeded_frames = 0
-    proposal_mean_window_width = 0.0
-    best_proposal_raw_detected_frames = 0
-    best_proposal_after_seed_collapse_frames = 0
-    best_proposal_after_false_ball_suppression_frames = 0
-    best_proposal_direct_seed_detected_frames = 0
-    best_proposal_direct_seed_tight_detected_frames = 0
-    best_proposal_direct_seed_context_detected_frames = 0
-    best_proposal_direct_seed_hi_res_retry_frames = 0
-    best_proposal_direct_seed_hi_res_retry_detected_frames = 0
-    best_proposal_direct_seed_zero_detect_frames = 0
-    best_proposal_direct_seed_scale_1600_raw_detection_frames = 0
-    best_proposal_direct_seed_scale_960_raw_detection_frames = 0
-    best_proposal_direct_seed_scale_1920_raw_detection_frames = 0
-    best_proposal_direct_seed_scale_1600_candidate_frames = 0
-    best_proposal_direct_seed_scale_960_candidate_frames = 0
-    best_proposal_direct_seed_scale_1920_candidate_frames = 0
-    best_proposal_direct_seed_multi_scale_retry_frames = 0
-    best_proposal_direct_seed_multi_scale_detected_frames = 0
-    best_proposal_direct_seed_raw_hit_filtered_out_frames = 0
-    best_proposal_direct_seed_crop_edge_rejected_frames = 0
-    best_proposal_direct_seed_crop_center_y_rejected_frames = 0
-    best_proposal_direct_seed_pitch_polygon_rejected_frames = 0
-    best_proposal_direct_seed_mean_crop_area = 0.0
-    best_proposal_direct_seed_tight_mean_crop_area = 0.0
-    best_proposal_direct_seed_context_mean_crop_area = 0.0
-    best_proposal_player_ranked_mean_crop_area = 0.0
-    best_proposal_direct_seed_mean_detected_ball_box_area = 0.0
-    best_proposal_player_ranked_mean_detected_ball_box_area = 0.0
-    best_proposal_direct_seed_context_window_frames = 0
-    best_proposal_direct_seed_context_eligible_frames = 0
-    best_proposal_direct_seed_context_mean_seed_to_box_distance = 0.0
-    best_proposal_direct_seed_context_expanded_frames = 0
-    best_proposal_direct_seed_context_mean_expansion_px = 0.0
-    best_proposal_player_ranked_detected_frames = 0
-    best_proposal_exact_seed_detected_frames = 0
-    best_proposal_interpolated_seed_detected_frames = 0
-    best_proposal_single_seed_detected_frames = 0
-    best_proposal_profile_name: str | None = None
-    best_proposal_candidate_frames = 0
-    best_proposal_selected_frames = 0
-    best_proposal_viable = False
-    collapsed_candidate_frames = 0
-    collapsed_segment_count = 0
-    collapsed_longest_segment_frames = 0
-    continuity_preferred_frames = 0
-    continuity_rejected_frames = 0
-    midfield_collapsed_frames = 0
-    candidate_edge_share = 0.0
-    selected_edge_frame_share = 0.0
     accepted_match_state_frames = 0
     accepted_match_state_coverage_ratio = 0.0
     visible_state_frames = 0
@@ -1500,235 +1812,10 @@ def summarize_match_benchmark(storage: Storage, match_id: str) -> MatchBenchmark
             loaded_recovery_debug = None
         if isinstance(loaded_recovery_debug, dict):
             recovery_debug = loaded_recovery_debug
-    if recovery_debug is not None:
-        raw_recovery_profile_name = recovery_debug.get("recoveryProfileName")
-        recovery_profile_name = raw_recovery_profile_name if isinstance(raw_recovery_profile_name, str) else None
-        recovery_applied = _safe_bool(recovery_debug.get("recoveryApplied", False))
-        recovered_selected_frames = _safe_int(recovery_debug.get("recoveredSelectedFrames", 0))
-        dominant_anchor_coord = _safe_anchor_coord(recovery_debug.get("dominantAnchorCoord"))
-        dominant_anchor_count = _safe_int(recovery_debug.get("dominantAnchorCount", 0))
-        dominant_anchor_share = round(_safe_float(recovery_debug.get("dominantAnchorShare", 0.0)), 3)
-        mean_source_center_y = round(_safe_float(recovery_debug.get("meanSourceCenterY", 0.0)), 2)
-        mean_source_box_area = round(_safe_float(recovery_debug.get("meanSourceBoxArea", 0.0)), 2)
-        recovered_supported_frames = _safe_int(recovery_debug.get("recoveredSupportedFrames", 0), 0)
-        recovered_anchored_frames = _safe_int(recovery_debug.get("recoveredAnchoredFrames", 0), 0)
-        recovered_bridge_frames = _safe_int(recovery_debug.get("recoveredBridgeFrames", 0), 0)
-        recovered_unsupported_edge_frame_share = round(
-            _safe_float(recovery_debug.get("recoveredUnsupportedEdgeFrameShare", 0.0), 0.0),
-            3,
-        )
-        recovered_anchored_path_length = round(
-            _safe_float(recovery_debug.get("recoveredAnchoredPathLength", 0.0), 0.0),
-            2,
-        )
-        corridor_candidate_frames = _safe_int(recovery_debug.get("corridorCandidateFrames", 0), 0)
-        corridor_frames_with_two_anchors = _safe_int(recovery_debug.get("corridorFramesWithTwoAnchors", 0), 0)
-        corridor_frames_with_single_anchor = _safe_int(
-            recovery_debug.get("corridorFramesWithSingleAnchor", 0),
-            0,
-        )
-        corridor_mean_width = round(_safe_float(recovery_debug.get("corridorMeanWidth", 0.0)), 2)
-        proposal_candidate_frames = _safe_int(recovery_debug.get("proposalCandidateFrames", 0), 0)
-        proposal_window_count = _safe_int(recovery_debug.get("proposalWindowCount", 0), 0)
-        proposal_frames_with_anchor_seed = _safe_int(
-            recovery_debug.get("proposalFramesWithAnchorSeed", 0),
-            0,
-        )
-        proposal_frames_without_anchor_seed = _safe_int(
-            recovery_debug.get("proposalFramesWithoutAnchorSeed", 0),
-            0,
-        )
-        proposal_exact_seed_frames = _safe_int(recovery_debug.get("proposalExactSeedFrames", 0), 0)
-        proposal_interpolated_seed_frames = _safe_int(
-            recovery_debug.get("proposalInterpolatedSeedFrames", 0),
-            0,
-        )
-        proposal_single_seed_frames = _safe_int(recovery_debug.get("proposalSingleSeedFrames", 0), 0)
-        proposal_unseeded_frames = _safe_int(recovery_debug.get("proposalUnseededFrames", 0), 0)
-        proposal_mean_window_width = round(_safe_float(recovery_debug.get("proposalMeanWindowWidth", 0.0)), 2)
-        collapsed_candidate_frames = _safe_int(recovery_debug.get("collapsedCandidateFrames", 0), 0)
-        collapsed_segment_count = _safe_int(recovery_debug.get("collapsedSegmentCount", 0), 0)
-        collapsed_longest_segment_frames = _safe_int(
-            recovery_debug.get("collapsedLongestSegmentFrames", 0),
-            0,
-        )
-        continuity_preferred_frames = _safe_int(recovery_debug.get("continuityPreferredFrames", 0), 0)
-        continuity_rejected_frames = _safe_int(recovery_debug.get("continuityRejectedFrames", 0), 0)
-        midfield_collapsed_frames = _safe_int(recovery_debug.get("midfieldCollapsedFrames", 0), 0)
-        candidate_edge_share = round(_safe_float(recovery_debug.get("candidateEdgeShare", 0.0)), 3)
-        selected_edge_frame_share = round(_safe_float(recovery_debug.get("selectedEdgeFrameShare", 0.0)), 3)
-    recovery_profile_matrix = _load_recovery_profile_matrix(storage, match_id)
-    if recovery_profile_matrix is not None:
-        raw_profiles = recovery_profile_matrix.get("profiles")
-        if isinstance(raw_profiles, list):
-            proposal_profiles = [
-                profile
-                for profile in raw_profiles
-                if isinstance(profile, dict) and profile.get("cropMode") == "proposal_windows"
-            ]
-            if proposal_profiles:
-                best_proposal_profile = sorted(
-                    proposal_profiles,
-                    key=lambda profile: (
-                        -int(_safe_bool(profile.get("viable"), False)),
-                        -_safe_int(profile.get("selectedFrames", 0), 0),
-                        -_safe_int(profile.get("candidateFrames", 0), 0),
-                        str(profile.get("name", "")),
-                    ),
-                )[0]
-                raw_best_proposal_profile_name = best_proposal_profile.get("name")
-                if isinstance(raw_best_proposal_profile_name, str) and raw_best_proposal_profile_name.strip():
-                    best_proposal_profile_name = raw_best_proposal_profile_name.strip()
-                best_proposal_candidate_frames = _safe_int(
-                    best_proposal_profile.get("proposalCandidateFrames", best_proposal_profile.get("candidateFrames", 0)),
-                    0,
-                )
-                best_proposal_raw_detected_frames = _safe_int(
-                    best_proposal_profile.get("proposalRawDetectedFrames", 0),
-                    0,
-                )
-                best_proposal_after_seed_collapse_frames = _safe_int(
-                    best_proposal_profile.get("proposalAfterSeedCollapseFrames", 0),
-                    0,
-                )
-                best_proposal_after_false_ball_suppression_frames = _safe_int(
-                    best_proposal_profile.get("proposalAfterFalseBallSuppressionFrames", 0),
-                    0,
-                )
-                best_proposal_direct_seed_detected_frames = _safe_int(
-                    best_proposal_profile.get("proposalDirectSeedDetectedFrames", 0),
-                    0,
-                )
-                best_proposal_direct_seed_tight_detected_frames = _safe_int(
-                    best_proposal_profile.get("proposalDirectSeedTightDetectedFrames", 0),
-                    0,
-                )
-                best_proposal_direct_seed_context_detected_frames = _safe_int(
-                    best_proposal_profile.get("proposalDirectSeedContextDetectedFrames", 0),
-                    0,
-                )
-                best_proposal_direct_seed_hi_res_retry_frames = _safe_int(
-                    best_proposal_profile.get("proposalDirectSeedHiResRetryFrames", 0),
-                    0,
-                )
-                best_proposal_direct_seed_hi_res_retry_detected_frames = _safe_int(
-                    best_proposal_profile.get("proposalDirectSeedHiResRetryDetectedFrames", 0),
-                    0,
-                )
-                best_proposal_direct_seed_zero_detect_frames = _safe_int(
-                    best_proposal_profile.get("proposalDirectSeedZeroDetectFrames", 0),
-                    0,
-                )
-                best_proposal_direct_seed_scale_1600_raw_detection_frames = _safe_int(
-                    best_proposal_profile.get("proposalDirectSeedScale1600RawDetectionFrames", 0),
-                    0,
-                )
-                best_proposal_direct_seed_scale_960_raw_detection_frames = _safe_int(
-                    best_proposal_profile.get("proposalDirectSeedScale960RawDetectionFrames", 0),
-                    0,
-                )
-                best_proposal_direct_seed_scale_1920_raw_detection_frames = _safe_int(
-                    best_proposal_profile.get("proposalDirectSeedScale1920RawDetectionFrames", 0),
-                    0,
-                )
-                best_proposal_direct_seed_scale_1600_candidate_frames = _safe_int(
-                    best_proposal_profile.get("proposalDirectSeedScale1600CandidateFrames", 0),
-                    0,
-                )
-                best_proposal_direct_seed_scale_960_candidate_frames = _safe_int(
-                    best_proposal_profile.get("proposalDirectSeedScale960CandidateFrames", 0),
-                    0,
-                )
-                best_proposal_direct_seed_scale_1920_candidate_frames = _safe_int(
-                    best_proposal_profile.get("proposalDirectSeedScale1920CandidateFrames", 0),
-                    0,
-                )
-                best_proposal_direct_seed_multi_scale_retry_frames = _safe_int(
-                    best_proposal_profile.get("proposalDirectSeedMultiScaleRetryFrames", 0),
-                    0,
-                )
-                best_proposal_direct_seed_multi_scale_detected_frames = _safe_int(
-                    best_proposal_profile.get("proposalDirectSeedMultiScaleDetectedFrames", 0),
-                    0,
-                )
-                best_proposal_direct_seed_raw_hit_filtered_out_frames = _safe_int(
-                    best_proposal_profile.get("proposalDirectSeedRawHitFilteredOutFrames", 0),
-                    0,
-                )
-                best_proposal_direct_seed_crop_edge_rejected_frames = _safe_int(
-                    best_proposal_profile.get("proposalDirectSeedCropEdgeRejectedFrames", 0),
-                    0,
-                )
-                best_proposal_direct_seed_crop_center_y_rejected_frames = _safe_int(
-                    best_proposal_profile.get("proposalDirectSeedCropCenterYRejectedFrames", 0),
-                    0,
-                )
-                best_proposal_direct_seed_pitch_polygon_rejected_frames = _safe_int(
-                    best_proposal_profile.get("proposalDirectSeedPitchPolygonRejectedFrames", 0),
-                    0,
-                )
-                best_proposal_direct_seed_mean_crop_area = round(
-                    _safe_float(best_proposal_profile.get("proposalDirectSeedMeanCropArea", 0.0), 0.0),
-                    2,
-                )
-                best_proposal_direct_seed_tight_mean_crop_area = round(
-                    _safe_float(best_proposal_profile.get("proposalDirectSeedTightMeanCropArea", 0.0), 0.0),
-                    2,
-                )
-                best_proposal_direct_seed_context_mean_crop_area = round(
-                    _safe_float(best_proposal_profile.get("proposalDirectSeedContextMeanCropArea", 0.0), 0.0),
-                    2,
-                )
-                best_proposal_player_ranked_mean_crop_area = round(
-                    _safe_float(best_proposal_profile.get("proposalPlayerRankedMeanCropArea", 0.0), 0.0),
-                    2,
-                )
-                best_proposal_direct_seed_mean_detected_ball_box_area = round(
-                    _safe_float(best_proposal_profile.get("proposalDirectSeedMeanDetectedBallBoxArea", 0.0), 0.0),
-                    2,
-                )
-                best_proposal_player_ranked_mean_detected_ball_box_area = round(
-                    _safe_float(best_proposal_profile.get("proposalPlayerRankedMeanDetectedBallBoxArea", 0.0), 0.0),
-                    2,
-                )
-                best_proposal_direct_seed_context_window_frames = _safe_int(
-                    best_proposal_profile.get("proposalDirectSeedContextWindowFrames", 0),
-                    0,
-                )
-                best_proposal_direct_seed_context_eligible_frames = _safe_int(
-                    best_proposal_profile.get("proposalDirectSeedContextEligibleFrames", 0),
-                    0,
-                )
-                best_proposal_direct_seed_context_mean_seed_to_box_distance = round(
-                    _safe_float(best_proposal_profile.get("proposalDirectSeedContextMeanSeedToBoxDistance", 0.0), 0.0),
-                    2,
-                )
-                best_proposal_direct_seed_context_expanded_frames = _safe_int(
-                    best_proposal_profile.get("proposalDirectSeedContextExpandedFrames", 0),
-                    0,
-                )
-                best_proposal_direct_seed_context_mean_expansion_px = round(
-                    _safe_float(best_proposal_profile.get("proposalDirectSeedContextMeanExpansionPx", 0.0), 0.0),
-                    2,
-                )
-                best_proposal_player_ranked_detected_frames = _safe_int(
-                    best_proposal_profile.get("proposalPlayerRankedDetectedFrames", 0),
-                    0,
-                )
-                best_proposal_exact_seed_detected_frames = _safe_int(
-                    best_proposal_profile.get("proposalExactSeedDetectedFrames", 0),
-                    0,
-                )
-                best_proposal_interpolated_seed_detected_frames = _safe_int(
-                    best_proposal_profile.get("proposalInterpolatedSeedDetectedFrames", 0),
-                    0,
-                )
-                best_proposal_single_seed_detected_frames = _safe_int(
-                    best_proposal_profile.get("proposalSingleSeedDetectedFrames", 0),
-                    0,
-                )
-                best_proposal_selected_frames = _safe_int(best_proposal_profile.get("selectedFrames", 0), 0)
-                best_proposal_viable = _safe_bool(best_proposal_profile.get("viable"), False)
+    recovery_diagnostics = _summarize_recovery_debug(recovery_debug)
+    proposal_diagnostics = _summarize_recovery_profile_matrix(
+        _load_recovery_profile_matrix(storage, match_id)
+    )
     ball_pipeline_trace_path = storage._match_dir(match_id) / "ball_pipeline_trace.json"
     if ball_pipeline_trace_path.exists():
         ball_pipeline_trace = storage.load_analysis_artifact(match_id, "ball_pipeline_trace")
@@ -2017,80 +2104,80 @@ def summarize_match_benchmark(storage: Storage, match_id: str) -> MatchBenchmark
         ballTrackEdgeFrameShare=ball_track_edge_frame_share,
         ballTrackShowsMeaningfulMotion=ball_track_shows_meaningful_motion,
         ballTrackViable=ball_track_viable,
-        recoveryProfileName=recovery_profile_name,
-        recoveryApplied=recovery_applied,
-        recoveredSelectedFrames=recovered_selected_frames,
-        dominantAnchorCoord=dominant_anchor_coord,
-        dominantAnchorCount=dominant_anchor_count,
-        dominantAnchorShare=dominant_anchor_share,
-        meanSourceCenterY=mean_source_center_y,
-        meanSourceBoxArea=mean_source_box_area,
-        recoveredSupportedFrames=recovered_supported_frames,
-        recoveredAnchoredFrames=recovered_anchored_frames,
-        recoveredBridgeFrames=recovered_bridge_frames,
-        recoveredUnsupportedEdgeFrameShare=recovered_unsupported_edge_frame_share,
-        recoveredAnchoredPathLength=recovered_anchored_path_length,
-        corridorCandidateFrames=corridor_candidate_frames,
-        corridorFramesWithTwoAnchors=corridor_frames_with_two_anchors,
-        corridorFramesWithSingleAnchor=corridor_frames_with_single_anchor,
-        corridorMeanWidth=corridor_mean_width,
-        proposalCandidateFrames=proposal_candidate_frames,
-        proposalWindowCount=proposal_window_count,
-        proposalFramesWithAnchorSeed=proposal_frames_with_anchor_seed,
-        proposalFramesWithoutAnchorSeed=proposal_frames_without_anchor_seed,
-        proposalExactSeedFrames=proposal_exact_seed_frames,
-        proposalInterpolatedSeedFrames=proposal_interpolated_seed_frames,
-        proposalSingleSeedFrames=proposal_single_seed_frames,
-        proposalUnseededFrames=proposal_unseeded_frames,
-        proposalMeanWindowWidth=proposal_mean_window_width,
-        bestProposalRawDetectedFrames=best_proposal_raw_detected_frames,
-        bestProposalAfterSeedCollapseFrames=best_proposal_after_seed_collapse_frames,
-        bestProposalAfterFalseBallSuppressionFrames=best_proposal_after_false_ball_suppression_frames,
-        bestProposalDirectSeedDetectedFrames=best_proposal_direct_seed_detected_frames,
-        bestProposalDirectSeedTightDetectedFrames=best_proposal_direct_seed_tight_detected_frames,
-        bestProposalDirectSeedContextDetectedFrames=best_proposal_direct_seed_context_detected_frames,
-        bestProposalDirectSeedHiResRetryFrames=best_proposal_direct_seed_hi_res_retry_frames,
-        bestProposalDirectSeedHiResRetryDetectedFrames=best_proposal_direct_seed_hi_res_retry_detected_frames,
-        bestProposalDirectSeedZeroDetectFrames=best_proposal_direct_seed_zero_detect_frames,
-        bestProposalDirectSeedScale1600RawDetectionFrames=best_proposal_direct_seed_scale_1600_raw_detection_frames,
-        bestProposalDirectSeedScale960RawDetectionFrames=best_proposal_direct_seed_scale_960_raw_detection_frames,
-        bestProposalDirectSeedScale1920RawDetectionFrames=best_proposal_direct_seed_scale_1920_raw_detection_frames,
-        bestProposalDirectSeedScale1600CandidateFrames=best_proposal_direct_seed_scale_1600_candidate_frames,
-        bestProposalDirectSeedScale960CandidateFrames=best_proposal_direct_seed_scale_960_candidate_frames,
-        bestProposalDirectSeedScale1920CandidateFrames=best_proposal_direct_seed_scale_1920_candidate_frames,
-        bestProposalDirectSeedMultiScaleRetryFrames=best_proposal_direct_seed_multi_scale_retry_frames,
-        bestProposalDirectSeedMultiScaleDetectedFrames=best_proposal_direct_seed_multi_scale_detected_frames,
-        bestProposalDirectSeedRawHitFilteredOutFrames=best_proposal_direct_seed_raw_hit_filtered_out_frames,
-        bestProposalDirectSeedCropEdgeRejectedFrames=best_proposal_direct_seed_crop_edge_rejected_frames,
-        bestProposalDirectSeedCropCenterYRejectedFrames=best_proposal_direct_seed_crop_center_y_rejected_frames,
-        bestProposalDirectSeedPitchPolygonRejectedFrames=best_proposal_direct_seed_pitch_polygon_rejected_frames,
-        bestProposalDirectSeedMeanCropArea=best_proposal_direct_seed_mean_crop_area,
-        bestProposalDirectSeedTightMeanCropArea=best_proposal_direct_seed_tight_mean_crop_area,
-        bestProposalDirectSeedContextMeanCropArea=best_proposal_direct_seed_context_mean_crop_area,
-        bestProposalPlayerRankedMeanCropArea=best_proposal_player_ranked_mean_crop_area,
-        bestProposalDirectSeedMeanDetectedBallBoxArea=best_proposal_direct_seed_mean_detected_ball_box_area,
-        bestProposalPlayerRankedMeanDetectedBallBoxArea=best_proposal_player_ranked_mean_detected_ball_box_area,
-        bestProposalDirectSeedContextWindowFrames=best_proposal_direct_seed_context_window_frames,
-        bestProposalDirectSeedContextEligibleFrames=best_proposal_direct_seed_context_eligible_frames,
-        bestProposalDirectSeedContextMeanSeedToBoxDistance=best_proposal_direct_seed_context_mean_seed_to_box_distance,
-        bestProposalDirectSeedContextExpandedFrames=best_proposal_direct_seed_context_expanded_frames,
-        bestProposalDirectSeedContextMeanExpansionPx=best_proposal_direct_seed_context_mean_expansion_px,
-        bestProposalPlayerRankedDetectedFrames=best_proposal_player_ranked_detected_frames,
-        bestProposalExactSeedDetectedFrames=best_proposal_exact_seed_detected_frames,
-        bestProposalInterpolatedSeedDetectedFrames=best_proposal_interpolated_seed_detected_frames,
-        bestProposalSingleSeedDetectedFrames=best_proposal_single_seed_detected_frames,
-        bestProposalProfileName=best_proposal_profile_name,
-        bestProposalCandidateFrames=best_proposal_candidate_frames,
-        bestProposalSelectedFrames=best_proposal_selected_frames,
-        bestProposalViable=best_proposal_viable,
-        collapsedCandidateFrames=collapsed_candidate_frames,
-        collapsedSegmentCount=collapsed_segment_count,
-        collapsedLongestSegmentFrames=collapsed_longest_segment_frames,
-        continuityPreferredFrames=continuity_preferred_frames,
-        continuityRejectedFrames=continuity_rejected_frames,
-        midfieldCollapsedFrames=midfield_collapsed_frames,
-        candidateEdgeShare=candidate_edge_share,
-        selectedEdgeFrameShare=selected_edge_frame_share,
+        recoveryProfileName=recovery_diagnostics["recovery_profile_name"],
+        recoveryApplied=recovery_diagnostics["recovery_applied"],
+        recoveredSelectedFrames=recovery_diagnostics["recovered_selected_frames"],
+        dominantAnchorCoord=recovery_diagnostics["dominant_anchor_coord"],
+        dominantAnchorCount=recovery_diagnostics["dominant_anchor_count"],
+        dominantAnchorShare=recovery_diagnostics["dominant_anchor_share"],
+        meanSourceCenterY=recovery_diagnostics["mean_source_center_y"],
+        meanSourceBoxArea=recovery_diagnostics["mean_source_box_area"],
+        recoveredSupportedFrames=recovery_diagnostics["recovered_supported_frames"],
+        recoveredAnchoredFrames=recovery_diagnostics["recovered_anchored_frames"],
+        recoveredBridgeFrames=recovery_diagnostics["recovered_bridge_frames"],
+        recoveredUnsupportedEdgeFrameShare=recovery_diagnostics["recovered_unsupported_edge_frame_share"],
+        recoveredAnchoredPathLength=recovery_diagnostics["recovered_anchored_path_length"],
+        corridorCandidateFrames=recovery_diagnostics["corridor_candidate_frames"],
+        corridorFramesWithTwoAnchors=recovery_diagnostics["corridor_frames_with_two_anchors"],
+        corridorFramesWithSingleAnchor=recovery_diagnostics["corridor_frames_with_single_anchor"],
+        corridorMeanWidth=recovery_diagnostics["corridor_mean_width"],
+        proposalCandidateFrames=recovery_diagnostics["proposal_candidate_frames"],
+        proposalWindowCount=recovery_diagnostics["proposal_window_count"],
+        proposalFramesWithAnchorSeed=recovery_diagnostics["proposal_frames_with_anchor_seed"],
+        proposalFramesWithoutAnchorSeed=recovery_diagnostics["proposal_frames_without_anchor_seed"],
+        proposalExactSeedFrames=recovery_diagnostics["proposal_exact_seed_frames"],
+        proposalInterpolatedSeedFrames=recovery_diagnostics["proposal_interpolated_seed_frames"],
+        proposalSingleSeedFrames=recovery_diagnostics["proposal_single_seed_frames"],
+        proposalUnseededFrames=recovery_diagnostics["proposal_unseeded_frames"],
+        proposalMeanWindowWidth=recovery_diagnostics["proposal_mean_window_width"],
+        bestProposalRawDetectedFrames=proposal_diagnostics["best_proposal_raw_detected_frames"],
+        bestProposalAfterSeedCollapseFrames=proposal_diagnostics["best_proposal_after_seed_collapse_frames"],
+        bestProposalAfterFalseBallSuppressionFrames=proposal_diagnostics["best_proposal_after_false_ball_suppression_frames"],
+        bestProposalDirectSeedDetectedFrames=proposal_diagnostics["best_proposal_direct_seed_detected_frames"],
+        bestProposalDirectSeedTightDetectedFrames=proposal_diagnostics["best_proposal_direct_seed_tight_detected_frames"],
+        bestProposalDirectSeedContextDetectedFrames=proposal_diagnostics["best_proposal_direct_seed_context_detected_frames"],
+        bestProposalDirectSeedHiResRetryFrames=proposal_diagnostics["best_proposal_direct_seed_hi_res_retry_frames"],
+        bestProposalDirectSeedHiResRetryDetectedFrames=proposal_diagnostics["best_proposal_direct_seed_hi_res_retry_detected_frames"],
+        bestProposalDirectSeedZeroDetectFrames=proposal_diagnostics["best_proposal_direct_seed_zero_detect_frames"],
+        bestProposalDirectSeedScale1600RawDetectionFrames=proposal_diagnostics["best_proposal_direct_seed_scale_1600_raw_detection_frames"],
+        bestProposalDirectSeedScale960RawDetectionFrames=proposal_diagnostics["best_proposal_direct_seed_scale_960_raw_detection_frames"],
+        bestProposalDirectSeedScale1920RawDetectionFrames=proposal_diagnostics["best_proposal_direct_seed_scale_1920_raw_detection_frames"],
+        bestProposalDirectSeedScale1600CandidateFrames=proposal_diagnostics["best_proposal_direct_seed_scale_1600_candidate_frames"],
+        bestProposalDirectSeedScale960CandidateFrames=proposal_diagnostics["best_proposal_direct_seed_scale_960_candidate_frames"],
+        bestProposalDirectSeedScale1920CandidateFrames=proposal_diagnostics["best_proposal_direct_seed_scale_1920_candidate_frames"],
+        bestProposalDirectSeedMultiScaleRetryFrames=proposal_diagnostics["best_proposal_direct_seed_multi_scale_retry_frames"],
+        bestProposalDirectSeedMultiScaleDetectedFrames=proposal_diagnostics["best_proposal_direct_seed_multi_scale_detected_frames"],
+        bestProposalDirectSeedRawHitFilteredOutFrames=proposal_diagnostics["best_proposal_direct_seed_raw_hit_filtered_out_frames"],
+        bestProposalDirectSeedCropEdgeRejectedFrames=proposal_diagnostics["best_proposal_direct_seed_crop_edge_rejected_frames"],
+        bestProposalDirectSeedCropCenterYRejectedFrames=proposal_diagnostics["best_proposal_direct_seed_crop_center_y_rejected_frames"],
+        bestProposalDirectSeedPitchPolygonRejectedFrames=proposal_diagnostics["best_proposal_direct_seed_pitch_polygon_rejected_frames"],
+        bestProposalDirectSeedMeanCropArea=proposal_diagnostics["best_proposal_direct_seed_mean_crop_area"],
+        bestProposalDirectSeedTightMeanCropArea=proposal_diagnostics["best_proposal_direct_seed_tight_mean_crop_area"],
+        bestProposalDirectSeedContextMeanCropArea=proposal_diagnostics["best_proposal_direct_seed_context_mean_crop_area"],
+        bestProposalPlayerRankedMeanCropArea=proposal_diagnostics["best_proposal_player_ranked_mean_crop_area"],
+        bestProposalDirectSeedMeanDetectedBallBoxArea=proposal_diagnostics["best_proposal_direct_seed_mean_detected_ball_box_area"],
+        bestProposalPlayerRankedMeanDetectedBallBoxArea=proposal_diagnostics["best_proposal_player_ranked_mean_detected_ball_box_area"],
+        bestProposalDirectSeedContextWindowFrames=proposal_diagnostics["best_proposal_direct_seed_context_window_frames"],
+        bestProposalDirectSeedContextEligibleFrames=proposal_diagnostics["best_proposal_direct_seed_context_eligible_frames"],
+        bestProposalDirectSeedContextMeanSeedToBoxDistance=proposal_diagnostics["best_proposal_direct_seed_context_mean_seed_to_box_distance"],
+        bestProposalDirectSeedContextExpandedFrames=proposal_diagnostics["best_proposal_direct_seed_context_expanded_frames"],
+        bestProposalDirectSeedContextMeanExpansionPx=proposal_diagnostics["best_proposal_direct_seed_context_mean_expansion_px"],
+        bestProposalPlayerRankedDetectedFrames=proposal_diagnostics["best_proposal_player_ranked_detected_frames"],
+        bestProposalExactSeedDetectedFrames=proposal_diagnostics["best_proposal_exact_seed_detected_frames"],
+        bestProposalInterpolatedSeedDetectedFrames=proposal_diagnostics["best_proposal_interpolated_seed_detected_frames"],
+        bestProposalSingleSeedDetectedFrames=proposal_diagnostics["best_proposal_single_seed_detected_frames"],
+        bestProposalProfileName=proposal_diagnostics["best_proposal_profile_name"],
+        bestProposalCandidateFrames=proposal_diagnostics["best_proposal_candidate_frames"],
+        bestProposalSelectedFrames=proposal_diagnostics["best_proposal_selected_frames"],
+        bestProposalViable=proposal_diagnostics["best_proposal_viable"],
+        collapsedCandidateFrames=recovery_diagnostics["collapsed_candidate_frames"],
+        collapsedSegmentCount=recovery_diagnostics["collapsed_segment_count"],
+        collapsedLongestSegmentFrames=recovery_diagnostics["collapsed_longest_segment_frames"],
+        continuityPreferredFrames=recovery_diagnostics["continuity_preferred_frames"],
+        continuityRejectedFrames=recovery_diagnostics["continuity_rejected_frames"],
+        midfieldCollapsedFrames=recovery_diagnostics["midfield_collapsed_frames"],
+        candidateEdgeShare=recovery_diagnostics["candidate_edge_share"],
+        selectedEdgeFrameShare=recovery_diagnostics["selected_edge_frame_share"],
         runtimeFingerprint=runtime_fingerprint,
         requestedTransport=requested_transport,
         resolvedTransport=resolved_transport,
