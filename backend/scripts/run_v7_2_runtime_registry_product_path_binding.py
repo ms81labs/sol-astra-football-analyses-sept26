@@ -1,15 +1,13 @@
 from __future__ import annotations
 
+from backend.scripts.football_external_real_eval_chain_common import utc_now_iso as _utc_now_iso
+
 import argparse
-from datetime import datetime, timezone
 import json
 from pathlib import Path
-import sys
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from backend.scripts.football_external_real_eval_chain_common import load_json as _load_json, write_json as _write_json  # noqa: E402
 from backend.app.proof_runtime import load_runtime_default_registry_options  # noqa: E402
@@ -24,14 +22,6 @@ NEXT_RUNPOD_FIX = "v7_2_runpod_runtime_payload_contract_fix"
 
 BLOCKER_REGISTRY_INACTIVE = "v7_2_product_path_runtime_registry_not_active"
 BLOCKER_RUNPOD_PAYLOAD = "v7_2_product_path_runpod_auxiliary_payload_gap"
-
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-
-
 
 
 def _output_root(storage_root: Path) -> Path:
