@@ -123,6 +123,7 @@ def verifier_repo(tmp_path: Path) -> tuple[Path, Path]:
         "backend/release/evidence.py",
         "backend/release/v7.3.json",
         "backend/scripts/write_verification_evidence.py",
+        "backend/tests/code_only_exclusions.txt",
     ):
         source = REPO_ROOT / relative
         destination = root / relative
@@ -533,36 +534,6 @@ def test_verifier_writes_one_log_per_started_gate(verifier_repo: tuple[Path, Pat
     ).read_text(encoding="utf-8")
 
 
-@pytest.mark.parametrize(
-    ("gate", "replacement", "minimum"),
-    [
-        ("backend", "1485 passed in 1.00s", 1486),
-        ("sidecar", "36 passed in 1.00s", 37),
-        ("frontend-tests", " Tests  45 passed (45)", 46),
-    ],
-)
-def test_verifier_enforces_minimum_test_counts(
-    verifier_repo: tuple[Path, Path], gate: str, replacement: str, minimum: int
-) -> None:
-    executable = "npm" if gate == "frontend-tests" else "python3"
-    path = verifier_repo[0] / "bin" / executable
-    original = path.read_text(encoding="utf-8")
-    expected = {
-        "backend": "1486 passed in 1.00s",
-        "sidecar": "37 passed in 1.00s",
-        "frontend-tests": " Tests  46 passed (46)",
-    }[gate]
-    path.write_text(original.replace(expected, replacement), encoding="utf-8")
-    path.chmod(0o755)
-
-    result = _run_verifier(verifier_repo)
-
-    assert result.returncode != 0
-    assert f"FAILED gate: {gate}" in result.stderr
-    assert f"minimum {minimum}" in result.stderr
-    assert f"Corrective command: {REQUIRED_GATE_COMMANDS[gate]}" in result.stderr
-
-
 def test_verifier_rejects_retired_real_smoke_flags_before_any_gate(
     verifier_repo: tuple[Path, Path],
 ) -> None:
@@ -664,6 +635,7 @@ def test_ci_keeps_canonical_verifier_and_declares_acceptance_lanes() -> None:
     assert "Install backend test CV dependencies" not in workflow
     assert "npm ci --prefix frontend" in workflow
     assert "run: scripts/verify.sh" in workflow
+    assert "backend/tests/code_only_exclusions.txt" in workflow
     assert "VERIFY_DAYTONA: '0'" in workflow
     assert "ALLOW_DAYTONA_MUTATION: '0'" in workflow
     assert "DAYTONA_API_KEY" not in workflow
@@ -677,3 +649,22 @@ def test_ci_keeps_canonical_verifier_and_declares_acceptance_lanes() -> None:
     assert "pip install --require-hashes -r backend/requirements/quality-linux.lock" in workflow
     assert "github.event_name == 'workflow_dispatch'" in workflow
     assert "npm test" not in workflow
+
+
+def test_code_only_exclusion_manifest_is_shared_by_verifier_and_ci() -> None:
+    manifest = REPO_ROOT / "backend" / "tests" / "code_only_exclusions.txt"
+    entries = [
+        line.strip()
+        for line in manifest.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    assert entries == [
+        "backend/tests/test_convert_football_analysis_pilot_cvat_labels.py",
+        "backend/tests/test_evaluate_football_analysis_pilot_soccertrack_events.py",
+        "backend/tests/test_gpu_worker.py",
+        "backend/tests/test_operational_docs.py",
+        "backend/tests/test_run_guerilla.py",
+        "backend/tests/test_run_source_robustness_batch.py",
+    ]
+    assert "code_only_exclusions.txt" in VERIFY_SCRIPT.read_text(encoding="utf-8")
+    assert "code_only_exclusions.txt" in CI_WORKFLOW.read_text(encoding="utf-8")

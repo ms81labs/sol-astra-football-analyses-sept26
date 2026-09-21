@@ -1,0 +1,7 @@
+# Tests intentionally excluded from VERIFY_CODE_ONLY and executed by excluded-backend CI.
+backend/tests/test_convert_football_analysis_pilot_cvat_labels.py
+backend/tests/test_evaluate_football_analysis_pilot_soccertrack_events.py
+backend/tests/test_gpu_worker.py
+backend/tests/test_operational_docs.py
+backend/tests/test_run_guerilla.py
+backend/tests/test_run_source_robustness_batch.py

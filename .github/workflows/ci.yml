@@ -108,13 +108,8 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p .verification/logs
-          pytest -q \
-            backend/tests/test_convert_football_analysis_pilot_cvat_labels.py \
-            backend/tests/test_evaluate_football_analysis_pilot_soccertrack_events.py \
-            backend/tests/test_gpu_worker.py \
-            backend/tests/test_operational_docs.py \
-            backend/tests/test_run_guerilla.py \
-            backend/tests/test_run_source_robustness_batch.py \
+          mapfile -t excluded_tests < <(grep -Ev '^[[:space:]]*(#|$)' backend/tests/code_only_exclusions.txt)
+          pytest -q "${excluded_tests[@]}" \
             2>&1 | tee .verification/logs/excluded-backend.log
       - name: Upload excluded-suite evidence
         if: always()
