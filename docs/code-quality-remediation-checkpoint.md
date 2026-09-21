@@ -299,3 +299,22 @@ owned by the calibration mixin.
 
 Next action: inspect CI on the new head. If any lane is red, debug that exact regression before
 starting another H03 extraction.
+
+## Resume update — H03 identity state seam
+
+Base head `7e2e374efe35f5c1b101d43912f333c526af4db0` completed all applicable CI lanes green, and the separate C06 media workflow was green, before this refactor.
+
+The next H03 extraction moves only the undeco­rated identity state/mutation cluster behind
+`_IdentityStorageMixin` in `backend/app/storage_identity.py`:
+- identity eligibility / continuity helpers;
+- stored calibration eligibility helper used by identity-sensitive views;
+- repair and promotion commands;
+- identity continuity recomputation;
+- track edit application;
+- physical-metric invalidation after identity discontinuity.
+
+`heatmap_for_match` and `identity_for_match` deliberately remain in `Storage` because they use
+the local `_generation_reader` decorator; moving them would require an unnecessary decorator-module refactor.
+A focused AST seam regression prevents the eight extracted methods from drifting back into `Storage`.
+
+Next action: inspect CI on this head. If any lane is red, debug that exact regression before another H03 extraction.
