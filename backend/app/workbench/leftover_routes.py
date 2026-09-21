@@ -13,108 +13,160 @@ from .access import object_access_decision
 from .leftover_http import leftover_http_enabled
 from .recovery import support_bundle
 
+import json
+
+from .leftover_support import (
+    _as_bytes,
+    _as_detection,
+    _as_label,
+    _challenger_adapters_view,
+    _decoder_challengers_view,
+    _four_rates_view,
+    _legacy_geometry,
+    _legacy_geometry_profile,
+    _production_decode_frames,
+    _production_job_request,
+    _stale_permissions_view,
+    _unmeasured_landmark_preview,
+    _unpromoted_receipt,
+)
+from ..ai_policy import (
+    ground_output,
+    select_evidence,
+)
+from .access import (
+    authorize_object,
+    mint_sharing_link,
+    signed_scoped_object_access,
+    upload_quota,
+)
+from .adoption import (
+    dependency_register,
+)
+from .artifacts import (
+    import_worker_output,
+)
+from .assistance import (
+    json_repair_chain,
+    network_failure_preserves_unknown,
+    policy_log,
+    template_report,
+)
+from .benchmarks import (
+    experiment_receipt,
+    quality_gate_holds,
+)
+from .cache import (
+    recompute_plan,
+)
+from .contracts import (
+    migrate_legacy_zero,
+    SourceClockIdentity,
+)
+from .costs import (
+    deployment_choice,
+)
+from .dossier import (
+    build_baseline_dossier,
+    build_release_dossier,
+)
+from .evaluation import (
+    analyst_workflow_measures,
+    current_repository_evaluation_gate,
+    evaluate_protocol_prerequisites,
+)
+from .events import (
+    ownership_invalidation,
+    propose_event,
+    score_events,
+)
+from .evidence import (
+    DEFINITION_VERSION,
+    evaluate_metric_spec,
+)
+from .flags import (
+    feature_enabled,
+)
+from .geometry import (
+    CalibrationProfile,
+    detect_zoom_or_cut,
+    evaluate_landmarks,
+    ground_contact_point,
+    project_to_pitch,
+)
+from .identity import (
+    cluster_mapping,
+    IdentityRecord,
+    promote_identity,
+)
+from .jobs import (
+    cleanup_failure_is_complete,
+    pause_experiment,
+    worker_environment,
+)
+from .media import (
+    align_clip_start_to_grid,
+    apply_crop_and_rotation,
+    colour_round_trip,
+    cpu_fallback,
+    DecodedFrame,
+    detect_camera_cuts,
+    FfmpegFrameSource,
+    FfmpegProbe,
+    frame_interval_for_target_fps,
+    map_decoded_to_sample,
+    map_original_to_proxy_pts,
+    pixels_from_decoded_frame,
+    pts_to_seconds,
+    resolve_declared_interval,
+    sample_decode_anchors,
+    torso_colour_pixels,
+    wrap_decoded_frame,
+)
+from .ownership import (
+    OwnershipHysteresis,
+    possession_from_states,
+)
+from .perception import (
+    DetectorAdapter,
+    IdentityRepair,
+    IouAssociationFallback,
+    merge_tiled_detections,
+    PreprocessPlan,
+    preview_identity_change,
+    score_detections,
+    score_detections_by_stratum,
+    separate_ball_states,
+    tile_to_source,
+)
+from .providers import (
+    cloud_adapter,
+    local_adapter,
+    provider_roster,
+)
+from .quantities import (
+    heatmap_availability,
+    split_scores,
+)
+from .reports import (
+    assemble_report,
+)
+from .research import (
+    execute_track,
+    may_write_product_paths,
+)
+from .roster import (
+    promotion_gate,
+)
+from .training import (
+    admit_example,
+    experiment_cycle,
+    experiment_ledger,
+    promote_candidate,
+    pseudo_label,
+)
 
 def create_leftover_post_router(storage: Storage) -> APIRouter:
-    import backend.app.main as _main
-
-    CalibrationProfile = _main.CalibrationProfile
-    DEFINITION_VERSION = _main.DEFINITION_VERSION
-    DecodedFrame = _main.DecodedFrame
-    DetectorAdapter = _main.DetectorAdapter
-    FfmpegFrameSource = _main.FfmpegFrameSource
-    FfmpegProbe = _main.FfmpegProbe
-    IdentityRecord = _main.IdentityRecord
-    IdentityRepair = _main.IdentityRepair
-    OwnershipHysteresis = _main.OwnershipHysteresis
-    PreprocessPlan = _main.PreprocessPlan
-    SourceClockIdentity = _main.SourceClockIdentity
-    _as_bytes = _main._as_bytes
-    _as_detection = _main._as_detection
-    _as_label = _main._as_label
-    _challenger_adapters_view = _main._challenger_adapters_view
-    _decoder_challengers_view = _main._decoder_challengers_view
-    _four_rates_view = _main._four_rates_view
-    _legacy_geometry = _main._legacy_geometry
-    _legacy_geometry_profile = _main._legacy_geometry_profile
-    _production_decode_frames = _main._production_decode_frames
-    _production_job_request = _main._production_job_request
-    _stale_permissions_view = _main._stale_permissions_view
-    _unmeasured_landmark_preview = _main._unmeasured_landmark_preview
-    _unpromoted_receipt = _main._unpromoted_receipt
-    admit_example = _main.admit_example
-    align_clip_start_to_grid = _main.align_clip_start_to_grid
-    analyst_workflow_measures = _main.analyst_workflow_measures
-    apply_crop_and_rotation = _main.apply_crop_and_rotation
-    assemble_report = _main.assemble_report
-    authorize_object = _main.authorize_object
-    build_baseline_dossier = _main.build_baseline_dossier
-    build_release_dossier = _main.build_release_dossier
-    cleanup_failure_is_complete = _main.cleanup_failure_is_complete
-    cloud_adapter = _main.cloud_adapter
-    cluster_mapping = _main.cluster_mapping
-    colour_round_trip = _main.colour_round_trip
-    cpu_fallback = _main.cpu_fallback
-    current_repository_evaluation_gate = _main.current_repository_evaluation_gate
-    dependency_register = _main.dependency_register
-    deployment_choice = _main.deployment_choice
-    detect_camera_cuts = _main.detect_camera_cuts
-    detect_zoom_or_cut = _main.detect_zoom_or_cut
-    evaluate_landmarks = _main.evaluate_landmarks
-    evaluate_metric_spec = _main.evaluate_metric_spec
-    evaluate_protocol_prerequisites = _main.evaluate_protocol_prerequisites
-    execute_track = _main.execute_track
-    experiment_cycle = _main.experiment_cycle
-    experiment_ledger = _main.experiment_ledger
-    experiment_receipt = _main.experiment_receipt
-    feature_enabled = _main.feature_enabled
-    frame_interval_for_target_fps = _main.frame_interval_for_target_fps
-    ground_contact_point = _main.ground_contact_point
-    ground_output = _main.ground_output
-    heatmap_availability = _main.heatmap_availability
-    import_worker_output = _main.import_worker_output
-    json = _main.json
-    json_repair_chain = _main.json_repair_chain
-    local_adapter = _main.local_adapter
-    map_decoded_to_sample = _main.map_decoded_to_sample
-    map_original_to_proxy_pts = _main.map_original_to_proxy_pts
-    may_write_product_paths = _main.may_write_product_paths
-    merge_tiled_detections = _main.merge_tiled_detections
-    migrate_legacy_zero = _main.migrate_legacy_zero
-    mint_sharing_link = _main.mint_sharing_link
-    network_failure_preserves_unknown = _main.network_failure_preserves_unknown
-    ownership_invalidation = _main.ownership_invalidation
-    pause_experiment = _main.pause_experiment
-    pixels_from_decoded_frame = _main.pixels_from_decoded_frame
-    policy_log = _main.policy_log
-    possession_from_states = _main.possession_from_states
-    preview_identity_change = _main.preview_identity_change
-    project_to_pitch = _main.project_to_pitch
-    promote_candidate = _main.promote_candidate
-    promote_identity = _main.promote_identity
-    promotion_gate = _main.promotion_gate
-    propose_event = _main.propose_event
-    provider_roster = _main.provider_roster
-    pseudo_label = _main.pseudo_label
-    pts_to_seconds = _main.pts_to_seconds
-    quality_gate_holds = _main.quality_gate_holds
-    recompute_plan = _main.recompute_plan
-    resolve_declared_interval = _main.resolve_declared_interval
-    sample_decode_anchors = _main.sample_decode_anchors
-    score_detections = _main.score_detections
-    score_detections_by_stratum = _main.score_detections_by_stratum
-    score_events = _main.score_events
-    select_evidence = _main.select_evidence
-    separate_ball_states = _main.separate_ball_states
-    signed_scoped_object_access = _main.signed_scoped_object_access
-    split_scores = _main.split_scores
-    support_bundle = _main.support_bundle
-    template_report = _main.template_report
-    tile_to_source = _main.tile_to_source
-    torso_colour_pixels = _main.torso_colour_pixels
-    upload_quota = _main.upload_quota
-    worker_environment = _main.worker_environment
-    wrap_decoded_frame = _main.wrap_decoded_frame
-
     router = APIRouter()
 
     def require_match(
