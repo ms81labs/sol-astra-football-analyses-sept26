@@ -306,6 +306,13 @@ class Storage:
         self._annotation_issue_lock = threading.Lock()
         # ponytail: per-instance only; use a cross-process lock if multiple API workers mutate bundles.
         self._review_bundle_lock = threading.Lock()
+        from .storage_review import ReviewStorage
+
+        self._review_storage = ReviewStorage(
+            self,
+            corrupt_error=ReviewBundleCorruptError,
+            uncertain_delete_error=StorageDeleteOutcomeUncertain,
+        )
         # ponytail: per-instance config serialization; use per-match cross-process locks for multiple API workers.
         self.config_update_lock = threading.Lock()
         self._remote_cost_unsettled = False
@@ -3128,234 +3135,87 @@ class Storage:
     # ===== Review Bundles / Playlists =====
 
     def _bundle_dir(self) -> Path:
-        path = self.storage_root / "bundles"
-        path.mkdir(parents=True, exist_ok=True)
-        return path
+        return self._review_storage.bundle_dir()
 
     def list_review_bundles(self, tags: list[str] | None = None) -> list[ReviewBundle]:
-        """List all bundles, optionally filtered by tags."""
-        with self._review_bundle_lock:
-            bundles_dir = self._bundle_dir()
-            bundles = []
-            for bundle_file in bundles_dir.glob("*.json"):
-                try:
-                    data = self._read_json(bundle_file)
-                    bundle = ReviewBundle.model_validate(data)
-                except (json.JSONDecodeError, UnicodeDecodeError, ValidationError) as error:
-                    raise ReviewBundleCorruptError(
-                        f"review bundle {bundle_file.stem!r} is corrupt"
-                    ) from error
-                if tags and not any(tag in bundle.tags for tag in tags):
-                    continue
-                bundles.append(bundle)
-        
-        # Sort by updatedAt descending
-        bundles.sort(key=lambda b: b.updatedAt, reverse=True)
-        return bundles
+        return self._review_storage.list_review_bundles(tags)
 
     def get_review_bundle(self, bundle_id: str) -> ReviewBundle:
-        """Load a single bundle by ID."""
-        bundle_path = self._bundle_dir() / f"{bundle_id}.json"
-        if not bundle_path.exists():
-            raise KeyError(bundle_id)
-        data = self._read_json(bundle_path)
-        return ReviewBundle.model_validate(data)
+        return self._review_storage.get_review_bundle(bundle_id)
 
     @contextmanager
     def _bound_bundle_items(self, items):
-        """Pin every referenced match until the playlist document is durable.
+        with self._review_storage.bound_bundle_items(items) as bound_items:
+            yield bound_items
 
-        Legacy links with no resolvable match remain explicitly unverified. A
-        supplied historical generation must resolve; it can never silently fall
-        back to a different current snapshot.
-        """
-        from contextlib import ExitStack
-        from .schemas import ReviewBundleItem
-        normalised = [ReviewBundleItem.model_validate(item) for item in items]
-        with ExitStack() as pins:
-            refs = {}
-            for mid, gid in sorted({(item.matchId, item.generationId) for item in normalised},
-                                   key=lambda pair: (pair[0], pair[1] or "")):
-                try:
-                    self.get_match(mid)
-                    refs[mid, gid] = pins.enter_context(self.generation_snapshot(mid, generation_id=gid)).generationId
-                except (KeyError, FileNotFoundError):
-                    if gid is not None:
-                        from .generations import GenerationRecoveryRequired
-                        raise GenerationRecoveryRequired("Playlist source generation is unavailable")
-                    refs[mid, gid] = None
-            yield [item.model_copy(update={"generationId": refs[item.matchId, item.generationId],
-                "sourceStatus": "generation_bound" if refs[item.matchId, item.generationId] else "unverified"})
-                for item in normalised]
+    def create_review_bundle(
+        self,
+        name: str,
+        description: str = "",
+        items: list | None = None,
+        tags: list[str] | None = None,
+    ) -> ReviewBundle:
+        return self._review_storage.create_review_bundle(
+            name,
+            description=description,
+            items=items,
+            tags=tags,
+        )
 
-    def create_review_bundle(self, name: str, description: str = "", items: list = None, tags: list[str] | None = None) -> ReviewBundle:
-        """Create a new review bundle."""
-        with self._bound_bundle_items(items or []) as bound_items:
-            bundle_id = uuid.uuid4().hex
-            now = _utcnow().isoformat()
-            bundle = ReviewBundle(
-                id=bundle_id,
-                name=name,
-                description=description,
-                items=bound_items,
-                tags=tags or [],
-                createdAt=now,
-                updatedAt=now,
-            )
-            bundle_path = self._bundle_dir() / f"{bundle_id}.json"
-            self._write_json(bundle_path, bundle.model_dump(mode="json"))
-            return bundle
-
-    def update_review_bundle(self, bundle_id: str, name: str | None = None, description: str | None = None, items: list | None = None, tags: list[str] | None = None) -> ReviewBundle:
-        """Update an existing bundle."""
-        with self._review_bundle_lock, self._bound_bundle_items(items or []) as bound_items:
-            bundle = self.get_review_bundle(bundle_id)
-            now = _utcnow().isoformat()
-            if name is not None:
-                bundle.name = name
-            if description is not None:
-                bundle.description = description
-            if items is not None:
-                bundle.items = bound_items
-            if tags is not None:
-                bundle.tags = tags
-            bundle.updatedAt = now
-            bundle_path = self._bundle_dir() / f"{bundle_id}.json"
-            self._write_json(bundle_path, bundle.model_dump(mode="json"))
-            return bundle
+    def update_review_bundle(
+        self,
+        bundle_id: str,
+        name: str | None = None,
+        description: str | None = None,
+        items: list | None = None,
+        tags: list[str] | None = None,
+    ) -> ReviewBundle:
+        return self._review_storage.update_review_bundle(
+            bundle_id,
+            name=name,
+            description=description,
+            items=items,
+            tags=tags,
+        )
 
     def delete_review_bundle(self, bundle_id: str) -> None:
-        """Delete a bundle."""
-        with self._review_bundle_lock:
-            bundle_path = self._bundle_dir() / f"{bundle_id}.json"
-            tombstone = bundle_path.with_name(
-                f".{bundle_path.name}.{uuid.uuid4().hex}.deleted"
-            )
-            directory_fd = os.open(
-                bundle_path.parent,
-                os.O_RDONLY
-                | getattr(os, "O_CLOEXEC", 0)
-                | getattr(os, "O_DIRECTORY", 0),
-            )
-            renamed = committed = False
-            try:
-                try:
-                    target = os.stat(bundle_path, follow_symlinks=False)
-                except FileNotFoundError:
-                    raise KeyError(bundle_id) from None
-                if not stat.S_ISREG(target.st_mode):
-                    raise OSError("review bundle is not a regular file")
-                os.replace(bundle_path, tombstone)
-                renamed = True
-                os.fsync(directory_fd)
-                committed = True
-                try:
-                    tombstone.unlink()
-                    renamed = False
-                    os.fsync(directory_fd)
-                except OSError:
-                    pass  # The visible deletion is already durable.
-            except BaseException as error:
-                if renamed and not committed:
-                    try:
-                        os.replace(tombstone, bundle_path)
-                        renamed = False
-                        os.fsync(directory_fd)
-                    except BaseException:
-                        raise StorageDeleteOutcomeUncertain(
-                            "review bundle deletion outcome is uncertain; inspect before retrying"
-                        ) from error
-                raise
-            finally:
-                if committed and renamed:
-                    try:
-                        tombstone.unlink(missing_ok=True)
-                    except OSError:
-                        pass
-                try:
-                    os.close(directory_fd)
-                except OSError:
-                    pass
+        self._review_storage.delete_review_bundle(bundle_id)
 
     # ===== Annotations =====
 
     def _annotations_path(self, match_id: str) -> Path:
-        self.get_match(match_id)
-        path = self.storage_root / "matches" / match_id / "annotations.json"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        return path
+        return self._review_storage.annotations_path(match_id)
 
     def list_annotations(self, match_id: str) -> list[TacticalAnnotationRecord]:
-        """Load all annotations for a match."""
-        path = self._annotations_path(match_id)
-        if not path.exists():
-            return []
-        data = self._read_json(path)
-        if not isinstance(data, list):
-            raise TypeError("annotations must be a JSON array")
-        return [TacticalAnnotationRecord.model_validate(a) for a in data]
+        return self._review_storage.list_annotations(match_id)
 
-    def create_annotation(self, match_id: str, payload: CreateAnnotationRequest) -> TacticalAnnotationRecord:
-        """Append a new annotation to a match's annotation list."""
-        now = _utcnow().isoformat()
-        record = TacticalAnnotationRecord(
-            id=uuid.uuid4().hex,
-            matchId=match_id,
-            createdAt=now,
-            updatedAt=now,
-            **{k: v for k, v in payload.model_dump().items() if v is not None},
-        )
-        with self._annotation_issue_lock:
-            annotations = self.list_annotations(match_id)
-            annotations.append(record)
-            self._write_json(self._annotations_path(match_id), [a.model_dump(mode="json") for a in annotations])
-        return record
+    def create_annotation(
+        self,
+        match_id: str,
+        payload: CreateAnnotationRequest,
+    ) -> TacticalAnnotationRecord:
+        return self._review_storage.create_annotation(match_id, payload)
 
     def delete_annotation(self, match_id: str, annotation_id: str) -> None:
-        """Remove an annotation by ID."""
-        with self._annotation_issue_lock:
-            annotations = [a for a in self.list_annotations(match_id) if a.id != annotation_id]
-            self._write_json(self._annotations_path(match_id), [a.model_dump(mode="json") for a in annotations])
+        self._review_storage.delete_annotation(match_id, annotation_id)
 
     # ===== Match Issues =====
 
     def _issues_path(self, match_id: str) -> Path:
-        self.get_match(match_id)
-        path = self.storage_root / "matches" / match_id / "issues.json"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        return path
+        return self._review_storage.issues_path(match_id)
 
     def list_issues(self, match_id: str) -> list[MatchIssueRecord]:
-        """Load all issues for a match."""
-        path = self._issues_path(match_id)
-        if not path.exists():
-            return []
-        data = self._read_json(path)
-        if not isinstance(data, list):
-            raise TypeError("issues must be a JSON array")
-        return [MatchIssueRecord.model_validate(i) for i in data]
+        return self._review_storage.list_issues(match_id)
 
-    def create_issue(self, match_id: str, payload: CreateIssueRequest) -> MatchIssueRecord:
-        """Append a new issue to a match's issue list."""
-        now = _utcnow().isoformat()
-        record = MatchIssueRecord(
-            id=uuid.uuid4().hex,
-            matchId=match_id,
-            createdAt=now,
-            updatedAt=now,
-            **{k: v for k, v in payload.model_dump().items() if v is not None},
-        )
-        with self._annotation_issue_lock:
-            issues = self.list_issues(match_id)
-            issues.append(record)
-            self._write_json(self._issues_path(match_id), [i.model_dump(mode="json") for i in issues])
-        return record
+    def create_issue(
+        self,
+        match_id: str,
+        payload: CreateIssueRequest,
+    ) -> MatchIssueRecord:
+        return self._review_storage.create_issue(match_id, payload)
 
     def delete_issue(self, match_id: str, issue_id: str) -> None:
-        """Remove an issue by ID."""
-        with self._annotation_issue_lock:
-            issues = [i for i in self.list_issues(match_id) if i.id != issue_id]
-            self._write_json(self._issues_path(match_id), [i.model_dump(mode="json") for i in issues])
+        self._review_storage.delete_issue(match_id, issue_id)
 
     # ===== Semantic Search Support =====
 
