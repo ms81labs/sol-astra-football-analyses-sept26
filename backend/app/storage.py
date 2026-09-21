@@ -317,6 +317,9 @@ class Storage:
             corrupt_error=ReviewBundleCorruptError,
             uncertain_delete_error=StorageDeleteOutcomeUncertain,
         )
+        from .storage_corrections import CorrectionStorage
+
+        self._correction_storage = CorrectionStorage(self)
         # ponytail: per-instance config serialization; use per-match cross-process locks for multiple API workers.
         self.config_update_lock = threading.Lock()
         self._remote_cost_unsettled = False
@@ -1435,21 +1438,13 @@ class Storage:
             return result
 
     def _corrections_path(self, match_id: str) -> Path:
-        self.get_match(match_id)
-        path = self._match_dir(match_id) / "corrections.json"
-        path.parent.mkdir(parents=True, exist_ok=True)
-        return path
+        return self._correction_storage.path(match_id)
 
     def _load_correction_log(self, match_id: str):
-        from .workbench.review import CorrectionLog
-
-        path = self._corrections_path(match_id)
-        if not path.exists():
-            return CorrectionLog()
-        return CorrectionLog.from_payload(self._read_json(path))
+        return self._correction_storage.load_log(match_id)
 
     def _save_correction_log(self, match_id: str, log) -> None:
-        self._write_json(self._corrections_path(match_id), log.dump())
+        self._correction_storage.save_log(match_id, log)
 
     def submit_correction(
         self, match_id: str, *, kind: str, payload: dict | None = None,
@@ -1483,9 +1478,7 @@ class Storage:
                                         command_id=command_id, idempotency_key=idempotency_key)
 
     def list_corrections(self, match_id: str, *, state: str | None = None) -> list[dict]:
-        log = self._load_correction_log(match_id)
-        items = log.pending(match_id) if state == "pending" else log.history(match_id)
-        return [item.model_dump(mode="json") for item in items]
+        return self._correction_storage.list_corrections(match_id, state=state)
 
     def _active_playlist_payloads(self, match_id: str) -> list[dict]:
         ref = self.current_generation(match_id)
