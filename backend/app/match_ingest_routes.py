@@ -17,7 +17,7 @@ from .storage import AdmissionOutcomeUncertainError, Storage, UploadTooLargeErro
 from .workbench.errors import IdempotencyConflict
 
 LOGGER = logging.getLogger(__name__)
-_IDEMPOTENCY_KEY = re.compile(r"[A-Za-z0-9._:-]{1,128}\\Z")
+_IDEMPOTENCY_KEY = re.compile(r"[A-Za-z0-9._:-]{1,128}\Z")
 _DISPATCH_FAILED = "Job dispatch failed before processing started."
 _DISPATCH_UNCERTAIN = "Job dispatch outcome is uncertain; automatic retry is disabled."
 

@@ -41,7 +41,6 @@ def test_t24_every_frontend_api_path_resolves_with_default_flags(tmp_path: Path,
         path = re.sub(r"\$\{[^}]+\}", "value", raw.split("?", 1)[0])
         return any(
             getattr(route, "path_regex", re.compile("$^")).fullmatch(path)
-            and getattr(getattr(route, "endpoint", None), "__module__", None) in {"backend.app.main", "backend.app.insight_routes", "backend.app.review_routes", "backend.app.artifact_routes"}
             for route in routes
         )
 

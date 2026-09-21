@@ -14,7 +14,7 @@ import pytest
 from backend.app import daytona as daytona_adapter
 from backend.app import gpu_worker
 from backend.app import remote_worker
-from backend.app import storage as storage_module
+from backend.app import storage_remote as storage_remote_module
 from backend.app.remote_contracts import (
     CompletionReceipt,
     FileEntry,
@@ -519,7 +519,7 @@ def test_remote_import_rolls_back_every_owned_video_output(
         "recovery_debug.json",
         "recovery_profile_matrix.json",
     }
-    assert set(storage_module._REMOTE_RESULT_FILENAMES) == expected
+    assert set(storage_remote_module._REMOTE_RESULT_FILENAMES) == expected
     match_dir = storage._match_dir(match.id)
     for filename in expected:
         (match_dir / filename).write_text('{"state":"before"}\n', encoding="utf-8")

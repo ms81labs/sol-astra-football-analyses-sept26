@@ -254,3 +254,31 @@ State after this commit:
 
 H06 is not declared closed until the fast hygiene gate is green on this exact head.
 
+
+## Resume update — H06 verified; canonical verifier regression repair
+
+Exact H06 completion head: `99cfbd4ae85884064d24d4370eaea27bbe973546`.
+
+Fresh CI evidence on that head:
+- `python-quality`: green;
+- `Script hygiene gate`: green;
+- integration / real-media / api-profile / macOS / excluded-backend: green;
+- canonical `verify`: red with 16 failures.
+
+Therefore H06's dedicated acceptance criterion is satisfied: all 297 unique script offenders
+(477 original violations: 297 `sys.path` bootstraps + 180 canonical local UTC helpers)
+are transformed and the repo-wide AST regression is green.
+
+The canonical verifier failures are separate structural-extraction regressions. Root causes identified:
+1. `match_ingest_routes._IDEMPOTENCY_KEY` was written as a raw pattern ending in
+   `\\\\Z`, matching a literal backslash-Z instead of the regex end anchor; valid caller
+   tokens were rejected with HTTP 400 before upload/admission.
+2. `test_t24_every_frontend_api_path_resolves_with_default_flags` still hard-coded the
+   pre-H01 endpoint module allowlist, so routes correctly moved to new `APIRouter` modules
+   were reported as unresolved.
+3. `test_remote_worker` still asserted private `_REMOTE_RESULT_FILENAMES` through
+   `storage.py` after H03 moved that private constant to its true owner,
+   `storage_remote.py`.
+
+This repair changes only those three roots. Next action: inspect CI on the new head; do not
+restart H06 or begin another structural refactor while any current-head lane is red.
