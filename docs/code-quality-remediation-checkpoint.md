@@ -213,3 +213,15 @@ Resume algorithm:
 4. do not redo `0..147`;
 5. after the final offender is transformed, require the fast H06 gate green before audit closure.
 
+## Resume update — H06 bulk consolidation checkpoint #3
+
+Progress persisted in this commit:
+- original unique-offender indexes `0..211` are now rewritten and durable;
+- newly completed in this tranche: original indexes `148..211` (64 scripts);
+- next original offender index: `212`;
+- remaining scripts: 85.
+
+The same guarded transform remains in force. On resume, do not redo `0..211`.
+Continue from original index `212` (equivalently authoritative remainder offset `128`),
+then require the fast python-quality script-hygiene gate to report zero offenders.
+
