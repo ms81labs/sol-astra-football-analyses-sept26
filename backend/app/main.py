@@ -71,6 +71,7 @@ from .workbench.routes import create_workbench_router
 # Compatibility export retained for tests/internal callers that historically imported
 # this helper from backend.app.main. The implementation now lives with insight routes.
 _dashboard_average = _insight_routes._dashboard_average
+_dashboard_difference = _insight_routes._dashboard_difference
 
 STORAGE_ROOT_ENV = "GUERILLA_STORAGE_ROOT"
 LOGGER = logging.getLogger(__name__)

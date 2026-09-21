@@ -140,3 +140,16 @@ This batch:
 - fails with every offending filename/line if any `sys.path.insert/append` or local `_utc_now_iso` remains.
 
 Resume rule: inspect the latest HEAD CI first. If `test_script_hygiene.py` fails, fix every path reported before any other work. Do not trust GitHub code-search counts for H06.
+
+
+## Resume update — dashboard compatibility sibling
+
+Inherited integration evidence from `bfcfb9a` showed one remaining compatibility import:
+`backend/tests/test_audit_v3_c02_ui_contract.py` imports both
+`_dashboard_average` and `_dashboard_difference` from `backend.app.main`.
+
+Ruling:
+- retain both names as explicit aliases to their implementations in `insight_routes`;
+- do not restore any other legacy `main.py` import surface.
+
+After this commit, priorities remain: H06 hygiene gate first, then exact current-head CI closure.
