@@ -1,16 +1,14 @@
 from __future__ import annotations
 
+from backend.scripts.football_external_real_eval_chain_common import utc_now_iso as _utc_now_iso
+
 import argparse
-from datetime import datetime, timezone
 import json
 from math import ceil, floor
 from pathlib import Path
-import sys
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from backend.scripts.football_external_real_eval_chain_common import load_json as _load_json, write_json as _write_json  # noqa: E402
 from backend.app.run_benchmarks import DEFAULT_STORAGE_ROOT  # noqa: E402
@@ -36,14 +34,6 @@ NEXT_INSTRUMENTATION = "v7_2_default_path_edge_share_instrumentation"
 NEXT_INBOARD_RECOVERY = "v7_2_default_path_inboard_ball_recovery"
 NEXT_RETENTION_REPAIR = "v7_2_default_path_retention_guardrail_repair"
 NEXT_RUNTIME_DEFAULT_CHANGE = "v7_2_runtime_default_change_validation"
-
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
-
-
 
 
 def _suite_root(storage_root: Path) -> Path:

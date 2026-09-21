@@ -1,17 +1,15 @@
 from __future__ import annotations
 
+from backend.scripts.football_external_real_eval_chain_common import utc_now_iso as _utc_now_iso
+
 import argparse
-from datetime import datetime, timezone
 import hashlib
 import json
 from pathlib import Path
 import statistics
-import sys
 from typing import Any, Callable
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from backend.app.run_benchmarks import DEFAULT_STORAGE_ROOT  # noqa: E402
 import backend.scripts.run_v7_1_tiny_overfit_sanity_train as tiny_train  # noqa: E402
@@ -41,10 +39,6 @@ NEXT_SINGLE_IMAGE = "v7_1_single_image_overfit_minimal_repro"
 NEXT_HARD_NEGATIVE = "v7_1_tiny_hard_negative_balance_debug"
 
 Predictor = Callable[..., dict[str, Any]]
-
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _candidate_root(storage_root: Path, candidate_name: str) -> Path:
