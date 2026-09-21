@@ -6,12 +6,9 @@ import os
 from pathlib import Path
 import re
 import stat
-import sys
 from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from backend.scripts.football_external_real_eval_chain_common import (  # noqa: E402
     DEFAULT_CANDIDATE_NAME,
