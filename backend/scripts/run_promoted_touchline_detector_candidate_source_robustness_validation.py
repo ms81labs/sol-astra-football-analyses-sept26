@@ -2,20 +2,18 @@
 
 from __future__ import annotations
 
+from backend.scripts.football_external_real_eval_chain_common import utc_now_iso as _utc_now_iso
+
 if __name__ == "__main__":
     from backend.scripts.runpod_session import require_retired_runpod_disabled
 
     require_retired_runpod_disabled()
 
 import argparse
-from datetime import datetime, timezone
 import json
 from pathlib import Path
-import sys
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from backend.app.run_benchmarks import DEFAULT_STORAGE_ROOT  # noqa: E402
 from backend.app.run_benchmarks import build_selected_cluster_payload  # noqa: E402
@@ -74,10 +72,6 @@ ARM_NAME_PROMOTED_V6_PLUS_BEST_THIN = "promoted_v6_plus_best_thin"
 BALL_EDGE_MARGIN = 5.0
 PITCH_WIDTH = 100.0
 PITCH_HEIGHT = 100.0
-
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _load_json_dict(path: Path) -> dict[str, object]:

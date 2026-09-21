@@ -1,18 +1,16 @@
 from __future__ import annotations
 
+from backend.scripts.football_external_real_eval_chain_common import utc_now_iso as _utc_now_iso
+
 import argparse
 import asyncio
-from datetime import datetime, timezone
 import json
 from pathlib import Path
-import sys
 from typing import Any
 
 import httpx
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
 
 from backend.scripts.football_external_real_eval_chain_common import write_json as _write_json  # noqa: E402
 from backend.app.main import create_app  # noqa: E402
@@ -27,12 +25,6 @@ NEXT_EXTERNAL_SMOKE = "football_external_safe_source_adapter_smoke_test"
 NEXT_PRODUCT_REPAIR = "product_video_to_analysis_smoke_repair"
 
 BLOCKER_API_UPLOAD = "product_smoke_api_upload_export_failure"
-
-
-def _utc_now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
-
-
 
 
 def _output_root(storage_root: Path) -> Path:
