@@ -292,6 +292,91 @@ def create_job_router(
 
 
     @router.post("/api/matches/{match_id}/jobs", status_code=202)
+    def post_match_job(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+        body = payload or {}
+        request_id = str(body.get("requestId") or uuid.uuid4().hex)
+        from .workbench.money import admission_money, money
+        try:
+            budget = float(admission_money(body.get("budget", 0)))
+        except (TypeError, ValueError) as exc:
+            raise HTTPException(status_code=422, detail="budget must be a finite non-negative money amount, not a boolean or null") from exc
+        if runner.settings.processing_backend == "daytona" and budget <= 0:
+            raise HTTPException(
+                status_code=422,
+                detail="Daytona processing requires a positive authorised budget",
+            )
+        try:
+            job, created = storage.ensure_job(
+                match.id,
+                request_id,
+                created_status="queued",
+                budget=budget,
+                authorised_location=(
+                    "daytona"
+                    if runner.settings.processing_backend == "daytona"
+                    else "local"
+                ),
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        try:
+            attempt = runner.admit(
+                request_id,
+                match_id=match.id,
+                source_sha256=storage.source_sha256(match.id),
+                budget=budget,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail="idempotent request payload mismatch") from exc
+        view = attach_durable_job_view(job.model_dump(mode="json"), runner.ledger)
+        return {
+            "matchId": match.id,
+            "jobId": job.id,
+            "status": job.status,
+            "attemptId": attempt.attemptId,
+            "costReserved": float(attempt.reservedCost),
+            "costActual": view["costActual"],
+            "costSummary": view["costSummary"],
+            **view["costSummary"],
+            "reused": not created,
+            "cancelRequested": view["cancelRequested"],
+            "terminated": view["terminated"],
+            "cleanupResult": view["cleanupResult"],
+            "durablePhase": view["durablePhase"],
+        }
+    
     
     @router.websocket("/ws/jobs/{job_id}")
+    async def job_updates(websocket: WebSocket, job_id: str) -> None:
+        await websocket.accept()
+        last_payload = None
+        try:
+            while True:
+                try:
+                    payload = (await run_in_threadpool(storage.get_job, job_id)).model_dump(mode="json")
+                    payload = attach_durable_job_view(payload, storage.job_ledger)
+                except KeyError:
+                    await websocket.send_json({"error": "Job not found"})
+                    await websocket.close()
+                    return
+                if payload != last_payload:
+                    await websocket.send_json(payload)
+                    last_payload = payload
+                ledger_status = payload.get("ledgerStatus")
+                if (
+                    ledger_status in {"complete", "failed", "cancelled"}
+                    or ledger_status is None
+                    and payload["status"] in {"completed", "complete", "failed", "cancelled"}
+                ):
+                    await websocket.close()
+                    return
+                try:
+                    message = await asyncio.wait_for(websocket.receive(), timeout=0.5)
+                except asyncio.TimeoutError:
+                    continue
+                if message["type"] == "websocket.disconnect":
+                    return
+        except WebSocketDisconnect:
+            return
+    
     return router

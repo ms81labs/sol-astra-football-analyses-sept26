@@ -30,5 +30,13 @@ def create_match_ingest_router(
     router = APIRouter()
 
     @router.post("/api/matches", status_code=202)
+    async def create_match(
+        request: Request,
+        name: str = Form(...),
+        inputMode: str = Form(...),
+        config: str = Form("{}"),
+        budget: float = Form(0.0),
+        file: UploadFile = File(...),
+        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 
     return router
