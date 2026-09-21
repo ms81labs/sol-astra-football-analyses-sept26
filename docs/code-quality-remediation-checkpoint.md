@@ -25,7 +25,7 @@ If a chat/session is refreshed, **read this file and current git/CI state before
 - M03/M04: verifier selection centralized and human pytest-summary parsing removed from the contract.
 - M05/M06: dependency drift checking and real CV import smoke added.
 - M07/M10: normalization/private-helper coupling reduced; regular-file helper moved to its true owner.
-- H06: no local `def _utc_now_iso` remains under scripts; no script `sys.path.insert` bootstrap remains.
+- H06: reopened during final closure after stale code search missed script bootstraps. A repo-wide AST regression now scans every `backend/scripts/*.py` for `sys.path.insert/append` and local `_utc_now_iso`; H06 closes only when that gate is green.
 - M08: **intentionally retained**. Numerous tests explicitly assert 410 `ROUTE_RETIRED` compatibility; deletion would be a contract change.
 - M09: **no forced split**. Large tests already use shared fixtures/helpers; splitting by file size alone would be cosmetic.
 
@@ -122,3 +122,21 @@ They and the now-unused `re` import are removed in the next commit.
 Next action after a fresh resume: inspect the latest HEAD CI only. No new structural
 refactor is planned unless a red lane or final register check provides concrete
 evidence.
+
+
+## Resume update — H06 script hygiene safeguard
+
+Base head: `bfcfb9af0708d2b4361e981a1dc8e0ad251ad92f`.
+
+Direct source inspection disproved the stale zero-bootstrap claim. Confirmed offenders:
+- `backend/scripts/run_source_robustness_batch.py`
+- `backend/scripts/football_external_real_eval_chain_common.py`
+
+Both used `sys` only for repo-root `sys.path` bootstrapping. The robustness regression imports the former as a package module, and the common helper has no CLI entrypoint.
+
+This batch:
+- removes both known bootstraps;
+- adds `backend/tests/test_script_hygiene.py`, which AST-scans all Python files directly under `backend/scripts`;
+- fails with every offending filename/line if any `sys.path.insert/append` or local `_utc_now_iso` remains.
+
+Resume rule: inspect the latest HEAD CI first. If `test_script_hygiene.py` fails, fix every path reported before any other work. Do not trust GitHub code-search counts for H06.
