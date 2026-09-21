@@ -405,7 +405,7 @@ async def _test_analysis_route_passes_persisted_summary_and_events_to_backend(tm
 
         captured = {}
 
-        def fake_run_analysis(  # noqa: ANN001
+        def fake_run_analysis(
             analysis_type,
             frames,
             *,

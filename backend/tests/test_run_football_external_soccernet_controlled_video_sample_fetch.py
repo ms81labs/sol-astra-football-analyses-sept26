@@ -60,7 +60,7 @@ def _write_inputs(tmp_path: Path, *, approved: bool = True) -> Path:
 def test_controlled_video_sample_fetch_writes_capped_sample(tmp_path: Path, monkeypatch) -> None:
     candidate_root = _write_inputs(tmp_path)
 
-    def fake_fetch(url: str, start: int, end: int, timeout_seconds: int):  # noqa: ANN001
+    def fake_fetch(url: str, start: int, end: int, timeout_seconds: int):
         return b"sample-bytes", {
             "rangeStart": start,
             "rangeEnd": end,

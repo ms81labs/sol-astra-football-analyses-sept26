@@ -1031,6 +1031,13 @@ def _artifact_metadata_bool(
 
 
 
+
+# Supported internal API for cross-module benchmark workflows.
+assess_truth_gates = _assess_truth_gates
+load_ball_truth_layers = _load_ball_truth_layers
+load_accepted_match_state = _load_accepted_match_state
+summarize_ball_rows = _summarize_ball_rows
+
 def _summarize_accepted_match_state(payload: dict[str, object] | None) -> dict[str, object]:
     result: dict[str, object] = {
         "accepted_match_state_frames": 0,

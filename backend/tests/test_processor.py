@@ -936,7 +936,7 @@ def test_process_match_streams_allowed_object_store_reference_through_local_boto
         def __init__(self):
             self.chunks = [b"baseline-", b"reference", b""]
 
-        def read(self, size):  # noqa: ANN001, ANN201
+        def read(self, size):  # noqa: ANN001
             read_sizes.append(size)
             return self.chunks.pop(0)
 
@@ -944,7 +944,7 @@ def test_process_match_streams_allowed_object_store_reference_through_local_boto
             return None
 
     class FakeClient:
-        def get_object(self, *, Bucket, Key):  # noqa: N803, ANN001, ANN201
+        def get_object(self, *, Bucket, Key):  # noqa: N803, ANN001
             assert Bucket == "release-inputs"
             assert Key == "v7.3/baseline.json"
             return {"Body": FakeBody()}

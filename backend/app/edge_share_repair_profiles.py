@@ -742,6 +742,287 @@ SHADOW_SOURCE_EDGE_SHARE_REPAIR_PROFILE_NAMES = (
 )
 
 
+def _normalize_admission_widening(config: dict[str, object], normalized: dict[str, object]) -> None:
+        if bool(config.get("admissionWideningEnabled")):
+            normalized["admissionWideningEnabled"] = True
+            normalized["admissionWideningRequirePlayerSupport"] = bool(
+                config.get("admissionWideningRequirePlayerSupport", True)
+            )
+            normalized["admissionWideningMaxProjectedEdgeShare"] = float(
+                config.get("admissionWideningMaxProjectedEdgeShare", 0.6)
+            )
+
+
+def _normalize_baseline_guided_rescue(config: dict[str, object], normalized: dict[str, object]) -> None:
+        if bool(config.get("baselineGuidedRescueEnabled")):
+            normalized["baselineGuidedRescueEnabled"] = True
+            normalized["baselineGuidedRescueMaxProjectedEdgeShare"] = float(
+                config.get("baselineGuidedRescueMaxProjectedEdgeShare", 0.6)
+            )
+
+
+def _normalize_continuity_bridge_recovery(config: dict[str, object], normalized: dict[str, object]) -> None:
+        if bool(config.get("continuityBridgeRecoveryEnabled")):
+            normalized["continuityBridgeRecoveryEnabled"] = True
+            normalized["continuityBridgeRecoveryMaxGapFrames"] = int(
+                config.get("continuityBridgeRecoveryMaxGapFrames", 20)
+            )
+            normalized["continuityBridgeRecoveryMaxProjectedEdgeShare"] = float(
+                config.get("continuityBridgeRecoveryMaxProjectedEdgeShare", 0.6)
+            )
+            normalized["continuityBridgeRecoveryRequireEndpointContinuity"] = bool(
+                config.get("continuityBridgeRecoveryRequireEndpointContinuity", True)
+            )
+
+
+def _normalize_acceptance_support_gating(config: dict[str, object], normalized: dict[str, object]) -> None:
+        if bool(config.get("acceptanceSupportGatingEnabled")):
+            normalized["acceptanceSupportGatingEnabled"] = True
+            normalized["acceptanceSupportGatingRequirePlayerSupport"] = bool(
+                config.get("acceptanceSupportGatingRequirePlayerSupport", True)
+            )
+            normalized["acceptanceSupportGatingRequireSupportImprovement"] = bool(
+                config.get("acceptanceSupportGatingRequireSupportImprovement", True)
+            )
+            normalized["acceptanceSupportGatingMaxProjectedEdgeShare"] = float(
+                config.get("acceptanceSupportGatingMaxProjectedEdgeShare", 0.6)
+            )
+            normalized["acceptanceSupportGatingRequireRealDetectedCandidateRows"] = bool(
+                config.get("acceptanceSupportGatingRequireRealDetectedCandidateRows", True)
+            )
+
+
+def _normalize_proposal_selection_admission_fix(config: dict[str, object], normalized: dict[str, object]) -> None:
+        if bool(config.get("proposalSelectionAdmissionFixEnabled")):
+            normalized["proposalSelectionAdmissionFixEnabled"] = True
+            normalized["proposalSelectionAdmissionFixApproachFamily"] = str(
+                config.get("proposalSelectionAdmissionFixApproachFamily") or "truth_seed_guided_selection"
+            )
+            normalized["proposalSelectionAdmissionFixTruthSeedPath"] = str(
+                config.get("proposalSelectionAdmissionFixTruthSeedPath") or ""
+            )
+            normalized["proposalSelectionAdmissionFixTargetSourceClipId"] = str(
+                config.get("proposalSelectionAdmissionFixTargetSourceClipId")
+                or SOURCE_EDGE_SHARE_REPAIR_TARGET_CLIP
+            )
+            normalized["proposalSelectionAdmissionFixMaxProjectedEdgeShare"] = float(
+                config.get("proposalSelectionAdmissionFixMaxProjectedEdgeShare", 0.6)
+            )
+            normalized["proposalSelectionAdmissionFixRequireRealDetectedCandidateRows"] = bool(
+                config.get("proposalSelectionAdmissionFixRequireRealDetectedCandidateRows", True)
+            )
+            normalized["proposalSelectionAdmissionFixPreserveRepeatedAnchorGuard"] = bool(
+                config.get("proposalSelectionAdmissionFixPreserveRepeatedAnchorGuard", True)
+            )
+            normalized["proposalSelectionAdmissionFixPreserveContinuityGuard"] = bool(
+                config.get("proposalSelectionAdmissionFixPreserveContinuityGuard", True)
+            )
+            normalized["proposalSelectionAdmissionFixMaxSeedPitchDistance"] = float(
+                config.get("proposalSelectionAdmissionFixMaxSeedPitchDistance", 8.0)
+            )
+
+
+def _normalize_support_viability_admission_fix(config: dict[str, object], normalized: dict[str, object]) -> None:
+        if bool(config.get("supportViabilityAdmissionFixEnabled")):
+            normalized["supportViabilityAdmissionFixEnabled"] = True
+            normalized["supportViabilityAdmissionFixApproachFamily"] = str(
+                config.get("supportViabilityAdmissionFixApproachFamily") or "support_evidence_lift"
+            )
+            normalized["supportViabilityAdmissionFixTruthSeedPath"] = str(
+                config.get("supportViabilityAdmissionFixTruthSeedPath") or ""
+            )
+            normalized["supportViabilityAdmissionFixTargetSourceClipId"] = str(
+                config.get("supportViabilityAdmissionFixTargetSourceClipId")
+                or SOURCE_EDGE_SHARE_REPAIR_TARGET_CLIP
+            )
+            normalized["supportViabilityAdmissionFixMaxProjectedEdgeShare"] = float(
+                config.get("supportViabilityAdmissionFixMaxProjectedEdgeShare", 0.6)
+            )
+            normalized["supportViabilityAdmissionFixRequireRealDetectedCandidateRows"] = bool(
+                config.get("supportViabilityAdmissionFixRequireRealDetectedCandidateRows", True)
+            )
+            normalized["supportViabilityAdmissionFixPreserveRepeatedAnchorGuard"] = bool(
+                config.get("supportViabilityAdmissionFixPreserveRepeatedAnchorGuard", True)
+            )
+            normalized["supportViabilityAdmissionFixPreserveContinuityGuard"] = bool(
+                config.get("supportViabilityAdmissionFixPreserveContinuityGuard", True)
+            )
+
+
+def _normalize_proposal_crop_geometry_fix(config: dict[str, object], normalized: dict[str, object]) -> None:
+        if bool(config.get("proposalCropGeometryFixEnabled")):
+            normalized["proposalCropGeometryFixEnabled"] = True
+            normalized["proposalCropGeometryFixTruthSeedPath"] = str(
+                config.get("proposalCropGeometryFixTruthSeedPath") or ""
+            )
+            normalized["proposalCropGeometryFixTargetSourceClipId"] = str(
+                config.get("proposalCropGeometryFixTargetSourceClipId")
+                or SOURCE_EDGE_SHARE_REPAIR_TARGET_CLIP
+            )
+            normalized["proposalCropGeometryFixUseTruthSeedRowsAsProposalAnchors"] = bool(
+                config.get("proposalCropGeometryFixUseTruthSeedRowsAsProposalAnchors", True)
+            )
+            normalized["proposalCropGeometryFixMaxWindowsPerFrame"] = int(
+                config.get("proposalCropGeometryFixMaxWindowsPerFrame", 4)
+            )
+            normalized["proposalCropGeometryFixMinSeedWindowFrames"] = int(
+                config.get("proposalCropGeometryFixMinSeedWindowFrames", 78)
+            )
+            normalized["proposalCropGeometryFixRetryScales"] = [
+                int(scale) for scale in config.get("proposalCropGeometryFixRetryScales", [1600, 960, 1920])
+            ]
+            if "proposalCropGeometryFixCropWidthRatio" in config:
+                normalized["proposalCropGeometryFixCropWidthRatio"] = float(
+                    config.get("proposalCropGeometryFixCropWidthRatio")
+                )
+            if "proposalCropGeometryFixCropHeightRatio" in config:
+                normalized["proposalCropGeometryFixCropHeightRatio"] = float(
+                    config.get("proposalCropGeometryFixCropHeightRatio")
+                )
+            if "proposalCropGeometryFixCropPaddingPx" in config:
+                normalized["proposalCropGeometryFixCropPaddingPx"] = int(
+                    config.get("proposalCropGeometryFixCropPaddingPx")
+                )
+
+
+def _normalize_reviewed_positive_proposal_generation_fix(config: dict[str, object], normalized: dict[str, object]) -> None:
+        if bool(config.get("reviewedPositiveProposalGenerationFixEnabled")):
+            normalized["reviewedPositiveProposalGenerationFixEnabled"] = True
+            normalized["reviewedPositiveAnchorSeedPath"] = str(
+                config.get("reviewedPositiveAnchorSeedPath") or ""
+            )
+            normalized["reviewedPositiveProposalGenerationFixTargetSourceClipId"] = str(
+                config.get("reviewedPositiveProposalGenerationFixTargetSourceClipId")
+                or SOURCE_EDGE_SHARE_REPAIR_TARGET_CLIP
+            )
+            normalized["reviewedPositiveProposalGenerationFixMaxWindowsPerFrame"] = int(
+                config.get("reviewedPositiveProposalGenerationFixMaxWindowsPerFrame", 3)
+            )
+            normalized["reviewedPositiveProposalGenerationFixRetryScales"] = [
+                int(scale)
+                for scale in config.get("reviewedPositiveProposalGenerationFixRetryScales", [1600, 960, 1920])
+            ]
+            if "reviewedPositiveProposalGenerationFixContextRatios" in config:
+                normalized["reviewedPositiveProposalGenerationFixContextRatios"] = [
+                    float(ratio)
+                    for ratio in config.get("reviewedPositiveProposalGenerationFixContextRatios", [])
+                ]
+            if "reviewedPositiveProposalGenerationFixMinCropSizePx" in config:
+                normalized["reviewedPositiveProposalGenerationFixMinCropSizePx"] = int(
+                    config.get("reviewedPositiveProposalGenerationFixMinCropSizePx", 64)
+                )
+            if "reviewedPositiveProposalGenerationFixUseAuditBestAttempts" in config:
+                normalized["reviewedPositiveProposalGenerationFixUseAuditBestAttempts"] = bool(
+                    config.get("reviewedPositiveProposalGenerationFixUseAuditBestAttempts", False)
+                )
+            if "reviewedPositiveProposalGenerationFixAuditMatrixPath" in config:
+                normalized["reviewedPositiveProposalGenerationFixAuditMatrixPath"] = str(
+                    config.get("reviewedPositiveProposalGenerationFixAuditMatrixPath") or ""
+                )
+            if "reviewedPositiveProposalGenerationFixExcludeFrameIds" in config:
+                normalized["reviewedPositiveProposalGenerationFixExcludeFrameIds"] = [
+                    int(frame_id)
+                    for frame_id in config.get("reviewedPositiveProposalGenerationFixExcludeFrameIds", [])
+                ]
+            normalized["reviewedPositiveProposalGenerationFixRequireRealDetectedCandidateRows"] = bool(
+                config.get("reviewedPositiveProposalGenerationFixRequireRealDetectedCandidateRows", True)
+            )
+            normalized["reviewedPositiveProposalGenerationFixCropWidthRatio"] = float(
+                config.get("reviewedPositiveProposalGenerationFixCropWidthRatio", 0.35)
+            )
+            normalized["reviewedPositiveProposalGenerationFixCropHeightRatio"] = float(
+                config.get("reviewedPositiveProposalGenerationFixCropHeightRatio", 0.35)
+            )
+            normalized["reviewedPositiveProposalGenerationFixCropPaddingPx"] = int(
+                config.get("reviewedPositiveProposalGenerationFixCropPaddingPx", 24)
+            )
+
+
+def _normalize_selection_segment_viability_fix(config: dict[str, object], normalized: dict[str, object]) -> None:
+        if bool(config.get("selectionSegmentViabilityFixEnabled")):
+            normalized["selectionSegmentViabilityFixEnabled"] = True
+            normalized["selectionSegmentViabilityFixTargetSourceClipId"] = str(
+                config.get("selectionSegmentViabilityFixTargetSourceClipId")
+                or SOURCE_EDGE_SHARE_REPAIR_TARGET_CLIP
+            )
+            normalized["selectionSegmentViabilityFixMinSegmentFrames"] = int(
+                config.get("selectionSegmentViabilityFixMinSegmentFrames", 3)
+            )
+            normalized["selectionSegmentViabilityFixMaxProjectedEdgeShare"] = float(
+                config.get("selectionSegmentViabilityFixMaxProjectedEdgeShare", 0.6)
+            )
+            normalized["selectionSegmentViabilityFixRequireRealDetectedCandidateRows"] = bool(
+                config.get("selectionSegmentViabilityFixRequireRealDetectedCandidateRows", True)
+            )
+            normalized["selectionSegmentViabilityFixRequireProposalLineage"] = bool(
+                config.get("selectionSegmentViabilityFixRequireProposalLineage", True)
+            )
+            normalized["selectionSegmentViabilityFixPreserveRepeatedAnchorGuard"] = bool(
+                config.get("selectionSegmentViabilityFixPreserveRepeatedAnchorGuard", True)
+            )
+
+
+def _normalize_reviewed_positive_selected_segment_fix(config: dict[str, object], normalized: dict[str, object]) -> None:
+        if bool(config.get("reviewedPositiveSelectedSegmentFixEnabled")):
+            normalized["reviewedPositiveSelectedSegmentFixEnabled"] = True
+            normalized["reviewedPositiveSelectedSegmentFixTargetSourceClipId"] = str(
+                config.get("reviewedPositiveSelectedSegmentFixTargetSourceClipId")
+                or SOURCE_EDGE_SHARE_REPAIR_TARGET_CLIP
+            )
+            normalized["reviewedPositiveSelectedSegmentFixRequiredProposalWindowKindPrefix"] = str(
+                config.get("reviewedPositiveSelectedSegmentFixRequiredProposalWindowKindPrefix")
+                or "reviewed_positive_"
+            )
+            normalized["reviewedPositiveSelectedSegmentFixMinSegmentFrames"] = int(
+                config.get("reviewedPositiveSelectedSegmentFixMinSegmentFrames", 5)
+            )
+            if "reviewedPositiveSelectedSegmentFixFrameIds" in config:
+                normalized["reviewedPositiveSelectedSegmentFixFrameIds"] = [
+                    int(frame_id)
+                    for frame_id in config.get("reviewedPositiveSelectedSegmentFixFrameIds", [])
+                ]
+            normalized["reviewedPositiveSelectedSegmentFixMaxProjectedEdgeShare"] = float(
+                config.get("reviewedPositiveSelectedSegmentFixMaxProjectedEdgeShare", 0.6)
+            )
+            normalized["reviewedPositiveSelectedSegmentFixRequireRealDetectedCandidateRows"] = bool(
+                config.get("reviewedPositiveSelectedSegmentFixRequireRealDetectedCandidateRows", True)
+            )
+            normalized["reviewedPositiveSelectedSegmentFixPreserveRepeatedAnchorGuard"] = bool(
+                config.get("reviewedPositiveSelectedSegmentFixPreserveRepeatedAnchorGuard", True)
+            )
+            normalized["reviewedPositiveSelectedSegmentFixPreserveContinuityGuard"] = bool(
+                config.get("reviewedPositiveSelectedSegmentFixPreserveContinuityGuard", True)
+            )
+            normalized["reviewedPositiveSelectedSegmentFixIgnoreEdgeShareGate"] = bool(
+                config.get("reviewedPositiveSelectedSegmentFixIgnoreEdgeShareGate", False)
+            )
+
+
+def _normalize_reviewed_positive_acceptance_profile(config: dict[str, object], normalized: dict[str, object]) -> None:
+        if bool(config.get("reviewedPositiveAcceptanceProfileEnabled")):
+            normalized["reviewedPositiveAcceptanceProfileEnabled"] = True
+            normalized["reviewedPositiveAcceptanceProfileTargetSourceClipId"] = str(
+                config.get("reviewedPositiveAcceptanceProfileTargetSourceClipId")
+                or SOURCE_EDGE_SHARE_REPAIR_TARGET_CLIP
+            )
+            normalized["reviewedPositiveAcceptanceProfileRequiredProposalWindowKindPrefix"] = str(
+                config.get("reviewedPositiveAcceptanceProfileRequiredProposalWindowKindPrefix")
+                or "reviewed_positive_"
+            )
+            normalized["reviewedPositiveAcceptanceProfileMinSelectedFrames"] = int(
+                config.get("reviewedPositiveAcceptanceProfileMinSelectedFrames", 5)
+            )
+            normalized["reviewedPositiveAcceptanceProfileRequireRealDetectedRows"] = bool(
+                config.get("reviewedPositiveAcceptanceProfileRequireRealDetectedRows", True)
+            )
+            normalized["reviewedPositiveAcceptanceProfilePreserveRepeatedAnchorGuard"] = bool(
+                config.get("reviewedPositiveAcceptanceProfilePreserveRepeatedAnchorGuard", True)
+            )
+            normalized["reviewedPositiveAcceptanceProfilePreserveContinuityGuard"] = bool(
+                config.get("reviewedPositiveAcceptanceProfilePreserveContinuityGuard", True)
+            )
+
+
 def _normalized_repair_config(config: dict[str, object]) -> dict[str, object]:
     normalized = {
         "mode": str(config.get("mode") or UNIFORM_EDGE_RUN_THIN_MODE),
@@ -749,257 +1030,18 @@ def _normalized_repair_config(config: dict[str, object]) -> dict[str, object]:
         "minRunLength": int(config["minRunLength"]),
         "guardFrameCount": int(config.get("guardFrameCount") or 0),
     }
-    if bool(config.get("admissionWideningEnabled")):
-        normalized["admissionWideningEnabled"] = True
-        normalized["admissionWideningRequirePlayerSupport"] = bool(
-            config.get("admissionWideningRequirePlayerSupport", True)
-        )
-        normalized["admissionWideningMaxProjectedEdgeShare"] = float(
-            config.get("admissionWideningMaxProjectedEdgeShare", 0.6)
-        )
-    if bool(config.get("baselineGuidedRescueEnabled")):
-        normalized["baselineGuidedRescueEnabled"] = True
-        normalized["baselineGuidedRescueMaxProjectedEdgeShare"] = float(
-            config.get("baselineGuidedRescueMaxProjectedEdgeShare", 0.6)
-        )
-    if bool(config.get("continuityBridgeRecoveryEnabled")):
-        normalized["continuityBridgeRecoveryEnabled"] = True
-        normalized["continuityBridgeRecoveryMaxGapFrames"] = int(
-            config.get("continuityBridgeRecoveryMaxGapFrames", 20)
-        )
-        normalized["continuityBridgeRecoveryMaxProjectedEdgeShare"] = float(
-            config.get("continuityBridgeRecoveryMaxProjectedEdgeShare", 0.6)
-        )
-        normalized["continuityBridgeRecoveryRequireEndpointContinuity"] = bool(
-            config.get("continuityBridgeRecoveryRequireEndpointContinuity", True)
-        )
-    if bool(config.get("acceptanceSupportGatingEnabled")):
-        normalized["acceptanceSupportGatingEnabled"] = True
-        normalized["acceptanceSupportGatingRequirePlayerSupport"] = bool(
-            config.get("acceptanceSupportGatingRequirePlayerSupport", True)
-        )
-        normalized["acceptanceSupportGatingRequireSupportImprovement"] = bool(
-            config.get("acceptanceSupportGatingRequireSupportImprovement", True)
-        )
-        normalized["acceptanceSupportGatingMaxProjectedEdgeShare"] = float(
-            config.get("acceptanceSupportGatingMaxProjectedEdgeShare", 0.6)
-        )
-        normalized["acceptanceSupportGatingRequireRealDetectedCandidateRows"] = bool(
-            config.get("acceptanceSupportGatingRequireRealDetectedCandidateRows", True)
-        )
-    if bool(config.get("proposalSelectionAdmissionFixEnabled")):
-        normalized["proposalSelectionAdmissionFixEnabled"] = True
-        normalized["proposalSelectionAdmissionFixApproachFamily"] = str(
-            config.get("proposalSelectionAdmissionFixApproachFamily") or "truth_seed_guided_selection"
-        )
-        normalized["proposalSelectionAdmissionFixTruthSeedPath"] = str(
-            config.get("proposalSelectionAdmissionFixTruthSeedPath") or ""
-        )
-        normalized["proposalSelectionAdmissionFixTargetSourceClipId"] = str(
-            config.get("proposalSelectionAdmissionFixTargetSourceClipId")
-            or SOURCE_EDGE_SHARE_REPAIR_TARGET_CLIP
-        )
-        normalized["proposalSelectionAdmissionFixMaxProjectedEdgeShare"] = float(
-            config.get("proposalSelectionAdmissionFixMaxProjectedEdgeShare", 0.6)
-        )
-        normalized["proposalSelectionAdmissionFixRequireRealDetectedCandidateRows"] = bool(
-            config.get("proposalSelectionAdmissionFixRequireRealDetectedCandidateRows", True)
-        )
-        normalized["proposalSelectionAdmissionFixPreserveRepeatedAnchorGuard"] = bool(
-            config.get("proposalSelectionAdmissionFixPreserveRepeatedAnchorGuard", True)
-        )
-        normalized["proposalSelectionAdmissionFixPreserveContinuityGuard"] = bool(
-            config.get("proposalSelectionAdmissionFixPreserveContinuityGuard", True)
-        )
-        normalized["proposalSelectionAdmissionFixMaxSeedPitchDistance"] = float(
-            config.get("proposalSelectionAdmissionFixMaxSeedPitchDistance", 8.0)
-        )
-    if bool(config.get("supportViabilityAdmissionFixEnabled")):
-        normalized["supportViabilityAdmissionFixEnabled"] = True
-        normalized["supportViabilityAdmissionFixApproachFamily"] = str(
-            config.get("supportViabilityAdmissionFixApproachFamily") or "support_evidence_lift"
-        )
-        normalized["supportViabilityAdmissionFixTruthSeedPath"] = str(
-            config.get("supportViabilityAdmissionFixTruthSeedPath") or ""
-        )
-        normalized["supportViabilityAdmissionFixTargetSourceClipId"] = str(
-            config.get("supportViabilityAdmissionFixTargetSourceClipId")
-            or SOURCE_EDGE_SHARE_REPAIR_TARGET_CLIP
-        )
-        normalized["supportViabilityAdmissionFixMaxProjectedEdgeShare"] = float(
-            config.get("supportViabilityAdmissionFixMaxProjectedEdgeShare", 0.6)
-        )
-        normalized["supportViabilityAdmissionFixRequireRealDetectedCandidateRows"] = bool(
-            config.get("supportViabilityAdmissionFixRequireRealDetectedCandidateRows", True)
-        )
-        normalized["supportViabilityAdmissionFixPreserveRepeatedAnchorGuard"] = bool(
-            config.get("supportViabilityAdmissionFixPreserveRepeatedAnchorGuard", True)
-        )
-        normalized["supportViabilityAdmissionFixPreserveContinuityGuard"] = bool(
-            config.get("supportViabilityAdmissionFixPreserveContinuityGuard", True)
-        )
-    if bool(config.get("proposalCropGeometryFixEnabled")):
-        normalized["proposalCropGeometryFixEnabled"] = True
-        normalized["proposalCropGeometryFixTruthSeedPath"] = str(
-            config.get("proposalCropGeometryFixTruthSeedPath") or ""
-        )
-        normalized["proposalCropGeometryFixTargetSourceClipId"] = str(
-            config.get("proposalCropGeometryFixTargetSourceClipId")
-            or SOURCE_EDGE_SHARE_REPAIR_TARGET_CLIP
-        )
-        normalized["proposalCropGeometryFixUseTruthSeedRowsAsProposalAnchors"] = bool(
-            config.get("proposalCropGeometryFixUseTruthSeedRowsAsProposalAnchors", True)
-        )
-        normalized["proposalCropGeometryFixMaxWindowsPerFrame"] = int(
-            config.get("proposalCropGeometryFixMaxWindowsPerFrame", 4)
-        )
-        normalized["proposalCropGeometryFixMinSeedWindowFrames"] = int(
-            config.get("proposalCropGeometryFixMinSeedWindowFrames", 78)
-        )
-        normalized["proposalCropGeometryFixRetryScales"] = [
-            int(scale) for scale in config.get("proposalCropGeometryFixRetryScales", [1600, 960, 1920])
-        ]
-        if "proposalCropGeometryFixCropWidthRatio" in config:
-            normalized["proposalCropGeometryFixCropWidthRatio"] = float(
-                config.get("proposalCropGeometryFixCropWidthRatio")
-            )
-        if "proposalCropGeometryFixCropHeightRatio" in config:
-            normalized["proposalCropGeometryFixCropHeightRatio"] = float(
-                config.get("proposalCropGeometryFixCropHeightRatio")
-            )
-        if "proposalCropGeometryFixCropPaddingPx" in config:
-            normalized["proposalCropGeometryFixCropPaddingPx"] = int(
-                config.get("proposalCropGeometryFixCropPaddingPx")
-            )
-    if bool(config.get("reviewedPositiveProposalGenerationFixEnabled")):
-        normalized["reviewedPositiveProposalGenerationFixEnabled"] = True
-        normalized["reviewedPositiveAnchorSeedPath"] = str(
-            config.get("reviewedPositiveAnchorSeedPath") or ""
-        )
-        normalized["reviewedPositiveProposalGenerationFixTargetSourceClipId"] = str(
-            config.get("reviewedPositiveProposalGenerationFixTargetSourceClipId")
-            or SOURCE_EDGE_SHARE_REPAIR_TARGET_CLIP
-        )
-        normalized["reviewedPositiveProposalGenerationFixMaxWindowsPerFrame"] = int(
-            config.get("reviewedPositiveProposalGenerationFixMaxWindowsPerFrame", 3)
-        )
-        normalized["reviewedPositiveProposalGenerationFixRetryScales"] = [
-            int(scale)
-            for scale in config.get("reviewedPositiveProposalGenerationFixRetryScales", [1600, 960, 1920])
-        ]
-        if "reviewedPositiveProposalGenerationFixContextRatios" in config:
-            normalized["reviewedPositiveProposalGenerationFixContextRatios"] = [
-                float(ratio)
-                for ratio in config.get("reviewedPositiveProposalGenerationFixContextRatios", [])
-            ]
-        if "reviewedPositiveProposalGenerationFixMinCropSizePx" in config:
-            normalized["reviewedPositiveProposalGenerationFixMinCropSizePx"] = int(
-                config.get("reviewedPositiveProposalGenerationFixMinCropSizePx", 64)
-            )
-        if "reviewedPositiveProposalGenerationFixUseAuditBestAttempts" in config:
-            normalized["reviewedPositiveProposalGenerationFixUseAuditBestAttempts"] = bool(
-                config.get("reviewedPositiveProposalGenerationFixUseAuditBestAttempts", False)
-            )
-        if "reviewedPositiveProposalGenerationFixAuditMatrixPath" in config:
-            normalized["reviewedPositiveProposalGenerationFixAuditMatrixPath"] = str(
-                config.get("reviewedPositiveProposalGenerationFixAuditMatrixPath") or ""
-            )
-        if "reviewedPositiveProposalGenerationFixExcludeFrameIds" in config:
-            normalized["reviewedPositiveProposalGenerationFixExcludeFrameIds"] = [
-                int(frame_id)
-                for frame_id in config.get("reviewedPositiveProposalGenerationFixExcludeFrameIds", [])
-            ]
-        normalized["reviewedPositiveProposalGenerationFixRequireRealDetectedCandidateRows"] = bool(
-            config.get("reviewedPositiveProposalGenerationFixRequireRealDetectedCandidateRows", True)
-        )
-        normalized["reviewedPositiveProposalGenerationFixCropWidthRatio"] = float(
-            config.get("reviewedPositiveProposalGenerationFixCropWidthRatio", 0.35)
-        )
-        normalized["reviewedPositiveProposalGenerationFixCropHeightRatio"] = float(
-            config.get("reviewedPositiveProposalGenerationFixCropHeightRatio", 0.35)
-        )
-        normalized["reviewedPositiveProposalGenerationFixCropPaddingPx"] = int(
-            config.get("reviewedPositiveProposalGenerationFixCropPaddingPx", 24)
-        )
-    if bool(config.get("selectionSegmentViabilityFixEnabled")):
-        normalized["selectionSegmentViabilityFixEnabled"] = True
-        normalized["selectionSegmentViabilityFixTargetSourceClipId"] = str(
-            config.get("selectionSegmentViabilityFixTargetSourceClipId")
-            or SOURCE_EDGE_SHARE_REPAIR_TARGET_CLIP
-        )
-        normalized["selectionSegmentViabilityFixMinSegmentFrames"] = int(
-            config.get("selectionSegmentViabilityFixMinSegmentFrames", 3)
-        )
-        normalized["selectionSegmentViabilityFixMaxProjectedEdgeShare"] = float(
-            config.get("selectionSegmentViabilityFixMaxProjectedEdgeShare", 0.6)
-        )
-        normalized["selectionSegmentViabilityFixRequireRealDetectedCandidateRows"] = bool(
-            config.get("selectionSegmentViabilityFixRequireRealDetectedCandidateRows", True)
-        )
-        normalized["selectionSegmentViabilityFixRequireProposalLineage"] = bool(
-            config.get("selectionSegmentViabilityFixRequireProposalLineage", True)
-        )
-        normalized["selectionSegmentViabilityFixPreserveRepeatedAnchorGuard"] = bool(
-            config.get("selectionSegmentViabilityFixPreserveRepeatedAnchorGuard", True)
-        )
-    if bool(config.get("reviewedPositiveSelectedSegmentFixEnabled")):
-        normalized["reviewedPositiveSelectedSegmentFixEnabled"] = True
-        normalized["reviewedPositiveSelectedSegmentFixTargetSourceClipId"] = str(
-            config.get("reviewedPositiveSelectedSegmentFixTargetSourceClipId")
-            or SOURCE_EDGE_SHARE_REPAIR_TARGET_CLIP
-        )
-        normalized["reviewedPositiveSelectedSegmentFixRequiredProposalWindowKindPrefix"] = str(
-            config.get("reviewedPositiveSelectedSegmentFixRequiredProposalWindowKindPrefix")
-            or "reviewed_positive_"
-        )
-        normalized["reviewedPositiveSelectedSegmentFixMinSegmentFrames"] = int(
-            config.get("reviewedPositiveSelectedSegmentFixMinSegmentFrames", 5)
-        )
-        if "reviewedPositiveSelectedSegmentFixFrameIds" in config:
-            normalized["reviewedPositiveSelectedSegmentFixFrameIds"] = [
-                int(frame_id)
-                for frame_id in config.get("reviewedPositiveSelectedSegmentFixFrameIds", [])
-            ]
-        normalized["reviewedPositiveSelectedSegmentFixMaxProjectedEdgeShare"] = float(
-            config.get("reviewedPositiveSelectedSegmentFixMaxProjectedEdgeShare", 0.6)
-        )
-        normalized["reviewedPositiveSelectedSegmentFixRequireRealDetectedCandidateRows"] = bool(
-            config.get("reviewedPositiveSelectedSegmentFixRequireRealDetectedCandidateRows", True)
-        )
-        normalized["reviewedPositiveSelectedSegmentFixPreserveRepeatedAnchorGuard"] = bool(
-            config.get("reviewedPositiveSelectedSegmentFixPreserveRepeatedAnchorGuard", True)
-        )
-        normalized["reviewedPositiveSelectedSegmentFixPreserveContinuityGuard"] = bool(
-            config.get("reviewedPositiveSelectedSegmentFixPreserveContinuityGuard", True)
-        )
-        normalized["reviewedPositiveSelectedSegmentFixIgnoreEdgeShareGate"] = bool(
-            config.get("reviewedPositiveSelectedSegmentFixIgnoreEdgeShareGate", False)
-        )
-    if bool(config.get("reviewedPositiveAcceptanceProfileEnabled")):
-        normalized["reviewedPositiveAcceptanceProfileEnabled"] = True
-        normalized["reviewedPositiveAcceptanceProfileTargetSourceClipId"] = str(
-            config.get("reviewedPositiveAcceptanceProfileTargetSourceClipId")
-            or SOURCE_EDGE_SHARE_REPAIR_TARGET_CLIP
-        )
-        normalized["reviewedPositiveAcceptanceProfileRequiredProposalWindowKindPrefix"] = str(
-            config.get("reviewedPositiveAcceptanceProfileRequiredProposalWindowKindPrefix")
-            or "reviewed_positive_"
-        )
-        normalized["reviewedPositiveAcceptanceProfileMinSelectedFrames"] = int(
-            config.get("reviewedPositiveAcceptanceProfileMinSelectedFrames", 5)
-        )
-        normalized["reviewedPositiveAcceptanceProfileRequireRealDetectedRows"] = bool(
-            config.get("reviewedPositiveAcceptanceProfileRequireRealDetectedRows", True)
-        )
-        normalized["reviewedPositiveAcceptanceProfilePreserveRepeatedAnchorGuard"] = bool(
-            config.get("reviewedPositiveAcceptanceProfilePreserveRepeatedAnchorGuard", True)
-        )
-        normalized["reviewedPositiveAcceptanceProfilePreserveContinuityGuard"] = bool(
-            config.get("reviewedPositiveAcceptanceProfilePreserveContinuityGuard", True)
-        )
+    _normalize_admission_widening(config, normalized)
+    _normalize_baseline_guided_rescue(config, normalized)
+    _normalize_continuity_bridge_recovery(config, normalized)
+    _normalize_acceptance_support_gating(config, normalized)
+    _normalize_proposal_selection_admission_fix(config, normalized)
+    _normalize_support_viability_admission_fix(config, normalized)
+    _normalize_proposal_crop_geometry_fix(config, normalized)
+    _normalize_reviewed_positive_proposal_generation_fix(config, normalized)
+    _normalize_selection_segment_viability_fix(config, normalized)
+    _normalize_reviewed_positive_selected_segment_fix(config, normalized)
+    _normalize_reviewed_positive_acceptance_profile(config, normalized)
     return normalized
-
-
 def get_source_edge_share_repair_config(profile_name: str | None) -> dict[str, object] | None:
     if not isinstance(profile_name, str):
         return None

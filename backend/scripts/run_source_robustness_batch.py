@@ -16,10 +16,10 @@ if str(REPO_ROOT) not in sys.path:
 from backend.app.run_benchmarks import (  # noqa: E402
     DEFAULT_STORAGE_ROOT,
     MAX_VIABLE_BALL_EDGE_FRAME_SHARE,
-    _assess_truth_gates,
-    _load_ball_truth_layers,
-    _load_accepted_match_state,
-    _summarize_ball_rows,
+    assess_truth_gates,
+    load_ball_truth_layers,
+    load_accepted_match_state,
+    summarize_ball_rows,
     build_benchmark_suite_source_summaries,
     diagnose_benchmark_suite_robustness,
     summarize_match_benchmark,
@@ -227,7 +227,7 @@ def _recommended_next_lever(verdict: str) -> str:
 
 
 def _load_accepted_ball_rows(storage: Storage, match_id: str) -> list[dict[str, object]]:
-    ball_truth_layers = _load_ball_truth_layers(storage, match_id)
+    ball_truth_layers = load_ball_truth_layers(storage, match_id)
     if not isinstance(ball_truth_layers, dict):
         return []
     accepted_ball = ball_truth_layers.get("acceptedBall")
@@ -242,7 +242,7 @@ def _load_accepted_ball_rows(storage: Storage, match_id: str) -> list[dict[str, 
 
 
 def _load_probe_observed_rows(storage: Storage, match_id: str) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
-    ball_truth_layers = _load_ball_truth_layers(storage, match_id)
+    ball_truth_layers = load_ball_truth_layers(storage, match_id)
     if not isinstance(ball_truth_layers, dict):
         return [], []
     probe_observed_ball = ball_truth_layers.get("probeObservedBall")
@@ -264,7 +264,7 @@ def _load_probe_observed_rows(storage: Storage, match_id: str) -> tuple[list[dic
 
 
 def _load_observed_ball_rows(storage: Storage, match_id: str) -> list[dict[str, object]]:
-    ball_truth_layers = _load_ball_truth_layers(storage, match_id)
+    ball_truth_layers = load_ball_truth_layers(storage, match_id)
     if not isinstance(ball_truth_layers, dict):
         return []
     observed_ball = ball_truth_layers.get("observedBall")
@@ -283,7 +283,7 @@ def _load_source_conditioned_acquisition_diagnostics(
     storage: Storage,
     match_id: str,
 ) -> dict[str, object] | None:
-    ball_truth_layers = _load_ball_truth_layers(storage, match_id)
+    ball_truth_layers = load_ball_truth_layers(storage, match_id)
     if not isinstance(ball_truth_layers, dict):
         return None
     acquisition_diagnostics = ball_truth_layers.get("sourceConditionedAcquisitionDiagnostics")
@@ -727,7 +727,7 @@ def resolve_source_robustness_recommended_next_lever(
 
 
 def _direct_observation_breakdown_present(storage: Storage, match_id: str) -> bool:
-    ball_truth_layers = _load_ball_truth_layers(storage, match_id)
+    ball_truth_layers = load_ball_truth_layers(storage, match_id)
     return isinstance(ball_truth_layers, dict) and isinstance(ball_truth_layers.get("directObservationBreakdown"), dict)
 
 
@@ -1609,7 +1609,7 @@ def _build_detector_candidate_failure_analysis_diagnosis(
 
 
 def _load_controlled_frame_ids(storage: Storage, match_id: str) -> set[int]:
-    accepted_match_state = _load_accepted_match_state(storage, match_id)
+    accepted_match_state = load_accepted_match_state(storage, match_id)
     if isinstance(accepted_match_state, dict):
         raw_state_frames = accepted_match_state.get("frames")
         if isinstance(raw_state_frames, list):
@@ -1696,7 +1696,7 @@ def _build_projection_row(
         edge_frame_share,
         _shows_meaningful_motion,
         ball_track_viable,
-    ) = _summarize_ball_rows(retained_rows)
+    ) = summarize_ball_rows(retained_rows)
 
     observed_ball_frames = min(
         int(summary.observedBallFrames) or accepted_ball_frames,
@@ -1711,7 +1711,7 @@ def _build_projection_row(
         accepted_from_observed_frames / accepted_ball_frames if accepted_ball_frames else 0.0
     )
     inferred_ball_frames = max(0, accepted_ball_frames - observed_ball_frames)
-    five_minute_truth_ready, _forty_five_minute_truth_ready, truth_gate_reasons, _dominant_event_share = _assess_truth_gates(
+    five_minute_truth_ready, _forty_five_minute_truth_ready, truth_gate_reasons, _dominant_event_share = assess_truth_gates(
         requires_team_selection=bool(summary.requiresTeamSelection),
         tracked_possession_frames=int(summary.trackedPossessionFrames),
         frame_count=int(summary.frameCount),

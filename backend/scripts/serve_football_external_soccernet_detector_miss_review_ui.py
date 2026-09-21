@@ -275,7 +275,7 @@ def build_handler(*, candidate_root: Path, ui_root: Path):
     class SoccerNetDetectorMissReviewHandler(BaseHTTPRequestHandler):
         timeout = 5.0
 
-        def do_GET(self) -> None:  # noqa: N802
+        def do_GET(self) -> None:
             parsed = urlparse(self.path)
             try:
                 if parsed.path in {"/", "/index.html"}:
@@ -310,7 +310,7 @@ def build_handler(*, candidate_root: Path, ui_root: Path):
             except Exception as exc:  # pragma: no cover
                 _error_response(self, str(exc), HTTPStatus.INTERNAL_SERVER_ERROR)
 
-        def do_POST(self) -> None:  # noqa: N802
+        def do_POST(self) -> None:
             parsed = urlparse(self.path)
             try:
                 payload = read_json_payload(self)

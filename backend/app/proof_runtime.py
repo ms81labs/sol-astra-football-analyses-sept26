@@ -26,7 +26,7 @@ DEFAULT_AUXILIARY_BALL_MODEL_PROFILE = None
 RUNTIME_DEFAULT_REGISTRY_FILENAME = "promoted_touchline_detector_candidate.json"
 
 
-def local_boto3_object_loader(reference: ArtifactReference):  # noqa: ANN202
+def local_boto3_object_loader(reference: ArtifactReference):
     """Open a bounded-by-materializer S3 object stream for local execution."""
 
     if reference.kind != "object_store":

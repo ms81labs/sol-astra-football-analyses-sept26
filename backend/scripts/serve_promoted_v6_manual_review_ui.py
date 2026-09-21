@@ -265,7 +265,7 @@ def build_handler(*, review_root: Path, ui_root: Path):
     class PromotedV6ManualReviewHandler(BaseHTTPRequestHandler):
         timeout = 5.0
 
-        def do_GET(self) -> None:  # noqa: N802
+        def do_GET(self) -> None:
             parsed = urlparse(self.path)
             path = parsed.path
             try:
@@ -298,7 +298,7 @@ def build_handler(*, review_root: Path, ui_root: Path):
             except Exception as exc:  # pragma: no cover - defensive server guard
                 _error_response(self, str(exc), HTTPStatus.INTERNAL_SERVER_ERROR)
 
-        def do_POST(self) -> None:  # noqa: N802
+        def do_POST(self) -> None:
             parsed = urlparse(self.path)
             path = parsed.path
             try:
