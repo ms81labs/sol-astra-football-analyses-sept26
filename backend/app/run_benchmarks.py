@@ -1872,6 +1872,8 @@ def summarize_match_benchmark(storage: Storage, match_id: str) -> MatchBenchmark
     detector_model_name: str | None = None
     direct_seed_retry_policy: str | None = None
     direct_seed_retry_scales: list[int] = []
+    long_gap_treatment_outcome: str | None = None
+    controlled_possession_assignment_outcome: str | None = None
     proof_runtime_options = load_proof_runtime_options(
         storage, match_id, manifest_path=RUNTIME_MANIFEST_PATH
     )
