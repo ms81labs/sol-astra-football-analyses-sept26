@@ -68,6 +68,7 @@ def test_repeated_pytest_runs_are_separate_and_latest_is_not_a_sum(
     _git_repo(tmp_path)
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("GA_VERIFICATION_RUN", "1")
+    monkeypatch.delenv("VERIFY_CODE_ONLY", raising=False)
     config = _config(tmp_path, args=("-q", "test_example.py"))
 
     verification_plugin.pytest_terminal_summary(

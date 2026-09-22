@@ -122,6 +122,9 @@ def _cost_round_trip(storage: Storage, match_id: str, mode: str) -> None:
 
 @pytest.mark.parametrize("mode", ["video", "tracking_json"])
 def test_v3t50_composed_lifecycle(tmp_path, monkeypatch, children, mode):
+    scorer_value = os.environ.get("C05_TRACKEVAL_ROOT")
+    if not scorer_value:
+        pytest.skip("dedicated V3T50 lane supplies the pinned real TrackEval source")
     monkeypatch.setattr(
         processor, "process_video_input",
         lambda *args, **kwargs: pytest.fail("unexpected perception/model execution"),
@@ -252,7 +255,7 @@ def test_v3t50_composed_lifecycle(tmp_path, monkeypatch, children, mode):
     else:
         assert reopened.get_match(match_id).inputMode == "tracking_json"
 
-    scorer_root = Path(os.environ["C05_TRACKEVAL_ROOT"])
+    scorer_root = Path(scorer_value)
     scorer_sha = subprocess.run(
         ["git", "-C", str(scorer_root), "rev-parse", "HEAD"],
         check=True, capture_output=True, text=True,
