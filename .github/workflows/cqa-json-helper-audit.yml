@@ -1,0 +1,50 @@
+name: CQA JSON helper audit
+
+on:
+  push:
+    branches:
+      - cursor/audit-completion-verification-417d
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-json-helper-families:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Inventory local JSON helper variants
+        run: |
+          python - <<'PY'
+          import ast, hashlib, json
+          from pathlib import Path
+
+          root = Path("backend/scripts")
+          names = {"_write_json", "_load_json"}
+          groups = {}
+          for path in sorted(root.glob("*.py")):
+              text = path.read_text(encoding="utf-8")
+              try:
+                  tree = ast.parse(text)
+              except SyntaxError:
+                  continue
+              for node in tree.body:
+                  if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in names:
+                      seg = ast.get_source_segment(text, node) or ""
+                      normalized = ast.dump(node, include_attributes=False)
+                      key = (node.name, hashlib.sha256(normalized.encode()).hexdigest()[:12])
+                      groups.setdefault(key, {"source": seg, "files": []})["files"].append(str(path))
+          payload = []
+          for (name, digest), info in sorted(groups.items()):
+              payload.append({
+                  "name": name,
+                  "digest": digest,
+                  "count": len(info["files"]),
+                  "files": info["files"],
+                  "source": info["source"],
+              })
+          print(json.dumps(payload, indent=2))
+          PY
