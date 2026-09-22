@@ -8159,6 +8159,13 @@ def test_process_video_prefers_supported_tracking_ball_candidate_before_higher_c
     )
     monkeypatch.setattr(run_guerilla, "ball_rows_need_recovery", lambda _rows: False)
     monkeypatch.setattr(run_guerilla, "ball_rows_need_supplemental_recovery", lambda *_args, **_kwargs: False)
+    monkeypatch.setattr(
+        run_guerilla,
+        "recover_ball_rows",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("track-only wrapped model must skip the probe-observed predict pass")
+        ),
+    )
     monkeypatch.setattr(run_guerilla, "recover_ball_rows", lambda *_args, **_kwargs: [])
 
     result = process_video(
@@ -8288,7 +8295,7 @@ def test_process_video_emits_heartbeat_updates_for_worker_stages(monkeypatch):
     assert result["ballTruthLayers"]["acceptedBall"]["summary"]["frameCount"] >= 1
 
 
-def test_process_video_returns_ball_truth_layers_with_output_parquet(monkeypatch, tmp_path):
+def test_process_video_skips_probe_pass_for_track_only_model_with_output_parquet(monkeypatch, tmp_path):
     frame = np.zeros((120, 160, 3), dtype=np.uint8)
 
     class FakeCapture:
