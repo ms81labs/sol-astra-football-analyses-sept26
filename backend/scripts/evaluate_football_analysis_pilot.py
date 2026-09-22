@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib
+import importlib.util
 import io
 import argparse
 import csv
@@ -599,12 +600,32 @@ def evaluate_tracking(data: Mapping[str, object], *, trackeval_root: Path) -> di
     )
     if result.returncode or result.stdout.strip() != TRACKEVAL_COMMIT:
         raise ValueError(f"trackeval_root must be the pinned TrackEval commit {TRACKEVAL_COMMIT}")
-    try:
-        with redirect_stdout(io.StringIO()):
-            trackeval = importlib.import_module("trackeval")
-    finally:
-        sys.path.pop(0)
-    if not Path(trackeval.__file__).resolve().is_relative_to(trackeval_root.resolve()):
+    trackeval_root = Path(trackeval_root).resolve()
+    package_root = trackeval_root / "trackeval"
+    init_path = package_root / "__init__.py"
+    existing = sys.modules.get("trackeval")
+    if existing is not None:
+        module_file = getattr(existing, "__file__", None)
+        if module_file is None or not Path(module_file).resolve().is_relative_to(trackeval_root):
+            raise ValueError("a different TrackEval package is already imported")
+        trackeval = existing
+    else:
+        spec = importlib.util.spec_from_file_location(
+            "trackeval",
+            init_path,
+            submodule_search_locations=[str(package_root)],
+        )
+        if spec is None or spec.loader is None:
+            raise ValueError("unable to load pinned TrackEval package")
+        trackeval = importlib.util.module_from_spec(spec)
+        sys.modules["trackeval"] = trackeval
+        try:
+            with redirect_stdout(io.StringIO()):
+                spec.loader.exec_module(trackeval)
+        except Exception:
+            sys.modules.pop("trackeval", None)
+            raise
+    if not Path(trackeval.__file__).resolve().is_relative_to(trackeval_root):
         raise ValueError("a different TrackEval package is already imported")
     # TrackEval's pinned revision predates NumPy 1.24 alias removals.
     if not hasattr(np, "float"):
