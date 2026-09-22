@@ -19,6 +19,12 @@ from backend.app.daytona import (
     _UnreturnedSandboxCleanupError,
 )
 from backend.app.daytona_worker_image import (
+    MAX_CONTEXT_MEMBER_BYTES as MAX_CONTEXT_MEMBER_BYTES,
+    WORKER_CONTEXT_MEMBERS as WORKER_CONTEXT_MEMBERS,
+    WorkerImageError as WorkerImageError,
+    _copy_context_member as _copy_context_member,
+    worker_context as _worker_context,
+    worker_context_sha256 as worker_context_sha256,
     worker_image_factory,
 )
 from backend.app.release_manifest import ReleaseManifest
