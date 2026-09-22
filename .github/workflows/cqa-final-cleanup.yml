@@ -6,13 +6,16 @@ on:
       - cursor/audit-completion-verification-417d
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  inspect-app-f401:
+  apply-app-f401-cleanup:
+    if: "!contains(github.event.head_commit.message, '[cqa-app-f401-applied]') && !contains(github.event.head_commit.message, '[cqa-helper-remove]')"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: cursor/audit-completion-verification-417d
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -20,7 +23,24 @@ jobs:
           cache-dependency-path: backend/requirements/quality-linux.lock
       - name: Install pinned Ruff
         run: pip install --require-hashes -r backend/requirements/quality-linux.lock
-      - name: Report backend app F401 residue
+      - name: Apply app F401 cleanup
         run: |
-          set -o pipefail
-          ruff check backend/app --select F401 --output-format=concise || true
+          set -euo pipefail
+          before="$(ruff check backend/app --select F401 --output-format=concise 2>&1 || true)"
+          printf '%s\n' "$before"
+          test -n "$before"
+          ruff check backend/app --select F401 --fix
+          ruff check backend/app --select F401
+          git diff --check
+      - name: Commit cleanup
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/app
+          if git diff --cached --quiet; then
+            echo "No app F401 changes to commit"
+            exit 0
+          fi
+          git commit -m "CQA: clean app F401 residue [cqa-app-f401-applied]"
+          git push origin HEAD:cursor/audit-completion-verification-417d
