@@ -6,7 +6,7 @@ from pathlib import Path
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 
 
-def test_scripts_do_not_bootstrap_sys_path_or_redefine_utc_helper() -> None:
+def test_scripts_do_not_bootstrap_sys_path_or_redefine_common_helpers() -> None:
     violations: list[str] = []
     for path in sorted(SCRIPTS.glob("*.py")):
         source = path.read_text(encoding="utf-8")
@@ -22,10 +22,10 @@ def test_scripts_do_not_bootstrap_sys_path_or_redefine_utc_helper() -> None:
                     and node.func.attr in {"insert", "append"}
                 ):
                     violations.append(f"{path.name}:{node.lineno}: sys.path.{node.func.attr}")
-            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == "_utc_now_iso":
-                violations.append(f"{path.name}:{node.lineno}: local _utc_now_iso")
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in {"_utc_now_iso", "_write_json", "_load_json"}:
+                violations.append(f"{path.name}:{node.lineno}: local {node.name}")
     assert violations == [], "\n".join(violations)
 
 
 if __name__ == "__main__":
-    test_scripts_do_not_bootstrap_sys_path_or_redefine_utc_helper()
+    test_scripts_do_not_bootstrap_sys_path_or_redefine_common_helpers()
