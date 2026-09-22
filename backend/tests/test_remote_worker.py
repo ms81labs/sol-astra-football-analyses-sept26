@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import hashlib
+import logging
 import os
 import tracemalloc
 from dataclasses import replace
@@ -206,9 +207,12 @@ def test_remote_progress_is_persisted_before_adapter_returns(
     assert storage.load_analysis_artifact(match.id, "remote_worker_progress")["sequence"] == event.sequence
 
 
+@pytest.mark.parametrize("diagnostic_failure", [False, True])
 def test_run_remote_job_persists_sandbox_imports_processor_and_writes_neutral_artifacts(
     tmp_path: Path,
     monkeypatch,
+    caplog,
+    diagnostic_failure: bool,
 ) -> None:
     storage = Storage(tmp_path)
     match, job = _job(storage)
@@ -256,9 +260,12 @@ def test_run_remote_job_persists_sandbox_imports_processor_and_writes_neutral_ar
             assert not staging.exists()
             assert not execution.bundle_root.exists()
             completed_diagnostics.append(payload)
+            if diagnostic_failure:
+                raise OSError("sentinel-secret-completed")
         return original_save(self, match_id, analysis_type, payload)
 
     monkeypatch.setattr(Storage, "save_analysis_artifact", save_artifact)
+    caplog.set_level(logging.WARNING, logger="backend.app.remote_worker")
 
     remote_worker.run_remote_job(
         tmp_path,
@@ -271,7 +278,8 @@ def test_run_remote_job_persists_sandbox_imports_processor_and_writes_neutral_ar
     assert persisted.remoteRunId == "sandbox-123"
     assert persisted.status == "completed"
     assert imported == [{"rows": [{"Frame_ID": 1}]}]
-    assert storage.load_analysis_artifact(match.id, "remote_transport_debug")["initialRunId"] == "sandbox-123"
+    diagnostic = storage.load_analysis_artifact(match.id, "remote_transport_debug")
+    assert diagnostic["initialRunId"] == (None if diagnostic_failure else "sandbox-123")
     assert storage.load_analysis_artifact(match.id, "remote_worker_progress")["stage"] == "resultSerialize"
     identity = storage.load_analysis_artifact(match.id, "input_video_identity")
     assert identity["schemaVersion"] == 1
@@ -283,6 +291,11 @@ def test_run_remote_job_persists_sandbox_imports_processor_and_writes_neutral_ar
     assert not staging.exists()
     assert not execution.bundle_root.exists()
     assert len(completed_diagnostics) == 1
+    if diagnostic_failure:
+        assert "optional_artifact_write_failed" in caplog.text
+        assert match.id in caplog.text and job.id in caplog.text
+        assert "remote_transport_debug" in caplog.text and "OSError" in caplog.text
+        assert "sentinel-secret-completed" not in caplog.text
 
 
 def test_run_remote_job_rejects_input_receipt_replaced_after_result_validation(tmp_path: Path, monkeypatch) -> None:
@@ -820,9 +833,12 @@ def test_build_execution_request_reports_unconfirmed_bundle_cleanup_without_secr
     assert "credential-secret" not in str(caught.value)
 
 
+@pytest.mark.parametrize("diagnostic_failure", [False, True])
 def test_missing_daytona_credentials_fail_job_without_local_fallback(
     tmp_path: Path,
     monkeypatch,
+    caplog,
+    diagnostic_failure: bool,
 ) -> None:
     storage = Storage(tmp_path)
     match, job = _job(storage)
@@ -830,6 +846,19 @@ def test_missing_daytona_credentials_fail_job_without_local_fallback(
     monkeypatch.delenv("DAYTONA_API_KEY", raising=False)
     executed: list[object] = []
     monkeypatch.setattr(remote_worker, "execute_daytona_job", lambda *args, **kwargs: executed.append(args))
+    original_save = Storage.save_analysis_artifact
+
+    def save_artifact(self, match_id, analysis_type, payload):
+        if (
+            diagnostic_failure
+            and analysis_type == "remote_transport_debug"
+            and payload.get("runtimeOutcome") == "failed"
+        ):
+            raise OSError("sentinel-secret-failed")
+        return original_save(self, match_id, analysis_type, payload)
+
+    monkeypatch.setattr(Storage, "save_analysis_artifact", save_artifact)
+    caplog.set_level(logging.WARNING, logger="backend.app.remote_worker")
 
     remote_worker.run_remote_job(tmp_path, job.id)
 
@@ -838,8 +867,15 @@ def test_missing_daytona_credentials_fail_job_without_local_fallback(
     assert persisted.error == "Daytona processing failed"
     assert executed == []
     assert storage.get_match(match.id).status == "failed"
-    assert storage.load_analysis_artifact(match.id, "remote_transport_debug")["runtimeOutcome"] == "failed"
+    diagnostic = storage.load_analysis_artifact(match.id, "remote_transport_debug")
+    assert diagnostic["runtimeOutcome"] == ("preparing" if diagnostic_failure else "failed")
     assert storage.load_analysis_artifact(match.id, "remote_worker_progress") == {}
+    if diagnostic_failure:
+        assert storage.job_ledger.latest_attempt(job.id).status == "outcome_unknown"
+        assert "optional_artifact_write_failed" in caplog.text
+        assert match.id in caplog.text and job.id in caplog.text
+        assert "remote_transport_debug" in caplog.text and "OSError" in caplog.text
+        assert "sentinel-secret-failed" not in caplog.text
 
 
 def test_initial_diagnostic_write_failure_still_terminalizes_job_before_retrying_diagnostics(
