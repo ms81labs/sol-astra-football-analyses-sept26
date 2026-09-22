@@ -186,3 +186,58 @@ def test_gate_log_digest_preserves_carriage_returns(tmp_path, monkeypatch) -> No
     writer.main()
     result = json.loads((tmp_path / ".verification/receipt.json").read_text())
     assert result["gates"][0]["logSha256"] == fields[4]
+
+
+def test_nested_pytest_receipts_do_not_compete_with_the_outer_backend_gate(tmp_path, monkeypatch) -> None:
+    run = _gates(tmp_path, monkeypatch)
+    # Full-suite tests launch these real child selections with the same inherited
+    # session/gate environment. They are not the outer gate's invocation.
+    nested_selections = [
+        ["-q", "backend/tests/test_audit_v2_h01_provider.py"],
+        ["-p", "pytest_storage_observer", "--collect-only", "-q", "backend/tests/test_api.py"],
+    ]
+    for index, args in enumerate(nested_selections):
+        _save(tmp_path, {**run, "runId": str(index) * 32, "args": args,
+                         "selectedCount": 0, "selectedNodeIds": [], "stubsActive": []})
+    writer.main()
+    result = json.loads((tmp_path / ".verification/receipt.json").read_text())
+    assert result["gates"][0]["pytestRunId"] == run["runId"]
+    assert result["stubsActive"] == ["ultralytics"]
+
+
+def test_real_nested_pytest_invocations_preserve_the_outer_gate_receipt(tmp_path, monkeypatch) -> None:
+    import os
+    import sys
+
+    _gates(tmp_path, monkeypatch)
+    for path in (tmp_path / ".verification/pytest-runs").glob("*.json"):
+        path.unlink()
+    (tmp_path / ".gitignore").write_text(".verification/\n__pycache__/\n.pytest_cache/\n")
+    (tmp_path / "pytest.ini").write_text("[pytest]\n")
+    tests = tmp_path / "backend/tests"
+    tests.mkdir(parents=True)
+    (tests / "test_inner.py").write_text("def test_inner(): pass\n")
+    (tests / "test_outer.py").write_text(
+        "import subprocess,sys\ndef test_outer():\n"
+        "    subprocess.run([sys.executable,'-m','pytest','-q',"
+        "'backend/tests/test_inner.py'],check=True,capture_output=True)\n"
+    )
+    env = os.environ.copy()
+    env.update({
+        "PYTHONPATH": str(Path(__file__).resolve().parents[2]),
+        "PYTEST_PLUGINS": "backend.tests.conftest", "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
+        "GA_VERIFICATION_RUN": "1", "GA_VERIFICATION_GATE": "backend",
+    })
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", "backend/tests"], cwd=tmp_path,
+        env=env, text=True, capture_output=True, check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    runs = [json.loads(p.read_text()) for p in (tmp_path / ".verification/pytest-runs").glob("*.json")]
+    assert len(runs) == 2 and all(r["gate"] == "backend" for r in runs)
+    writer.main()
+    final = json.loads((tmp_path / ".verification/receipt.json").read_text())
+    outer = next(r for r in runs if r["args"] == ["-q", "backend/tests"])
+    assert final["gates"][0]["pytestRunId"] == outer["runId"]
+    assert final["gates"][0]["tests"]["passed"] == 2
+    assert final["stubsActive"] == outer["stubsActive"]

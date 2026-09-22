@@ -196,14 +196,17 @@ def main() -> None:
     ]
     if [gate["name"] for gate in gates] != expected:
         raise RuntimeError("current verification session has an incomplete or reordered gate set")
-    # Gate ownership, not UUID sort order, selects the one backend invocation.
+    # Nested pytest processes inherit the gate label; only the exact gate command
+    # may own its receipt. Duplicate executions of that command still refuse.
+    command = shlex.split(str(gates[0]["command"]))
     candidates = []
     for path in (root / ".verification/pytest-runs").glob("*.json"):
         try:
             run = json.loads(_read_evidence(root, f".verification/pytest-runs/{path.name}"))
         except (json.JSONDecodeError, UnicodeError):
             continue
-        if isinstance(run, dict) and run.get("sessionId") == session_id and run.get("gate") == "backend":
+        if (isinstance(run, dict) and run.get("sessionId") == session_id
+                and run.get("gate") == "backend" and run.get("args") == command[3:]):
             if run.get("runId") != path.stem:
                 raise RuntimeError("backend receipt run identity differs from its path")
             candidates.append(run)
@@ -222,7 +225,6 @@ def main() -> None:
             or any(type(value) is not int or value < 0 for value in counts.values())
             or counts.get("failed", 0) or counts.get("error", 0)):
         raise RuntimeError("backend receipt did not pass")
-    command = shlex.split(str(gates[0]["command"]))
     nodes = run.get("selectedNodeIds")
     if (command[:3] != ["python3", "-m", "pytest"] or run.get("args") != command[3:]
             or not isinstance(nodes, list) or not nodes
