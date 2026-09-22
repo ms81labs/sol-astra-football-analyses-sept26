@@ -5,6 +5,7 @@ import logging
 from contextlib import contextmanager
 import hashlib
 import os
+import shutil as shutil
 import sqlite3
 import stat
 import tempfile
