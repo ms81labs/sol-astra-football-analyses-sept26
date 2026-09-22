@@ -1,45 +1,66 @@
 # Review-fix checkpoint — 22 September 2026
 
-This is the current bounded follow-up to the review at `ae8ffee`, not an instruction to restart C01–C06 or the historical code-quality audit. Read actual remote source and run state before resuming. Earlier main-only instructions and old checkpoint heads are historical for this follow-up.
+## Current verdict
+
+The four targeted code/journey findings from the review of ae8ffee are implemented and regression-tested. Final-source focused tests, the pinned CPU scorer, both enhanced journeys, integration, media and the excluded complement pass. The full canonical verify job is still running at this capture. This is not a blanket F00–F09 completion or merge sign-off.
+
+Do not restart C01–C06, the historical quality audit, or already-proven follow-ups. Read actual branch and run state before resuming. This checkpoint supersedes its earlier 54f906f/pending-run state without erasing that historical commit.
 
 ## Source and authority
 
-- Authorized target: `agent/backend-bounded-completion-2026-09-22` only.
-- Starting reviewed commit: `ae8ffeec3a2a2eb4736b1751600396c2f6c30a28`.
-- CI-home commit: `7daf87e51e516ad03f66d495f6b125e154dd0d94`.
-- Fixed code commit: `54f906f2ac1e49613952d311ab12b30d54582b30`.
-- Fixed code tree: `8d07bc884d6f3fcdc8425c36ef26f9514ff645ef`.
-- Main last observed: `c685640a897c16669e3b1848d77bf9e6e5d7e8cf`; no merge, force-push, branch deletion, live-store mutation or paid/model execution performed.
-- This checkpoint commit is documentation-only and skips redundant CI. It is not a claim that tests ran on the documentation SHA.
+- Existing target only: `agent/backend-bounded-completion-2026-09-22`.
+- Reviewed starting source: `ae8ffeec3a2a2eb4736b1751600396c2f6c30a28`.
+- CI-home fix: `7daf87e51e516ad03f66d495f6b125e154dd0d94`.
+- Initial receipt/journey fixes: `54f906f2ac1e49613952d311ab12b30d54582b30`.
+- Final code: `f6223f539829ebc21f6fc9dfd6821021df78bb8e`.
+- Final code tree: `03ced4712829308748bdd3fe8b67d33961fa7b79`.
+- Main last observed: `c685640a897c16669e3b1848d77bf9e6e5d7e8cf`.
+- No new remote branch, merge, force-push, branch deletion, live-store mutation, paid worker, model inference or real provider invocation.
+- This update is documentation-only. It skips redundant CI and does not claim tests ran on its later documentation SHA.
 
-## Implemented and focused-verified
+## Implemented repairs
 
-1. Direct pytest receipt leaf now uses existing no-follow/confinement/atomic helpers. Existing and dangling symlinks cannot overwrite/create their targets.
-2. Final code-only evidence binds the unique backend gate invocation, actual source before/after testing, profile, arguments, selected nodes, exit and raw log hashes. UUID ordering no longer selects authority. Backend stubs and dirty-source identity survive the final summary.
-3. Existing pinned C05 CPU workflow explicitly executes final journey tests and has FFmpeg, working-branch coverage, scorer pin checks and always-retained invocation records.
-4. Both composed modes use the real provider gateway with a fake post-dispatch timeout and actual shared ledger reconciliation/idempotency. Recovery twice and final reopen execute in fresh guarded child processes, not only a new object in the parent.
+1. Direct pytest receipt leaves and final evidence inputs use existing confinement/no-follow/atomic helpers. Existing and dangling symlinks cannot overwrite/create their external targets.
+2. Final code-only aggregation identifies the exact outer backend invocation by session, gate and command arguments. It validates source before/after/current, profile, selection, exit and raw log hashes, retaining backend stubs and dirty-source identity. UUID sorting does not select authority; duplicate exact outer invocations refuse.
+3. The existing pinned C05 CPU workflow explicitly executes V3T50 with FFmpeg, the exact TrackEval checkout, existing-branch coverage and always-retained per-invocation evidence.
+4. Both journeys use the real gateway/shared ledger with a fake post-dispatch timeout and explicit idempotent reconciliation. Recovery twice and final reopen happen in fresh guarded spawned processes.
 
-No new runtime dependency/framework or application architecture change was introduced. Full-mode shell behavior and command/tee failure safeguards remain covered. Review was self-review, not an invented independent agent review.
+No runtime dependency/framework or product architecture change. Existing shell exit/tee/no-follow safeguards and full-mode release behavior remain covered. Review was self-review using Superpowers/Ponytail, not an invented independent reviewer.
 
-## Verified execution, kept separate
+## Canonical aggregation regression and correction
 
-- Receipt RED: 21 intended counterexamples before the fixes. Gateway/parent-recovery and CRLF regressions also retained.
-- Focused selection: 89 passed on available Python 3.13.5; exact tested file blobs subsequently matched the fixed code tree. Not relabelled as locked Python 3.11.
-- Neighboring selection on fixed code: 123 passed.
-- Canonical C05 run `35783957026`: success at fixed code; 46 scorer tests and 3 final-journey tests passed separately, no skips. Python 3.11.16 and repository dev lock; ultralytics stub disclosed. Artifact `10719447031`, SHA256 `eed546991aab2b8147c0247983b4f43cd9700670bf1fc383c1a4533c77ca7513` verified.
-- Canonical CI `35783956961`: quality, API, excluded-backend, integration, real-media and macOS dependency dry-run completed successfully. At this checkpoint the canonical verify job `106936066539` is still running; do not mark it passed.
-- Canonical excluded complement: 594 passed. Integration: 357 passed, 15 skipped. Real-media: 23 passed, 4 skipped. Scorer/journey skips in ordinary lanes are executed in the separate pinned job; counts overlap and are not summed.
-- Local C06 ordinary: 69 passed, 1 opt-in skip, 3 failures. All three failures reproduced on unchanged `c685640` in this available Python 3.13.5 container: 150ms decoder-start timing, 160MiB address-space hash child, and cancellation before the second export process. Tests were not weakened. This local run remains qualified, not green.
-- Local opt-in long decode: 1 passed, 1,500 generated frames and more than 8GiB decoded with bounded buffering. Synthetic, not full-match performance evidence.
-- True legacy fixture/migration selection: 13 passed, 23 deselected on fixed code in the local available profile.
-- Copied-store compatibility: actual c685640 video/tracking stores were copied, opened/edited/reopened by fixed code; original source hashes and SQLite integrity preserved. Untouched backup copies reopened with matching old source. Not an in-place downgrade.
+Run `35783956961` at 54f906f passed all nine substantive gates, then failed final aggregation. Nested pytest processes inherited the backend gate label; three legitimate receipts existed. The final f6223f5 correction selects the exact outer arguments before checking uniqueness. Synthetic and real nested-process regressions reproduced RED then passed. The failed earlier workflow remains failed; its raw receipt/logs are retained and its results are not relabelled to the new commit.
 
-## Historical evidence recovered
+At 54f906f, the preserved gates recorded 3,895 backend passes/18 skips, 100 sidecar passes, 438 frontend passes, and zero exits for lint, both TypeScript projects, build, startup and production audit. Those are earlier gate results, not a successful f6223f5 full verifier.
 
-The original audit archive was recovered from the user's Library. Its SHA256 is `7f86b4dcb53ca0522da490ca79c4bd3a1d6657b803581c4b2d6650fcba940424`, matching the original kit. All 51 archived content checksums and 12 kit-file checks verified. The unchanged original four probes ran on exact c685640 and produced four intended assertion failures, not import/collection failures. That replay used available Python 3.13.5; it is not a canonical locked baseline run.
+## Results at exact f6223f5
 
-## Durable evidence and exact next action
+| Selection | Observed result | Evidence |
+|---|---|---|
+| Receipt/shell/workflow/journey focused selection | 91 passed, zero skips | Local available Python 3.13.5; clean exact code/tree; not canonical locked 3.11 |
+| Pinned scorer | 46 passed, zero skips | Canonical Python 3.11.16, run 35787664515 |
+| Enhanced journey module | 3 passed, zero skips | Same run, separate JUnit: video, tracking and gateway-boundary regression |
+| Excluded complement | 594 passed | Canonical run 35787664136 |
+| Integration | 357 passed, 15 skipped | Same run; scorer/journey cases execute in their separate pinned job |
+| Ordinary real media | 23 passed, 4 skipped | Same run; opt-in/scorer skips not relabelled passed |
+| Pinned quality and hygiene | Passed | Same run |
+| API profile | Passed | Same run; import smoke, not inference |
+| macOS profile | Dependency dry-run passed | Not macOS runtime qualification |
+| Copied-store compatibility / untouched-backup restoration | Both modes passed | Actual c685640 and f6223f5 in separate interpreters; available Python 3.13.5; original hashes and SQLite integrity preserved |
+| Full canonical verify | In progress | Run 35787664136, job 106948292320 |
 
-Current session evidence: `/mnt/data/fix-evidence`; original kit/archive: `/mnt/data/recovered-history`. Do not assume these local paths exist in another environment. Canonical repository/scorer bundles and run receipts are retained in the C05 artifact above. Final downloadable handoff must retain local logs, checksums, compatibility driver, qualifications and the execution index.
+Counts overlap and are never added as unique coverage. Local and canonical profiles remain separate. Final git diff --check passed; the code worktree/tree was verified clean. Scorer CI includes generated evidence/scorer files in its dirty metadata and is not called a clean working tree.
 
-Next: inspect CI `35783956961` job `106936066539` at exact fixed source, download its final artifact, validate receipt/run/log bindings and inspect actual failure or completion. Then finish the qualified evidence handoff. Do not rerun already-proven fixes, create another branch, or merge to main automatically. Main-push rollout, real browser, macOS runtime, GPU, real billing, model accuracy and deployment remain separate unexecuted qualifications.
+## Durable evidence
+
+The downloaded final-source scorer artifact `10720402424` has verified ZIP SHA256 `debf9e232da510934a6a2c0ed9ae571017295d1729f1dcaedeff113ef4bda38a`. It retains exact repository/scorer bundles, Python/lock identities, JUnit and per-invocation receipts. Final-source integration artifact: `10720869107`; media: `10720589332`; excluded complement: `10720324552`. Their downloaded ZIP hashes were verified.
+
+The original historical archive was recovered from the user's Library. SHA256 `7f86b4dcb53ca0522da490ca79c4bd3a1d6657b803581c4b2d6650fcba940424` matches the original kit. All 51 archived content hashes and 12 kit-file checks passed. The unchanged four probes reproduced four intended assertion failures on exact c685640 under available Python 3.13.5, not a locked baseline profile.
+
+Earlier source-labelled evidence is retained: 123 neighboring tests, 13 true legacy/migration tests, and the 1,500-frame synthetic decode beyond 8 GiB at 54f906f. Its local ordinary C06 result remains 69 passed, 1 skipped, 3 failed. All three failures also reproduced on unchanged c685640 in this container: decoder-start timing, the address-space-constrained hash child and cancellation before the second export process. No media assertions were weakened and that local run is not called green.
+
+The downloadable handoff retains raw RED/GREEN and CI artifacts, checksums, exact-source patch/bundles, compatibility drivers and an operation-specific suppression classification. `REVIEW_FIX_REGISTER.json` is the scoped repair register. Original R/N/CQA/V3T association maps are navigation, not retrospective certification of all 78 plan actions or all 98 acceptance clauses. Real browser, macOS runtime, model accuracy, real billing, GPU and deployment remain unexecuted qualifications.
+
+## Exact next action
+
+Inspect canonical run **35787664136**, job **106948292320**, on exact **f6223f5**. Download its final verify-evidence artifact and verify the final verificationSession references the outer backend invocation and all nine source/profile/stub/log identities. If it fails, retain the failure and repair only the demonstrated cause. Do not infer success from other green jobs, repeat finished repairs, create another branch, merge, delete branches or run paid work automatically.
