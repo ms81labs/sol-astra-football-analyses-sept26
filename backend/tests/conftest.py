@@ -16,6 +16,7 @@ if os.environ.get("GA_TEST_DEFAULT_FLAGS") != "1":
     os.environ.setdefault("GA_FLAG_LEFTOVER_HTTP", "1")
 _STUBS_KEY = pytest.StashKey[tuple[str, ...]]()
 _SELECTED_KEY = pytest.StashKey[tuple[str, ...]]()
+_SOURCE_KEY = pytest.StashKey[dict[str, object]]()
 _ACTIVE_STUBS: list[str] = []
 
 _STORAGE_ROOT_ENV = "GUERILLA_STORAGE_ROOT"
@@ -146,6 +147,9 @@ for _mod_name, _make_stub in [
 def pytest_configure(config) -> None:  # noqa: ANN001
     config.stash[_STUBS_KEY] = tuple(_ACTIVE_STUBS)
     config.stash[_SELECTED_KEY] = ()
+    if os.environ.get("GA_VERIFICATION_RUN") == "1":
+        from backend.scripts.write_lane_receipt import source_identity
+        config.stash[_SOURCE_KEY] = source_identity(Path(config.rootpath))
 
 
 def pytest_collection_finish(session) -> None:  # noqa: ANN001
@@ -172,6 +176,7 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config) -> None:  # no
         exit_code=int(exitstatus),
         counts=counts,
         selected_node_ids=selected_node_ids,
+        source_start=config.stash.get(_SOURCE_KEY, None),
     )
 
 

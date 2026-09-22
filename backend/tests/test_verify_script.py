@@ -116,6 +116,7 @@ def verifier_repo(tmp_path: Path) -> tuple[Path, Path]:
         "backend/app/__init__.py",
         "backend/app/release_manifest.py",
         "backend/app/remote_contracts.py",
+        "backend/app/storage_remote.py",
         "backend/app/runtime_options.py",
         "backend/release/__init__.py",
         "backend/release/daytona_policy.py",
@@ -145,8 +146,19 @@ printf '%s|%s\\n' "$(basename "$0")" "$*" >> "$VERIFY_STUB_CALLS"
 case "$(basename "$0")|$*" in
   "python3|-m pytest -q backend/tests"|"python3|-m pytest -q backend/tests --ignore="*)
     printf 'QT_QPA_PLATFORM=%s\\n1486 passed in 1.00s\\n' "${QT_QPA_PLATFORM:-}"
-    mkdir -p .verification/pytest-runs
-    printf '{"sessionId":"%s","commit":"%s","stubsActive":[]}\\n' "$GA_VERIFICATION_SESSION_ID" "$(git rev-parse HEAD)" > .verification/pytest-runs/backend.json
+    # Synthetic invocation for shell contracts; the receipt serializer is real.
+    "$REAL_PYTHON" - "$@" <<'RECEIPT'
+import os
+from pathlib import Path
+import sys
+from backend.scripts.write_lane_receipt import write_pytest_receipt
+write_pytest_receipt(
+    repo_root=Path.cwd(), output_root=Path.cwd(), args=tuple(sys.argv[3:]),
+    profile=os.environ["GA_VERIFICATION_PROFILE"], stubs=("synthetic-shell-fixture",),
+    exit_code=0, counts={"passed": 1, "failed": 0, "error": 0},
+    selected_node_ids=["backend/tests/test_fixture.py::test_one"],
+)
+RECEIPT
     if [ -n "${VERIFY_BACKEND_END_MARKER:-}" ]; then touch "$VERIFY_BACKEND_END_MARKER"; sleep 0.05; fi
     ;;
   "python3|-m pytest -q research-addon/tests") printf '37 passed in 1.00s\\n' ;;

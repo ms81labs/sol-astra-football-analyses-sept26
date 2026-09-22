@@ -58,6 +58,8 @@ jobs:
           path: |
             .verification/logs/
             .verification/receipt.json
+            .verification/pytest-runs/
+            .verification/gates.tsv
           if-no-files-found: warn
 
 
@@ -183,6 +185,8 @@ jobs:
           path: |
             .verification/logs/
             .verification/receipt.json
+            .verification/pytest-runs/
+            .verification/gates.tsv
           if-no-files-found: warn
 
   real-media:
@@ -215,6 +219,8 @@ jobs:
           path: |
             .verification/logs/
             .verification/receipt.json
+            .verification/pytest-runs/
+            .verification/gates.tsv
           if-no-files-found: warn
 
   gpu-acceptance:
@@ -251,4 +257,6 @@ jobs:
           path: |
             .verification/logs/
             .verification/receipt.json
+            .verification/pytest-runs/
+            .verification/gates.tsv
           if-no-files-found: error

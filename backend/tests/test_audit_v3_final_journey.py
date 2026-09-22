@@ -20,11 +20,10 @@ from backend.app.review_service import ReviewService
 from backend.app.schemas import ColorClusterSummary, DetectedEvent, MatchConfig
 from backend.app.semantic_commands import SemanticCommandError
 from backend.app.storage import Storage
-from backend.app.workbench.jobs import JobRequest
 from backend.tests.test_audit_v3_c01_generations import children as children
-from backend.tests.test_audit_v3_c02_journey import _held_reader, _snapshot
+from backend.tests.final_journey_process import guarded_journey_child
+from backend.tests.test_audit_v3_c02_journey import _snapshot
 from backend.tests.test_audit_v3_c02_projection import profile
-from backend.tests.test_audit_v3_c03_journey import _crashing_configuration
 from backend.tests.test_audit_v3_c03_reports import _gateway, _interprets
 from backend.tests.test_audit_v3_c05_evaluation import fixture as evaluation_fixture
 from backend.tests.test_audit_v3_c05_evaluation import policy as evaluation_policy
@@ -104,29 +103,96 @@ def _team_for_track(storage: Storage, match_id: str, track_id: int) -> str | Non
     return None
 
 
-def _cost_round_trip(storage: Storage, match_id: str, mode: str) -> None:
-    request = JobRequest(
-        requestId=f"v3t50-cost-{mode}", matchId=match_id,
-        sourceSha256=storage.source_sha256(match_id), intervalStart=0, intervalEnd=1,
-        temporalPolicy="source_global_grid", decoderVersion="synthetic",
-        modelHash="synthetic-fake-provider", outputSchema="report_draft_v1",
-        budget=1.0, authorisedLocation="cloud",
+def _cost_round_trip(storage: Storage, match_id: str, mode: str) -> str:
+    from backend.app.provider_gateway import ProviderGateway, ProviderBudgetLedger
+    from backend.app.settings import ProcessingSettings
+    from backend.app.workbench.errors import ReconciliationRequired
+    from backend.tests.test_audit_v3_c04_providers import fake_policy
+
+    # Only this explicitly fake adapter may dispatch. Its pricing is synthetic.
+    config = storage.get_match(match_id).config.model_copy(deep=True)
+    permitted = config.model_copy(deep=True)
+    permitted.rights.cloudPermission = True
+    permitted.rights.processingScope = "local_plus_burst"
+    storage.update_match_config(match_id, permitted)
+    calls = []
+
+    def adapter(*args, **kwargs):
+        calls.append((kwargs["request_id"], kwargs["reservation_id"]))
+        assert kwargs["execution_bound"]["maxOutputTokens"] == 25
+        raise TimeoutError("synthetic post-dispatch outcome unknown")
+
+    adapter.billing_contract_id = "synthetic-byte-token-v1"
+    gateway = ProviderGateway(
+        storage,
+        ProcessingSettings(
+            cloud_provider_enabled=True, cloud_provider_api_key="test-only",
+            allowed_model_ids=("test-model",), cloud_model_id="test-model",
+            provider_call_reservation=1.0, provider_budget_limit=1.0,
+            provider_spend_policy=fake_policy(),
+        ),
+        adapter_factory=lambda: adapter,
+        budget_ledger=ProviderBudgetLedger(storage.job_ledger.db_path, 1.0),
     )
-    attempt = storage.job_ledger.admit(request, mode="submit", owner_id="fake", lease_seconds=60)
-    storage.job_ledger.record_charge(attempt.attemptId, kind="settled", amount=0.1, evidence_id="partial")
-    storage.job_ledger.timeout_before_response(request.requestId, owner_id="fake")
-    unknown = storage.job_ledger.cost_for(request.requestId)
-    assert unknown["actualTotal"] is None and unknown["settledTotal"] == 0.1
-    storage.job_ledger.reconcile_attempt(
-        attempt.attemptId, provider_outcome="complete", settled_cost=0.2, receipt_id="final",
-    )
-    charges = storage.job_ledger.charges_for(attempt.attemptId)
-    storage.job_ledger.reconcile_attempt(
-        attempt.attemptId, provider_outcome="complete", settled_cost=0.2, receipt_id="final",
-    )
-    assert storage.job_ledger.charges_for(attempt.attemptId) == charges
-    receipt = storage.job_ledger.receipt(request.requestId)
-    assert receipt.actualTotal == 0.2 and receipt.attemptCount == 1
+    body = {"requireProvider": True, "requestId": f"v3t50-cost-{mode}"}
+    try:
+        with pytest.raises(TimeoutError, match="post-dispatch"):
+            gateway.execute(match_id, "tactical_report", requested_provider="cloud", body=body)
+        assert len(calls) == 1
+        request_id, attempt_id = calls[0]
+        assert storage.job_ledger.latest_attempt(request_id).status == "outcome_unknown"
+        storage.job_ledger.record_charge(attempt_id, kind="settled", amount=0.1, evidence_id="partial")
+        unknown = storage.job_ledger.cost_for(request_id)
+        assert unknown["actualTotal"] is None and unknown["settledTotal"] == 0.1
+        with pytest.raises(ReconciliationRequired):
+            gateway.execute(match_id, "tactical_report", requested_provider="cloud", body=body)
+        storage.job_ledger.reconcile_attempt(
+            attempt_id, provider_outcome="complete", settled_cost=0.2, receipt_id="final",
+        )
+        charges = storage.job_ledger.charges_for(attempt_id)
+        storage.job_ledger.reconcile_attempt(
+            attempt_id, provider_outcome="complete", settled_cost=0.2, receipt_id="final",
+        )
+        # The timed-out report has no cached result. Replay must refuse, not buy it again.
+        with pytest.raises(ReconciliationRequired):
+            gateway.execute(match_id, "tactical_report", requested_provider="cloud", body=body)
+        assert storage.job_ledger.charges_for(attempt_id) == charges and len(calls) == 1
+        receipt = storage.job_ledger.receipt(request_id)
+        assert receipt.actualTotal == 0.2 and receipt.attemptCount == 1
+        assert storage.job_ledger.cost_for(request_id)["authorisedBudget"] == 1.0
+        return request_id
+    finally:
+        storage.update_match_config(match_id, config)
+
+
+def _fresh_state(root, match_id, pipe):
+    try:
+        storage = Storage(Path(root))
+        costs = {
+            request.requestId: storage.job_ledger.receipt(request.requestId).model_dump(mode="json")
+            for request in storage.job_ledger.requests.values()
+            if request.matchId == match_id and request.scope == "provider"
+        }
+        pipe.send({"pid": os.getpid(), "snapshot": _snapshot(storage, match_id),
+                   "inventory": _source_inventory(storage, match_id), "costs": costs})
+    finally:
+        pipe.close()
+
+
+def _recover_twice(root, match_id, pipe):
+    storage = Storage(Path(root))
+    command = next(item for item in storage.list_corrections(match_id)
+                   if item["commandId"] == "c03-crash-command")
+    expected = storage.current_generation(match_id).generationId
+    history_size = len(storage.list_corrections(match_id))
+    for _ in range(2):
+        storage.recover_correction(match_id, command["correctionId"])
+        assert storage.current_generation(match_id).generationId == expected
+        history = storage.list_corrections(match_id)
+        assert len(history) == history_size
+        recovered = next(item for item in history if item["correctionId"] == command["correctionId"])
+        assert recovered["applyState"] == "applied" and recovered["appliedGeneration"] == expected
+    _fresh_state(root, match_id, pipe)
 
 
 @pytest.mark.parametrize("mode", ["video", "tracking_json"])
@@ -146,7 +212,7 @@ def test_v3t50_composed_lifecycle(tmp_path, monkeypatch, children, mode):
     initial_report = _gateway(storage, _interprets).execute(match_id, "tactical_report")
     assert _team_for_track(storage, match_id, 7) == "my_team"
 
-    reader = children(_held_reader, str(storage.storage_root), match_id)
+    reader = children(guarded_journey_child, "held_reader", str(storage.storage_root), match_id)
     assert reader.receive() == ("pinned", initial["generation"])
 
     ReviewService(storage).configure(match_id, {"attackDirection": "right_to_left"})
@@ -209,26 +275,39 @@ def test_v3t50_composed_lifecycle(tmp_path, monkeypatch, children, mode):
             future.result(timeout=10)
     assert len(stale_calls) == 1 and ReportStore(storage).view(match_id)["reports"] == {}
 
-    _cost_round_trip(storage, match_id, mode)
+    cost_request_id = _cost_round_trip(storage, match_id, mode)
     reuse = storage.execute_recompute(match_id, "team_mapping")
     assert reuse.kind == "executed" and reuse.detectorCalls == 0
 
-    writer = children(_crashing_configuration, str(storage.storage_root), match_id)
+    writer = children(guarded_journey_child, "crashing_writer", str(storage.storage_root), match_id)
     assert writer.receive() == ("committed", "after_pointer_publish")
     committed = json.loads((storage.generations.root(match_id) / "current_generation.json").read_text())["generationId"]
     writer.process.kill()
     writer.process.join(10)
     assert not writer.process.is_alive() and writer.process.exitcode != 0
+    # Recovery must not accidentally use this already-imported parent process.
+    parent_pid = os.getpid()
+    original_recover = Storage.recover_correction
+
+    def require_fresh_recovery(self, *args, **kwargs):
+        assert os.getpid() != parent_pid, "recovery must execute in a fresh process"
+        return original_recover(self, *args, **kwargs)
+
+    monkeypatch.setattr(Storage, "recover_correction", require_fresh_recovery)
+    recovery = children(guarded_journey_child, "recover", str(storage.storage_root), match_id)
+    recovered = recovery.receive()
+    recovery.finish()
+    assert recovered["pid"] not in {parent_pid, writer.process.pid, reader.process.pid}
+    assert recovered["snapshot"]["generation"] == committed
+    assert recovered["inventory"] == inventory
+    assert recovered["costs"][cost_request_id]["actualTotal"] == 0.2
+    assert recovered["costs"][cost_request_id]["attemptCount"] == 1
     reopened = Storage(storage.storage_root)
     assert reopened.current_generation(match_id).generationId == committed
-    command = next(item for item in reopened.list_corrections(match_id) if item["commandId"] == "c03-crash-command")
-    for _ in range(2):
-        reopened.recover_correction(match_id, command["correctionId"])
-        assert reopened.current_generation(match_id).generationId == committed
 
     reopened.undo_correction(match_id, mapping.correctionId)
     assert _team_for_track(reopened, match_id, 7) == "my_team"
-    persisted_cost = reopened.job_ledger.receipt(f"v3t50-cost-{mode}")
+    persisted_cost = reopened.job_ledger.receipt(cost_request_id)
     assert persisted_cost.actualTotal == 0.2 and persisted_cost.attemptCount == 1
     final_generation = reopened.current_generation(match_id).generationId
     final_report = _gateway(reopened, _interprets).execute(match_id, "tactical_report")
@@ -296,9 +375,34 @@ def test_v3t50_composed_lifecycle(tmp_path, monkeypatch, children, mode):
     old_first, old_last = reader.receive()
     reader.finish()
     assert old_first == old_last == initial
-    assert _snapshot(reopened, match_id)["generation"] == final_generation
+    fresh = children(guarded_journey_child, "state", str(storage.storage_root), match_id)
+    final_state = fresh.receive()
+    fresh.finish()
+    assert final_state["pid"] != parent_pid
+    assert final_state["snapshot"] == _snapshot(reopened, match_id)
+    assert final_state["snapshot"]["generation"] == final_generation
+    assert final_state["inventory"] == inventory
+    assert final_state["costs"][cost_request_id]["actualTotal"] == 0.2
+    assert final_state["costs"][cost_request_id]["attemptCount"] == 1
     assert ReportStore(reopened).view(
         match_id, generation_id=initial_report["generationId"]
     )["status"] == "historical"
     assert _source_inventory(reopened, match_id) == inventory
     assert reopened.list_corrections(match_id)
+
+
+def test_cost_round_trip_crosses_the_real_gateway_boundary(tmp_path, monkeypatch):
+    from backend.app.provider_gateway import ProviderGateway
+
+    storage = Storage(tmp_path / "cost-store")
+    match_id = _install_tracking(storage, tmp_path)
+    calls = []
+    original = ProviderGateway.execute
+
+    def observe(self, *args, **kwargs):
+        calls.append(kwargs.get("requested_provider"))
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(ProviderGateway, "execute", observe)
+    _cost_round_trip(storage, match_id, "tracking_json")
+    assert "cloud" in calls, "composed cost journey never reached the provider gateway"
