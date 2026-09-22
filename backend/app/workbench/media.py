@@ -14,13 +14,11 @@ import time
 import tempfile
 from fractions import Fraction
 from abc import ABC, abstractmethod
-from collections import deque
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Iterator, Literal
 
 from .contracts import FrameIdentity, SamplingReceipt, SourceClockIdentity
-from .access import constrained_decoder
 from .hashing import HashCache, stream_sha256
 from .executables import resolve_trusted_executable
 from .media_execution import (

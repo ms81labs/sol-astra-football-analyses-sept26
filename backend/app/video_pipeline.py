@@ -4,11 +4,10 @@ import importlib.metadata
 from pathlib import Path
 
 from .schemas import MatchConfig
-from .domain_types import Interval
-from .workbench.cache import DetectionIdentity, TrackingIdentity, recompute_plan
+from .workbench.cache import recompute_plan
 from .workbench.geometry import ground_contact_point, project_to_pitch
 from .workbench.media import FrameSource, OpenCvFrameSource, decode_memory_policy, vid_stride_policy
-from .workbench.hashing import HashCache, stream_sha256
+from .workbench.hashing import HashCache
 
 # Exposed at module level so tests can patch this name directly.
 from backend.run_guerilla import TARGET_FPS, process_video as _process_video_impl

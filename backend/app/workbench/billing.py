@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from pydantic import BaseModel, ConfigDict, Field
 
-from .money import ZERO, total
+from .money import total
 
 
 @dataclass(frozen=True)

@@ -5,7 +5,6 @@ import logging
 from contextlib import contextmanager
 import hashlib
 import os
-import shutil
 import sqlite3
 import stat
 import tempfile
@@ -17,7 +16,6 @@ from io import BytesIO
 from pathlib import Path
 from typing import BinaryIO, TextIO
 
-from pydantic import ValidationError
 
 from .storage_jobs import (
     AdmissionOutcomeUncertainError as AdmissionOutcomeUncertainError,
@@ -37,7 +35,6 @@ from .schemas import (
     DetectedEvent,
     FormationSegment,
     FrameData,
-    JobRecord,
     MatchConfig,
     MatchRecord,
     MatchSummary,

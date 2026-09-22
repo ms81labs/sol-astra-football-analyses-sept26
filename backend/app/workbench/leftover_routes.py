@@ -13,7 +13,6 @@ from .access import object_access_decision
 from .leftover_http import leftover_http_enabled
 from .recovery import support_bundle
 
-import json
 
 from .leftover_support import (
     _as_bytes,
