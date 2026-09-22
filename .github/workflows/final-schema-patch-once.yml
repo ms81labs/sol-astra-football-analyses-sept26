@@ -1,0 +1,37 @@
+name: Apply exact tested schema patch once
+on:
+  push:
+    branches: [agent/backend-bounded-completion-2026-09-22]
+    paths: ['.github/workflows/final-schema-patch-once.yml']
+permissions:
+  contents: read
+jobs:
+  apply-tested-patch:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Apply only the exact hash-verified local repair and remove this job
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          test "$(git rev-parse HEAD:backend/app/storage.py)" = e1e1d3c259aa4a2c7e84350758e180223fdaf4a7
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('backend/app/storage.py')
+          old = '    def _initialize(self) -> None:\n        with self._connect() as connection:\n            connection.executescript(\n                """\n                CREATE TABLE IF NOT EXISTS matches'
+          new = '    def _initialize(self) -> None:\n        with self._connect() as connection:\n            # Serialize schema discovery and migration across startup processes.\n            # BEGIN belongs inside executescript, which commits a pending transaction.\n            connection.executescript(\n                """\n                BEGIN IMMEDIATE;\n                CREATE TABLE IF NOT EXISTS matches'
+          content = p.read_text()
+          assert content.count(old) == 1
+          p.write_text(content.replace(old, new))
+          PY
+          test "$(git hash-object backend/app/storage.py)" = 11a1133a083b9a7d5c180882b9f45ed2159b3ae0
+          git diff --check
+          git add backend/app/storage.py
+          git rm .github/workflows/final-schema-patch-once.yml
+          git -c user.name='github-actions[bot]' -c user.email='41898282+github-actions[bot]@users.noreply.github.com' commit -m 'fix: serialize SQLite schema discovery and migration in one transaction'
+          git push origin HEAD:refs/heads/agent/backend-bounded-completion-2026-09-22
