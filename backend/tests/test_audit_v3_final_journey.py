@@ -95,6 +95,15 @@ def _source_inventory(storage: Storage, match_id: str) -> dict[str, str]:
     return {str(path): hashlib.sha256(path.read_bytes()).hexdigest() for path in paths}
 
 
+def _team_for_track(storage: Storage, match_id: str, track_id: int) -> str | None:
+    frame = storage.load_frames(match_id)[0]
+    if any(player.id == track_id for player in frame.myTeam):
+        return "my_team"
+    if any(player.id == track_id for player in frame.enemies):
+        return "enemy"
+    return None
+
+
 def _cost_round_trip(storage: Storage, match_id: str, mode: str) -> None:
     request = JobRequest(
         requestId=f"v3t50-cost-{mode}", matchId=match_id,
@@ -135,6 +144,7 @@ def test_v3t50_composed_lifecycle(tmp_path, monkeypatch, children, mode):
     initial = _snapshot(storage, match_id)
     inventory = _source_inventory(storage, match_id)
     initial_report = _gateway(storage, _interprets).execute(match_id, "tactical_report")
+    assert _team_for_track(storage, match_id, 7) == "my_team"
 
     reader = children(_held_reader, str(storage.storage_root), match_id)
     assert reader.receive() == ("pinned", initial["generation"])
@@ -145,6 +155,7 @@ def test_v3t50_composed_lifecycle(tmp_path, monkeypatch, children, mode):
         payload={"swap": True, "pair": [0, 1]} if mode == "video" else {"targetRole": "enemy"},
     )
     assert mapping.applyState == "applied"
+    assert _team_for_track(storage, match_id, 7) == "enemy"
 
     split = storage.submit_correction(
         match_id, kind="track_split", payload={"trackId": "7", "atFrame": 5, "newTrackId": 99},
@@ -216,6 +227,9 @@ def test_v3t50_composed_lifecycle(tmp_path, monkeypatch, children, mode):
         assert reopened.current_generation(match_id).generationId == committed
 
     reopened.undo_correction(match_id, mapping.correctionId)
+    assert _team_for_track(reopened, match_id, 7) == "my_team"
+    persisted_cost = reopened.job_ledger.receipt(f"v3t50-cost-{mode}")
+    assert persisted_cost.actualTotal == 0.2 and persisted_cost.attemptCount == 1
     final_generation = reopened.current_generation(match_id).generationId
     final_report = _gateway(reopened, _interprets).execute(match_id, "tactical_report")
     assert final_report["generationId"] == final_generation
@@ -267,6 +281,16 @@ def test_v3t50_composed_lifecycle(tmp_path, monkeypatch, children, mode):
     )
     assert gate.accepted and gate.executionStatus == "completed"
     assert gate.executionEvidence["modelInferenceExecuted"] is False
+    rejected_path, rejected_manifest, _save = evaluation_fixture(
+        tmp_path / f"evaluation-rejected-{mode}", prediction=False
+    )
+    rejected = verify_evaluation_manifest(
+        rejected_path,
+        trackeval_root=scorer_root,
+        acceptance_policy=evaluation_policy(rejected_manifest),
+    )
+    assert rejected.executionStatus == "completed" and not rejected.accepted
+    assert rejected.acceptanceStatus == "failed"
 
     reader.pipe.send("read")
     old_first, old_last = reader.receive()

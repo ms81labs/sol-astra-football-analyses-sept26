@@ -136,15 +136,17 @@ def verifier_repo(tmp_path: Path) -> tuple[Path, Path]:
     subprocess.run(["git", "add", "scripts", "backend"], cwd=root, check=True)
     subprocess.run(["git", "commit", "-m", "metadata"], cwd=root, check=True, capture_output=True)
     (root / ".git/info/exclude").write_text(
-        "bin/\ncalls.log\n__pycache__/\n*.pyc\n", encoding="utf-8"
+        "bin/\ncalls.log\n.verification/\n__pycache__/\n*.pyc\n", encoding="utf-8"
     )
 
     stub = """#!/usr/bin/env bash
 set -eu
 printf '%s|%s\\n' "$(basename "$0")" "$*" >> "$VERIFY_STUB_CALLS"
 case "$(basename "$0")|$*" in
-  "python3|-m pytest -q backend/tests")
+  "python3|-m pytest -q backend/tests"|"python3|-m pytest -q backend/tests --ignore="*)
     printf 'QT_QPA_PLATFORM=%s\\n1486 passed in 1.00s\\n' "${QT_QPA_PLATFORM:-}"
+    mkdir -p .verification/pytest-runs
+    printf '{"sessionId":"%s","commit":"%s","stubsActive":[]}\\n' "$GA_VERIFICATION_SESSION_ID" "$(git rev-parse HEAD)" > .verification/pytest-runs/backend.json
     if [ -n "${VERIFY_BACKEND_END_MARKER:-}" ]; then touch "$VERIFY_BACKEND_END_MARKER"; sleep 0.05; fi
     ;;
   "python3|-m pytest -q research-addon/tests") printf '37 passed in 1.00s\\n' ;;
@@ -275,6 +277,23 @@ def test_code_only_receipt_uses_current_session_gate_results(
         "backend", "sidecar", "frontend-tests", "lint", "typecheck-app",
         "typecheck-node", "build", "backend-startup", "prod-audit",
     ]
+
+
+def test_lane_writer_rejects_gate_records_from_another_session(
+    verifier_repo: tuple[Path, Path],
+) -> None:
+    first = _run_verifier(verifier_repo, extra_env={"VERIFY_CODE_ONLY": "1"})
+    assert first.returncode == 0, first.stdout + first.stderr
+    env = os.environ.copy()
+    env.update({"PYTHONPATH": str(verifier_repo[0]), "GA_VERIFICATION_SESSION_ID": "other"})
+
+    result = subprocess.run(
+        [sys.executable, "-m", "backend.scripts.write_lane_receipt"],
+        cwd=verifier_repo[0], env=env, text=True, capture_output=True, check=False,
+    )
+
+    assert result.returncode != 0
+    assert "stale source or session identity" in result.stderr
 
 
 def test_gate_timestamp_is_touched_after_the_command_finishes(
@@ -536,6 +555,24 @@ def test_verifier_rejects_symlinked_log_components_without_touching_external_fil
     assert result.returncode != 0
     assert "unsafe verification log path" in result.stderr
     assert sentinel.read_text(encoding="utf-8") == "preserve me"
+    assert _calls(verifier_repo) == []
+
+
+def test_verifier_rejects_symlinked_gate_results_without_touching_target(
+    verifier_repo: tuple[Path, Path], tmp_path: Path
+) -> None:
+    root = verifier_repo[0]
+    verification = root / ".verification"
+    verification.mkdir()
+    external = tmp_path / "external.tsv"
+    external.write_text("preserve me", encoding="utf-8")
+    (verification / "gates.tsv").symlink_to(external)
+
+    result = _run_verifier(verifier_repo)
+
+    assert result.returncode != 0
+    assert "unsafe verification log path" in result.stderr
+    assert external.read_text(encoding="utf-8") == "preserve me"
     assert _calls(verifier_repo) == []
 
 

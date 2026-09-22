@@ -59,6 +59,8 @@ jobs:
         shell: bash
         env:
           C05_TRACKEVAL_ROOT: ${{ github.workspace }}/.deps/trackeval
+          GA_VERIFICATION_RUN: '1'
+          GA_VERIFICATION_PROFILE: 'c05-pinned-cpu'
           PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
           VERIFY_DAYTONA: '0'
           ALLOW_DAYTONA_MUTATION: '0'

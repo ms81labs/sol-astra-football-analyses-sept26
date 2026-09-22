@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 from backend.tests import conftest as verification_plugin
+from backend.scripts.write_lane_receipt import build_pytest_receipt
 
 
 def _git_repo(root: Path) -> str:
@@ -143,6 +144,21 @@ def test_receipt_binds_checkout_not_event_sha_and_records_dirty_identity(
     assert len(receipt["diffSha256"]) == 64
 
 
+def test_dirty_identity_includes_untracked_file_bytes(tmp_path) -> None:
+    _git_repo(tmp_path)
+    untracked = tmp_path / "candidate-test.py"
+    untracked.write_text("first", encoding="utf-8")
+    kwargs = dict(
+        repo_root=tmp_path, run_id="run", session_id=None, args=("-q",),
+        profile="local", stubs=(), exit_code=0, counts={}, selected_node_ids=[],
+    )
+    first = build_pytest_receipt(**kwargs)
+    untracked.write_text("second", encoding="utf-8")
+    second = build_pytest_receipt(**kwargs)
+
+    assert first["diffSha256"] != second["diffSha256"]
+
+
 def test_real_child_pytest_records_nonzero_exit_and_selected_nodes(tmp_path) -> None:
     _git_repo(tmp_path)
     test_file = tmp_path / "test_child.py"
@@ -170,6 +186,33 @@ def test_real_child_pytest_records_nonzero_exit_and_selected_nodes(tmp_path) -> 
     assert receipt["selectedNodeIds"] == [
         "test_child.py::test_pass",
         "test_child.py::test_fail",
+    ]
+
+
+def test_selected_nodes_come_from_collection_even_when_x_stops_execution(tmp_path) -> None:
+    _git_repo(tmp_path)
+    test_file = tmp_path / "test_child.py"
+    test_file.write_text(
+        "def test_fail(): assert False\n\ndef test_not_run(): assert True\n",
+        encoding="utf-8",
+    )
+    env = os.environ.copy()
+    env.update({"GA_VERIFICATION_RUN": "1", "PYTHONPATH": str(Path(__file__).resolve().parents[2])})
+
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", "-x", "-p", "backend.tests.conftest", str(test_file)],
+        cwd=tmp_path,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    receipt = json.loads((tmp_path / ".verification" / "receipt.json").read_text())
+    assert result.returncode == 1
+    assert receipt["selectedNodeIds"] == [
+        "test_child.py::test_fail",
+        "test_child.py::test_not_run",
     ]
 
 
@@ -222,3 +265,21 @@ def test_malformed_previous_receipt_is_explicitly_replaced(tmp_path, monkeypatch
 
     receipt = json.loads((verification / "receipt.json").read_text())
     assert receipt["priorReceiptStatus"] == "malformed"
+
+
+def test_pytest_receipt_rejects_symlinked_run_directory(tmp_path, monkeypatch) -> None:
+    _git_repo(tmp_path)
+    verification = tmp_path / ".verification"
+    verification.mkdir()
+    external = tmp_path / "external"
+    external.mkdir()
+    (verification / "pytest-runs").symlink_to(external, target_is_directory=True)
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("GA_VERIFICATION_RUN", "1")
+
+    with pytest.raises(OSError, match="pytest-runs"):
+        verification_plugin.pytest_terminal_summary(
+            SimpleNamespace(stats={}, write_line=lambda _line: None), 0, _config(tmp_path)
+        )
+
+    assert list(external.iterdir()) == []

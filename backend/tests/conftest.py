@@ -15,6 +15,7 @@ import pytest
 if os.environ.get("GA_TEST_DEFAULT_FLAGS") != "1":
     os.environ.setdefault("GA_FLAG_LEFTOVER_HTTP", "1")
 _STUBS_KEY = pytest.StashKey[tuple[str, ...]]()
+_SELECTED_KEY = pytest.StashKey[tuple[str, ...]]()
 _ACTIVE_STUBS: list[str] = []
 
 _STORAGE_ROOT_ENV = "GUERILLA_STORAGE_ROOT"
@@ -144,6 +145,11 @@ for _mod_name, _make_stub in [
 
 def pytest_configure(config) -> None:  # noqa: ANN001
     config.stash[_STUBS_KEY] = tuple(_ACTIVE_STUBS)
+    config.stash[_SELECTED_KEY] = ()
+
+
+def pytest_collection_finish(session) -> None:  # noqa: ANN001
+    session.config.stash[_SELECTED_KEY] = tuple(item.nodeid for item in session.items)
 
 
 def pytest_terminal_summary(terminalreporter, exitstatus, config) -> None:  # noqa: ANN001
@@ -155,12 +161,7 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config) -> None:  # no
 
     outcomes = ("passed", "failed", "skipped", "error", "xfailed", "xpassed")
     counts = {outcome: len(terminalreporter.stats.get(outcome, ())) for outcome in outcomes}
-    selected_node_ids = list(dict.fromkeys(
-        report.nodeid
-        for outcome in outcomes
-        for report in terminalreporter.stats.get(outcome, ())
-        if getattr(report, "nodeid", None)
-    ))
+    selected_node_ids = list(config.stash.get(_SELECTED_KEY, ()))
     root = Path(config.rootpath)
     write_pytest_receipt(
         repo_root=root,

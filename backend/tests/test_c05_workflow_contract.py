@@ -34,4 +34,5 @@ def test_c05_workflow_covers_determining_changes_without_paid_execution() -> Non
     )
     assert test_step["env"]["VERIFY_DAYTONA"] == "0"
     assert test_step["env"]["ALLOW_DAYTONA_MUTATION"] == "0"
+    assert test_step["env"]["GA_VERIFICATION_RUN"] == "1"
     assert all("gpu" not in key.lower() for key in test_step["env"])

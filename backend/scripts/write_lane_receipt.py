@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import re
+import stat
 import subprocess
 import uuid
 
@@ -27,6 +28,23 @@ def build_pytest_receipt(
 ) -> dict[str, object]:
     status = _git(repo_root, "status", "--porcelain=v1", "--untracked-files=all")
     diff = _git(repo_root, "diff", "--binary", "HEAD")
+    untracked = _git(repo_root, "ls-files", "--others", "--exclude-standard", "-z")
+    dirty = hashlib.sha256()
+    dirty.update(status.encode())
+    dirty.update(b"\0")
+    dirty.update(diff.encode())
+    for relative in sorted(filter(None, untracked.split("\0"))):
+        path = repo_root / relative
+        mode = path.lstat().st_mode
+        dirty.update(relative.encode())
+        dirty.update(b"\0")
+        if stat.S_ISREG(mode):
+            with path.open("rb") as handle:
+                for chunk in iter(lambda: handle.read(64 * 1024), b""):
+                    dirty.update(chunk)
+        elif stat.S_ISLNK(mode):
+            dirty.update(os.readlink(path).encode())
+        dirty.update(b"\0")
     return {
         "schemaVersion": 2,
         "kind": "pytestInvocation",
@@ -36,7 +54,7 @@ def build_pytest_receipt(
         "tree": _git(repo_root, "rev-parse", "HEAD^{tree}").strip(),
         "eventCommit": os.environ.get("GITHUB_SHA"),
         "dirty": bool(status),
-        "diffSha256": hashlib.sha256((status + "\0" + diff).encode()).hexdigest(),
+        "diffSha256": dirty.hexdigest(),
         "profile": profile,
         "stubsActive": list(stubs),
         "args": list(args),
@@ -56,6 +74,8 @@ def write_pytest_receipt(
     if verification.is_symlink():
         raise OSError("verification directory must not be a symlink")
     runs = verification / "pytest-runs"
+    if runs.is_symlink() or (runs.exists() and not runs.is_dir()):
+        raise OSError("pytest-runs directory must not be a symlink")
     runs.mkdir(parents=True, exist_ok=True)
     latest = verification / "receipt.json"
     if not latest.exists():
@@ -102,9 +122,13 @@ def main() -> None:
     session_id = os.environ.get("GA_VERIFICATION_SESSION_ID")
     if not session_id:
         raise RuntimeError("GA_VERIFICATION_SESSION_ID is required")
+    root = Path.cwd()
+    commit = _git(root, "rev-parse", "HEAD").strip()
     gates: list[dict[str, object]] = []
     for line in Path(".verification/gates.tsv").read_text(encoding="utf-8").splitlines():
-        name, raw_exit, command = line.split("\t", 2)
+        gate_session, gate_commit, name, raw_exit, command = line.split("\t", 4)
+        if gate_session != session_id or gate_commit != commit:
+            raise RuntimeError(f"gate {name} has stale source or session identity")
         if Path(name).name != name:
             raise RuntimeError(f"invalid gate name: {name}")
         exit_code = int(raw_exit)
@@ -125,18 +149,26 @@ def main() -> None:
         gates.append(gate)
     if not gates:
         raise RuntimeError("current verification session has no gates")
-    root = Path.cwd()
-    commit = _git(root, "rev-parse", "HEAD").strip()
+    expected = [
+        "backend", "sidecar", "frontend-tests", "lint", "typecheck-app",
+        "typecheck-node", "build", "backend-startup", "prod-audit",
+    ]
+    if [gate["name"] for gate in gates] != expected:
+        raise RuntimeError("current verification session has an incomplete or reordered gate set")
     tree = _git(root, "rev-parse", "HEAD^{tree}").strip()
     stubs: list[str] = []
+    matching_run = False
     for path in sorted(Path(".verification/pytest-runs").glob("*.json"), reverse=True):
         try:
             run = json.loads(path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             continue
         if run.get("sessionId") == session_id and run.get("commit") == commit:
+            matching_run = True
             stubs = list(run.get("stubsActive", []))
             break
+    if not matching_run:
+        raise RuntimeError("current verification session has no source-bound pytest receipt")
     receipt = {
         "schemaVersion": 2,
         "kind": "verificationSession",

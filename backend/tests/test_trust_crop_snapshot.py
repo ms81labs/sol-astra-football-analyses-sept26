@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import anyio
 import httpx
+import json
 import multiprocessing
 from pathlib import Path
 
@@ -289,3 +290,60 @@ async def _assert_historical_dimensions(tmp_path) -> None:
     assert payload["ballTeleportGeometryAvailable"] is True
     assert payload["ballTeleportReasonCodes"] == []
     assert all("ball_teleport" not in crop["reasons"] for crop in payload["crops"])
+
+
+def test_declared_pitch_metre_dimensions_drive_trust_crop_distance(tmp_path) -> None:
+    anyio.run(_assert_declared_pitch_metre_dimensions, tmp_path)
+
+
+async def _assert_declared_pitch_metre_dimensions(tmp_path) -> None:
+    from backend.app.processor import process_match
+
+    app = create_app(storage_root=tmp_path / "store", run_jobs_inline=True)
+    storage = app.state.storage
+    source = tmp_path / "tracking.json"
+    source.write_text(json.dumps({
+        "format": "guerilla_tracking_v2",
+        "schemaVersion": 2,
+        "coordinates": {"space": "pitch_metres", "pitchLengthM": 100, "pitchWidthM": 60},
+        "frames": [
+            {"frameId": 0, "timestamp": 0, "ball": {"x": 0, "y": 30, "confidence": 1}},
+            {"frameId": 1, "timestamp": 1, "ball": {"x": 14.5, "y": 30, "confidence": 1}},
+        ],
+    }), encoding="utf-8")
+    match = storage.create_match(
+        "declared metres", "tracking_json", source.name, source,
+        MatchConfig(pitchLengthM=105, pitchWidthM=68),
+    )
+    process_match(storage, storage.create_job(match.id).id)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
+        response = await client.get(f"/api/matches/{match.id}/trust-crops")
+
+    payload = response.json()
+    assert response.status_code == 200
+    assert payload["ballTeleportGeometryAvailable"] is True
+    assert all("ball_teleport" not in crop["reasons"] for crop in payload["crops"])
+
+
+def test_complete_flat_legacy_trust_crop_remains_readable_without_migration(tmp_path) -> None:
+    anyio.run(_assert_complete_flat_legacy, tmp_path)
+
+
+async def _assert_complete_flat_legacy(tmp_path) -> None:
+    app = create_app(storage_root=tmp_path / "store", run_jobs_inline=True)
+    storage = app.state.storage
+    source = tmp_path / "tracking.json"
+    source.write_text("[]", encoding="utf-8")
+    match = storage.create_match("flat legacy", "tracking_json", source.name, source, MatchConfig())
+    storage.save_frames(match.id, [FrameData(frameId=0, timestamp=0)])
+    storage.save_events(match.id, [])
+    storage.save_analytics(match.id, _summary(1), [], [], [])
+    storage.update_match_status(match.id, status="ready")
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
+        response = await client.get(f"/api/matches/{match.id}/trust-crops")
+
+    assert response.status_code == 200
+    assert response.json()["generationId"] is None
+    assert not (storage.generations.root(match.id) / "current_generation.json").exists()

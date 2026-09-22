@@ -53,8 +53,12 @@ if [[ "$LOG_PHYSICAL" != "$VERIFICATION_PHYSICAL/logs" ]]; then
     unsafe_log_path "$LOG_DIR"
 fi
 rm -f "$LOG_DIR"/*.log
+if [[ -L "$GATE_RESULTS" ]] || [[ -e "$GATE_RESULTS" && ! -f "$GATE_RESULTS" ]]; then
+    unsafe_log_path "$GATE_RESULTS"
+fi
 : > "$GATE_RESULTS"
 cd "$REPO_ROOT"
+GATE_SOURCE_COMMIT="$(git rev-parse HEAD)"
 
 fail_gate() {
     local gate="$1"
@@ -84,7 +88,9 @@ run_gate() {
         fail_gate "$gate" "$command" "exit ${pipeline_status[0]}"
     fi
     touch -- "$log"
-    printf '%s\t%s\t%s\n' "$gate" "${pipeline_status[0]}" "$command" >> "$GATE_RESULTS"
+    printf '%s\t%s\t%s\t%s\t%s\n' \
+        "$GA_VERIFICATION_SESSION_ID" "$GATE_SOURCE_COMMIT" "$gate" \
+        "${pipeline_status[0]}" "$command" >> "$GATE_RESULTS"
 }
 
 BACKEND_COMMAND="python3 -m pytest -q backend/tests"
