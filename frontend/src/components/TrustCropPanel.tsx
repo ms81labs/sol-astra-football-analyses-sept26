@@ -6,6 +6,7 @@ import { createMatchIssue, fetchTrustCrops } from '../utils/api';
 
 interface TrustCropPanelProps {
     matchId: string;
+    generationId?: string;
     frames: FrameData[];
     onClose: () => void;
     onSeekToCrop: (frame: number) => void;
@@ -38,7 +39,7 @@ function ScoreBar({ score }: { score: number }) {
     );
 }
 
-export default function TrustCropPanel({ matchId, frames, onClose, onSeekToCrop }: TrustCropPanelProps) {
+export default function TrustCropPanel({ matchId, generationId, frames, onClose, onSeekToCrop }: TrustCropPanelProps) {
     const [data, setData] = useState<TrustCropsResponse | null>(null);
     const [isLoading, setIsLoading] = useState(true);
     const [loadError, setLoadError] = useState<Error | null>(null);
@@ -48,7 +49,10 @@ export default function TrustCropPanel({ matchId, frames, onClose, onSeekToCrop 
 
     useEffect(() => {
         let cancelled = false;
-        fetchTrustCrops(matchId)
+        setData(null);
+        setLoadError(null);
+        setIsLoading(true);
+        fetchTrustCrops(matchId, 20, generationId)
             .then((result) => {
                 if (!cancelled) {
                     setData(result);
@@ -64,7 +68,7 @@ export default function TrustCropPanel({ matchId, frames, onClose, onSeekToCrop 
         return () => {
             cancelled = true;
         };
-    }, [matchId]);
+    }, [matchId, generationId]);
 
     const timestamps = frames.map(frame => frame.Timestamp);
     const crops: TrustCrop[] = data?.crops ?? [];
@@ -135,6 +139,11 @@ export default function TrustCropPanel({ matchId, frames, onClose, onSeekToCrop 
 
                     {!isLoading && !loadError && (
                         <>
+                            {!data?.ballTeleportGeometryAvailable && (
+                                <p className="mb-3 rounded border border-amber-800 bg-amber-950/30 p-2 text-xs text-amber-300">
+                                    Physical ball-teleport check unavailable ({data?.ballTeleportReasonCodes.join(', ') || 'geometry unavailable'}). Other review signals remain active.
+                                </p>
+                            )}
                             {crops.length === 0 ? (
                                 <div className="text-slate-500 text-sm text-center py-8">
                                     <div className="mb-2">
@@ -147,8 +156,8 @@ export default function TrustCropPanel({ matchId, frames, onClose, onSeekToCrop 
                             ) : (
                                 <div className="space-y-2">
                                     <p className="text-xs text-slate-500 mb-4">
-                                        Frame windows flagged by heuristic scoring: ball teleport distance, track ID switches,
-                                        team flip rate, and possession gaps. Higher score = more uncertain.
+                                        Frame windows flagged by available heuristic scoring: track ID switches,
+                                        team flip rate, possession gaps, and ball teleport distance when geometry is available. Higher score = more uncertain.
                                     </p>
                                     {crops.map((crop, idx) => (
                                         <CropRow
