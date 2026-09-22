@@ -129,3 +129,15 @@ These are hygiene items the remediation created or left; none blocks closure.
 3. Add one C03 regression: a wrapped model exposing only `track()` must not trigger the probe-observed pass and must not raise.
 4. Amend the M01 line in the closure document to state the metric used ("13 directives unused with the debt rule set enabled; 65 directives for never-enabled rules retained intentionally").
 5. Optionally reconcile the 13 local `_write_json`/`_load_json` variants in 81 scripts, deciding per family whether the trailing-newline / `sort_keys` difference is load-bearing for committed artifacts before adopting the common helper.
+
+## 7. Post-verification cleanup addendum — 2026-09-22
+
+The cleanup pass identified in §6 was executed on branch `cursor/audit-completion-verification-417d` before merge:
+
+- `backend/scripts` F401: **175 → 0** under pinned Ruff 0.16.8; the cleanup log recorded `175 fixed, 0 remaining`.
+- `backend/app` F401: the two intentional `storage.py` compatibility re-exports were made explicit; the remaining **16** true unused imports were removed, leaving **0**.
+- C03 now has an explicit regression, `test_process_video_skips_probe_pass_for_track_only_model_with_output_parquet`, so the track-only wrapped-model contract is directly covered.
+- The closure document now states the M01 metric precisely: 13 genuinely unused RUF100 directives were cleared under the debt rule set; 65 directives for otherwise-disabled rules remain because they suppress real findings when enabled.
+- CI's F401 gate is widened from `backend/app/main.py` to all of `backend/app` and `backend/scripts`, preventing both residue classes from returning.
+
+The JSON helper-family consolidation remains intentionally deferred: the 13 observed variants differ in newline / `sort_keys` semantics, so collapsing them without artifact-by-artifact evidence would be behavior-changing cleanup rather than mechanical hygiene.

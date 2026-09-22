@@ -78,3 +78,7 @@ the remediation's simplification discipline.
 This remediation program is closed at the verified implementation head above. Treat this document and
 `docs/code-quality-remediation-checkpoint.md` as the handoff. Reopen an item only when a regression,
 new evidence, or an explicitly approved contract/product change justifies it.
+
+## Post-closure hygiene follow-through — 2026-09-22
+
+Independent verification found non-blocking F401 residue created or exposed by the remediation. The follow-through branch removed **175/175** script F401 findings and **16/16** true app F401 findings after explicitly preserving the two `storage.py` compatibility re-exports. The dedicated C03 track-only probe regression was added, and the CI F401 gate was widened to all of `backend/app` and `backend/scripts`. JSON helper variants remain deferred because their serialization semantics are not equivalent.
