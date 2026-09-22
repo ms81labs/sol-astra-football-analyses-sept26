@@ -519,5 +519,7 @@ class TrustCropsResponse(BaseModel):
     """Response for trust crop queue for a match."""
     matchId: str
     generationId: str | None = None
+    ballTeleportGeometryAvailable: bool = False
+    ballTeleportReasonCodes: list[str] = Field(default_factory=list)
     crops: list[TrustCropSchema]
     totalFrames: int

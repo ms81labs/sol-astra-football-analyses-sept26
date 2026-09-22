@@ -20,6 +20,26 @@ from .storage import Storage
 from .trust_crops import compute_trust_crops
 
 
+def _trust_crop_geometry(manifest, frames) -> tuple[float | None, float | None, list[str]]:
+    declared = all(
+        frame.geometryAvailable
+        and frame.coordinateSpace == "pitch_normalized_0_100"
+        and frame.coordinateProvenance.get("outputConvention") == "pitch_normalized_0_100"
+        and isinstance(frame.coordinateProvenance.get("inputConvention"), dict)
+        for frame in frames
+    )
+    if not frames or not declared:
+        return None, None, ["CALIBRATION_UNAVAILABLE"]
+    config = manifest.effectiveConfig or {}
+    length, width = config.get("pitchLengthM"), config.get("pitchWidthM")
+    calibration = manifest.calibrationData
+    if isinstance(calibration, dict) and calibration.get("accepted") is True and calibration.get("measured") is True:
+        length, width = calibration.get("pitchLengthM"), calibration.get("pitchWidthM")
+    if type(length) not in (int, float) or type(width) not in (int, float):
+        return None, None, ["CALIBRATION_UNAVAILABLE"]
+    return float(length), float(width), []
+
+
 def create_review_router(
     storage: Storage,
     require_match: Callable[..., MatchRecord],
@@ -137,14 +157,24 @@ def create_review_router(
                 _summary, assignments, _, _ = storage.load_analytics(
                     match.id, generation_id=ref.generationId
                 )
+                manifest, _ = storage.generations.manifest(match.id, ref.generationId)
+                pitch_length_m, pitch_width_m, geometry_reasons = _trust_crop_geometry(
+                    manifest, frames
+                )
                 frames_dicts = [f.model_dump() for f in frames]
                 assignments_dicts = [a.model_dump() for a in assignments]
                 crops = compute_trust_crops(
-                    frames_dicts, assignments_dicts, max_crops=limit
+                    frames_dicts,
+                    assignments_dicts,
+                    max_crops=limit,
+                    pitch_length_m=pitch_length_m,
+                    pitch_width_m=pitch_width_m,
                 )
                 response = TrustCropsResponse(
                     matchId=match.id,
                     generationId=ref.generationId,
+                    ballTeleportGeometryAvailable=not geometry_reasons,
+                    ballTeleportReasonCodes=geometry_reasons,
                     crops=[TrustCropSchema(
                         frameStart=crop.frameStart,
                         frameEnd=crop.frameEnd,

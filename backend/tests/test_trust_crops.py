@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from backend.app.trust_crops import (
     compute_trust_crops,
 )
@@ -26,12 +28,75 @@ class TestComputeTrustCrops:
         assert compute_trust_crops([], assignments) == []
 
     def test_ball_teleport_flagged(self) -> None:
-        # Frame 0: ball at (0, 0) → Frame 1: ball at (100, 0) = 100m teleport
+        # Frame 0: ball at (0, 0) → Frame 1: ball at (100, 0) = 105m on this declared pitch.
         frames = [_frame(0, 0.0, 0.0), _frame(1, 100.0, 0.0), _frame(2, 100.0, 0.0)]
         assignments = [_assignment(0, "my_team", 1), _assignment(1, "my_team", 1), _assignment(2, "my_team", 1)]
-        crops = compute_trust_crops(frames, assignments)
+        crops = compute_trust_crops(
+            frames, assignments, pitch_length_m=105.0, pitch_width_m=68.0
+        )
         assert len(crops) > 0
         assert "ball_teleport" in crops[0].reasons
+
+    def test_vertical_normalized_step_uses_pitch_width_metres(self) -> None:
+        frames = [_frame(0, 50.0, 0.0), _frame(1, 50.0, 20.0)]
+        assignments = [_assignment(0, "my_team", 1), _assignment(1, "my_team", 1)]
+
+        crops = compute_trust_crops(
+            frames, assignments, pitch_length_m=105.0, pitch_width_m=68.0
+        )
+
+        assert all("ball_teleport" not in crop.reasons for crop in crops)
+
+    def test_horizontal_normalized_step_uses_pitch_length_metres(self) -> None:
+        frames = [_frame(0, 0.0, 50.0), _frame(1, 14.5, 50.0)]
+        assignments = [_assignment(0, "my_team", 1), _assignment(1, "my_team", 1)]
+
+        crops = compute_trust_crops(
+            frames, assignments, pitch_length_m=105.0, pitch_width_m=68.0
+        )
+
+        assert any("ball_teleport" in crop.reasons for crop in crops)
+
+    def test_exact_fifteen_metre_step_keeps_strict_threshold(self) -> None:
+        frames = [_frame(0, 0.0, 50.0), _frame(1, 100 / 7, 50.0)]
+        assignments = [_assignment(0, "my_team", 1), _assignment(1, "my_team", 1)]
+
+        crops = compute_trust_crops(
+            frames, assignments, pitch_length_m=105.0, pitch_width_m=68.0
+        )
+
+        assert all("ball_teleport" not in crop.reasons for crop in crops)
+
+    def test_equal_diagonal_changes_use_anisotropic_pitch_dimensions(self) -> None:
+        frames = [_frame(0, 0.0, 0.0), _frame(1, 11.9, 11.9)]
+        assignments = [_assignment(0, "my_team", 1), _assignment(1, "my_team", 1)]
+
+        crops = compute_trust_crops(
+            frames, assignments, pitch_length_m=105.0, pitch_width_m=68.0
+        )
+
+        assert all("ball_teleport" not in crop.reasons for crop in crops)
+
+    @pytest.mark.parametrize("dimension", [True, 0.0, -1.0, float("inf"), float("nan")])
+    def test_invalid_dimensions_withhold_physical_heuristic(self, dimension) -> None:
+        frames = [_frame(0, 0.0, 0.0), _frame(1, 100.0, 100.0)]
+        assignments = [_assignment(0, "my_team", 1), _assignment(1, "my_team", 1)]
+
+        crops = compute_trust_crops(
+            frames, assignments, pitch_length_m=dimension, pitch_width_m=68.0
+        )
+
+        assert all("ball_teleport" not in crop.reasons for crop in crops)
+
+    def test_missing_dimensions_withholds_only_physical_heuristic(self) -> None:
+        frames = [_frame(i, 0.0 if i == 0 else 100.0, 0.0) for i in range(40)]
+        assignments = [_assignment(i, "my_team", i % 2) for i in range(40)]
+
+        crops = compute_trust_crops(frames, assignments)
+
+        assert crops
+        assert "track_switches" in crops[0].reasons
+        assert all("ball_teleport" not in crop.reasons for crop in crops)
 
     def test_track_switches_flagged(self) -> None:
         frames = [_frame(i) for i in range(40)]

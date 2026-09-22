@@ -24,12 +24,20 @@ def _summary(value: int) -> MatchSummary:
     )
 
 
-def _publish(storage: Storage, match_id: str, value: int):
+def _publish(
+    storage: Storage,
+    match_id: str,
+    value: int,
+    *,
+    frames=None,
+    assignments=None,
+    config: MatchConfig | None = None,
+):
     return storage.publish_generation(
         match_id,
-        frames=[FrameData(frameId=value, timestamp=float(value))],
+        frames=frames or [FrameData(frameId=value, timestamp=float(value))],
         summary=_summary(value),
-        assignments=[
+        assignments=assignments or [
             BallOwnership(
                 frameId=value,
                 timestamp=float(value),
@@ -41,7 +49,7 @@ def _publish(storage: Storage, match_id: str, value: int):
         shots=[],
         events=[],
         correction_head="none",
-        effective_config=MatchConfig(),
+        effective_config=config or MatchConfig(),
     )
 
 
@@ -202,3 +210,82 @@ async def _assert_not_ready(tmp_path) -> None:
 
     assert response.status_code == 404
     assert response.json()["detail"] == "Frames or analytics not ready"
+
+
+def test_trust_crop_missing_geometry_is_disclosed_without_hiding_other_reasons(
+    tmp_path,
+) -> None:
+    anyio.run(_assert_missing_geometry, tmp_path)
+
+
+async def _assert_missing_geometry(tmp_path) -> None:
+    app = create_app(storage_root=tmp_path / "store", run_jobs_inline=True)
+    storage = app.state.storage
+    source = tmp_path / "tracking.json"
+    source.write_text("[]", encoding="utf-8")
+    match = storage.create_match("geometry", "tracking_json", source.name, source, MatchConfig())
+    frames = [FrameData(frameId=i, timestamp=float(i), ball={"x": i * 3 % 100, "y": 0}) for i in range(40)]
+    assignments = [
+        BallOwnership(frameId=i, timestamp=float(i), team="my_team", trackId=i % 2)
+        for i in range(40)
+    ]
+    _publish(storage, match.id, 1, frames=frames, assignments=assignments)
+    storage.update_match_status(match.id, status="ready")
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
+        response = await client.get(f"/api/matches/{match.id}/trust-crops")
+
+    payload = response.json()
+    assert response.status_code == 200
+    assert payload["ballTeleportGeometryAvailable"] is False
+    assert "CALIBRATION_UNAVAILABLE" in payload["ballTeleportReasonCodes"]
+    assert any("track_switches" in crop["reasons"] for crop in payload["crops"])
+
+
+def test_historical_trust_crop_uses_its_own_declared_dimensions(tmp_path) -> None:
+    anyio.run(_assert_historical_dimensions, tmp_path)
+
+
+async def _assert_historical_dimensions(tmp_path) -> None:
+    app = create_app(storage_root=tmp_path / "store", run_jobs_inline=True)
+    storage = app.state.storage
+    source = tmp_path / "tracking.json"
+    source.write_text("[]", encoding="utf-8")
+    match = storage.create_match("dimensions", "tracking_json", source.name, source, MatchConfig())
+    frames = [
+        FrameData(frameId=0, timestamp=0, ball={"x": 50, "y": 0}, geometryAvailable=True,
+                  coordinateProvenance={"inputConvention": {"space": "pitch_normalized_0_100"}, "outputConvention": "pitch_normalized_0_100"}),
+        FrameData(frameId=1, timestamp=1, ball={"x": 50, "y": 20}, geometryAvailable=True,
+                  coordinateProvenance={"inputConvention": {"space": "pitch_normalized_0_100"}, "outputConvention": "pitch_normalized_0_100"}),
+    ]
+    assignments = [
+        BallOwnership(frameId=i, timestamp=float(i), team="my_team", trackId=1)
+        for i in range(2)
+    ]
+    old = _publish(
+        storage,
+        match.id,
+        1,
+        frames=frames,
+        assignments=assignments,
+        config=MatchConfig(pitchLengthM=105, pitchWidthM=68),
+    )
+    _publish(
+        storage,
+        match.id,
+        2,
+        frames=frames,
+        assignments=assignments,
+        config=MatchConfig(pitchLengthM=105, pitchWidthM=100),
+    )
+    storage.update_match_status(match.id, status="ready")
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://127.0.0.1") as client:
+        response = await client.get(
+            f"/api/matches/{match.id}/trust-crops", params={"generationId": old.generationId}
+        )
+
+    payload = response.json()
+    assert payload["ballTeleportGeometryAvailable"] is True
+    assert payload["ballTeleportReasonCodes"] == []
+    assert all("ball_teleport" not in crop["reasons"] for crop in payload["crops"])
