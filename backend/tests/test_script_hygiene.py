@@ -19,7 +19,7 @@ def test_scripts_do_not_bootstrap_sys_path_or_redefine_common_helpers() -> None:
                     and isinstance(owner.value, ast.Name)
                     and owner.value.id == "sys"
                     and owner.attr == "path"
-                    and node.func.attr in {"insert", "append"}
+                    and node.func.attr in {"insert", "append", "extend", "remove", "pop", "clear", "reverse", "sort"}
                 ):
                     violations.append(f"{path.name}:{node.lineno}: sys.path.{node.func.attr}")
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in {"_utc_now_iso", "_write_json", "_load_json"}:
