@@ -1,4 +1,4 @@
-name: CQA JSON helper audit
+name: CQA JSON helper consolidation
 
 on:
   push:
@@ -6,38 +6,117 @@ on:
       - cursor/audit-completion-verification-417d
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  red-evidence:
+  consolidate:
+    if: "!contains(github.event.head_commit.message, '[cqa-json-consolidated]')"
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: cursor/audit-completion-verification-417d
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Prove local-helper gate is RED
+          cache: pip
+          cache-dependency-path: |
+            backend/requirements/dev.lock
+            backend/requirements/quality-linux.lock
+      - name: Install verification dependencies
         run: |
-          set +e
-          python backend/tests/test_script_hygiene.py > /tmp/hygiene.log 2>&1
-          hygiene_rc=$?
-          python - <<'PY' > /tmp/import.log 2>&1
-          from backend.scripts.football_external_real_eval_chain_common import (
-              load_json_dict_or_empty_existing,
-              load_json_dict_or_empty_optional,
-              load_json_dict_or_empty_required,
-              load_json_object_at_strict,
-              load_json_object_payload_strict,
-              load_json_object_strict,
-              write_json_sorted_no_newline,
-              write_json_unsorted_newline,
-              write_json_unsorted_no_newline,
-          )
+          pip install --require-hashes -r backend/requirements/dev.lock
+          pip install --require-hashes -r backend/requirements/quality-linux.lock
+          pip install -e . --no-deps
+      - name: Replace local JSON helpers with policy-preserving aliases
+        run: |
+          python - <<'PY'
+          import ast
+          import hashlib
+          from pathlib import Path
+
+          mapping = {
+              ("_load_json", "1524c47d9723"): "load_json_dict_or_empty_required",
+              ("_load_json", "2d0e405656b1"): "load_json_dict_or_empty_required",
+              ("_load_json", "78472bb04024"): "load_json_dict_or_empty_existing",
+              ("_load_json", "7e46c4735305"): "load_json_dict_or_empty_optional",
+              ("_load_json", "b4d976724ed4"): "load_json_object_payload_strict",
+              ("_load_json", "cc42afb94962"): "load_json_object_strict",
+              ("_load_json", "eca90ec926b6"): "load_json_object_at_strict",
+              ("_write_json", "3d23c3aca780"): "write_json_sorted_no_newline",
+              ("_write_json", "43887c58c1c8"): "write_json_unsorted_newline",
+              ("_write_json", "7439baa565e9"): "write_json_sorted_no_newline",
+              ("_write_json", "cb110263cef0"): "write_json_unsorted_no_newline",
+          }
+
+          root = Path("backend/scripts")
+          changed = 0
+          replaced = 0
+          for path in sorted(root.glob("*.py")):
+              source = path.read_text(encoding="utf-8")
+              tree = ast.parse(source, filename=str(path))
+              targets = []
+              aliases = {}
+              for node in tree.body:
+                  if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                      continue
+                  if node.name not in {"_write_json", "_load_json"}:
+                      continue
+                  digest = hashlib.sha256(ast.dump(node, include_attributes=False).encode()).hexdigest()[:12]
+                  helper = mapping.get((node.name, digest))
+                  if helper is None:
+                      raise SystemExit(f"Unmapped helper variant {path}:{node.lineno} {node.name} {digest}")
+                  targets.append((node.lineno - 1, node.end_lineno))
+                  aliases[node.name] = helper
+
+              if not targets:
+                  continue
+
+              lines = source.splitlines(keepends=True)
+              for start, end in sorted(targets, reverse=True):
+                  del lines[start:end]
+
+              interim = "".join(lines)
+              interim_tree = ast.parse(interim, filename=str(path))
+              insertion_line = 0
+              for node in interim_tree.body:
+                  if (
+                      isinstance(node, ast.Expr)
+                      and isinstance(node.value, ast.Constant)
+                      and isinstance(node.value.value, str)
+                      and node.lineno == 1
+                  ):
+                      insertion_line = max(insertion_line, node.end_lineno)
+                  elif isinstance(node, ast.ImportFrom) and node.module == "__future__":
+                      insertion_line = max(insertion_line, node.end_lineno)
+
+              imports = [
+                  f"from backend.scripts.football_external_real_eval_chain_common import {helper} as {alias}\n"
+                  for alias, helper in sorted(aliases.items())
+              ]
+              lines = interim.splitlines(keepends=True)
+              lines[insertion_line:insertion_line] = imports + ["\n"]
+              path.write_text("".join(lines), encoding="utf-8")
+              changed += 1
+              replaced += len(targets)
+
+          print(f"changed_files={changed} replaced_helpers={replaced}")
           PY
-          import_rc=$?
-          set -e
-          cat /tmp/hygiene.log
-          cat /tmp/import.log
-          echo "hygiene_rc=$hygiene_rc import_rc=$import_rc"
-          test "$hygiene_rc" -ne 0
-          test "$import_rc" -ne 0
+          ruff check backend/scripts --select F401 --fix
+          ruff check backend/scripts --select F401
+          python backend/tests/test_script_hygiene.py
+          pytest -q backend/tests/test_script_json_helpers.py
+          git diff --check
+      - name: Commit consolidation
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add backend/scripts
+          git add backend/tests/test_script_hygiene.py backend/tests/test_script_json_helpers.py
+          if git diff --cached --quiet; then
+            echo "No JSON-helper changes to commit"
+            exit 0
+          fi
+          git commit -m "CQA H06: consolidate JSON helper variants [cqa-json-consolidated]"
+          git push origin HEAD:cursor/audit-completion-verification-417d
