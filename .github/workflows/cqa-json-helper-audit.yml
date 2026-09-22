@@ -9,42 +9,35 @@ permissions:
   contents: read
 
 jobs:
-  inspect-json-helper-families:
+  red-evidence:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Inventory local JSON helper variants
+      - name: Prove local-helper gate is RED
         run: |
-          python - <<'PY'
-          import ast, hashlib, json
-          from pathlib import Path
-
-          root = Path("backend/scripts")
-          names = {"_write_json", "_load_json"}
-          groups = {}
-          for path in sorted(root.glob("*.py")):
-              text = path.read_text(encoding="utf-8")
-              try:
-                  tree = ast.parse(text)
-              except SyntaxError:
-                  continue
-              for node in tree.body:
-                  if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name in names:
-                      seg = ast.get_source_segment(text, node) or ""
-                      normalized = ast.dump(node, include_attributes=False)
-                      key = (node.name, hashlib.sha256(normalized.encode()).hexdigest()[:12])
-                      groups.setdefault(key, {"source": seg, "files": []})["files"].append(str(path))
-          payload = []
-          for (name, digest), info in sorted(groups.items()):
-              payload.append({
-                  "name": name,
-                  "digest": digest,
-                  "count": len(info["files"]),
-                  "files": info["files"],
-                  "source": info["source"],
-              })
-          print(json.dumps(payload, indent=2))
+          set +e
+          python backend/tests/test_script_hygiene.py > /tmp/hygiene.log 2>&1
+          hygiene_rc=$?
+          python - <<'PY' > /tmp/import.log 2>&1
+          from backend.scripts.football_external_real_eval_chain_common import (
+              load_json_dict_or_empty_existing,
+              load_json_dict_or_empty_optional,
+              load_json_dict_or_empty_required,
+              load_json_object_at_strict,
+              load_json_object_payload_strict,
+              load_json_object_strict,
+              write_json_sorted_no_newline,
+              write_json_unsorted_newline,
+              write_json_unsorted_no_newline,
+          )
           PY
+          import_rc=$?
+          set -e
+          cat /tmp/hygiene.log
+          cat /tmp/import.log
+          echo "hygiene_rc=$hygiene_rc import_rc=$import_rc"
+          test "$hygiene_rc" -ne 0
+          test "$import_rc" -ne 0
