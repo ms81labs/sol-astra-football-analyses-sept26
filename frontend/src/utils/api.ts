@@ -453,8 +453,10 @@ export async function deleteMatchAnnotation(matchId: string, annotationId: strin
 
 // ===== Trust Crops =====
 
-export async function fetchTrustCrops(matchId: string, limit = 20): Promise<TrustCropsResponse> {
-    const response = await fetch(`/api/matches/${matchId}/trust-crops?limit=${encodeURIComponent(String(limit))}`);
+export async function fetchTrustCrops(matchId: string, limit = 20, generationId?: string): Promise<TrustCropsResponse> {
+    const query = new URLSearchParams({ limit: String(limit) });
+    if (generationId) query.set('generationId', generationId);
+    const response = await fetch(`/api/matches/${matchId}/trust-crops?${query}`);
     if (!response.ok) {
         throw new Error(`Failed to load trust crops: ${response.status}`);
     }

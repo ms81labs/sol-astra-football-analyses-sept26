@@ -15,6 +15,7 @@ describe('TrustCropPanel', () => {
   it('keeps loaded crops visible and labels a save failure correctly', async () => {
     vi.mocked(fetchTrustCrops).mockResolvedValue({
       matchId: 'match-1',
+      generationId: 'gen-1',
       totalFrames: 1,
       crops: [{
         frameStart: 0,
@@ -42,6 +43,7 @@ describe('TrustCropPanel', () => {
   it('saves an uncertain crop as trust-eval training metadata', async () => {
     vi.mocked(fetchTrustCrops).mockResolvedValue({
       matchId: 'match-1',
+      generationId: 'gen-1',
       totalFrames: 100,
       crops: [
         {
@@ -93,7 +95,7 @@ describe('TrustCropPanel', () => {
 
 it('seeks the crop timestamp midpoint and saves displayed frame bounds for sparse IDs', async () => {
   const frames = [100, 150, 200].map((Frame_ID, index) => ({ Frame_ID, Timestamp: index, Ball: null, My_Team: [], Enemies: [] }));
-  vi.mocked(fetchTrustCrops).mockResolvedValue({ matchId: 'm', totalFrames: 3, crops: [{ frameStart: 100, frameEnd: 200, timestampStart: 0, timestampEnd: 2, score: 8, reasons: [] }] });
+  vi.mocked(fetchTrustCrops).mockResolvedValue({ matchId: 'm', generationId: 'gen-1', totalFrames: 3, crops: [{ frameStart: 100, frameEnd: 200, timestampStart: 0, timestampEnd: 2, score: 8, reasons: [] }] });
   const seek = vi.fn();
   render(<TrustCropPanel matchId="m" frames={frames} onClose={() => {}} onSeekToCrop={seek} />);
   fireEvent.click(await screen.findByRole('button', { name: /Seek/ }));

@@ -121,33 +121,42 @@ def create_review_router(
             raise HTTPException(status_code=404, detail="Match not found") from exc
 
     @router.get("/api/matches/{match_id}/trust-crops")
-    def get_trust_crops(match: MatchRecord = Depends(require_match), limit: int = 20) -> dict:
+    def get_trust_crops(
+        match: MatchRecord = Depends(require_match),
+        limit: int = 20,
+        generationId: str | None = None,
+    ) -> dict:
         """Compute heuristic-based trust crop queue for a match.
 
         Frames are scored by uncertainty: ball teleport distance,
         track ID switch frequency, team flip rate, possession gaps.
         """
         try:
-            frames = storage.load_frames(match.id)
-            _summary, assignments, _, _ = storage.load_analytics(match.id)
+            with storage.generation_snapshot(match.id, generation_id=generationId) as ref:
+                frames = storage.load_frames(match.id, generation_id=ref.generationId)
+                _summary, assignments, _, _ = storage.load_analytics(
+                    match.id, generation_id=ref.generationId
+                )
+                frames_dicts = [f.model_dump() for f in frames]
+                assignments_dicts = [a.model_dump() for a in assignments]
+                crops = compute_trust_crops(
+                    frames_dicts, assignments_dicts, max_crops=limit
+                )
+                response = TrustCropsResponse(
+                    matchId=match.id,
+                    generationId=ref.generationId,
+                    crops=[TrustCropSchema(
+                        frameStart=crop.frameStart,
+                        frameEnd=crop.frameEnd,
+                        timestampStart=crop.timestampStart,
+                        timestampEnd=crop.timestampEnd,
+                        score=crop.score,
+                        reasons=crop.reasons,
+                    ) for crop in crops],
+                    totalFrames=len(frames),
+                )
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail="Frames or analytics not ready") from exc
-
-        frames_dicts = [f.model_dump() for f in frames]
-        assignments_dicts = [a.model_dump() for a in assignments]
-        crops = compute_trust_crops(frames_dicts, assignments_dicts, max_crops=limit)
-        response = TrustCropsResponse(
-            matchId=match.id,
-            crops=[TrustCropSchema(
-                frameStart=crop.frameStart,
-                frameEnd=crop.frameEnd,
-                timestampStart=crop.timestampStart,
-                timestampEnd=crop.timestampEnd,
-                score=crop.score,
-                reasons=crop.reasons,
-            ) for crop in crops],
-            totalFrames=len(frames),
-        )
         return response.model_dump(mode="json")
 
     return router

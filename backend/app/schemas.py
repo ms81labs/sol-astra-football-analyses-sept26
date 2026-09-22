@@ -518,5 +518,6 @@ class TrustCropSchema(BaseModel):
 class TrustCropsResponse(BaseModel):
     """Response for trust crop queue for a match."""
     matchId: str
+    generationId: str | None = None
     crops: list[TrustCropSchema]
     totalFrames: int

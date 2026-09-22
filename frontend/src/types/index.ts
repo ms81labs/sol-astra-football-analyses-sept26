@@ -544,6 +544,7 @@ export interface TrustCrop {
 
 export interface TrustCropsResponse {
     matchId: string;
+    generationId: string | null;
     crops: TrustCrop[];
     totalFrames: number;
 }
