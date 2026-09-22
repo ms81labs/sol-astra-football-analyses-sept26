@@ -26,6 +26,8 @@ fi
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 VERIFICATION_DIR="$REPO_ROOT/.verification"
 LOG_DIR="$VERIFICATION_DIR/logs"
+GATE_RESULTS="$VERIFICATION_DIR/gates.tsv"
+export GA_VERIFICATION_SESSION_ID="${GA_VERIFICATION_SESSION_ID-$(date -u +%Y%m%dT%H%M%S)-$$}"
 
 unsafe_log_path() {
     printf 'unsafe verification log path: %s\n' "$1" >&2
@@ -51,6 +53,7 @@ if [[ "$LOG_PHYSICAL" != "$VERIFICATION_PHYSICAL/logs" ]]; then
     unsafe_log_path "$LOG_DIR"
 fi
 rm -f "$LOG_DIR"/*.log
+: > "$GATE_RESULTS"
 cd "$REPO_ROOT"
 
 fail_gate() {
@@ -81,6 +84,7 @@ run_gate() {
         fail_gate "$gate" "$command" "exit ${pipeline_status[0]}"
     fi
     touch -- "$log"
+    printf '%s\t%s\t%s\n' "$gate" "${pipeline_status[0]}" "$command" >> "$GATE_RESULTS"
 }
 
 BACKEND_COMMAND="python3 -m pytest -q backend/tests"
@@ -114,6 +118,7 @@ run_gate "manifest" "python3 -m pytest -q backend/tests/test_release_manifest.py
 run_gate "runtime-options" "python3 -m pytest -q backend/tests/test_runtime_options.py"
 run_gate "preflight-negatives" "python3 -m pytest -q backend/tests/test_release_preflight.py -k reject"
 run_gate "prod-audit" "npm --prefix frontend audit --omit=dev --audit-level=high"
+rm -f -- "$GATE_RESULTS"
 python3 -m backend.scripts.write_verification_evidence --record-verifier-success
 
 printf '%s\n' "Daytona provider operation skipped; G-PRODUCT remains a separate explicitly approved acceptance."

@@ -123,6 +123,7 @@ def verifier_repo(tmp_path: Path) -> tuple[Path, Path]:
         "backend/release/evidence.py",
         "backend/release/v7.3.json",
         "backend/scripts/write_verification_evidence.py",
+        "backend/scripts/write_lane_receipt.py",
         "backend/tests/code_only_exclusions.txt",
     ):
         source = REPO_ROOT / relative
@@ -148,6 +149,7 @@ case "$(basename "$0")|$*" in
     ;;
   "python3|-m pytest -q research-addon/tests") printf '37 passed in 1.00s\\n' ;;
   "python3|-m backend.scripts.write_verification_evidence --record-verifier-success") exec "$REAL_PYTHON" "$@" ;;
+  "python3|-m backend.scripts.write_lane_receipt") exec "$REAL_PYTHON" "$@" ;;
   "npm|--prefix frontend test -- --run") printf ' Tests  46 passed (46)\\n' ;;
   *) printf 'stub success\\n' ;;
 esac
@@ -244,6 +246,35 @@ def test_successful_verifier_records_canonical_receipt_with_twelve_real_log_hash
     for gate in receipt["gates"]:
         log = verifier_repo[0] / ".verification/logs" / f"{gate['name']}.log"
         assert gate["logSha256"] == hashlib.sha256(log.read_bytes()).hexdigest()
+
+
+def test_code_only_receipt_uses_current_session_gate_results(
+    verifier_repo: tuple[Path, Path],
+) -> None:
+    result = _run_verifier(
+        verifier_repo,
+        extra_env={"VERIFY_CODE_ONLY": "1", "GITHUB_SHA": "f" * 40},
+    )
+    receipt = json.loads(
+        (verifier_repo[0] / ".verification" / "receipt.json").read_text(encoding="utf-8")
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert receipt["schemaVersion"] == 2
+    assert receipt["kind"] == "verificationSession"
+    assert receipt["commit"] == subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=verifier_repo[0], check=True,
+        capture_output=True, text=True,
+    ).stdout.strip()
+    assert receipt["eventCommit"] == "f" * 40
+    assert receipt["profile"] == "code-only"
+    assert receipt["status"] == "passed"
+    assert receipt["totalPassed"] is None
+    assert all(gate["status"] == "passed" and gate["exitCode"] == 0 for gate in receipt["gates"])
+    assert [gate["name"] for gate in receipt["gates"]] == [
+        "backend", "sidecar", "frontend-tests", "lint", "typecheck-app",
+        "typecheck-node", "build", "backend-startup", "prod-audit",
+    ]
 
 
 def test_gate_timestamp_is_touched_after_the_command_finishes(

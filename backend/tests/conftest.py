@@ -4,8 +4,6 @@ from __future__ import annotations
 import atexit
 import os
 import shutil
-import json
-import subprocess
 import sys
 import tempfile
 import types
@@ -149,39 +147,31 @@ def pytest_configure(config) -> None:  # noqa: ANN001
 
 
 def pytest_terminal_summary(terminalreporter, exitstatus, config) -> None:  # noqa: ANN001
-    del exitstatus
     active = config.stash.get(_STUBS_KEY, ())
     terminalreporter.write_line(f"stubs_active: {','.join(active) if active else 'none'}")
     if os.environ.get("GA_VERIFICATION_RUN") != "1":
         return
-    receipt_path = Path(".verification/receipt.json")
-    try:
-        receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        receipt = {}
-    commit = os.environ.get("GITHUB_SHA")
-    if not commit:
-        completed = subprocess.run(
-            ["git", "rev-parse", "HEAD"],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        commit = completed.stdout.strip() if completed.returncode == 0 else "unknown"
-    previous_tests = receipt.get("tests") if isinstance(receipt.get("tests"), dict) else {}
-    receipt.update(
-        {
-            "commit": commit,
-            "profile": os.environ.get("GA_VERIFICATION_PROFILE", "local"),
-            "stubsActive": list(active),
-            "tests": {
-                outcome: int(previous_tests.get(outcome, 0)) + len(terminalreporter.stats.get(outcome, ()))
-                for outcome in ("passed", "failed", "skipped")
-            },
-        }
+    from backend.scripts.write_lane_receipt import write_pytest_receipt
+
+    outcomes = ("passed", "failed", "skipped", "error", "xfailed", "xpassed")
+    counts = {outcome: len(terminalreporter.stats.get(outcome, ())) for outcome in outcomes}
+    selected_node_ids = list(dict.fromkeys(
+        report.nodeid
+        for outcome in outcomes
+        for report in terminalreporter.stats.get(outcome, ())
+        if getattr(report, "nodeid", None)
+    ))
+    root = Path(config.rootpath)
+    write_pytest_receipt(
+        repo_root=root,
+        output_root=root,
+        args=tuple(str(arg) for arg in config.invocation_params.args),
+        profile=os.environ.get("GA_VERIFICATION_PROFILE", "local"),
+        stubs=tuple(active),
+        exit_code=int(exitstatus),
+        counts=counts,
+        selected_node_ids=selected_node_ids,
     )
-    receipt_path.parent.mkdir(parents=True, exist_ok=True)
-    receipt_path.write_text(json.dumps(receipt, indent=2, sort_keys=True), encoding="utf-8")
 
 
 _RUNTIME_BOUNDARY_TEST_MODULES = frozenset(
