@@ -36,3 +36,21 @@ def test_c05_workflow_covers_determining_changes_without_paid_execution() -> Non
     assert test_step["env"]["ALLOW_DAYTONA_MUTATION"] == "0"
     assert test_step["env"]["GA_VERIFICATION_RUN"] == "1"
     assert all("gpu" not in key.lower() for key in test_step["env"])
+
+
+def test_final_journey_has_a_pinned_cpu_execution_home() -> None:
+    workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    steps = workflow["jobs"]["source"]["steps"]
+    assert "agent/backend-bounded-completion-2026-09-22" in workflow["on"]["push"]["branches"]
+    journey = next(step for step in steps if step.get("name") == "Verify final composed journey")
+    assert "backend/tests/test_audit_v3_final_journey.py" in journey["run"]
+    assert "--junitxml=.c05-evidence/v3t50.xml" in journey["run"]
+    assert journey["env"]["C05_TRACKEVAL_ROOT"] == "${{ github.workspace }}/.deps/trackeval"
+    assert journey["env"]["VERIFY_DAYTONA"] == journey["env"]["ALLOW_DAYTONA_MUTATION"] == "0"
+    assert 'test "$(git -C "$C05_TRACKEVAL_ROOT" rev-parse HEAD)"' in journey["run"]
+    assert TRACKEVAL_COMMIT in journey["run"]
+    media_setup = next(i for i, step in enumerate(steps) if "apt-get install -y ffmpeg" in step.get("run", ""))
+    assert media_setup < steps.index(journey)
+    capture = next(step for step in steps if step.get("name") == "Retain per-invocation evidence")
+    assert capture["if"] == "always()"
+    assert ".verification/pytest-runs" in capture["run"]

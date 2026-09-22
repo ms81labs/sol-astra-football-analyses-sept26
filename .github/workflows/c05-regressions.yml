@@ -1,7 +1,7 @@
 name: C05 identity and evaluation evidence
 on:
   push:
-    branches: [main, agent/c05-identity-evaluation]
+    branches: [main, agent/c05-identity-evaluation, agent/backend-bounded-completion-2026-09-22]
     paths:
       - 'backend/**'
       - 'pyproject.toml'
@@ -51,6 +51,8 @@ jobs:
           python-version: '3.11'
           cache: pip
           cache-dependency-path: backend/requirements/dev.lock
+      - name: Install generated-media tools
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - name: Install declared hash-locked profile
         run: |
           pip install --require-hashes -r backend/requirements/dev.lock
@@ -69,8 +71,28 @@ jobs:
           python --version | tee .c05-evidence/python-version.txt
           sha256sum backend/requirements/dev.lock frontend/package-lock.json > .c05-evidence/lock-sha256.txt
           python -m pytest -q backend/tests/test_audit_v3_c05*.py --junitxml=.c05-evidence/c05.xml 2>&1 | tee .c05-evidence/c05.log
-          cp -R .verification/pytest-runs .c05-evidence/pytest-runs
-          (cd .c05-evidence && sha256sum *.log *.xml *.txt *.bundle > evidence-sha256.txt)
+      - name: Verify final composed journey
+        shell: bash
+        env:
+          C05_TRACKEVAL_ROOT: ${{ github.workspace }}/.deps/trackeval
+          GA_VERIFICATION_RUN: '1'
+          GA_VERIFICATION_PROFILE: 'v3t50-pinned-cpu'
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: '1'
+          VERIFY_DAYTONA: '0'
+          ALLOW_DAYTONA_MUTATION: '0'
+        run: |
+          set -euo pipefail
+          test "$(git -C "$C05_TRACKEVAL_ROOT" rev-parse HEAD)" = 12c8791b303e0a0b50f753af204249e622d0281a
+          python -m pytest -q backend/tests/test_audit_v3_final_journey.py --junitxml=.c05-evidence/v3t50.xml 2>&1 | tee .c05-evidence/v3t50.log
+      - name: Retain per-invocation evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -d .verification/pytest-runs ]]; then
+            cp -R .verification/pytest-runs .c05-evidence/pytest-runs
+          fi
+          (cd .c05-evidence && find . -type f ! -name evidence-sha256.txt -print0 | sort -z | xargs -0 sha256sum > evidence-sha256.txt)
       - uses: actions/upload-artifact@v4
         if: always()
         with:
