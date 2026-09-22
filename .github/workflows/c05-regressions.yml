@@ -1,11 +1,19 @@
 name: C05 identity and evaluation evidence
 on:
   push:
-    branches: [agent/c05-identity-evaluation]
+    branches: [main, agent/c05-identity-evaluation]
+    paths:
+      - 'backend/**'
+      - 'pyproject.toml'
+      - 'scripts/**'
+      - '.github/workflows/**'
   pull_request:
     paths:
       - 'backend/**'
-      - '.github/workflows/c05-regressions.yml'
+      - 'pyproject.toml'
+      - 'scripts/**'
+      - '.github/workflows/**'
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
@@ -32,6 +40,9 @@ jobs:
           git -C .deps/trackeval bundle create "$GITHUB_WORKSPACE/.c05-evidence/trackeval.bundle" HEAD
           git rev-parse HEAD > .c05-evidence/source-sha.txt
           git rev-parse HEAD^{tree} > .c05-evidence/source-tree.txt
+          printf '%s\n' "$GITHUB_EVENT_NAME" > .c05-evidence/event-name.txt
+          printf '%s\n' "${{ github.event.pull_request.base.sha || '' }}" > .c05-evidence/event-base-sha.txt
+          printf '%s\n' "${{ github.event.pull_request.head.sha || '' }}" > .c05-evidence/event-head-sha.txt
           git bundle create .c05-evidence/repository.bundle HEAD origin/main
           cd .c05-evidence
           sha256sum *.bundle > SHA256SUMS.txt
@@ -56,6 +67,7 @@ jobs:
           python --version | tee .c05-evidence/python-version.txt
           sha256sum backend/requirements/dev.lock frontend/package-lock.json > .c05-evidence/lock-sha256.txt
           python -m pytest -q backend/tests/test_audit_v3_c05*.py --junitxml=.c05-evidence/c05.xml 2>&1 | tee .c05-evidence/c05.log
+          cp -R .verification/pytest-runs .c05-evidence/pytest-runs
           (cd .c05-evidence && sha256sum *.log *.xml *.txt *.bundle > evidence-sha256.txt)
       - uses: actions/upload-artifact@v4
         if: always()
