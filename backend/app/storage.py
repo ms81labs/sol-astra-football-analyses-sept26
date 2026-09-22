@@ -20,8 +20,8 @@ from typing import BinaryIO, TextIO
 from pydantic import ValidationError
 
 from .storage_jobs import (
-    AdmissionOutcomeUncertainError,
-    JobCancellationRequested,
+    AdmissionOutcomeUncertainError as AdmissionOutcomeUncertainError,
+    JobCancellationRequested as JobCancellationRequested,
     _JobStorageMixin,
 )
 
