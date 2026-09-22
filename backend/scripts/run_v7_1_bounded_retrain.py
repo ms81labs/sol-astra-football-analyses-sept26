@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-from backend.scripts.football_external_real_eval_chain_common import utc_now_iso as _utc_now_iso
 
-import argparse
+
 import hashlib
-import json
 from pathlib import Path
 import shutil
 import statistics
@@ -15,7 +13,6 @@ from typing import Any, Callable
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 from backend.app.run_benchmarks import DEFAULT_STORAGE_ROOT  # noqa: E402
-from backend.scripts.football_external_real_eval_chain_common import reset_output  # noqa: E402
 import backend.scripts.run_v7_1_tiny_overfit_sanity_train as tiny_train  # noqa: E402
 from backend.scripts import runpod_session  # noqa: E402
 
@@ -63,9 +60,6 @@ def _candidate_root(storage_root: Path, candidate_name: str) -> Path:
     return Path(storage_root) / "trained_detector_candidates" / candidate_name
 
 
-def _write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
 
 
 def _sha256(path: Path | None) -> str | None:

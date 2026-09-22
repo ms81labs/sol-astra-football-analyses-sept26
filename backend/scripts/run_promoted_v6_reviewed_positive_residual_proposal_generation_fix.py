@@ -1,4 +1,6 @@
 from __future__ import annotations
+from backend.scripts.football_external_real_eval_chain_common import write_json_sorted_no_newline as _write_json
+
 
 from backend.scripts.football_external_real_eval_chain_common import utc_now_iso as _utc_now_iso
 
@@ -54,9 +56,6 @@ def _load_optional_json_dict(path: Path) -> dict[str, Any]:
     return _load_json_dict(path)
 
 
-def _write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
 
 
 def _safe_int(value: object, default: int = 0) -> int:

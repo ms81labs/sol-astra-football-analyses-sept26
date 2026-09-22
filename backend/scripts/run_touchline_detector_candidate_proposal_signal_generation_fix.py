@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+
 from backend.scripts.football_external_real_eval_chain_common import utc_now_iso as _utc_now_iso
 
 if __name__ == "__main__":
@@ -9,8 +10,6 @@ if __name__ == "__main__":
 
     require_retired_runpod_disabled()
 
-import argparse
-import json
 import os
 from pathlib import Path
 import shlex
@@ -53,16 +52,8 @@ PLATEAU_BASELINE = {
 }
 
 
-def _load_json(path: Path) -> dict[str, object]:
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(payload, dict):
-        raise ValueError(f"Expected JSON object in {path}")
-    return payload
 
 
-def _write_json(path: Path, payload: dict[str, object]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 def _write_markdown(path: Path, text: str) -> None:

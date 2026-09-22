@@ -1,16 +1,16 @@
 """Historical training recipe, retired with its RunPod execution path."""
 
 from __future__ import annotations
+from backend.scripts.football_external_real_eval_chain_common import write_json_sorted_no_newline as _write_json
+
 
 from backend.scripts.football_external_real_eval_chain_common import utc_now_iso as _utc_now_iso
 
 import argparse
-import json
 from pathlib import Path
 import re
 import shlex
 import tempfile
-from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -63,16 +63,8 @@ def _safe_float(value: object, default: float = 0.0) -> float:
         return default
 
 
-def _load_json(path: Path) -> dict[str, object]:
-    payload = json.loads(Path(path).read_text(encoding="utf-8"))
-    if not isinstance(payload, dict):
-        raise ValueError(f"Expected JSON object at {path}")
-    return payload
 
 
-def _write_json(path: Path, payload: dict[str, object]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
 
 
 def _safe_stem(value: object) -> str:

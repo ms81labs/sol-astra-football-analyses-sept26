@@ -40,7 +40,7 @@ Fresh evidence on the verified implementation head:
 | H06 | Closed | All 297 script offenders / 477 original violations transformed; repo-wide AST hygiene gate is in python-quality. |
 | H07 | Closed | Targeted degraded states now emit safe observability instead of silent operational suppression. |
 | H08 | Closed | Pinned Ruff/static correctness gate runs in CI. |
-| M01 | Closed | Stale `# noqa` debt cleared for intended scope. |
+| M01 | Closed | RUF100 was evaluated with the debt rule set enabled: 13 directives were genuinely unused and cleared; 65 directives tied to otherwise-disabled rules were retained because they suppress real findings when those rules are enabled. |
 | M02 | Closed | B023 late-binding debt triaged/cleared for intended scope. |
 | M03 | Closed | Verifier selection/threshold logic centralized. |
 | M04 | Closed | Human pytest-summary parsing removed from verifier contract. |
@@ -78,3 +78,11 @@ the remediation's simplification discipline.
 This remediation program is closed at the verified implementation head above. Treat this document and
 `docs/code-quality-remediation-checkpoint.md` as the handoff. Reopen an item only when a regression,
 new evidence, or an explicitly approved contract/product change justifies it.
+
+## Post-closure hygiene follow-through — 2026-09-22
+
+Independent verification found non-blocking F401 and script-helper residue created or exposed by the remediation. The follow-through branch removed **175/175** script F401 findings and **16/16** true app F401 findings after explicitly preserving required compatibility re-exports. The dedicated C03 track-only probe regression was added, and the CI F401 gate was widened to all of `backend/app` and `backend/scripts`. The final H06 pass then replaced **112 local `_write_json`/`_load_json` definitions across 80 scripts** with 9 named common helpers that preserve the 11 observed serialization/read/error policies exactly; durable AST and behavior tests prevent regression.
+
+### Dedicated scorer-lane follow-through — 2026-09-22
+
+The follow-through also repaired a latent H06 regression in the dedicated C05 evidence workflow: a prior bootstrap cleanup had removed a `sys.path.insert` while leaving the corresponding `sys.path.pop(0)`, preventing the pinned TrackEval checkout from being imported by the scorer worker. The loader now uses an explicit package spec rooted at the verified TrackEval checkout, without mutating `sys.path`; the hygiene guard rejects common `sys.path` mutators. Dedicated C05 run **32** on `d24c4ea` verified the repair with **46 passed / 0 failed**.

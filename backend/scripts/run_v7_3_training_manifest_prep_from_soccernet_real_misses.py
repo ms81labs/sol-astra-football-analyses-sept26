@@ -1,4 +1,6 @@
 from __future__ import annotations
+from backend.scripts.football_external_real_eval_chain_common import load_json_dict_or_empty_optional as _load_json
+
 
 from backend.scripts.football_external_real_eval_chain_common import utc_now_iso as _utc_now_iso
 
@@ -47,13 +49,6 @@ def _candidate_root(storage_root: Path, candidate_name: str) -> Path:
     return Path(storage_root) / "trained_detector_candidates" / candidate_name
 
 
-def _load_json(path: Path, *, required: bool = False) -> dict[str, Any]:
-    if not path.exists():
-        if required:
-            raise FileNotFoundError(path)
-        return {}
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    return payload if isinstance(payload, dict) else {}
 
 
 def _safe_float(value: Any) -> float | None:

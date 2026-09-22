@@ -1,4 +1,6 @@
 from __future__ import annotations
+from backend.scripts.football_external_real_eval_chain_common import write_json_unsorted_no_newline as _write_json
+
 
 import argparse
 import csv
@@ -169,9 +171,6 @@ def _build_slice_suite_manifest(storage_root: Path, *, max_entries: int = 10) ->
     }
 
 
-def _write_json(path: Path, payload: dict[str, object]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 def _write_import_rows_csv(path: Path, rows: list[dict[str, object]]) -> None:

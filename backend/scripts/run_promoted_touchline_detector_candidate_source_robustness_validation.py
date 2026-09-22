@@ -1,15 +1,15 @@
 """Historical validation recipe, retired with its RunPod execution path."""
 
 from __future__ import annotations
+from backend.scripts.football_external_real_eval_chain_common import write_json_unsorted_no_newline as _write_json
 
-from backend.scripts.football_external_real_eval_chain_common import utc_now_iso as _utc_now_iso
+
 
 if __name__ == "__main__":
     from backend.scripts.runpod_session import require_retired_runpod_disabled
 
     require_retired_runpod_disabled()
 
-import argparse
 import json
 from pathlib import Path
 
@@ -81,9 +81,6 @@ def _load_json_dict(path: Path) -> dict[str, object]:
     return payload
 
 
-def _write_json(path: Path, payload: dict[str, object]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
 
 def _write_text(path: Path, text: str) -> None:

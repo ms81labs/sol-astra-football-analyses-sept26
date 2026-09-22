@@ -1,4 +1,7 @@
 from __future__ import annotations
+from backend.scripts.football_external_real_eval_chain_common import load_json_dict_or_empty_required as _load_json
+from backend.scripts.football_external_real_eval_chain_common import write_json_sorted_no_newline as _write_json
+
 
 from backend.scripts.football_external_real_eval_chain_common import utc_now_iso as _utc_now_iso
 
@@ -33,18 +36,8 @@ NEXT_SPLIT_REFRESH = "v7_1_split_policy_refresh"
 NEXT_MANUAL_REVIEW = "manual_review_required"
 
 
-def _load_json(path: Path, *, required: bool = True) -> dict[str, Any]:
-    if not path.exists():
-        if required:
-            raise FileNotFoundError(str(path))
-        return {}
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    return payload if isinstance(payload, dict) else {}
 
 
-def _write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
 
 
 def _candidate_root(storage_root: Path, candidate_name: str) -> Path:

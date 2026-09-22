@@ -1,4 +1,6 @@
 from __future__ import annotations
+from backend.scripts.football_external_real_eval_chain_common import load_json_object_payload_strict as _load_json
+
 
 from backend.scripts.football_external_real_eval_chain_common import utc_now_iso as _utc_now_iso
 
@@ -47,11 +49,6 @@ _write_dataset_yaml = phase1._write_dataset_yaml
 _extract_frame_image = phase1._extract_frame_image
 
 
-def _load_json(path: Path) -> dict[str, object]:
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(payload, dict):
-        raise ValueError(f"Expected object payload in {path}")
-    return payload
 
 
 def _stable_curation_unit_id(*, match_id: str, frame_start: int, frame_end: int) -> str:

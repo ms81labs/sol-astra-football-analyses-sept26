@@ -9,7 +9,7 @@ from typing import Any
 
 from .settings import ProcessingSettings
 from .provider_adapters import LOCAL_MODEL_ID
-from .provider_billing import (ProviderBudgetLedger, ProviderTicket, ProviderResult, ProviderNotDispatched)
+from .provider_billing import (ProviderBudgetLedger as ProviderBudgetLedger, ProviderTicket, ProviderResult, ProviderNotDispatched)
 from .workbench.money import money
 from .workbench.jobs import maintain_job_lease
 from .workbench.evidence import records_from_match
