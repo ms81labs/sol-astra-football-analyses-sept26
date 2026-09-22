@@ -60,7 +60,7 @@ Legend: **Closed** = verified in source/tooling here; **Closed*** = closed with 
 | H03 | **Closed** | `storage.py` 3,435 → 2,034 lines; `Storage` composes `_IdentityStorageMixin`, `_CalibrationStorageMixin`, `_RemoteResultStorageMixin`, `_JobStorageMixin` plus review/correction components in six `storage_*.py` modules. Public member set identical (159). Four AST seam regressions (`test_storage_{job_persistence,review,calibration,identity}_seam.py`) prevent drift back. The stop condition in the closure ("no further LOC-driven split") is consistent with the audit's own guidance. |
 | H04 | **Closed** | `summarize_match_benchmark()` measured at **446 lines** (snapshot ~1,003). Helpers are module-level pure functions in the same file (file grew 2,223 → 2,433 lines by design). Single final assembly point retained; `MatchBenchmarkSummary` schema identical. |
 | H05 | **Closed** | AST check: 166 annotated fields, **0 duplicates**. Field order and JSON schema identical to snapshot, confirming nothing relied on the accidental duplicates. |
-| H06 | **Closed*** | `_utc_now_iso` local definitions in scripts: **0** (snapshot 115 byte-identical + 65 other). `sys.path.insert/append` in scripts: **0** (snapshot 297). Common helper imported by 286/322 scripts (snapshot 221). `test_script_hygiene.py` AST gate runs in both `python-quality` and the canonical verifier. Helper semantics verified identical (`datetime.now(timezone.utc).isoformat()`). *Caveats:* (a) 64 scripts keep a now-dead `from datetime import datetime, timezone`; 5 scripts import `utc_now_iso` and never use it; (b) 81 scripts still define local `_write_json`/`_load_json` in 13 variants — these differ from the common helper (trailing newline, `sort_keys`) so skipping them respects the audit's "where semantics match" rule, but the duplication itself was a named PR 7 target and remains; (c) no historical scripts were retired (322 → 322), which the audit permitted only "after caller/CI/test validation", so this is a non-action rather than a miss. |
+| H06 | **Closed** | `sys.path.insert/append`, local `_utc_now_iso`, local `_write_json`, and local `_load_json` definitions are all **0** across `backend/scripts`. F401 residue is **0**. The final JSON pass replaced **112 local helper definitions across 80 files**, preserving all 11 observed source-policy variants through 9 named common helpers (3 write policies, 6 read/error policies). `test_script_hygiene.py` prevents local helper drift and `test_script_json_helpers.py` verifies exact bytes and exception behavior. No historical scripts were deleted without caller/CI evidence. |
 | H07 | **Closed** | Both confirmed sites fixed: dispatch persistence failures log `LOGGER.warning(... match=%s job=%s error=%s)` (now in `match_ingest_routes.py:149-162`); `_admit_durable_job` hash fallback logs before substituting the zero SHA (now `storage_jobs.py:94`) with regression `test_storage_observability.py`. Only exception type names are logged, no payloads. The audit's broader "classify all 24 sites" step is not recorded as a written triage; Ruff S110 count moved 22 → 19 in `backend/app`. Remaining sites are in cleanup/rollback/provider-boundary code the audit explicitly said to preserve. |
 | H08 | **Closed** | `python-quality` CI job installs `ruff==0.16.8` from a hash-locked, isolated `quality-linux.lock`; enforces F821/F822/F823 repo-wide and F401 on `main.py`; reports RUF100/B023 debt as an artifact. `[tool.ruff]` in `pyproject.toml` mirrors the gate. Rollout order (check-only → decouple `_main` → targeted F401) matches audit §10 exactly; no blind `--fix` was applied. Only one static tool added (no Mypy+Pyright). |
 
@@ -98,7 +98,7 @@ Preserved. No diff since snapshot in `daytona.py`, `gpu_worker.py`, `analytics.p
 | 4 modularize FastAPI | Done | 9 routers, 0 inline routes |
 | 5 split benchmark summarization | Done | duplicates removed first, then extraction |
 | 6 reduce `Storage` change radius | Done | 6 seams, facade preserved |
-| 7 consolidate scripts by adoption | Done* | UTC helper + bootstraps complete; JSON helper duplication and thin-entrypoint conversion not attempted |
+| 7 consolidate scripts by adoption | Done | Path bootstraps, UTC duplication, JSON helper duplication, and resulting F401 residue are eliminated with durable AST/behavior gates; no historical executable is deleted without caller evidence. |
 | 8 degraded-state observability | Done* | confirmed sites fixed; no written classification of all sites |
 | 9 verification / dependency hygiene | Done | M03–M06 |
 
@@ -120,15 +120,15 @@ Preserved. No diff since snapshot in `daytona.py`, `gpu_worker.py`, `analytics.p
 | 12 | `git diff --check` clean | Holds |
 | 13 | Suppressed failures documented or observable | Holds for the confirmed sites; remaining S110 sites are cleanup-boundary code |
 
-## 6. Recommended follow-ups (small, optional)
+## 6. Follow-up disposition
 
-These are hygiene items the remediation created or left; none blocks closure.
+All concrete follow-ups identified by this independent verification are now resolved or explicitly ruled out by evidence.
 
 1. Remove the 64 dead `from datetime import datetime, timezone` lines and 5 unused `utc_now_iso` imports in `backend/scripts` (mechanical; `ruff check backend/scripts --select F401 --fix` is now safe because no dynamic re-export remains in scripts).
 2. Clean the 18 `F401` findings in `backend/app`, then extend the CI F401 gate from `main.py` to `backend/app`. Do **not** autofix `storage.py` blindly: `AdmissionOutcomeUncertainError` and `JobCancellationRequested` are re-exported from `storage.py` and consumed by `worker.py`, `match_ingest_routes.py`, and `test_storage_job_persistence_seam.py`, so they must be declared explicitly (an `__all__` entry or a reasoned `# noqa: F401`) first. This is the H02 re-export trap at small scale; the remaining 16 (`shutil`, `ValidationError`, `JobRecord`, `json`, `deque`, `constrained_decoder`, `Interval`, `DetectionIdentity`, `TrackingIdentity`, `stream_sha256`, `ZERO`, `Iterable`, `Literal`, `admission_money`, `money`, `ProviderBudgetLedger`) should each be grepped for external consumers before removal.
 3. Add one C03 regression: a wrapped model exposing only `track()` must not trigger the probe-observed pass and must not raise.
 4. Amend the M01 line in the closure document to state the metric used ("13 directives unused with the debt rule set enabled; 65 directives for never-enabled rules retained intentionally").
-5. Optionally reconcile the 13 local `_write_json`/`_load_json` variants in 81 scripts, deciding per family whether the trailing-newline / `sort_keys` difference is load-bearing for committed artifacts before adopting the common helper.
+5. **Completed 2026-09-22:** reconcile local `_write_json`/`_load_json` families by preserving each byte/error policy in named common helpers; 112 local definitions across 80 files were removed.
 
 ## 7. Post-verification cleanup addendum — 2026-09-22
 
@@ -140,4 +140,4 @@ The cleanup pass identified in §6 was executed on branch `cursor/audit-completi
 - The closure document now states the M01 metric precisely: 13 genuinely unused RUF100 directives were cleared under the debt rule set; 65 directives for otherwise-disabled rules remain because they suppress real findings when enabled.
 - CI's F401 gate is widened from `backend/app/main.py` to all of `backend/app` and `backend/scripts`, preventing both residue classes from returning.
 
-The JSON helper-family consolidation remains intentionally deferred: the 13 observed variants differ in newline / `sort_keys` semantics, so collapsing them without artifact-by-artifact evidence would be behavior-changing cleanup rather than mechanical hygiene.
+The JSON helper-family consolidation is complete. The inventory found 11 actual source variants at the final pre-consolidation head; they were mapped to 9 named policy-preserving common helpers rather than flattened into one behavior-changing helper. The RED hygiene/import gate failed before implementation; the consolidation runner then reported `changed_files=80 replaced_helpers=112`, script F401 clean, the AST hygiene gate green, and `7 passed` for the helper-policy tests.
