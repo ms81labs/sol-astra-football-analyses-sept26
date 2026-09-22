@@ -244,8 +244,11 @@ class Storage(_IdentityStorageMixin, _CalibrationStorageMixin, _RemoteResultStor
 
     def _initialize(self) -> None:
         with self._connect() as connection:
+            # Serialize schema discovery and migration across startup processes.
+            # BEGIN belongs inside executescript, which commits a pending transaction.
             connection.executescript(
                 """
+                BEGIN IMMEDIATE;
                 CREATE TABLE IF NOT EXISTS matches (
                     id TEXT PRIMARY KEY,
                     admission_token TEXT,
