@@ -1,4 +1,6 @@
 from __future__ import annotations
+from backend.scripts.football_external_real_eval_chain_common import load_json_object_payload_strict as _load_json
+
 
 import argparse
 from datetime import datetime, timezone
@@ -43,11 +45,6 @@ def _safe_float(value: object, default: float = 0.0) -> float:
         return default
 
 
-def _load_json(path: Path) -> dict[str, object]:
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(payload, dict):
-        raise ValueError(f"Expected object payload in {path}")
-    return payload
 
 
 def _load_optional_analysis_artifact(storage: Storage, match_id: str, analysis_type: str) -> dict[str, object]:

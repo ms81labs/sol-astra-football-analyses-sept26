@@ -1,4 +1,7 @@
 from __future__ import annotations
+from backend.scripts.football_external_real_eval_chain_common import load_json_dict_or_empty_existing as _load_json
+from backend.scripts.football_external_real_eval_chain_common import write_json_sorted_no_newline as _write_json
+
 
 from backend.scripts.football_external_real_eval_chain_common import utc_now_iso as _utc_now_iso
 
@@ -25,14 +28,8 @@ def _candidate_root(storage_root: Path, candidate_name: str) -> Path:
     return Path(storage_root) / "trained_detector_candidates" / candidate_name
 
 
-def _load_json(path: Path) -> dict[str, Any]:
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    return payload if isinstance(payload, dict) else {}
 
 
-def _write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
 
 
 def _slug(value: object) -> str:

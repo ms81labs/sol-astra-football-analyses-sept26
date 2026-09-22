@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 
+
 import hashlib
-import json
 from pathlib import Path
 import shutil
 import statistics
@@ -60,9 +60,6 @@ def _candidate_root(storage_root: Path, candidate_name: str) -> Path:
     return Path(storage_root) / "trained_detector_candidates" / candidate_name
 
 
-def _write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
 
 
 def _sha256(path: Path | None) -> str | None:

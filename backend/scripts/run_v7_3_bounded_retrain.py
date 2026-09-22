@@ -1,9 +1,10 @@
 """Historical training recipe, retired with its RunPod execution path."""
 
 from __future__ import annotations
+from backend.scripts.football_external_real_eval_chain_common import write_json_sorted_no_newline as _write_json
 
 
-import json
+
 from pathlib import Path
 import shlex
 import tempfile
@@ -58,9 +59,6 @@ Trainer = Callable[..., dict[str, Any]]
 Predictor = Callable[..., dict[str, Any]]
 
 
-def _write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
 
 
 def _checkpoint_path(training_result: dict[str, Any], *keys: str) -> Path | None:

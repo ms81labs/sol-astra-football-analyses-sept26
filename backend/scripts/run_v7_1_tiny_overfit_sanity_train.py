@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 
-import json
+
 from pathlib import Path
 import shutil
 import statistics
@@ -59,9 +59,6 @@ def _candidate_root(storage_root: Path, candidate_name: str) -> Path:
     return Path(storage_root) / "trained_detector_candidates" / candidate_name
 
 
-def _write_json(path: Path, payload: dict[str, Any]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")
 
 
 def _safe_float(value: object, default: float = 0.0) -> float:
