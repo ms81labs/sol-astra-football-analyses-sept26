@@ -141,3 +141,9 @@ The cleanup pass identified in §6 was executed on branch `cursor/audit-completi
 - CI's F401 gate is widened from `backend/app/main.py` to all of `backend/app` and `backend/scripts`, preventing both residue classes from returning.
 
 The JSON helper-family consolidation is complete. The inventory found 11 actual source variants at the final pre-consolidation head; they were mapped to 9 named policy-preserving common helpers rather than flattened into one behavior-changing helper. The RED hygiene/import gate failed before implementation; the consolidation runner then reported `changed_files=80 replaced_helpers=112`, script F401 clean, the AST hygiene gate green, and `7 passed` for the helper-policy tests.
+
+### Dedicated C05 evidence-lane repair — 2026-09-22
+
+The final H06 review also exposed a latent regression in the dedicated C05 scorer lane: the earlier script-bootstrap cleanup had removed the matching `sys.path.insert(...)` from `evaluate_football_analysis_pilot.py` while leaving `sys.path.pop(0)`. That made the pinned TrackEval package unavailable to the scorer worker even though normal CI remained green because it does not provide `C05_TRACKEVAL_ROOT`.
+
+The scorer now loads the verified pinned TrackEval checkout directly with an `importlib.util.spec_from_file_location(..., submodule_search_locations=...)` package spec, with no `sys.path` mutation. The script-hygiene AST guard was widened to reject common `sys.path` mutators, including orphan `pop` calls. Dedicated C05 run **32** on code head `d24c4ea` completed **46 passed / 0 failed**.
