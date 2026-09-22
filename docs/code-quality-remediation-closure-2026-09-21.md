@@ -40,7 +40,7 @@ Fresh evidence on the verified implementation head:
 | H06 | Closed | All 297 script offenders / 477 original violations transformed; repo-wide AST hygiene gate is in python-quality. |
 | H07 | Closed | Targeted degraded states now emit safe observability instead of silent operational suppression. |
 | H08 | Closed | Pinned Ruff/static correctness gate runs in CI. |
-| M01 | Closed | Stale `# noqa` debt cleared for intended scope. |
+| M01 | Closed | RUF100 was evaluated with the debt rule set enabled: 13 directives were genuinely unused and cleared; 65 directives tied to otherwise-disabled rules were retained because they suppress real findings when those rules are enabled. |
 | M02 | Closed | B023 late-binding debt triaged/cleared for intended scope. |
 | M03 | Closed | Verifier selection/threshold logic centralized. |
 | M04 | Closed | Human pytest-summary parsing removed from verifier contract. |
