@@ -9,7 +9,6 @@ if __name__ == "__main__":
 
     require_retired_runpod_disabled()
 
-import argparse
 import hashlib
 import json
 import os

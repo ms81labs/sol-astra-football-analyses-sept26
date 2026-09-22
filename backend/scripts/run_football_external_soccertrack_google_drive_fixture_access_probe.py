@@ -8,7 +8,6 @@ import json
 from pathlib import Path
 import re
 import subprocess
-import sys
 from typing import Any, Callable
 
 REPO_ROOT = Path(__file__).resolve().parents[2]

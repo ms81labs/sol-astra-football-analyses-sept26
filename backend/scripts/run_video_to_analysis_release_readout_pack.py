@@ -14,7 +14,6 @@ from backend.scripts.football_external_real_eval_chain_common import (  # noqa: 
     reset_output,
     standard_false_flags,
     utc_now_iso,
-    write_json,
     write_outcome,
 )
 

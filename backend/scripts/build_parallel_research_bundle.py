@@ -4,7 +4,7 @@ from backend.scripts.football_external_real_eval_chain_common import utc_now_iso
 
 import argparse
 from contextlib import contextmanager, ExitStack
-from datetime import date, datetime, timezone
+from datetime import date
 import json
 import os
 from pathlib import Path, PurePosixPath

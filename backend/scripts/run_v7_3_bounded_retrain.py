@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from backend.scripts.football_external_real_eval_chain_common import utc_now_iso as _utc_now_iso
 
-import argparse
 import json
 from pathlib import Path
 import shlex
@@ -14,7 +12,6 @@ from typing import Any, Callable
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 from backend.app.run_benchmarks import DEFAULT_STORAGE_ROOT  # noqa: E402
-from backend.scripts.football_external_real_eval_chain_common import reset_output  # noqa: E402
 import backend.scripts.run_v7_1_bounded_retrain as bounded_v7_1  # noqa: E402
 import backend.scripts.run_v7_1_tiny_overfit_sanity_train as tiny_train  # noqa: E402
 import backend.scripts.runpod_session as runpod_session  # noqa: E402

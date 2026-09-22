@@ -6,7 +6,6 @@ import argparse
 from collections.abc import Callable
 import json
 from pathlib import Path
-from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 

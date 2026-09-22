@@ -10,7 +10,6 @@ from pathlib import Path
 import re
 import shlex
 import tempfile
-from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 

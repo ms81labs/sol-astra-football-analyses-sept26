@@ -6,7 +6,6 @@ import argparse
 import json
 from pathlib import Path
 import statistics
-from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 

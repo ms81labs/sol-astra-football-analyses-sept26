@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-from backend.scripts.football_external_real_eval_chain_common import utc_now_iso as _utc_now_iso
 
 if __name__ == "__main__":
     from backend.scripts.runpod_session import require_retired_runpod_disabled
 
     require_retired_runpod_disabled()
 
-import argparse
 import json
 from pathlib import Path
 

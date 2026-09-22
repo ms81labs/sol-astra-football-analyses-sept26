@@ -9,7 +9,6 @@ if __name__ == "__main__":
 
     require_retired_runpod_disabled()
 
-import argparse
 from datetime import datetime, timezone
 import json
 from pathlib import Path

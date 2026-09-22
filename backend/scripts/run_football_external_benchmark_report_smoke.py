@@ -3,7 +3,6 @@ from __future__ import annotations
 from backend.scripts.football_external_real_eval_chain_common import utc_now_iso
 
 import argparse
-from datetime import datetime, timezone
 import json
 from pathlib import Path
 from typing import Any

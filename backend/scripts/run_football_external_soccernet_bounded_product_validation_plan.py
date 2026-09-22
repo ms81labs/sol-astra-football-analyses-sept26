@@ -10,7 +10,6 @@ from backend.scripts.football_external_real_eval_chain_common import (  # noqa: 
     DEFAULT_CANDIDATE_NAME,
     DEFAULT_STORAGE_ROOT,
     candidate_root,
-    guardrails_false,
     load_json,
     main_for,
     reset_output,

@@ -9,7 +9,6 @@ if __name__ == "__main__":
 
     require_retired_runpod_disabled()
 
-import argparse
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -18,9 +17,7 @@ import shlex
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 from backend.app.run_benchmarks import DEFAULT_STORAGE_ROOT  # noqa: E402
-import backend.scripts.run_pod_proof_cycle as run_pod_proof_cycle  # noqa: E402
 import backend.scripts.run_source_robustness_batch as run_source_robustness_batch  # noqa: E402
-import backend.scripts.run_trimmed_ball_recovery_matrix as run_trimmed_ball_recovery_matrix  # noqa: E402
 import backend.scripts.runpod_session as runpod_session  # noqa: E402
 
 DETECTOR_BREADTH_MODELS = ("yolov10n.pt", "yolo11s.pt", "yolov8n.pt", "yolov8s.pt")
