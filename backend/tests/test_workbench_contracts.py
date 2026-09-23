@@ -433,6 +433,16 @@ def test_typed_search_answers_known_and_unanswerable_queries_without_sql() -> No
     ]
     hits = execute_typed_query(events, query, match_id="m1")
     assert [hit.eventId for hit in hits] == ["t1"]
+    bounded = execute_typed_query([
+        {"id": "bounded", "type": "turnover", "team": "my_team", "period": 2,
+         "timestamp": 70.2, "frameId": 351, "intervalStart": 70.0, "intervalEnd": 71.0,
+         "reviewStatus": "accepted", "evidenceIds": ["event:bounded"]},
+    ], parse_typed_query("our second-half turnovers"), match_id="m1")
+    assert bounded[0].model_dump(mode="json") == {
+        "eventId": "bounded", "matchId": "m1", "timestamp": 70.2, "frameId": 351,
+        "intervalStart": 70.0, "intervalEnd": 71.0,
+        "reviewStatus": "accepted", "evidenceIds": ["event:bounded"], "label": "turnover",
+    }
     refused = parse_typed_query("select * from events; drop table matches")
     assert refused.unanswerable is True
     assert refused.reason == "refused_code_execution"

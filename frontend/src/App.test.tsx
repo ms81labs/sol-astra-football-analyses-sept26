@@ -526,6 +526,39 @@ describe('App match workspace loading', () => {
     expect(await screen.findByText(/1 evidence-linked interval/i)).toBeTruthy();
   });
 
+  it('shares a selected search interval with evidence, timeline and playlist', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    stubSnapshotWorkspace({
+      ...loadedWorkspace('match-a', 'Match A'),
+      frames: [0, 1.2, 2, 2.2].map((Timestamp, Frame_ID) => ({
+        Frame_ID, Timestamp, Ball: null, My_Team: [], Enemies: [],
+      })),
+      frameCount: 4,
+    });
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo, init?: RequestInit) => {
+      if (String(input).includes('/api/matches/match-a/queries') && init?.method === 'POST') {
+        return Promise.resolve({ ok: true, json: async () => ({
+          generationId: 'g-match-a', query: { unanswerable: false },
+          results: [{ eventId: 'ev-1', matchId: 'match-a', timestamp: 1.2,
+            intervalStart: 1.1, intervalEnd: 2.1, evidenceIds: ['e-1'],
+            label: 'turnover', reviewStatus: 'accepted' }],
+        }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${String(input)}`));
+    }));
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    fireEvent.click(screen.getByRole('button', { name: /search evidence/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /turnover.*1.1.*2.1/i }));
+    await waitFor(() => {
+      expect((screen.getByLabelText(/clip start/i) as HTMLInputElement).value).toBe('1.1');
+      expect((screen.getByLabelText(/clip end/i) as HTMLInputElement).value).toBe('2.1');
+    });
+    expect(screen.getByText(/selected evidence: e-1/i)).toBeTruthy();
+    expect(within(screen.getByRole('region', { name: 'Evidence inspector' })).getAllByText('1.2s').length).toBeGreaterThan(0);
+  });
+
   it('refreshes stored events after accept without rewriting the playhead or injecting event ids', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);

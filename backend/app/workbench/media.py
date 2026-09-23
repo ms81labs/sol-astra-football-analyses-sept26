@@ -808,6 +808,7 @@ class FfmpegProbe:
         *,
         start_seconds: float,
         duration_seconds: float,
+        frame_exact: bool = False,
         cancel_event: threading.Event | None = None,
         runner=subprocess.run,
     ) -> None:
@@ -829,16 +830,21 @@ class FfmpegProbe:
                     raise ValueError("export interval is outside the source")
                 admission = self.last_execution_receipt
             command = [self.ffmpeg, "-hide_banner", "-nostdin", "-loglevel", "error",
-                       "-protocol_whitelist", "file,pipe", "-threads", str(self.threads),
-                       "-y", "-ss", f"{start_seconds:.3f}", "-i", str(source),
-                       "-t", f"{duration_seconds:.3f}", "-c", "copy", str(destination)]
+                       "-protocol_whitelist", "file,pipe", "-threads", str(self.threads), "-y"]
+            command += ["-ss", f"{start_seconds:.3f}", "-i", str(source)]
+            if frame_exact:
+                command += ["-t", f"{duration_seconds:.3f}",
+                            "-c:v", "libx264", "-c:a", "aac", "-fps_mode", "vfr"]
+            else:
+                command += ["-t", f"{duration_seconds:.3f}", "-c", "copy"]
+            command.append(str(destination))
             _assert_safe_ffmpeg_argv(command, settings=self.settings)
             self.last_execution_receipt = _publish_media_output(source, destination, command,
                 policy=self.policy, cancel_event=cancel_event, runner=runner, deadline=deadline,
                 expected_source_sha256=identity.sourceSha256 if identity is not None else None)
             self.last_execution_receipt.update(operation="export", sourceProbe=admission,
-                selectedIntervalSeconds=duration_seconds, decodedWorkApplicable=False, streamCopy=True,
-                frameExact=False)
+                selectedIntervalSeconds=duration_seconds, decodedWorkApplicable=frame_exact, streamCopy=not frame_exact,
+                frameExact=frame_exact)
         except BaseException as error:
             self.last_execution_receipt = media_failure_receipt(
                 error, policy=self.policy, previous=self.last_execution_receipt)

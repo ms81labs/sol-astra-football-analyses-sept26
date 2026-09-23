@@ -16,6 +16,7 @@ type PitchAnnotationPlacementMode = 'circle' | 'arrow-start' | 'arrow-end' | nul
 
 interface UseReviewSurfaceOptions {
   activeMatchId: string | null;
+  activeGenerationId?: string | null;
   currentFrame: number;
   matchData: FrameData[];
   pausePlayback: () => void;
@@ -26,6 +27,7 @@ interface UseReviewSurfaceOptions {
 
 export function useReviewSurface({
   activeMatchId,
+  activeGenerationId,
   currentFrame,
   matchData,
   pausePlayback,
@@ -44,13 +46,14 @@ export function useReviewSurface({
   const [reviewRange, setReviewRange] = useState<ReviewRange | null>(null);
   const [reviewMode, setReviewMode] = useState<ReviewMode>(null);
   const [pendingArrowStart, setPendingArrowStart] = useState<{ x: number; y: number } | null>(null);
-  const [reviewMatchId, setReviewMatchId] = useState(activeMatchId);
+  const reviewScope = `${activeMatchId ?? ''}:${activeGenerationId ?? ''}`;
+  const [reviewScopeId, setReviewScopeId] = useState(reviewScope);
 
   const activeMatchIdRef = useRef<string | null>(activeMatchId);
   const setLoadErrorRef = useRef(setLoadError);
 
-  if (reviewMatchId !== activeMatchId) {
-    setReviewMatchId(activeMatchId);
+  if (reviewScopeId !== reviewScope) {
+    setReviewScopeId(reviewScope);
     setReviewRange(null);
     setReviewMode(null);
     setPendingArrowStart(null);

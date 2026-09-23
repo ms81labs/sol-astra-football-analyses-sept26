@@ -65,6 +65,10 @@ class SearchHit(StrictModel):
     eventId: str
     matchId: str
     timestamp: float
+    frameId: int | None = None
+    intervalStart: float | None = None
+    intervalEnd: float | None = None
+    reviewStatus: str | None = None
     evidenceIds: list[str] = Field(default_factory=list)
     label: str
 
@@ -193,6 +197,10 @@ def execute_typed_query(events: list[dict[str, Any]], query: TypedQuery, *, matc
                 eventId=str(event.get("id") or f"{match_id}:{index}"),
                 matchId=match_id,
                 timestamp=float(event.get("timestamp") or 0.0),
+                frameId=event.get("frameId"),
+                intervalStart=event.get("intervalStart"),
+                intervalEnd=event.get("intervalEnd"),
+                reviewStatus=event.get("reviewStatus"),
                 evidenceIds=list(event.get("evidenceIds") or []),
                 label=str(event.get("type")),
             )

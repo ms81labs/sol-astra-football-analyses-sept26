@@ -7,6 +7,7 @@ import ClockReadout from './ClockReadout';
 interface EvidenceInspectorProps {
   matchId?: string;
   frame: FrameData | null;
+  selectedInterval?: { start: number; end: number; evidenceIds: string[] } | null;
   cameraProfile?: string;
   reviewStatus?: 'unreviewed' | 'accepted' | 'rejected' | 'corrected';
   modelHash?: string;
@@ -29,6 +30,7 @@ function sourceLabel(frame: FrameData | null): string {
 export default function EvidenceInspector({
   matchId,
   frame,
+  selectedInterval,
   cameraProfile,
   reviewStatus = 'unreviewed',
   modelHash,
@@ -72,6 +74,7 @@ export default function EvidenceInspector({
         <span aria-label="review status icon">✓</span>
         {' '}Review status: <span className="font-mono text-amber-300">{reviewStatus}</span>
       </p>
+      {selectedInterval && <p>Selected source interval: {selectedInterval.start}s to {selectedInterval.end}s. Selected evidence: {selectedInterval.evidenceIds.join(', ') || 'unavailable'}.</p>}
       {cameraProfile && <p>Camera profile: <span className="font-mono">{cameraProfile}</span></p>}
       {modelHash && <p>Model: <span className="font-mono">{modelHash}</span></p>}
       {configVersion && <p>Config: <span className="font-mono">{configVersion}</span></p>}

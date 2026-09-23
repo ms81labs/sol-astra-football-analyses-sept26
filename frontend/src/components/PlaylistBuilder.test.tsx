@@ -44,6 +44,14 @@ it('exports time-bounded clips with notes and refuses whole-match frequency clai
   expect(screen.getByText(/do not establish a whole-match frequency/i)).toBeTruthy();
 });
 
+it('offers exact saved video intervals as source-bound playable downloads', () => {
+  render(<PlaylistBuilder matchId="match-a" generationId="g1" videoAvailable storedClips={[
+    { generationId: 'g1', start: 1.1, end: 2.1, notes: 'Key moment', sourceEndFrameExclusive: 11 },
+  ]} />);
+  const link = screen.getByRole('link', { name: /download rendered clip/i });
+  expect(link.getAttribute('href')).toBe('/api/matches/match-a/edits/clip?generationId=g1&start=1.1&end=2.1');
+});
+
 it('assembles a deterministic match report that does not claim whole-match frequency', async () => {
   const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
     void init;

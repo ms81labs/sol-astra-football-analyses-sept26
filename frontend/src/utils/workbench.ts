@@ -77,6 +77,18 @@ export async function fetchWorkbenchDossier(): Promise<WorkbenchDossier> {
   return response.json() as Promise<WorkbenchDossier>;
 }
 
+export interface SearchHit {
+  eventId: string;
+  matchId: string;
+  timestamp: number;
+  frameId?: number | null;
+  intervalStart?: number | null;
+  intervalEnd?: number | null;
+  reviewStatus?: 'unreviewed' | 'accepted' | 'rejected' | 'corrected' | null;
+  label: string;
+  evidenceIds: string[];
+}
+
 export async function searchWorkbenchEvents(query: string, matchId: string, events: Array<Record<string, unknown>> = [], generationId?: string) {
   void events;
   const response = await fetch(`/api/matches/${matchId}/queries`, {
@@ -86,7 +98,7 @@ export async function searchWorkbenchEvents(query: string, matchId: string, even
   });
   const payload = await parseJson<{
     query: { unanswerable: boolean; reason: string | null; eventFamily: string };
-    results: Array<{ eventId: string; timestamp: number; evidenceIds: string[] }>;
+    results: SearchHit[];
   } & { generationId?: string | null }>(response);
   assertGeneration(payload, generationId);
   return payload;
@@ -422,6 +434,11 @@ export async function postMatchLegacyMigrate(matchId: string) {
 
 export interface MatchExportBundle {
   schemaVersion: string;
+  matchId?: string;
+  generationId?: string;
+  playlist?: { sourceSha256?: string; intervals?: Array<[number, number]> };
+  corrections?: unknown[];
+  annotations?: unknown[];
   provenance?: { storageArtifactsAreSourceOfTruth?: boolean; llmGenerated?: boolean };
   exports?: {
     matchJson?: string;
@@ -431,8 +448,9 @@ export interface MatchExportBundle {
   };
 }
 
-export async function fetchMatchExport(matchId: string) {
-  const response = await fetch(`/api/matches/${matchId}/export/match.json`);
+export async function fetchMatchExport(matchId: string, generationId?: string) {
+  const url = `/api/matches/${encodeURIComponent(matchId)}/export/match.json`;
+  const response = await fetch(generationId ? `${url}?generationId=${encodeURIComponent(generationId)}` : url);
   if (!response.ok) {
     throw new Error(`Failed to load match export: ${response.status}`);
   }

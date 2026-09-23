@@ -1,21 +1,28 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 
-import { searchWorkbenchEvents } from '../utils/workbench';
+import { searchWorkbenchEvents, type SearchHit } from '../utils/workbench';
 
 interface TypedSearchPanelProps {
   matchId?: string;
   generationId?: string;
   onSeek?: (timestamp: number) => void;
+  onSelectHit?: (hit: SearchHit) => void;
 }
 
-export default function TypedSearchPanel({ matchId, onSeek, generationId }: TypedSearchPanelProps) {
+export default function TypedSearchPanel({ matchId, onSeek, onSelectHit, generationId }: TypedSearchPanelProps) {
+  const scopeVersion = useRef(0);
+  useLayoutEffect(() => { scopeVersion.current += 1; return () => { scopeVersion.current += 1; }; }, [matchId, generationId]);
   const [query, setQuery] = useState('');
   const [message, setMessage] = useState<string | null>(null);
+  const [results, setResults] = useState<SearchHit[]>([]);
 
   async function runSearch() {
     if (!matchId) return;
+    const operation = scopeVersion.current;
+    setResults([]);
     try {
       const result = await searchWorkbenchEvents(query, matchId, [], generationId);
+      if (operation !== scopeVersion.current) return;
       if (result.query.unanswerable) {
         setMessage(`Unanswerable: ${result.query.reason ?? 'unknown'}`);
         return;
@@ -25,8 +32,9 @@ export default function TypedSearchPanel({ matchId, onSeek, generationId }: Type
         return;
       }
       setMessage(`${result.results.length} evidence-linked interval${result.results.length === 1 ? '' : 's'}.`);
-      onSeek?.(result.results[0].timestamp);
+      setResults(result.results);
     } catch (error) {
+      if (operation !== scopeVersion.current) return;
       setMessage(error instanceof Error ? error.message : 'Failed to run typed search');
     }
   }
@@ -48,6 +56,14 @@ export default function TypedSearchPanel({ matchId, onSeek, generationId }: Type
         Search evidence
       </button>
       {message && <p className="text-xs text-slate-300">{message}</p>}
+      {results.length > 0 && <ul className="space-y-1">{results.map((hit) => (
+        <li key={hit.eventId}>
+          <button type="button" className="text-left text-xs text-emerald-300 hover:underline"
+            onClick={() => { onSelectHit?.(hit); onSeek?.(hit.intervalStart ?? hit.timestamp); }}>
+            {hit.label ?? 'event'} · {hit.intervalStart ?? hit.timestamp}s to {hit.intervalEnd ?? hit.timestamp}s · {hit.reviewStatus ?? 'unreviewed'} · {hit.evidenceIds.length} evidence reference{hit.evidenceIds.length === 1 ? '' : 's'}
+          </button>
+        </li>
+      ))}</ul>}
     </section>
   );
 }

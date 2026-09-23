@@ -59,7 +59,7 @@ import { getUploadFailureGuidance } from './utils/uploadErrors';
 import { findNearestFrameIndex } from './utils/videoSync';
 import { playlistClipsFromCorrections } from './utils/playlist';
 import { applyReviewShortcut, type ReviewAction } from './utils/reviewShortcuts';
-import { fetchAssistance, fetchCorrectionHistory, fetchPendingCorrections, fetchHeatmap, fetchIncidentReview, fetchMatchFormation, fetchMatchMetrics, fetchNative, fetchNativeMemory, fetchQualityTimeline, fetchRecovery, fetchSecurity, fetchWorkbenchDossier, promoteMatchIdentity, recoverMatchCorrection, repairMatchIdentity, requestAccessDeletion, submitMatchCorrection, undoMatchCorrection, type FormationAvailability, type MetricAvailability } from './utils/workbench';
+import { fetchAssistance, fetchCorrectionHistory, fetchPendingCorrections, fetchHeatmap, fetchIncidentReview, fetchMatchFormation, fetchMatchMetrics, fetchNative, fetchNativeMemory, fetchQualityTimeline, fetchRecovery, fetchSecurity, fetchWorkbenchDossier, promoteMatchIdentity, recoverMatchCorrection, repairMatchIdentity, requestAccessDeletion, submitMatchCorrection, undoMatchCorrection, type FormationAvailability, type MetricAvailability, type SearchHit } from './utils/workbench';
 import { windowedTimelineProps } from './utils/windowedTimeline';
 import { splitScores } from './utils/quantities';
 
@@ -194,6 +194,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
   const [loadError, setLoadError] = useState<string | null>(null);
   const [comparisonLoadError, setComparisonLoadError] = useState<string | null>(null);
   const [events, setEvents] = useState<EventTag[]>([]);
+  const [selectedSearch, setSelectedSearch] = useState<{ generationId: string | null; hit: SearchHit } | null>(null);
   const [jobStatus, setJobStatus] = useState<string | null>(null);
   const uploadAbortControllerRef = useRef<AbortController | null>(null);
   const activeWorkspaceRequestRef = useRef(0);
@@ -445,6 +446,8 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
   const currentFrameRecord = matchData.find((frame) => frame.Frame_ID === currentFrame) ?? matchData[currentFrame] ?? null;
   const currentTimestamp = currentFrameRecord?.Timestamp ?? 0;
   const currentEvent = events.find((event) => event.frame === currentFrame) ?? events.find((event) => Math.abs(event.timestamp - currentTimestamp) < 0.2) ?? null;
+  const selectedHit = selectedSearch && selectedSearch.hit.matchId === activeMatch?.id
+    && selectedSearch.generationId === (activeMatch?.detail.generationId ?? null) ? selectedSearch.hit : null;
   const incidentTouchStart = storedIncident?.touchStart ?? currentEvent?.intervalStart ?? currentTimestamp;
   const incidentTouchEnd = storedIncident?.touchEnd ?? currentEvent?.intervalEnd ?? Number((currentTimestamp + 0.12).toFixed(2));
   const incidentSamples = storedIncident?.samples ?? [];
@@ -458,6 +461,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
   // A.4 — Review surface hook: manages annotations, issues, review range, pitch placement
   const review = useReviewSurface({
     activeMatchId: activeMatch?.id ?? null,
+    activeGenerationId: activeMatch?.detail.generationId ?? null,
     currentFrame,
     matchData,
     pausePlayback: () => setIsPlaying(false),
@@ -1230,7 +1234,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
             </div>
           )}
 
-          <Timeline
+            <Timeline
             matchData={timelineWindow.matchData}
             currentFrame={timelineWindow.currentFrame}
             currentRecord={timelineWindow.currentRecord}
@@ -1239,7 +1243,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
             fps={fps}
             events={events}
             reviewRange={review.reviewRange}
-            onRangeChange={review.setReviewRange}
+            onRangeChange={(range) => { setSelectedSearch(null); review.setReviewRange(range); }}
             onSeek={handleSeek}
             onTogglePlay={togglePlay}
           />
@@ -1454,8 +1458,9 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
             <EvidenceInspector
               matchId={activeMatch?.id}
               frame={currentFrameRecord}
+              selectedInterval={selectedHit ? { start: selectedHit.intervalStart ?? selectedHit.timestamp, end: selectedHit.intervalEnd ?? selectedHit.timestamp, evidenceIds: selectedHit.evidenceIds } : null}
               cameraProfile={activeMatch?.detail.config?.cameraProfile ?? uploadCameraProfile}
-              reviewStatus={currentEvent?.reviewStatus ?? 'unreviewed'}
+              reviewStatus={selectedHit?.reviewStatus ?? currentEvent?.reviewStatus ?? 'unreviewed'}
               configVersion={activeMatch?.evidence?.items[0]?.schemaVersion ?? 'evidence_v1'}
               coordinateSpace={activeMatch?.evidence?.coordinateSpace}
               definitionVersion={activeMatch?.evidence?.definitionVersion}
@@ -1481,8 +1486,10 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
               matchId={activeMatch?.id}
               generationId={activeMatch?.detail.generationId ?? undefined}
               reviewRange={review.reviewRange}
+              sourceInterval={selectedHit ? { start: selectedHit.intervalStart ?? selectedHit.timestamp, end: selectedHit.intervalEnd ?? selectedHit.timestamp } : null}
               frames={matchData}
               sourceFps={fps}
+              videoAvailable={isVideoMatch}
               storedClips={playlistClipsFromCorrections(correctionHistory, activeMatch?.detail.includedCommandIds ?? [], activeMatch?.detail.generationId ?? undefined)}
               onClipSaved={handleClipSaved}
               onOpenInterval={(timestamp) => {
@@ -1493,7 +1500,8 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
             />
           </div>
           <div className="mb-3 shrink-0">
-            <MatchPackagePanel matchId={activeMatch?.id} />
+            <MatchPackagePanel matchId={activeMatch?.id} generationId={activeMatch?.detail.generationId ?? undefined}
+              onReopen={(matchId, generationId) => loadWorkspaceIntoState(matchId, { force: true, generationId })} />
           </div>
           <div className="mb-3 shrink-0">
             <FourRatesPanel matchId={activeMatch?.id} />
@@ -1520,10 +1528,21 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
             <TypedSearchPanel key={`${activeMatch?.id}:${activeMatch?.detail.generationId}`}
               generationId={activeMatch?.detail.generationId ?? undefined}
               matchId={activeMatch?.id}
-              onSeek={(timestamp) => {
+              onSelectHit={(hit) => {
+                if (hit.matchId !== activeMatch?.id) return;
+                setSelectedSearch({ generationId: activeMatch.detail.generationId ?? null, hit });
                 setIsPlaying(false);
-                const index = findNearestFrameIndex(matchData.map((frame) => frame.Timestamp), timestamp);
-                if (index >= 0) handleSeek(matchData[index]?.Frame_ID ?? index);
+                const start = hit.intervalStart ?? hit.timestamp;
+                const end = hit.intervalEnd ?? hit.timestamp;
+                const startIndex = matchData.findIndex((frame) => frame.Timestamp >= start);
+                const afterEnd = matchData.findIndex((frame) => frame.Timestamp >= end);
+                const anchor = startIndex >= 0 ? startIndex : findNearestFrameIndex(frameTimestamps, hit.timestamp);
+                const anchorLoaded = hit.frameId == null || matchData.some((frame) => frame.Frame_ID === hit.frameId);
+                if (anchorLoaded && anchor >= 0 && matchData[anchor]) {
+                  review.setReviewRange({ startFrame: anchor, endFrame: Math.max(anchor, afterEnd < 0 ? matchData.length - 1 : afterEnd - 1) });
+                }
+                if (hit.frameId != null) handleSeek(hit.frameId);
+                else if (anchorLoaded && anchor >= 0 && matchData[anchor]) handleSeek(matchData[anchor].Frame_ID);
               }}
             />
           </div>

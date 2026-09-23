@@ -7,8 +7,10 @@ interface PlaylistBuilderProps {
   matchId?: string;
   generationId?: string;
   reviewRange?: { startFrame: number; endFrame: number } | null;
+  sourceInterval?: { start: number; end: number } | null;
   frames?: Array<{ Frame_ID: number; Timestamp: number }>;
   sourceFps?: number;
+  videoAvailable?: boolean;
   storedClips?: PlaylistClip[];
   onClipSaved?: (clip: PlaylistClip) => void | Promise<void>;
   onOpenInterval?: (sourceStartSeconds: number) => void;
@@ -33,16 +35,18 @@ function markedIntervalSeconds(
 export default function PlaylistBuilder({
   matchId, generationId,
   reviewRange = null,
+  sourceInterval = null,
   frames = [],
   sourceFps = 25,
+  videoAvailable = false,
   storedClips = [],
   onClipSaved,
   onOpenInterval,
 }: PlaylistBuilderProps) {
   const scopeVersion = useRef(0);
   useLayoutEffect(() => { scopeVersion.current += 1; return () => { scopeVersion.current += 1; }; }, [matchId, generationId]);
-  const rangeKey = reviewRange ? `${reviewRange.startFrame}:${reviewRange.endFrame}:${sourceFps}` : '';
-  const marked = reviewRange ? markedIntervalSeconds(reviewRange, frames, sourceFps) : null;
+  const rangeKey = sourceInterval ? `${sourceInterval.start}:${sourceInterval.end}` : reviewRange ? `${reviewRange.startFrame}:${reviewRange.endFrame}:${sourceFps}` : '';
+  const marked = sourceInterval ?? (reviewRange ? markedIntervalSeconds(reviewRange, frames, sourceFps) : null);
   const [draft, setDraft] = useState({ key: '', start: '12', end: '14' });
   const start = marked && draft.key !== rangeKey ? String(marked.start) : draft.start;
   const end = marked && draft.key !== rangeKey ? String(marked.end) : draft.end;
@@ -173,8 +177,8 @@ export default function PlaylistBuilder({
       {exportError && <p className="text-xs text-amber-200">{exportError}</p>}
       {reportError && <p className="text-xs text-amber-200">{reportError}</p>}
       {[...storedClips, ...clips.filter((clip) => !generationId || clip.generationId === generationId)].filter((clip, index, all) => all.findIndex((other) => clipKey(other) === clipKey(clip)) === index).map((clip) => (
+        <div key={clipKey(clip)}>
         <button
-          key={clipKey(clip)}
           type="button"
           aria-label={`Open ${clip.start}s to ${clip.end}s`}
           onClick={() => onOpenInterval?.(clip.start)}
@@ -182,6 +186,13 @@ export default function PlaylistBuilder({
         >
           {clip.start}s to {clip.end}s (frame {clip.sourceEndFrameExclusive} exclusive){clip.notes ? ` · ${clip.notes}` : ''}
         </button>
+        {videoAvailable && matchId && generationId && clip.generationId === generationId && (
+          <a className="text-xs text-emerald-300 underline" download
+            href={`/api/matches/${encodeURIComponent(matchId)}/edits/clip?${new URLSearchParams({ generationId, start: String(clip.start), end: String(clip.end) })}`}>
+            Download rendered clip
+          </a>
+        )}
+        </div>
       ))}
       {reportNote && <p className="text-xs text-slate-300">{reportNote}</p>}
       {editNote && <p className="text-xs text-slate-400">{editNote}</p>}

@@ -57,6 +57,18 @@ function deferred<T>() {
 }
 
 describe('useReviewSurface', () => {
+  it('clears a selected source range when the review generation changes', () => {
+    const { result, rerender } = renderHook(({ generation }) => useReviewSurface({
+      activeMatchId: 'match-1', activeGenerationId: generation,
+      currentFrame: 0, matchData: [frame(0, 1), frame(1, 2)],
+      pausePlayback: vi.fn(), clearResponse: vi.fn(), onSeekFrame: vi.fn(), setLoadError: vi.fn(),
+    }), { initialProps: { generation: 'g1' } });
+    act(() => result.current.setReviewRange({ startFrame: 0, endFrame: 1 }));
+    expect(result.current.reviewRange).toEqual({ startFrame: 0, endFrame: 1 });
+    rerender({ generation: 'g2' });
+    expect(result.current.reviewRange).toBeNull();
+  });
+
   it('surfaces an annotation load failure instead of presenting an empty review', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {});
     api.fetchMatchAnnotations.mockRejectedValueOnce(new Error('Annotation history unavailable.'));

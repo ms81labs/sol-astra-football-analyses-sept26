@@ -3,9 +3,15 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import math
+import shutil
+import tempfile
+from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import ValidationError
+from starlette.background import BackgroundTask
 
 from .provider_gateway import ProviderDenied, ProviderGateway
 from .run_benchmarks import summarize_match_benchmark
@@ -226,6 +232,34 @@ def create_match_detail_router(
             end=float(body.get("end") or 0.0),
             generation_id=body.get("generationId"),
         )
+
+    @router.get("/api/matches/{match_id}/edits/clip")
+    def download_match_clip(
+        match: MatchRecord = Depends(require_match), generationId: str = "", start: float = 0.0, end: float = 0.0,
+    ) -> FileResponse:
+        from .workbench.media import FfmpegProbe
+
+        if match.inputMode != "video":
+            raise HTTPException(status_code=409, detail="Clip export requires source video")
+        if not generationId or not all(map(math.isfinite, (start, end))) or start < 0 or end <= start:
+            raise HTTPException(status_code=422, detail="Invalid source interval or generation")
+        try:
+            edits = storage.edit_list_for_match(match.id, generation_id=generationId)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="Generation not found") from exc
+        if (start, end) not in [tuple(interval) for interval in edits["intervals"]]:
+            raise HTTPException(status_code=422, detail="Save this source interval before exporting")
+        temporary = Path(tempfile.mkdtemp(prefix="clip-", dir=storage.storage_root))
+        output = temporary / "clip.mp4"
+        try:
+            FfmpegProbe().export_clip(storage.get_match_input_path(match.id), output,
+                                      start_seconds=start, duration_seconds=end - start, frame_exact=True)
+        except Exception:
+            shutil.rmtree(temporary)
+            raise
+        return FileResponse(output, media_type="video/mp4", filename=f"{match.id}-clip.mp4",
+                            headers={"X-Generation-Id": generationId},
+                            background=BackgroundTask(shutil.rmtree, temporary))
     
     @router.get("/api/matches/{match_id}/tracklets")
     def get_match_tracklets(match: MatchRecord = Depends(require_match)) -> dict:
