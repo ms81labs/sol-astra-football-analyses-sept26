@@ -3,7 +3,7 @@
   "date": "2026-09-23",
   "repository": "ms81labs/sol-astra-football-analyses-sept26",
   "baseHead": "20c6a2b5443390414d32d368f3d183abdf15af2a",
-  "implementationHead": "6290aed51fc513f1efb0f117d84b8dd82ef2f835",
+  "implementationHead": "0639b95c544acf89b8300c96ea10f6b55c8e8782",
   "resumeHeadCommand": "git rev-parse HEAD (the checkpoint commit follows the implementation head)",
   "integrationLine": "integration/catapult-workbench",
   "historicalCheckpoint": "/root/WorkSpace/fotball-analyst/catapult-checkpoint/astra-catapult-w00-checkpoint-2026-09-23/CHECKPOINT.json",
@@ -19,7 +19,8 @@
     "The sidecar CLI test now derives its expected default root from Python's configured temporary directory, allowing the required verifier to use isolated tmpfs storage.",
     "W06 pre-dispatch preparation rechecks source generation and live report policy before calling a paid adapter; a stale unused reservation is recorded as confirmed no-charge.",
     "W06 adds a bounded PNG source-frame image reference and resolver that checks match/generation/source/frame PTS, crop transform, pixel/byte limits, complete server-approved metadata and content digest before reading image bytes. Structured FrameData samples are explicitly described as non-image observations in the report prompt.",
-    "W06 admits bounded PNGs from decoded retained-source frames, stores a four-image content-addressed manifest, and binds validated image references to the current report evidence digest; ordinary report calls retain their existing signature."
+    "W06 admits bounded PNGs from decoded retained-source frames, stores a four-image content-addressed manifest, and binds validated image references to the current report evidence digest; ordinary report calls retain their existing signature.",
+    "W06 adds a local match route for bounded source-image selection. FFprobe verifies the selected frame ordinal and PTS, FFmpeg seeks to that PTS, and the returned pixels, source hash and current generation are checked before a manifest digest is returned."
   ],
   "verified": [
     {
@@ -110,14 +111,23 @@
       "command": "PATH=/dev/shm/catapult-venv/bin:$PATH TMPDIR=/dev/shm/catapult-tmp GUERILLA_STORAGE_ROOT=/dev/shm/catapult-verify-store VERIFY_DAYTONA=0 ALLOW_DAYTONA_MUTATION=0 scripts/verify.sh",
       "outcome": "Exit 0 at 6290aed: backend 4520 passed/18 skipped, sidecar 100 passed, frontend 450 passed, lint/typechecks/build/startup/manifest/runtime/preflight/audit passed; production audit found 0 vulnerabilities.",
       "evidence": ".verification/receipt.json SHA-256 a9f5bc7354995b0a552a56df37f3dcb005bc7df8a07a8ddf2210b9208897ec2f and .verification/logs/"
+    },
+    {
+      "command": "TMPDIR=/dev/shm/catapult-tmp /dev/shm/catapult-venv/bin/python -m pytest -q backend/tests/test_provider_image_artifacts.py backend/tests/test_audit_v2_h01_provider.py backend/tests/test_audit_v2_h07_lanes.py backend/tests/test_audit_v3_c03_integrity.py backend/tests/test_audit_v3_c04_providers.py backend/tests/test_llm.py",
+      "outcome": "63 passed at 0639b95, exit 0; the wrong source ordinal with a plausible PTS failed before FFprobe index verification, and the missing route returned 404 before implementation."
+    },
+    {
+      "command": "PATH=/dev/shm/catapult-venv/bin:$PATH TMPDIR=/dev/shm/catapult-tmp GUERILLA_STORAGE_ROOT=/dev/shm/catapult-verify-store VERIFY_DAYTONA=0 ALLOW_DAYTONA_MUTATION=0 scripts/verify.sh",
+      "outcome": "Exit 0 at 0639b95: backend 4522 passed/18 skipped, sidecar 100 passed, frontend 450 passed, lint/typechecks/build/startup/manifest/runtime/preflight/audit passed; production audit found 0 vulnerabilities.",
+      "evidence": ".verification/receipt.json SHA-256 af57b5e788e6eb8450c1b580e264bd26829d687e75e53e39d3234d80cdb2dd89 and .verification/logs/"
     }
   ],
   "currentFullVerifier": {
     "command": "PATH=/dev/shm/catapult-venv/bin:$PATH TMPDIR=/dev/shm/catapult-tmp GUERILLA_STORAGE_ROOT=/dev/shm/catapult-verify-store VERIFY_DAYTONA=0 ALLOW_DAYTONA_MUTATION=0 scripts/verify.sh",
-    "sourceHead": "6290aed51fc513f1efb0f117d84b8dd82ef2f835",
+    "sourceHead": "0639b95c544acf89b8300c96ea10f6b55c8e8782",
     "status": "passed",
-    "backendProgress": "4520 passed, 18 skipped; sidecar 100 passed; frontend 450 passed; all remaining gates passed",
-    "evidence": ".verification/receipt.json and .verification/logs/; receipt SHA-256 a9f5bc7354995b0a552a56df37f3dcb005bc7df8a07a8ddf2210b9208897ec2f",
+    "backendProgress": "4522 passed, 18 skipped; sidecar 100 passed; frontend 450 passed; all remaining gates passed",
+    "evidence": ".verification/receipt.json and .verification/logs/; receipt SHA-256 af57b5e788e6eb8450c1b580e264bd26829d687e75e53e39d3234d80cdb2dd89",
     "priorCompleteAttempt": {
       "sourceHead": "b42b2befecd631c142d582d9992f767de2c554d3",
       "status": "failed_backend_gate",
@@ -148,20 +158,28 @@
     "finding": "Astra supports image input and structured output; detail high caps resized image patches at 2500 with 1.2x billable multiplier; max_output_tokens includes reasoning. Price varies by service tier and long-context threshold. These facts inform future bounding only; no live billing qualification was attempted."
   },
   "units": {
-    "W00": {"status": "in_progress", "implemented": true, "verified": true, "accepted": false, "limitation": "Software baseline verifier passed at 6290aed. Frozen pilot manifest declares 18 tasks, 6 validation/12 held-out, 9297 labels, with zero declared labels or media files present; independent label lock and camera/source baseline remain unavailable."},
-    "W01": {"status": "accepted", "implemented": true, "verified": true, "accepted": true, "limitation": "Milestone A software workflow passed focused, browser, and full verifier checks. Editable reopen requires retained source/store and matching generation; prior browser-generated media were temporary."},
-    "W02": {"status": "accepted", "implemented": true, "verified": true, "accepted": true, "limitation": "CPU contract and artifact tests plus normal verifier pass. This is contract acceptance only; no real SAM inference or model qualification."},
-    "W03": {"status": "not_started"},
-    "W04": {"status": "not_started"},
-    "W05": {"status": "not_started"},
-    "W06": {"status": "in_progress", "implemented": false, "verified": false, "accepted": false, "limitation": "Pre-dispatch and retained-source image-manifest regressions pass with the full software verifier. The producer is an internal decoder function tested with generated real media, not yet an analyst-facing source-frame selection path; exact frame-id/time alignment may limit use. Image bytes are resolved but not attached to a model request. A concurrent policy write between preflight and transport remains a race. Complete Astra token/spend accounting, real adapter contract, rights-cleared paid smoke and analyst review remain. Production cloud adapter remains disabled."},
-    "W07": {"status": "not_started"},
-    "W08": {"status": "not_started"},
-    "W09": {"status": "not_started"}
+    "W00": { "status": "blocked_on_evidence", "implemented": true, "verified": true, "accepted": false, "limitation": "Software baseline verifier passed at 0639b95. Frozen pilot manifest declares 18 tasks, 6 validation/12 held-out, 9297 labels, with zero declared labels or media files present; independent label lock, rights-approved source and camera baseline remain unavailable. No held-out inference." },
+    "W01": { "status": "accepted", "implemented": true, "verified": true, "accepted": true, "limitation": "Milestone A software workflow passed focused, browser, and full verifier checks. Editable reopen requires retained source/store and matching generation; prior browser-generated media were temporary." },
+    "W02": { "status": "accepted", "implemented": true, "verified": true, "accepted": true, "limitation": "CPU contract and artifact tests plus normal verifier pass. This is contract acceptance only; no real SAM inference or model qualification." },
+    "W03": { "status": "not_started", "implemented": false, "verified": false, "accepted": false, "limitation": "CPU worker admission/rejection tests remain eligible. Real SAM 3.1 qualification awaits approved checkpoint digest/revision, rights-approved source window and paid GPU authorization; W02 CPU contract remains usable." },
+    "W04": { "status": "blocked_on_evidence", "implemented": false, "verified": false, "accepted": false, "limitation": "Locked independent labels and real W03 mask artifacts are unavailable; no held-out inference or accuracy claim." },
+    "W05": { "status": "blocked_on_evidence", "implemented": false, "verified": false, "accepted": false, "limitation": "Automatic identity promotion depends on W04 paired independent evidence; baseline identity remains unchanged." },
+    "W06": { "status": "in_progress", "implemented": false, "verified": false, "accepted": false, "limitation": "Pre-dispatch and bounded retained-source image selection pass the full software verifier. A local route prepares at most four manifests from current generation frames with exact ordinal/PTS checks; generated media only, no measured long-match latency. Image bytes are resolved but not attached to a model request. A concurrent policy write between preflight and transport remains a race. Exact Astra token/spend accounting, real adapter contract, rights-cleared paid smoke, billing reconciliation and analyst review remain. Production cloud adapter remains disabled." },
+    "W07": { "status": "not_started" },
+    "W08": { "status": "not_started" },
+    "W09": { "status": "blocked_on_evidence", "implemented": false, "verified": false, "accepted": false, "limitation": "Requires rights-approved current-source pilot, locked labels, measured model/GPU/billing receipts and analyst acceptance; none supplied or run." }
   },
   "paidGpuCalls": 0,
   "paidModelApiCalls": 0,
   "liveStoreAccessed": false,
   "remoteMutations": 0,
-  "nextSmallestAction": "Continue W06 with bounded on-demand source-frame image selection under the current generation and retained source, then bind the exact Astra request to a conservative input/output/reasoning/image spend ceiling with tools and service tier fixed. Keep production cloud disabled until SDK/transport, rights-cleared paid smoke, real billing and analyst gates pass. W03/W04 await approved checkpoint/source rights and independent labels; no held-out inference."
+  "nextSmallestAction": "Continue W06 by binding the exact single Astra Responses request, including bounded images, reasoning/output tokens, tools disabled and fixed service tier, to a conservative approved spend ceiling and a strict draft parser. Keep production cloud disabled until the transport/SDK contract, rights-cleared paid smoke and real billing evidence pass. W03 CPU-only worker admission tests can proceed independently; W07 natural-language translation follows the selected-evidence request. W03 real qualification and W04/W05/W09 acceptance await external evidence/authorization.",
+  "externalMediaDetailsChecked": {
+    "date": "2026-09-23",
+    "sources": [
+      "https://www.ffmpeg.org/ffmpeg.html",
+      "https://ffmpeg.org/ffprobe.html"
+    ],
+    "finding": "Input -ss uses accurate seek by default while -copyts retains source timestamps subject to muxer/fps behavior. The implementation compares FFprobe ordinal PTS to the selected evidence and rejects a seek whose decoded PTS differs; generated nonzero-frame pixels were compared with a full source decode."
+  }
 }
