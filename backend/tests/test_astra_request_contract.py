@@ -77,3 +77,34 @@ def test_astra_request_without_visuals_contains_only_text():
     bound = bound_astra_request(body, input_price_per_million="11",
         output_price_per_million="41.25", authorised_limit="1")
     assert bound["maxImageTokens"] == 0
+
+
+def test_astra_response_requires_one_completed_draft_with_bounded_usage():
+    from backend.app.provider_adapters import parse_astra_response
+    from backend.app.report_contracts import ReportDraft
+    draft = ReportDraft(schemaVersion="report_draft_v1", matchId="m", generationId="g",
+        taskType="tactical_report")
+    response = {"id": "resp_1", "model": "gpt-6-astra", "status": "completed",
+        "service_tier": "default", "incomplete_details": None, "error": None,
+        "output": [{"type": "reasoning"}, {"type": "message", "role": "assistant",
+            "status": "completed", "content": [{"type": "output_text",
+                "text": draft.model_dump_json()}]}],
+        "usage": {"input_tokens": 200, "output_tokens": 100, "total_tokens": 300}}
+    bound = {"modelId": "gpt-6-astra", "serviceTier": "default",
+        "maxInputTokens": 500, "maxOutputTokens": 200}
+    parsed, usage = parse_astra_response(response, bound)
+    assert parsed == draft.model_dump(mode="json")
+    assert usage == {"responseId": "resp_1", "inputTokens": 200, "outputTokens": 100}
+    for changed in (
+        {"status": "incomplete"}, {"service_tier": "priority"},
+        {"output": response["output"] + [{"type": "function_call"}]},
+        {"output": [{"type": "message", "role": "assistant", "status": "completed",
+            "content": [{"type": "refusal", "refusal": "no"}]}]},
+        {"usage": {"input_tokens": 501, "output_tokens": 100, "total_tokens": 601}},
+        {"usage": None},
+        {"output": [{"type": "message", "role": "assistant", "status": "completed",
+            "content": [{"type": "output_text", "text": draft.model_dump_json()[:-1]
+                + ',"matchId":"wrong"}'}]}]},
+    ):
+        with pytest.raises(ValueError):
+            parse_astra_response({**response, **changed}, bound)

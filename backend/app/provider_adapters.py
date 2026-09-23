@@ -134,6 +134,47 @@ def bound_astra_request(body: dict[str, Any], *, input_price_per_million: str,
         "maximumCost": text(maximum), "currency": "USD"}
 
 
+def parse_astra_response(response: dict[str, Any], bound: dict[str, Any]) -> tuple[dict, dict]:
+    from .report_contracts import ReportDraft
+    if not isinstance(response, dict) or not isinstance(bound, dict) \
+            or response.get("model") != bound.get("modelId") \
+            or response.get("service_tier") != bound.get("serviceTier") \
+            or response.get("status") != "completed" \
+            or response.get("incomplete_details") is not None or response.get("error") is not None \
+            or not isinstance(response.get("id"), str) or not 0 < len(response["id"]) <= 512:
+        raise ValueError("Astra response is not a completed bounded request")
+    outputs = response.get("output")
+    if not isinstance(outputs, list) or any(not isinstance(item, dict) or
+            item.get("type") not in {"reasoning", "message"} for item in outputs):
+        raise ValueError("Astra response contains unsupported output")
+    messages = [item for item in outputs if item["type"] == "message"]
+    if len(messages) != 1 or messages[0].get("role") != "assistant" \
+            or messages[0].get("status") != "completed":
+        raise ValueError("Astra response must contain one completed assistant message")
+    content = messages[0].get("content")
+    if not isinstance(content, list) or len(content) != 1 or not isinstance(content[0], dict) \
+            or content[0].get("type") != "output_text" or not isinstance(content[0].get("text"), str) \
+            or len(content[0]["text"].encode()) > 1_000_000:
+        raise ValueError("Astra response must contain one bounded JSON output")
+    usage = response.get("usage")
+    if not isinstance(usage, dict) or any(type(usage.get(key)) is not int for key in
+            ("input_tokens", "output_tokens", "total_tokens")) \
+            or not 0 <= usage["input_tokens"] <= bound.get("maxInputTokens", -1) \
+            or not 0 <= usage["output_tokens"] <= bound.get("maxOutputTokens", -1) \
+            or usage["total_tokens"] != usage["input_tokens"] + usage["output_tokens"]:
+        raise ValueError("Astra response usage is missing or exceeds its bound")
+    def unique_keys(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("Astra JSON output contains a duplicate key")
+            result[key] = value
+        return result
+    draft = ReportDraft.model_validate(json.loads(content[0]["text"], object_pairs_hook=unique_keys))
+    return draft.model_dump(mode="json"), {"responseId": response["id"],
+        "inputTokens": usage["input_tokens"], "outputTokens": usage["output_tokens"]}
+
+
 def execute_local(prompt: str, analysis_type: str, validate: Validator, *, timeout_seconds: float = 120.0) -> dict:
     import requests
 
