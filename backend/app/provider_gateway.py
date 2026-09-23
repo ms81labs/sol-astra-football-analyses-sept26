@@ -95,6 +95,7 @@ class ProviderGateway:
         source_identity: str = "",
         adapter=None,
         retry_of_attempt_id: str | None = None,
+        visual_images: tuple[dict[str, Any], ...] = (),
     ) -> ExecutionPolicy:
         requested = requested_provider or match.config.llmProvider
         if requested not in {"local", "cloud"}:
@@ -135,7 +136,7 @@ class ProviderGateway:
             spend = self.settings.provider_spend_policy
             adapter = self.adapter_factory() if adapter is None else adapter
             reasons = []
-            if spend is None or getattr(adapter, "billing_contract_id", None) != spend.adapter_id:
+            if visual_images or spend is None or getattr(adapter, "billing_contract_id", None) != spend.adapter_id:
                 reasons.append("CLOUD_SPEND_BOUND_UNQUALIFIED")
             elif prompt is None:
                 reasons.append("REQUEST_BOUND_MISSING")
@@ -305,7 +306,7 @@ class ProviderGateway:
         policy = self.resolve_policy(live_match, requested_provider=requested_provider, task_type=task_type,
             generation_id=generation_id, require_provider=bool(body.get("requireProvider")),
             prompt=prompt, request_id=request_id, source_identity=package.digest, adapter=adapter,
-            retry_of_attempt_id=retry_anchor)
+            retry_of_attempt_id=retry_anchor, visual_images=package.visual_images)
         ticket = policy.ticket
         if ticket is not None:
             # ponytail: this closes preparation-time staleness; a future atomic rights/dispatch

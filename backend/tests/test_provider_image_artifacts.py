@@ -189,6 +189,43 @@ def test_retained_video_manifest_joins_current_report_evidence(tmp_path):
 
 @pytest.mark.integration
 @pytest.mark.real_media
+def test_text_only_spend_policy_cannot_admit_visual_request(tmp_path):
+    from backend.app.provider_gateway import ProviderBudgetLedger, ProviderDenied, ProviderGateway
+    from backend.app.settings import ProcessingSettings
+    from backend.app.storage import Storage
+    from backend.tests.test_audit_v3_c04_providers import fake_policy
+    from backend.tests.test_audit_v3_final_journey import _install_video
+
+    storage = Storage(tmp_path / "store")
+    match_id = _install_video(storage, tmp_path)
+    generation_id = storage.current_generation(match_id).generationId
+    source = storage.get_match_input_path(match_id)
+    frame = next(FfmpegFrameSource().iter_frames(source))
+    artifacts = ArtifactStore(storage.storage_root / "artifacts")
+    manifest_digest = save_image_manifest(artifacts, [admit_decoded_image(artifacts, source,
+        frame, match_id=match_id, generation_id=generation_id)])
+    config = storage.get_match(match_id).config.model_copy(deep=True)
+    config.rights.cloudPermission = True
+    config.rights.processingScope = "local_plus_burst"
+    storage.update_match_config(match_id, config)
+
+    def adapter(*_args, **_kwargs):
+        pytest.fail("visual request reached text-only adapter")
+    adapter.billing_contract_id = "synthetic-byte-token-v1"
+    settings = ProcessingSettings(cloud_provider_enabled=True, cloud_provider_api_key="test-only",
+        allowed_model_ids=("test-model",), cloud_model_id="test-model",
+        provider_call_reservation=.25, provider_budget_limit=1,
+        provider_spend_policy=fake_policy())
+    gateway = ProviderGateway(storage, settings, adapter_factory=lambda: adapter,
+        budget_ledger=ProviderBudgetLedger(storage.job_ledger.db_path, 1))
+    with pytest.raises(ProviderDenied, match="CLOUD_SPEND_BOUND_UNQUALIFIED"):
+        gateway.execute(match_id, "tactical_report", requested_provider="cloud",
+            body={"requireProvider": True, "imageManifestDigest": manifest_digest})
+    assert gateway.budget_ledger.reservations() == []
+
+
+@pytest.mark.integration
+@pytest.mark.real_media
 def test_selected_source_frame_seeks_to_exact_pts_and_rejects_misalignment(tmp_path):
     from backend.app.storage import Storage
     from backend.tests.test_audit_v3_final_journey import _install_video
