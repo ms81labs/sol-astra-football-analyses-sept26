@@ -3,7 +3,7 @@
   "date": "2026-09-23",
   "repository": "ms81labs/sol-astra-football-analyses-sept26",
   "baseHead": "20c6a2b5443390414d32d368f3d183abdf15af2a",
-  "implementationHead": "10f92f05616a200cc8d05de6a3a1c52d66d419d1",
+  "implementationHead": "dd05a7dc55d1cc91142320e18bf8921b509dbcda",
   "resumeHeadCommand": "git rev-parse HEAD (the checkpoint commit follows the implementation head)",
   "integrationLine": "integration/catapult-workbench",
   "historicalCheckpoint": "/root/WorkSpace/fotball-analyst/catapult-checkpoint/astra-catapult-w00-checkpoint-2026-09-23/CHECKPOINT.json",
@@ -16,7 +16,8 @@
     "Paged search hits seek by source frame and restore the interval range after page loading.",
     "W02 adds a CPU-only mask contract, valid RLE codec, bounded rectangle stub, source/model/request identity and content-addressed save/reopen.",
     "Paged search review ranges use source frame IDs after page loading, matching timeline and playlist semantics.",
-    "The sidecar CLI test now derives its expected default root from Python's configured temporary directory, allowing the required verifier to use isolated tmpfs storage."
+    "The sidecar CLI test now derives its expected default root from Python's configured temporary directory, allowing the required verifier to use isolated tmpfs storage.",
+    "W06 pre-dispatch preparation rechecks source generation and live report policy before calling a paid adapter; a stale unused reservation is recorded as confirmed no-charge."
   ],
   "verified": [
     {
@@ -75,15 +76,24 @@
     {
       "command": "PATH=/dev/shm/catapult-venv/bin:$PATH TMPDIR=/dev/shm/catapult-tmp GUERILLA_STORAGE_ROOT=/dev/shm/catapult-verify-store VERIFY_DAYTONA=0 ALLOW_DAYTONA_MUTATION=0 scripts/verify.sh",
       "outcome": "Exit 0 at 10f92f0: backend 4502 passed/18 skipped, sidecar 100 passed, frontend 450 passed, lint/typechecks/build/startup/manifest/runtime/preflight/audit passed; production audit found 0 vulnerabilities.",
-      "evidence": ".verification/receipt.json SHA-256 7133e69f7c4bf7886545fddca9d68ccd3c028468e29850e6da9712d9a090b553 and .verification/logs/"
+      "evidence": "Receipt SHA-256 7133e69f7c4bf7886545fddca9d68ccd3c028468e29850e6da9712d9a090b553; superseded in .verification by the later exact-head run"
+    },
+    {
+      "command": "TMPDIR=/dev/shm/catapult-tmp /dev/shm/catapult-venv/bin/python -m pytest -q backend/tests/test_audit_v3_c04_providers.py backend/tests/test_audit_v3_c03_reports.py",
+      "outcome": "28 passed, exit 0; the rights-revocation test first failed with a dispatched fake adapter before the fix"
+    },
+    {
+      "command": "PATH=/dev/shm/catapult-venv/bin:$PATH TMPDIR=/dev/shm/catapult-tmp GUERILLA_STORAGE_ROOT=/dev/shm/catapult-verify-store VERIFY_DAYTONA=0 ALLOW_DAYTONA_MUTATION=0 scripts/verify.sh",
+      "outcome": "Exit 0 at dd05a7d: backend 4503 passed/18 skipped, sidecar 100 passed, frontend 450 passed, lint/typechecks/build/startup/manifest/runtime/preflight/audit passed; production audit found 0 vulnerabilities.",
+      "evidence": ".verification/receipt.json SHA-256 01ea223a7221e03536d10a055902aca0702ebb7bf772f763b45992745db11174 and .verification/logs/"
     }
   ],
   "currentFullVerifier": {
     "command": "PATH=/dev/shm/catapult-venv/bin:$PATH TMPDIR=/dev/shm/catapult-tmp GUERILLA_STORAGE_ROOT=/dev/shm/catapult-verify-store VERIFY_DAYTONA=0 ALLOW_DAYTONA_MUTATION=0 scripts/verify.sh",
-    "sourceHead": "10f92f05616a200cc8d05de6a3a1c52d66d419d1",
+    "sourceHead": "dd05a7dc55d1cc91142320e18bf8921b509dbcda",
     "status": "passed",
-    "backendProgress": "4502 passed, 18 skipped; sidecar 100 passed; frontend 450 passed; all remaining gates passed",
-    "evidence": ".verification/receipt.json and .verification/logs/; receipt SHA-256 7133e69f7c4bf7886545fddca9d68ccd3c028468e29850e6da9712d9a090b553",
+    "backendProgress": "4503 passed, 18 skipped; sidecar 100 passed; frontend 450 passed; all remaining gates passed",
+    "evidence": ".verification/receipt.json and .verification/logs/; receipt SHA-256 01ea223a7221e03536d10a055902aca0702ebb7bf772f763b45992745db11174",
     "priorCompleteAttempt": {
       "sourceHead": "b42b2befecd631c142d582d9992f767de2c554d3",
       "status": "failed_backend_gate",
@@ -98,13 +108,13 @@
     "rootDisk": "Full; Python temporary files and isolated generated media use /dev/shm"
   },
   "units": {
-    "W00": { "status": "in_progress", "implemented": true, "verified": true, "accepted": false, "limitation": "Software baseline verifier passed at 10f92f0. Frozen pilot manifest declares 18 tasks, 6 validation/12 held-out, 9297 labels, with zero declared labels or media files present; independent label lock and camera/source baseline remain unavailable." },
+    "W00": { "status": "in_progress", "implemented": true, "verified": true, "accepted": false, "limitation": "Software baseline verifier passed at dd05a7d. Frozen pilot manifest declares 18 tasks, 6 validation/12 held-out, 9297 labels, with zero declared labels or media files present; independent label lock and camera/source baseline remain unavailable." },
     "W01": { "status": "accepted", "implemented": true, "verified": true, "accepted": true, "limitation": "Milestone A software workflow passed focused, browser, and full verifier checks. Editable reopen requires retained source/store and matching generation; prior browser-generated media were temporary." },
     "W02": { "status": "accepted", "implemented": true, "verified": true, "accepted": true, "limitation": "CPU contract and artifact tests plus normal verifier pass. This is contract acceptance only; no real SAM inference or model qualification." },
     "W03": { "status": "not_started" },
     "W04": { "status": "not_started" },
     "W05": { "status": "not_started" },
-    "W06": { "status": "not_started" },
+    "W06": { "status": "in_progress", "implemented": false, "verified": false, "accepted": false, "limitation": "The pre-dispatch regression and full software verifier pass for a partial fix: preparation-time rights/generation revocation is rejected before fake adapter dispatch, with no-charge record. A concurrent policy write between this check and transport remains a stated race. Source-bound image artifacts, complete Astra token/spend accounting, real SDK contract, rights-cleared paid smoke and analyst review remain. Production cloud adapter remains disabled." },
     "W07": { "status": "not_started" },
     "W08": { "status": "not_started" },
     "W09": { "status": "not_started" }
@@ -113,5 +123,5 @@
   "paidModelApiCalls": 0,
   "liveStoreAccessed": false,
   "remoteMutations": 0,
-  "nextSmallestAction": "Begin dependency-ready W06 fixture-only contract work against the existing provider gateway, after checking current official Astra API/image accounting details. Keep dispatch disabled until rights, spend bound and paid smoke evidence exist; W03/W04 await checkpoint/source rights and independent labels."
+  "nextSmallestAction": "Continue W06 with a bounded source-frame image artifact contract and fixture-only tests, then account for current Astra image/input/output/reasoning costs before any adapter dispatch. Keep production cloud disabled; W03/W04 await approved checkpoint/source rights and independent labels."
 }
