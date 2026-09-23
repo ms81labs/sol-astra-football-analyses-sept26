@@ -15,6 +15,7 @@ vi.mock('./utils/api', async (importOriginal) => {
     fetchMatchIssues: vi.fn(),
     fetchMatches: vi.fn(),
     fetchMatchWorkspace: vi.fn(),
+    fetchMatchFrames: vi.fn(),
     runMatchAnalysis: vi.fn(),
     updateMatchConfig: vi.fn(),
     waitForJobCompletion: vi.fn(),
@@ -557,6 +558,36 @@ describe('App match workspace loading', () => {
     });
     expect(screen.getByText(/selected evidence: e-1/i)).toBeTruthy();
     expect(within(screen.getByRole('region', { name: 'Evidence inspector' })).getAllByText('1.2s').length).toBeGreaterThan(0);
+  });
+
+  it('seeks a search hit by source frame and restores its range after a paged frame load', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    stubSnapshotWorkspace({ ...loadedWorkspace('match-a', 'Match A'), frameCount: 10 });
+    vi.mocked(api.fetchMatchFrames).mockResolvedValue({
+      generationId: 'g-match-a', frameCount: 10, nextCursor: null,
+      frames: [7, 8, 9].map((Frame_ID) => ({ Frame_ID, Timestamp: Frame_ID / 5,
+        Ball: null, My_Team: [], Enemies: [] })),
+    });
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo, init?: RequestInit) => {
+      if (String(input).includes('/api/matches/match-a/queries') && init?.method === 'POST') {
+        return Promise.resolve({ ok: true, json: async () => ({
+          generationId: 'g-match-a', query: { unanswerable: false },
+          results: [{ eventId: 'ev-7', matchId: 'match-a', frameId: 7, timestamp: 1.4,
+            intervalStart: 1.4, intervalEnd: 1.8, evidenceIds: ['e-7'], label: 'turnover' }],
+        }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${String(input)}`));
+    }));
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    fireEvent.click(screen.getByRole('button', { name: /search evidence/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /turnover.*1.4.*1.8/i }));
+    await waitFor(() => expect(api.fetchMatchFrames).toHaveBeenCalledWith('match-a', expect.objectContaining({
+      afterFrame: 7, generationId: 'g-match-a',
+    })));
+    expect(await screen.findByText('0 - 1')).toBeTruthy();
+    expect((screen.getByLabelText(/clip start/i) as HTMLInputElement).value).toBe('1.4');
   });
 
   it('refreshes stored events after accept without rewriting the playhead or injecting event ids', async () => {

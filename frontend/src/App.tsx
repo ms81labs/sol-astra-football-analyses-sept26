@@ -473,6 +473,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
     },
     setLoadError,
   });
+  const setReviewRange = review.setReviewRange;
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
@@ -510,6 +511,19 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
       cancelled = true;
     };
   }, [activeMatch, currentFrame, matchData, totalFrameCount]);
+
+  useEffect(() => {
+    if (!selectedHit || selectedHit.frameId == null
+        || !matchData.some((frame) => frame.Frame_ID === selectedHit.frameId)) return;
+    const start = selectedHit.intervalStart ?? selectedHit.timestamp;
+    const end = selectedHit.intervalEnd ?? selectedHit.timestamp;
+    const startIndex = matchData.findIndex((frame) => frame.Timestamp >= start);
+    const afterEnd = matchData.findIndex((frame) => frame.Timestamp >= end);
+    if (startIndex >= 0) {
+      setReviewRange({ startFrame: startIndex,
+        endFrame: Math.max(startIndex, afterEnd < 0 ? matchData.length - 1 : afterEnd - 1) });
+    }
+  }, [matchData, selectedHit, setReviewRange]);
 
   useEffect(() => {
     return () => {
