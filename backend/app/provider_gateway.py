@@ -224,7 +224,7 @@ class ProviderGateway:
                 body: dict[str, Any] | None = None) -> dict[str, Any]:
         import copy
         from .report_contracts import deterministic_fallback
-        from .report_store import ReportStore, TASKS, StaleEvidenceGeneration, policy_revision
+        from .report_store import ReportStore, TASKS, StaleEvidenceGeneration, StaleReportPolicy, policy_revision
         if task_type not in TASKS:
             raise ValueError("Unsupported report task")
         body = body or {}
@@ -277,6 +277,19 @@ class ProviderGateway:
             retry_of_attempt_id=retry_anchor)
         ticket = policy.ticket
         if ticket is not None:
+            # ponytail: this closes preparation-time staleness; a future atomic rights/dispatch
+            # protocol is needed if policy writes must race safely with the transport call itself.
+            with self.storage.generations.guard(match_id, "publication"):
+                stale_generation = self.storage.generations.resolve(match_id).generationId != generation_id
+                stale_policy = policy_revision(self.storage.get_match(match_id), self.settings) != revision
+            if stale_generation or stale_policy:
+                current = self.budget_ledger.ledger.latest_attempt(request_id)
+                self.budget_ledger.ledger.transition(current.attemptId, expected_revision=current.revision,
+                    owner_id=ticket.owner_id, status="failed", noChargeReason="NO_DISPATCH_CONFIRMED",
+                    error="STALE_EVIDENCE_GENERATION" if stale_generation else "STALE_REPORT_POLICY")
+                if stale_generation:
+                    raise StaleEvidenceGeneration("Evidence changed before dispatch")
+                raise StaleReportPolicy("Policy changed before dispatch")
             original = self.budget_ledger.result(request_id)
             if original is not None:
                 return original

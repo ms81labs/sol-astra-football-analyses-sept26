@@ -65,6 +65,28 @@ def test_v3t33_unknown_price_refused_before_reservation_or_dispatch(tmp_path):
     assert gateway.budget_ledger.reservations() == []
 
 
+def test_rights_revoked_after_reservation_prevents_provider_dispatch(tmp_path, monkeypatch):
+    from backend.app.report_store import StaleReportPolicy
+    calls = []
+    def adapter(*args, **kwargs):
+        calls.append(1)
+        return _interprets(*args, **kwargs)
+    storage, mid, gateway = gateway_fixture(tmp_path, adapter)
+    resolve = gateway.resolve_policy
+    def revoke_after_reservation(match, **kwargs):
+        policy = resolve(match, **kwargs)
+        config = storage.get_match(mid).config.model_copy(deep=True)
+        config.rights.cloudPermission = False
+        storage.update_match_config(mid, config)
+        return policy
+    monkeypatch.setattr(gateway, 'resolve_policy', revoke_after_reservation)
+    with pytest.raises(StaleReportPolicy):
+        run(gateway, mid)
+    assert calls == []
+    cost = storage.job_ledger.cost_summary()
+    assert cost['unsettledAttemptCount'] == 0
+
+
 @pytest.mark.parametrize('mode', ['timeout', 'cancel', 'malformed'])
 def test_v3t34_possible_bill_survives_failed_execution(tmp_path, mode):
     import asyncio
