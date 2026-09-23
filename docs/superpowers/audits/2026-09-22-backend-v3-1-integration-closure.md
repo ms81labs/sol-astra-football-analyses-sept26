@@ -1,6 +1,6 @@
 # Backend v3.1 bounded-completion closure
 
-**Date:** 2026-09-22  
+**Date:** 2026-09-22
 **Verdict:** the supported local code pass is implemented and substantially verified, with explicit qualifications below. This is not a deployment, provider, football-accuracy, browser, macOS, GPU, or main-push-rollout sign-off.
 
 ## 1. Supported scope and source

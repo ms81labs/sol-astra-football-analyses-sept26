@@ -25,5 +25,6 @@ def test_full_backend_lane_retains_actual_selection_and_results():
 
 def test_c06_evidence_is_run_before_and_after_authorized_integration():
     workflow = yaml.load((ROOT / '.github/workflows/c06-regressions.yml').read_text(), Loader=yaml.BaseLoader)
-    assert {'main', 'agent/backend-bounded-completion-2026-09-22'} <= set(workflow['on']['push']['branches'])
+    assert workflow['on']['push']['branches'] == ['main']
+    assert {'backend/**', 'pyproject.toml', '.github/workflows/c06-regressions.yml'} <= set(workflow['on']['push']['paths'])
     assert workflow['permissions'] == {'contents': 'read'}

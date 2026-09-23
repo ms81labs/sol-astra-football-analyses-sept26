@@ -11,9 +11,7 @@ def test_c05_workflow_covers_determining_changes_without_paid_execution() -> Non
     workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
     events = workflow["on"]
 
-    assert {"main", "agent/c05-identity-evaluation"} <= set(
-        events["push"]["branches"]
-    )
+    assert events["push"]["branches"] == ["main"]
     required_paths = {"backend/**", "pyproject.toml", "scripts/**", ".github/workflows/**"}
     assert required_paths <= set(events["push"]["paths"])
     assert required_paths <= set(events["pull_request"]["paths"])
@@ -41,7 +39,7 @@ def test_c05_workflow_covers_determining_changes_without_paid_execution() -> Non
 def test_final_journey_has_a_pinned_cpu_execution_home() -> None:
     workflow = yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
     steps = workflow["jobs"]["source"]["steps"]
-    assert "agent/backend-bounded-completion-2026-09-22" in workflow["on"]["push"]["branches"]
+    assert workflow["on"]["push"]["branches"] == ["main"]
     journey = next(step for step in steps if step.get("name") == "Verify final composed journey")
     assert "backend/tests/test_audit_v3_final_journey.py" in journey["run"]
     assert "--junitxml=.c05-evidence/v3t50.xml" in journey["run"]

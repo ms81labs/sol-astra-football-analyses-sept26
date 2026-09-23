@@ -1,7 +1,7 @@
 name: C05 identity and evaluation evidence
 on:
   push:
-    branches: [main, agent/c05-identity-evaluation, agent/backend-bounded-completion-2026-09-22]
+    branches: [main]
     paths:
       - 'backend/**'
       - 'pyproject.toml'

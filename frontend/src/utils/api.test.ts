@@ -7,6 +7,7 @@ import {
   createMatchUpload,
   fetchMatchEvidence,
   fetchMatchWorkspace,
+  fetchTrustCrops,
   mapBackendEventsToTags,
   updateMatchConfig,
   waitForJobCompletion,
@@ -114,6 +115,39 @@ describe('waitForJobCompletion', () => {
       await vi.advanceTimersByTimeAsync(100);
       await completion.catch(() => undefined);
     }
+  });
+});
+
+
+describe('fetchTrustCrops', () => {
+  it('rejects a response from a different generation', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        matchId: 'match-1', generationId: 'gen-1', ballTeleportGeometryAvailable: true,
+        ballTeleportReasonCodes: [], totalFrames: 0, crops: [],
+      }),
+    }));
+
+    await expect(fetchTrustCrops('match-1', 20, 'gen-2')).rejects.toMatchObject({
+      status: 409,
+      code: 'GENERATION_RESPONSE_MISMATCH',
+    });
+  });
+
+  it('preserves structured generation errors from the backend', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 503,
+      json: async () => ({ error: 'GENERATION_RECOVERY_REQUIRED', message: 'Recovery required.' }),
+    }));
+
+    await expect(fetchTrustCrops('match-1', 20, 'gen-2')).rejects.toMatchObject({
+      status: 503,
+      code: 'GENERATION_RECOVERY_REQUIRED',
+      message: 'Recovery required.',
+    });
   });
 });
 

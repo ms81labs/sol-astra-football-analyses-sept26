@@ -144,3 +144,25 @@ it('discloses unavailable physical geometry without hiding independent reasons',
   expect(screen.getByText('Track switches')).toBeTruthy();
   expect(screen.getByText(/CALIBRATION_UNAVAILABLE/)).toBeTruthy();
 });
+
+
+it('does not carry saved crop state into a new generation', async () => {
+  const crop = { frameStart: 10, frameEnd: 20, timestampStart: 1, timestampEnd: 2, score: 8, reasons: ['track_switches'] };
+  vi.mocked(fetchTrustCrops)
+    .mockResolvedValueOnce({ matchId: 'm', generationId: 'gen-1', ballTeleportGeometryAvailable: true, ballTeleportReasonCodes: [], totalFrames: 21, crops: [crop] })
+    .mockResolvedValueOnce({ matchId: 'm', generationId: 'gen-2', ballTeleportGeometryAvailable: true, ballTeleportReasonCodes: [], totalFrames: 21, crops: [crop] });
+  vi.mocked(createMatchIssue).mockResolvedValue({
+    id: 'issue-1', matchId: 'm', bucket: 'tracking_failure', frameStart: 10, frameEnd: 20,
+    timestampStart: 1, timestampEnd: 2, processingBackend: 'unknown', evidenceTarget: 'trust_eval',
+    note: 'saved', createdAt: '2026-09-23T00:00:00Z', updatedAt: '2026-09-23T00:00:00Z',
+  });
+  const frames = Array.from({ length: 21 }, (_, index) => ({ Frame_ID: index, Timestamp: index / 10, Ball: null, My_Team: [], Enemies: [] }));
+  const props = { matchId: 'm', frames, onClose: () => {}, onSeekToCrop: () => {} };
+  const { rerender } = render(<TrustCropPanel {...props} generationId="gen-1" />);
+
+  fireEvent.click(await screen.findByRole('button', { name: /save for training set/i }));
+  expect(await screen.findByText(/saved for training set/i)).toBeTruthy();
+
+  rerender(<TrustCropPanel {...props} generationId="gen-2" />);
+  expect(await screen.findByRole('button', { name: /^save for training set$/i })).toBeTruthy();
+});

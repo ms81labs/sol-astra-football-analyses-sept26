@@ -51,6 +51,9 @@ export default function TrustCropPanel({ matchId, generationId, frames, onClose,
         let cancelled = false;
         setData(null);
         setLoadError(null);
+        setSaveError(null);
+        setSavedCropKeys(new Set());
+        setSavingCropKey(null);
         setIsLoading(true);
         fetchTrustCrops(matchId, 20, generationId)
             .then((result) => {
