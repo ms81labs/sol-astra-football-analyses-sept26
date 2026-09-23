@@ -37,6 +37,15 @@ def _astra_format():
         "strict": True, "schema": _strict_report_schema(ReportDraft.model_json_schema())}}
 
 
+def _unique_json_keys(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("Astra JSON output contains a duplicate key")
+        result[key] = value
+    return result
+
+
 def build_astra_request(prompt: str, images: list[tuple[ProviderImage, bytes]], *,
                         approved_images: tuple[dict[str, Any], ...], max_output_tokens: int) -> dict[str, Any]:
     if not isinstance(prompt, str) or not prompt or len(prompt.encode()) > 256 * 1024:
@@ -163,16 +172,57 @@ def parse_astra_response(response: dict[str, Any], bound: dict[str, Any]) -> tup
             or not 0 <= usage["output_tokens"] <= bound.get("maxOutputTokens", -1) \
             or usage["total_tokens"] != usage["input_tokens"] + usage["output_tokens"]:
         raise ValueError("Astra response usage is missing or exceeds its bound")
-    def unique_keys(pairs):
-        result = {}
-        for key, value in pairs:
-            if key in result:
-                raise ValueError("Astra JSON output contains a duplicate key")
-            result[key] = value
-        return result
-    draft = ReportDraft.model_validate(json.loads(content[0]["text"], object_pairs_hook=unique_keys))
+    draft = ReportDraft.model_validate(json.loads(content[0]["text"], object_pairs_hook=_unique_json_keys))
     return draft.model_dump(mode="json"), {"responseId": response["id"],
         "inputTokens": usage["input_tokens"], "outputTokens": usage["output_tokens"]}
+
+
+def execute_astra_bound(request: dict, bound: dict, *, transport: Callable[[dict, float], bytes],
+                        timeout_seconds: float) -> tuple[dict, dict]:
+    from .provider_billing import ProviderNotDispatched
+    if not isinstance(request, dict) or not isinstance(bound, dict) \
+            or bound.get("modelId") != "gpt-6-astra" or bound.get("serviceTier") != "default" \
+            or bound.get("toolsEnabled") is not False \
+            or bound.get("requestSha256") != hashlib.sha256(json.dumps(request,
+                sort_keys=True, separators=(",", ":")).encode()).hexdigest() \
+            or type(timeout_seconds) not in (int, float) or not 0 < timeout_seconds <= 120:
+        raise ProviderNotDispatched("Astra request changed before dispatch")
+    raw = transport(request, timeout_seconds)
+    if not isinstance(raw, bytes) or len(raw) > 1_000_000:
+        raise ValueError("Astra response exceeds byte limit")
+    response = json.loads(raw, object_pairs_hook=_unique_json_keys)
+    return parse_astra_response(response, bound)
+
+
+def astra_http_transport(request: dict, timeout_seconds: float, *, api_key: str) -> bytes:
+    import requests
+    import time
+    from .provider_billing import ProviderNotDispatched
+    if not isinstance(api_key, str) or not 0 < len(api_key) <= 512 \
+            or not api_key.isascii() or any(char.isspace() or not char.isprintable() for char in api_key) \
+            or type(timeout_seconds) not in (int, float) or not 0 < timeout_seconds <= 120:
+        raise ProviderNotDispatched("Astra credentials or deadline unavailable before dispatch")
+    encoded = json.dumps(request, sort_keys=True, separators=(",", ":")).encode()
+    chunks = []
+    size = 0
+    started = time.monotonic()
+    with requests.post("https://api.openai.com/v1/responses", data=encoded,
+            headers={"Authorization": "Bearer " + api_key, "Content-Type": "application/json"},
+            stream=True, timeout=timeout_seconds, allow_redirects=False) as response:
+        if response.status_code != 200:
+            raise ValueError("Astra HTTP status is not successful")
+        for chunk in response.iter_content(chunk_size=65_536):
+            if time.monotonic() - started > timeout_seconds:
+                raise TimeoutError("Astra response deadline exceeded")
+            if not isinstance(chunk, bytes):
+                raise ValueError("Astra response contains non-byte content")
+            size += len(chunk)
+            if size > 1_000_000:
+                raise ValueError("Astra response exceeds byte limit")
+            chunks.append(chunk)
+    if time.monotonic() - started > timeout_seconds:
+        raise TimeoutError("Astra response deadline exceeded")
+    return b"".join(chunks)
 
 
 def execute_local(prompt: str, analysis_type: str, validate: Validator, *, timeout_seconds: float = 120.0) -> dict:

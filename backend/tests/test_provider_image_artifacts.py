@@ -229,7 +229,7 @@ def test_text_only_spend_policy_cannot_admit_visual_request(tmp_path):
 @pytest.mark.real_media
 def test_mock_astra_request_binds_exact_approved_image_and_reservation(tmp_path):
     import base64
-    from backend.app.provider_adapters import parse_astra_response
+    from backend.app.provider_adapters import execute_astra_bound
     from backend.app.provider_billing import AstraSpendPolicy, ProviderResult, ProviderUsage
     from backend.app.provider_gateway import ProviderBudgetLedger, ProviderGateway
     from backend.app.report_contracts import ReportDraft
@@ -270,7 +270,8 @@ def test_mock_astra_request_binds_exact_approved_image_and_reservation(tmp_path)
             "output": [{"type": "message", "role": "assistant", "status": "completed",
                 "content": [{"type": "output_text", "text": draft.model_dump_json()}]}],
             "usage": {"input_tokens": 100, "output_tokens": 100, "total_tokens": 200}}
-        parsed, _ = parse_astra_response(response, bound)
+        parsed, _ = execute_astra_bound(request, bound,
+            transport=lambda *_: json.dumps(response).encode(), timeout_seconds=5)
         return ProviderResult(parsed, ProviderUsage("mock-only", ".1", True))
     adapter.billing_contract_id = "astra-responses-v1"
     spend = AstraSpendPolicy(task_types=("tactical_report",), max_output_tokens=4096,

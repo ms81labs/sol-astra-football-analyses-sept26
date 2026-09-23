@@ -108,3 +108,88 @@ def test_astra_response_requires_one_completed_draft_with_bounded_usage():
     ):
         with pytest.raises(ValueError):
             parse_astra_response({**response, **changed}, bound)
+
+
+def test_astra_transport_checks_reserved_body_before_submission_and_caps_reply():
+    import json
+    from backend.app.provider_adapters import execute_astra_bound
+    from backend.app.provider_billing import ProviderNotDispatched
+    from backend.app.report_contracts import ReportDraft
+
+    request = build_astra_request("Approved evidence", [], approved_images=(), max_output_tokens=1024)
+    bound = bound_astra_request(request, input_price_per_million="20",
+        output_price_per_million="75", authorised_limit="1")
+    draft = ReportDraft(schemaVersion="report_draft_v1", matchId="m", generationId="g",
+        taskType="tactical_report")
+    response = {"id": "mock-1", "model": "gpt-6-astra", "service_tier": "default",
+        "status": "completed", "incomplete_details": None, "error": None,
+        "output": [{"type": "message", "role": "assistant", "status": "completed",
+            "content": [{"type": "output_text", "text": draft.model_dump_json()}]}],
+        "usage": {"input_tokens": 50, "output_tokens": 50, "total_tokens": 100}}
+    calls = []
+    def transport(body, timeout):
+        calls.append((body, timeout))
+        return json.dumps(response).encode()
+    parsed, usage = execute_astra_bound(request, bound, transport=transport, timeout_seconds=5)
+    assert parsed == draft.model_dump(mode="json")
+    assert usage["responseId"] == "mock-1" and calls == [(request, 5)]
+    with pytest.raises(ProviderNotDispatched):
+        execute_astra_bound({**request, "store": True}, bound,
+            transport=transport, timeout_seconds=5)
+    assert len(calls) == 1
+    with pytest.raises(ValueError, match="byte limit"):
+        execute_astra_bound(request, bound, transport=lambda *_: b"x" * 1_000_001,
+            timeout_seconds=5)
+
+
+def test_astra_http_transport_sends_canonical_json_and_caps_stream(monkeypatch):
+    import json
+    from backend.app.provider_adapters import astra_http_transport
+    from backend.app.provider_billing import ProviderNotDispatched
+    import requests
+
+    request = build_astra_request("Approved evidence", [], approved_images=(), max_output_tokens=1024)
+    calls = []
+    class Response:
+        def __init__(self, chunks): self.chunks = chunks
+        status_code = 200
+        def __enter__(self): return self
+        def __exit__(self, *_): return False
+        def raise_for_status(self): pass
+        def iter_content(self, chunk_size):
+            assert chunk_size == 65_536
+            yield from self.chunks
+    chunks = [b'{"status":"completed"}']
+    def post(url, **kwargs):
+        calls.append((url, kwargs))
+        return Response(chunks)
+    monkeypatch.setattr(requests, "post", post)
+    assert astra_http_transport(request, 5, api_key="test-key") == chunks[0]
+    url, kwargs = calls[0]
+    assert url == "https://api.openai.com/v1/responses"
+    assert kwargs["data"] == json.dumps(request, sort_keys=True, separators=(",", ":")).encode()
+    assert kwargs["headers"]["Authorization"] == "Bearer test-key"
+    assert kwargs["stream"] is True and kwargs["timeout"] == 5
+    assert kwargs["allow_redirects"] is False
+    chunks[:] = [b"x" * 1_000_000, b"y"]
+    with pytest.raises(ValueError, match="byte limit"):
+        astra_http_transport(request, 5, api_key="test-key")
+    with pytest.raises(ProviderNotDispatched):
+        astra_http_transport(request, 5, api_key="")
+    assert len(calls) == 2
+    class Redirect(Response):
+        status_code = 302
+    monkeypatch.setattr(requests, "post", lambda *_, **__: Redirect([b"redirect"]))
+    with pytest.raises(ValueError, match="HTTP status"):
+        astra_http_transport(request, 5, api_key="test-key")
+    import time
+    chunks[:] = [b"one", b"two"]
+    monotonic = iter((0, 6))
+    monkeypatch.setattr(time, "monotonic", lambda: next(monotonic))
+    monkeypatch.setattr(requests, "post", post)
+    with pytest.raises(TimeoutError):
+        astra_http_transport(request, 5, api_key="test-key")
+    chunks[:] = []
+    monotonic = iter((0, 6))
+    with pytest.raises(TimeoutError):
+        astra_http_transport(request, 5, api_key="test-key")
