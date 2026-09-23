@@ -10,7 +10,7 @@ from PIL import Image
 from backend.app.llm import build_prompt
 from backend.app.provider_images import (
     ProviderImage, admit_decoded_image, load_image_manifest,
-    resolve_provider_image, save_image_manifest,
+    resolve_provider_image, save_image_manifest, select_source_image_manifest,
 )
 from backend.app.workbench.artifacts import ArtifactStore
 from backend.app.workbench.media import DecodedFrame, FfmpegFrameSource, resolve_trusted_executable
@@ -185,3 +185,67 @@ def test_retained_video_manifest_joins_current_report_evidence(tmp_path):
     with pytest.raises(ValueError, match="scope"):
         gateway.build_evidence(match_id, generation_id, "tactical_report",
             image_manifest_digest=wrong_generation)
+
+
+@pytest.mark.integration
+@pytest.mark.real_media
+def test_selected_source_frame_seeks_to_exact_pts_and_rejects_misalignment(tmp_path):
+    from backend.app.storage import Storage
+    from backend.tests.test_audit_v3_final_journey import _install_video
+
+    storage = Storage(tmp_path / "store")
+    match_id = _install_video(storage, tmp_path)
+    frames = storage.load_frames(match_id)
+    # The journey fixture's declared 5 Hz observations differ from its 4 Hz source.
+    generation_id = storage.current_generation(match_id).generationId
+    with pytest.raises(ValueError, match="source frame identity"):
+        select_source_image_manifest(storage, match_id, generation_id, [2])
+    frames[2] = frames[2].model_copy(update={"timestamp": 0.25})
+    storage.save_frames(match_id, frames)
+    generation_id = storage.current_generation(match_id).generationId
+    with pytest.raises(ValueError, match="source frame identity"):
+        select_source_image_manifest(storage, match_id, generation_id, [2])
+    frames[2] = frames[2].model_copy(update={"timestamp": 0.5})
+    storage.save_frames(match_id, frames)
+    old_generation_id = generation_id
+    generation_id = storage.current_generation(match_id).generationId
+    with pytest.raises(ValueError, match="generation"):
+        select_source_image_manifest(storage, match_id, old_generation_id, [2])
+    digest = select_source_image_manifest(storage, match_id, generation_id, [2])
+    store = ArtifactStore(storage.storage_root / "artifacts")
+    images = load_image_manifest(store, digest, match_id=match_id,
+        generation_id=generation_id, source_sha256=storage.source_sha256(match_id),
+        source_frames={2: 0.5})
+    assert len(images) == 1
+    assert (images[0][0].sourceFrameId, images[0][0].ptsSeconds) == (2, 0.5)
+    source_frame = list(FfmpegFrameSource().iter_frames(storage.get_match_input_path(match_id)))[2]
+    with Image.open(BytesIO(images[0][1])) as image:
+        assert image.size == (1000, 600)
+        expected = Image.frombytes("RGB", (1000, 600), source_frame.payload, "raw", "BGR")
+        assert image.getpixel((500, 300)) == expected.getpixel((500, 300))
+    with pytest.raises(ValueError, match="source frame"):
+        select_source_image_manifest(storage, match_id, generation_id, [2, 2])
+
+
+@pytest.mark.integration
+@pytest.mark.real_media
+def test_image_manifest_route_uses_retained_current_generation_without_cloud(tmp_path):
+    from fastapi.testclient import TestClient
+    from backend.app.main import create_app
+    from backend.tests.test_audit_v3_final_journey import _install_video
+
+    app = create_app(storage_root=tmp_path / "store", run_jobs_inline=True)
+    storage = app.state.storage
+    match_id = _install_video(storage, tmp_path)
+    generation_id = storage.current_generation(match_id).generationId
+    with TestClient(app, base_url="http://127.0.0.1") as client:
+        response = client.post(f"/api/matches/{match_id}/provider-images", json={
+            "generationId": generation_id, "sourceFrameIds": [0]})
+        assert response.status_code == 200, response.text
+        digest = response.json()["imageManifestDigest"]
+        package, _ = app.state.provider_gateway.build_evidence(match_id, generation_id,
+            "tactical_report", image_manifest_digest=digest)
+        assert package.visual_images[0]["sourceFrameId"] == 0
+        rejected = client.post(f"/api/matches/{match_id}/provider-images", json={
+            "generationId": generation_id, "sourceFrameIds": [0, 0]})
+        assert rejected.status_code == 400

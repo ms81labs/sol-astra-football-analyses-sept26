@@ -315,6 +315,22 @@ def create_match_detail_router(
             raise HTTPException(status_code=400, detail=str(exc)) from exc
     
         return result
+
+    @router.post("/api/matches/{match_id}/provider-images")
+    def prepare_provider_images(match: MatchRecord = Depends(require_match), body: dict | None = None) -> dict:
+        from .provider_images import select_source_image_manifest
+        from .workbench.media_execution import MediaResourceLimit
+
+        payload = body or {}
+        generation_id = payload.get("generationId")
+        frame_ids = payload.get("sourceFrameIds")
+        if not isinstance(generation_id, str) or not generation_id or not isinstance(frame_ids, list):
+            raise HTTPException(status_code=400, detail="Current generation and source frames required")
+        try:
+            digest = select_source_image_manifest(storage, match.id, generation_id, frame_ids)
+        except (ValueError, MediaResourceLimit) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"matchId": match.id, "generationId": generation_id, "imageManifestDigest": digest}
     
     @router.get("/api/matches/{match_id}/benchmark")
     def get_match_benchmark(match: MatchRecord = Depends(require_match), includeSelectedClusterProbe: bool = False,
