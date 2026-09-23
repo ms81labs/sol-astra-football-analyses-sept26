@@ -1707,6 +1707,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
         <>
           <TrustCropPanel
             matchId={activeMatch.id}
+            generationId={activeMatch.detail.generationId ?? undefined}
             frames={matchData}
             onClose={() => setShowTrustCrop(false)}
             onSeekToCrop={(frame) => {

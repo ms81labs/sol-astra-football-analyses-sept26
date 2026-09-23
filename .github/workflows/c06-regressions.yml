@@ -1,7 +1,7 @@
 name: C06 media execution evidence
 on:
   push:
-    branches: [main]
+    branches: [main, agent/backend-bounded-completion-2026-09-22]
     paths:
       - 'backend/app/workbench/media.py'
       - 'backend/app/workbench/media_execution.py'

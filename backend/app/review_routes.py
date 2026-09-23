@@ -20,6 +20,32 @@ from .storage import Storage
 from .trust_crops import compute_trust_crops
 
 
+def _trust_crop_geometry(manifest, frames) -> tuple[float | None, float | None, list[str]]:
+    declared = all(
+        frame.geometryAvailable
+        and frame.coordinateSpace == "pitch_normalized_0_100"
+        and frame.coordinateProvenance.get("outputConvention") == "pitch_normalized_0_100"
+        and isinstance(frame.coordinateProvenance.get("inputConvention"), dict)
+        for frame in frames
+    )
+    if not frames or not declared:
+        return None, None, ["CALIBRATION_UNAVAILABLE"]
+    conventions = [frame.coordinateProvenance["inputConvention"] for frame in frames]
+    config = manifest.effectiveConfig or {}
+    length, width = config.get("pitchLengthM"), config.get("pitchWidthM")
+    calibration = manifest.calibrationData
+    if isinstance(calibration, dict) and calibration.get("accepted") is True and calibration.get("measured") is True:
+        length, width = calibration.get("pitchLengthM"), calibration.get("pitchWidthM")
+    elif all(item.get("space") == "pitch_metres" for item in conventions):
+        dimensions = {(item.get("pitchLengthM"), item.get("pitchWidthM")) for item in conventions}
+        if len(dimensions) != 1:
+            return None, None, ["CALIBRATION_UNAVAILABLE"]
+        length, width = dimensions.pop()
+    if type(length) not in (int, float) or type(width) not in (int, float):
+        return None, None, ["CALIBRATION_UNAVAILABLE"]
+    return float(length), float(width), []
+
+
 def create_review_router(
     storage: Storage,
     require_match: Callable[..., MatchRecord],
@@ -121,33 +147,58 @@ def create_review_router(
             raise HTTPException(status_code=404, detail="Match not found") from exc
 
     @router.get("/api/matches/{match_id}/trust-crops")
-    def get_trust_crops(match: MatchRecord = Depends(require_match), limit: int = 20) -> dict:
+    def get_trust_crops(
+        match: MatchRecord = Depends(require_match),
+        limit: int = 20,
+        generationId: str | None = None,
+    ) -> dict:
         """Compute heuristic-based trust crop queue for a match.
 
         Frames are scored by uncertainty: ball teleport distance,
         track ID switch frequency, team flip rate, possession gaps.
         """
-        try:
-            frames = storage.load_frames(match.id)
-            _summary, assignments, _, _ = storage.load_analytics(match.id)
-        except FileNotFoundError as exc:
-            raise HTTPException(status_code=404, detail="Frames or analytics not ready") from exc
+        def make_response(frames, assignments, generation_id, manifest=None):
+            if manifest is None:
+                pitch_length_m, pitch_width_m, geometry_reasons = None, None, ["CALIBRATION_UNAVAILABLE"]
+            else:
+                pitch_length_m, pitch_width_m, geometry_reasons = _trust_crop_geometry(manifest, frames)
+            crops = compute_trust_crops(
+                [frame.model_dump() for frame in frames],
+                [assignment.model_dump() for assignment in assignments],
+                max_crops=limit,
+                pitch_length_m=pitch_length_m,
+                pitch_width_m=pitch_width_m,
+            )
+            return TrustCropsResponse(
+                matchId=match.id,
+                generationId=generation_id,
+                ballTeleportGeometryAvailable=not geometry_reasons,
+                ballTeleportReasonCodes=geometry_reasons,
+                crops=[TrustCropSchema(
+                    frameStart=crop.frameStart, frameEnd=crop.frameEnd,
+                    timestampStart=crop.timestampStart, timestampEnd=crop.timestampEnd,
+                    score=crop.score, reasons=crop.reasons,
+                ) for crop in crops],
+                totalFrames=len(frames),
+            )
 
-        frames_dicts = [f.model_dump() for f in frames]
-        assignments_dicts = [a.model_dump() for a in assignments]
-        crops = compute_trust_crops(frames_dicts, assignments_dicts, max_crops=limit)
-        response = TrustCropsResponse(
-            matchId=match.id,
-            crops=[TrustCropSchema(
-                frameStart=crop.frameStart,
-                frameEnd=crop.frameEnd,
-                timestampStart=crop.timestampStart,
-                timestampEnd=crop.timestampEnd,
-                score=crop.score,
-                reasons=crop.reasons,
-            ) for crop in crops],
-            totalFrames=len(frames),
-        )
+        try:
+            with storage.generation_snapshot(match.id, generation_id=generationId) as ref:
+                frames = storage.load_frames(match.id, generation_id=ref.generationId)
+                _summary, assignments, _, _ = storage.load_analytics(
+                    match.id, generation_id=ref.generationId
+                )
+                manifest, _ = storage.generations.manifest(match.id, ref.generationId)
+                response = make_response(frames, assignments, ref.generationId, manifest)
+        except FileNotFoundError as exc:
+            if generationId is not None:
+                raise HTTPException(status_code=404, detail="Frames or analytics not ready") from exc
+            try:
+                frames = storage.load_frames(match.id)
+                _summary, assignments, _, _ = storage.load_analytics(match.id)
+                response = make_response(frames, assignments, None)
+            except FileNotFoundError as legacy_exc:
+                raise HTTPException(status_code=404, detail="Frames or analytics not ready") from legacy_exc
         return response.model_dump(mode="json")
 
     return router

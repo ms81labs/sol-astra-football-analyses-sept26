@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 import hashlib
 from io import BytesIO
 import json
+import logging
 import os
 from pathlib import Path, PurePosixPath
 import stat
@@ -47,6 +48,7 @@ from backend.release.preflight import build_validated_tar_context, validate_rele
 
 
 ExecutionRequestBuilder = Callable[[Storage, str, ProcessingSettings], DaytonaExecutionRequest]
+LOGGER = logging.getLogger(__name__)
 REPO_ROOT = Path(__file__).resolve().parents[2]
 # Legacy v1 imports materialize the complete JSON object.
 MAX_PROCESSOR_IMPORT_BYTES = 64 * 1024 * 1024
@@ -769,8 +771,11 @@ def _run_remote_job(
                     "workerProgress": progress,
                 },
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            LOGGER.warning(
+                "optional_artifact_write_failed match=%s job=%s artifact=%s error_type=%s",
+                match_id, job_id, "remote_transport_debug", type(exc).__name__,
+            )
     except Exception as exc:
         if storage.job_ledger.cancel_requested(job_id):
             cancelled = True
@@ -800,8 +805,11 @@ def _run_remote_job(
                         "finalErrorMessage": message,
                     },
                 )
-            except Exception:
-                pass
+            except Exception as diagnostic_exc:
+                LOGGER.warning(
+                    "optional_artifact_write_failed match=%s job=%s artifact=%s error_type=%s",
+                    match_id, job_id, "remote_transport_debug", type(diagnostic_exc).__name__,
+                )
     finally:
         cleanup_failed = False
         if staging_owner is not None and not staging_cleaned:

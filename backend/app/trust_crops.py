@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from itertools import chain
+from math import hypot, isclose, isfinite
 
 
 @dataclass
@@ -25,14 +26,17 @@ BALL_TELEPORT_WEIGHT = 5.0
 HIGH_SCORE_THRESHOLD = 3.0
 
 
-def _pitch_distance(x1: float, y1: float, x2: float, y2: float) -> float:
-    return ((x1 - x2) ** 2 + (y1 - y2) ** 2) ** 0.5
+def _valid_number(value: object) -> bool:
+    return type(value) in (int, float) and isfinite(value)
 
 
 def compute_trust_crops(
     frames: list[dict],
     assignments: list[dict],
     max_crops: int = 20,
+    *,
+    pitch_length_m: float | None = None,
+    pitch_width_m: float | None = None,
 ) -> list[TrustCrop]:
     """Score every frame window by uncertainty heuristics.
 
@@ -51,22 +55,37 @@ def compute_trust_crops(
     scores: dict[int, float] = {i: 0.0 for i in range(len(frames))}
     reasons: dict[int, list[str]] = {i: [] for i in range(len(frames))}
 
-    # 1. Ball teleport detection
-    for i in range(1, len(frames)):
-        prev_ball = frames[i - 1].get("ball")
-        curr_ball = frames[i].get("ball")
-        if not prev_ball or not curr_ball:
-            continue
-        dist = _pitch_distance(
-            prev_ball.get("x", 0), prev_ball.get("y", 0),
-            curr_ball.get("x", 0), curr_ball.get("y", 0),
-        )
-        if dist <= BALL_TELEPORT_THRESHOLD_M:
-            continue
-        for j in range(max(0, i - 2), i + 1):
-            scores[j] += BALL_TELEPORT_WEIGHT
-            if "ball_teleport" not in reasons[j]:
-                reasons[j].append("ball_teleport")
+    # 1. Ball teleport detection. Unknown geometry withholds only this pass.
+    if (
+        _valid_number(pitch_length_m)
+        and _valid_number(pitch_width_m)
+        and pitch_length_m > 0
+        and pitch_width_m > 0
+    ):
+        for i in range(1, len(frames)):
+            prev_ball = frames[i - 1].get("ball")
+            curr_ball = frames[i].get("ball")
+            if not isinstance(prev_ball, dict) or not isinstance(curr_ball, dict):
+                continue
+            coordinates = (
+                prev_ball.get("x"), prev_ball.get("y"),
+                curr_ball.get("x"), curr_ball.get("y"),
+            )
+            if not all(_valid_number(value) and 0 <= value <= 100 for value in coordinates):
+                continue
+            x1, y1, x2, y2 = coordinates
+            distance_m = hypot(
+                (x2 - x1) * pitch_length_m / 100.0,
+                (y2 - y1) * pitch_width_m / 100.0,
+            )
+            if distance_m < BALL_TELEPORT_THRESHOLD_M or isclose(
+                distance_m, BALL_TELEPORT_THRESHOLD_M, abs_tol=1e-9
+            ):
+                continue
+            for j in range(max(0, i - 2), i + 1):
+                scores[j] += BALL_TELEPORT_WEIGHT
+                if "ball_teleport" not in reasons[j]:
+                    reasons[j].append("ball_teleport")
 
     # 2. Track ID switches in window — bound indices to len(frames)
     prev_track = None

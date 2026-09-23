@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from math import gcd, hypot
 from pathlib import Path
 import time
@@ -34,6 +35,7 @@ if TYPE_CHECKING:
     from .remote_worker import ProcessorResultStream
 
 
+LOGGER = logging.getLogger(__name__)
 BALL_PIPELINE_TRACE_STAGE_ORDER = [
     "processVideoPrimary",
     "processVideoRecovery",
@@ -1037,8 +1039,11 @@ def _persist_prepared_video_outputs(
         )
     try:
         storage.publish_ownership_events(match_id)
-    except Exception:
-        pass
+    except Exception as exc:
+        LOGGER.warning(
+            "optional_artifact_write_failed match=%s job=%s artifact=%s error_type=%s",
+            match_id, job_id, "ownership_publication", type(exc).__name__,
+        )
     storage.update_match_status(
         match_id,
         status="ready",

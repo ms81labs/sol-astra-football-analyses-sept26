@@ -58,8 +58,47 @@ jobs:
           path: |
             .verification/logs/
             .verification/receipt.json
+            .verification/pytest-runs/
+            .verification/gates.tsv
           if-no-files-found: warn
 
+
+  complete-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: backend/requirements/dev.lock
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install complete-suite CPU profile
+        run: |
+          pip install --require-hashes -r backend/requirements/dev.lock
+          pip install -e . --no-deps
+          pip install -e ./research-addon
+      - name: Run complete CPU backend
+        env:
+          GA_VERIFICATION_RUN: '1'
+          GA_VERIFICATION_PROFILE: complete-cpu
+          VERIFY_DAYTONA: '0'
+          ALLOW_DAYTONA_MUTATION: '0'
+          PYTHON_DOTENV_DISABLED: '1'
+        run: |
+          set -euo pipefail
+          mkdir -p .verification/logs
+          python --version > .verification/python-version.txt
+          sha256sum backend/requirements/dev.lock > .verification/lock-sha256.txt
+          python -m pytest -q -ra backend/tests --junitxml=.verification/backend-all.xml 2>&1 | tee .verification/logs/backend-all.log
+      - name: Retain complete-suite evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: complete-backend-evidence
+          path: .verification/
+          include-hidden-files: true
+          if-no-files-found: error
 
   python-quality:
     runs-on: ubuntu-latest
@@ -183,6 +222,8 @@ jobs:
           path: |
             .verification/logs/
             .verification/receipt.json
+            .verification/pytest-runs/
+            .verification/gates.tsv
           if-no-files-found: warn
 
   real-media:
@@ -215,6 +256,8 @@ jobs:
           path: |
             .verification/logs/
             .verification/receipt.json
+            .verification/pytest-runs/
+            .verification/gates.tsv
           if-no-files-found: warn
 
   gpu-acceptance:
@@ -251,4 +294,6 @@ jobs:
           path: |
             .verification/logs/
             .verification/receipt.json
+            .verification/pytest-runs/
+            .verification/gates.tsv
           if-no-files-found: error

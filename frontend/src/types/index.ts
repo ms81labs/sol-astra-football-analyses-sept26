@@ -544,6 +544,9 @@ export interface TrustCrop {
 
 export interface TrustCropsResponse {
     matchId: string;
+    generationId: string | null;
+    ballTeleportGeometryAvailable: boolean;
+    ballTeleportReasonCodes: string[];
     crops: TrustCrop[];
     totalFrames: number;
 }

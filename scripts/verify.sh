@@ -26,6 +26,8 @@ fi
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd -P)"
 VERIFICATION_DIR="$REPO_ROOT/.verification"
 LOG_DIR="$VERIFICATION_DIR/logs"
+GATE_RESULTS="$VERIFICATION_DIR/gates.tsv"
+export GA_VERIFICATION_SESSION_ID="${GA_VERIFICATION_SESSION_ID-$(date -u +%Y%m%dT%H%M%S)-$$}"
 
 unsafe_log_path() {
     printf 'unsafe verification log path: %s\n' "$1" >&2
@@ -51,12 +53,18 @@ if [[ "$LOG_PHYSICAL" != "$VERIFICATION_PHYSICAL/logs" ]]; then
     unsafe_log_path "$LOG_DIR"
 fi
 rm -f "$LOG_DIR"/*.log
+if [[ -L "$GATE_RESULTS" ]] || [[ -e "$GATE_RESULTS" && ! -f "$GATE_RESULTS" ]]; then
+    unsafe_log_path "$GATE_RESULTS"
+fi
+: > "$GATE_RESULTS"
 cd "$REPO_ROOT"
+GATE_SOURCE_COMMIT="$(git rev-parse HEAD)"
 
 fail_gate() {
     local gate="$1"
     local command="$2"
     local detail="${3:-command exited nonzero}"
+    rm -f -- "$VERIFICATION_DIR/receipt.json"
     printf 'FAILED gate: %s (%s)\n' "$gate" "$detail" >&2
     printf 'Corrective command: %s\n' "$command" >&2
     exit 1
@@ -71,7 +79,7 @@ run_gate() {
     printf '==> %s\n' "$gate"
     printf 'Command: %s\n' "$command"
     set +e
-    bash -c "$command" 2>&1 | tee "$log"
+    GA_VERIFICATION_GATE="$gate" bash -c "$command" 2>&1 | tee "$log"
     pipeline_status=("${PIPESTATUS[@]}")
     set -e
     if (( pipeline_status[1] != 0 )); then
@@ -81,6 +89,15 @@ run_gate() {
         fail_gate "$gate" "$command" "exit ${pipeline_status[0]}"
     fi
     touch -- "$log"
+    local log_digest
+    if command -v sha256sum >/dev/null 2>&1; then
+        log_digest="$(sha256sum "$log")"
+    else
+        log_digest="$(shasum -a 256 "$log")"
+    fi
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' \
+        "$GA_VERIFICATION_SESSION_ID" "$GATE_SOURCE_COMMIT" "$gate" \
+        "${pipeline_status[0]}" "${log_digest%% *}" "$command" >> "$GATE_RESULTS"
 }
 
 BACKEND_COMMAND="python3 -m pytest -q backend/tests"
@@ -114,6 +131,8 @@ run_gate "manifest" "python3 -m pytest -q backend/tests/test_release_manifest.py
 run_gate "runtime-options" "python3 -m pytest -q backend/tests/test_runtime_options.py"
 run_gate "preflight-negatives" "python3 -m pytest -q backend/tests/test_release_preflight.py -k reject"
 run_gate "prod-audit" "npm --prefix frontend audit --omit=dev --audit-level=high"
+# The release writer owns the latest view; immutable invocation records remain.
+rm -f -- "$GATE_RESULTS" "$VERIFICATION_DIR/receipt.json"
 python3 -m backend.scripts.write_verification_evidence --record-verifier-success
 
 printf '%s\n' "Daytona provider operation skipped; G-PRODUCT remains a separate explicitly approved acceptance."
