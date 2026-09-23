@@ -586,7 +586,7 @@ describe('App match workspace loading', () => {
     await waitFor(() => expect(api.fetchMatchFrames).toHaveBeenCalledWith('match-a', expect.objectContaining({
       afterFrame: 7, generationId: 'g-match-a',
     })));
-    expect(await screen.findByText('0 - 1')).toBeTruthy();
+    expect(await screen.findByText('7 - 8')).toBeTruthy();
     expect((screen.getByLabelText(/clip start/i) as HTMLInputElement).value).toBe('1.4');
   });
 

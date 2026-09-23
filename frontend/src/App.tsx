@@ -520,8 +520,8 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
     const startIndex = matchData.findIndex((frame) => frame.Timestamp >= start);
     const afterEnd = matchData.findIndex((frame) => frame.Timestamp >= end);
     if (startIndex >= 0) {
-      setReviewRange({ startFrame: startIndex,
-        endFrame: Math.max(startIndex, afterEnd < 0 ? matchData.length - 1 : afterEnd - 1) });
+      setReviewRange({ startFrame: matchData[startIndex].Frame_ID,
+        endFrame: matchData[Math.max(startIndex, afterEnd < 0 ? matchData.length - 1 : afterEnd - 1)].Frame_ID });
     }
   }, [matchData, selectedHit, setReviewRange]);
 
@@ -1553,7 +1553,8 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
                 const anchor = startIndex >= 0 ? startIndex : findNearestFrameIndex(frameTimestamps, hit.timestamp);
                 const anchorLoaded = hit.frameId == null || matchData.some((frame) => frame.Frame_ID === hit.frameId);
                 if (anchorLoaded && anchor >= 0 && matchData[anchor]) {
-                  review.setReviewRange({ startFrame: anchor, endFrame: Math.max(anchor, afterEnd < 0 ? matchData.length - 1 : afterEnd - 1) });
+                  review.setReviewRange({ startFrame: matchData[anchor].Frame_ID,
+                    endFrame: matchData[Math.max(anchor, afterEnd < 0 ? matchData.length - 1 : afterEnd - 1)].Frame_ID });
                 }
                 if (hit.frameId != null) handleSeek(hit.frameId);
                 else if (anchorLoaded && anchor >= 0 && matchData[anchor]) handleSeek(matchData[anchor].Frame_ID);
