@@ -9,7 +9,8 @@ from typing import Any
 
 from .settings import ProcessingSettings
 from .provider_adapters import LOCAL_MODEL_ID
-from .provider_billing import (ProviderBudgetLedger as ProviderBudgetLedger, ProviderTicket, ProviderResult, ProviderNotDispatched)
+from .provider_billing import (AstraSpendPolicy, ProviderBudgetLedger as ProviderBudgetLedger,
+                               ProviderTicket, ProviderResult, ProviderNotDispatched)
 from .workbench.money import money
 from .workbench.jobs import maintain_job_lease
 from .workbench.evidence import records_from_match
@@ -96,6 +97,7 @@ class ProviderGateway:
         adapter=None,
         retry_of_attempt_id: str | None = None,
         visual_images: tuple[dict[str, Any], ...] = (),
+        prepared_request: dict[str, Any] | None = None,
     ) -> ExecutionPolicy:
         requested = requested_provider or match.config.llmProvider
         if requested not in {"local", "cloud"}:
@@ -136,13 +138,21 @@ class ProviderGateway:
             spend = self.settings.provider_spend_policy
             adapter = self.adapter_factory() if adapter is None else adapter
             reasons = []
-            if visual_images or spend is None or getattr(adapter, "billing_contract_id", None) != spend.adapter_id:
+            if spend is None or getattr(adapter, "billing_contract_id", None) != spend.adapter_id:
                 reasons.append("CLOUD_SPEND_BOUND_UNQUALIFIED")
-            elif prompt is None:
+            elif isinstance(spend, AstraSpendPolicy) and prepared_request is None:
+                reasons.append("REQUEST_BOUND_MISSING")
+            elif not isinstance(spend, AstraSpendPolicy) and visual_images:
+                reasons.append("CLOUD_SPEND_BOUND_UNQUALIFIED")
+            elif not isinstance(spend, AstraSpendPolicy) and prompt is None:
                 reasons.append("REQUEST_BOUND_MISSING")
             else:
                 try:
-                    bound = spend.bind(prompt=prompt, task=task_type, model=self.settings.cloud_model_id)
+                    bound = (spend.bind_request(prepared_request, task=task_type,
+                        model=self.settings.cloud_model_id,
+                        authorised_limit=str(self.settings.provider_call_reservation))
+                        if isinstance(spend, AstraSpendPolicy) else
+                        spend.bind(prompt=prompt, task=task_type, model=self.settings.cloud_model_id))
                     if money(bound["maximumCost"]) > money(self.settings.provider_call_reservation):
                         reasons.append("REQUEST_BOUND_EXCEEDS_AUTHORISED_BUDGET")
                 except ValueError as exc:
@@ -303,10 +313,21 @@ class ProviderGateway:
         if not isinstance(key, str) or not 1 <= len(key) <= 256:
             raise ValueError("Invalid provider request ID")
         request_id = "provider:" + hashlib.sha256(json.dumps([match_id, key]).encode()).hexdigest()
+        prepared_request = None
+        spend = self.settings.provider_spend_policy
+        if (requested_provider or live_match.config.llmProvider) == "cloud" and isinstance(spend, AstraSpendPolicy) \
+                and getattr(adapter, "billing_contract_id", None) == spend.adapter_id:
+            from .provider_adapters import build_astra_request
+            from .provider_images import ProviderImage
+            images = [(ProviderImage.model_validate_json(json.dumps(ref)), payload) for ref, payload in
+                zip(package.visual_images, inputs["visual_image_payloads"], strict=True)]
+            prepared_request = build_astra_request(prompt, images,
+                approved_images=package.visual_images, max_output_tokens=spend.max_output_tokens)
         policy = self.resolve_policy(live_match, requested_provider=requested_provider, task_type=task_type,
             generation_id=generation_id, require_provider=bool(body.get("requireProvider")),
             prompt=prompt, request_id=request_id, source_identity=package.digest, adapter=adapter,
-            retry_of_attempt_id=retry_anchor, visual_images=package.visual_images)
+            retry_of_attempt_id=retry_anchor, visual_images=package.visual_images,
+            prepared_request=prepared_request)
         ticket = policy.ticket
         if ticket is not None:
             # ponytail: this closes preparation-time staleness; a future atomic rights/dispatch
@@ -334,6 +355,8 @@ class ProviderGateway:
         if ticket is not None:
             kwargs.update(prepared_prompt=prompt, execution_bound=copy.deepcopy(policy.execution_bound),
                           request_id=request_id, reservation_id=ticket.attempt.attemptId)
+            if prepared_request is not None:
+                kwargs["prepared_request"] = copy.deepcopy(prepared_request)
         try:
             if ticket is not None:
                 with maintain_job_lease(self.budget_ledger.ledger, request_id, owner_id=ticket.owner_id):

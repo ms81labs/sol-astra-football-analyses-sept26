@@ -1,6 +1,7 @@
 """W06: visual evidence must be a bounded source image, not FrameData JSON."""
 
 import hashlib
+import json
 from io import BytesIO
 import subprocess
 
@@ -222,6 +223,71 @@ def test_text_only_spend_policy_cannot_admit_visual_request(tmp_path):
         gateway.execute(match_id, "tactical_report", requested_provider="cloud",
             body={"requireProvider": True, "imageManifestDigest": manifest_digest})
     assert gateway.budget_ledger.reservations() == []
+
+
+@pytest.mark.integration
+@pytest.mark.real_media
+def test_mock_astra_request_binds_exact_approved_image_and_reservation(tmp_path):
+    import base64
+    from backend.app.provider_adapters import parse_astra_response
+    from backend.app.provider_billing import AstraSpendPolicy, ProviderResult, ProviderUsage
+    from backend.app.provider_gateway import ProviderBudgetLedger, ProviderGateway
+    from backend.app.report_contracts import ReportDraft
+    from backend.app.settings import ProcessingSettings
+    from backend.app.storage import Storage
+    from backend.tests.test_audit_v3_final_journey import _install_video
+
+    storage = Storage(tmp_path / "store")
+    match_id = _install_video(storage, tmp_path)
+    generation_id = storage.current_generation(match_id).generationId
+    source = storage.get_match_input_path(match_id)
+    frame = next(FfmpegFrameSource().iter_frames(source))
+    artifacts = ArtifactStore(storage.storage_root / "artifacts")
+    reference = admit_decoded_image(artifacts, source, frame,
+        match_id=match_id, generation_id=generation_id)
+    manifest_digest = save_image_manifest(artifacts, [reference])
+    image_bytes = load_image_manifest(artifacts, manifest_digest, match_id=match_id,
+        generation_id=generation_id, source_sha256=reference.sourceSha256,
+        source_frames={reference.sourceFrameId: reference.ptsSeconds})[0][1]
+    config = storage.get_match(match_id).config.model_copy(deep=True)
+    config.rights.cloudPermission = True
+    config.rights.processingScope = "local_plus_burst"
+    storage.update_match_config(match_id, config)
+    calls = []
+    def adapter(*_args, **kwargs):
+        calls.append(kwargs)
+        request = kwargs["prepared_request"]
+        bound = kwargs["execution_bound"]
+        assert bound["requestSha256"] == hashlib.sha256(json.dumps(request,
+            sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        assert request["input"][0]["content"][1]["image_url"] == (
+            "data:image/png;base64," + base64.b64encode(image_bytes).decode())
+        assert bound["maxImageTokens"] == 3001
+        draft = ReportDraft(schemaVersion="report_draft_v1", matchId=match_id,
+            generationId=generation_id, taskType="tactical_report")
+        response = {"id": "mock-response", "model": "gpt-6-astra", "status": "completed",
+            "service_tier": "default", "incomplete_details": None, "error": None,
+            "output": [{"type": "message", "role": "assistant", "status": "completed",
+                "content": [{"type": "output_text", "text": draft.model_dump_json()}]}],
+            "usage": {"input_tokens": 100, "output_tokens": 100, "total_tokens": 200}}
+        parsed, _ = parse_astra_response(response, bound)
+        return ProviderResult(parsed, ProviderUsage("mock-only", ".1", True))
+    adapter.billing_contract_id = "astra-responses-v1"
+    spend = AstraSpendPolicy(task_types=("tactical_report",), max_output_tokens=4096,
+        input_price_per_million="20", output_price_per_million="75")
+    settings = ProcessingSettings(cloud_provider_enabled=True, cloud_provider_api_key="test-only",
+        allowed_model_ids=("gpt-6-astra",), cloud_model_id="gpt-6-astra",
+        provider_call_reservation=20, provider_budget_limit=40, provider_spend_policy=spend)
+    gateway = ProviderGateway(storage, settings, adapter_factory=lambda: adapter,
+        budget_ledger=ProviderBudgetLedger(storage.job_ledger.db_path, 40))
+    result = gateway.execute(match_id, "tactical_report", requested_provider="cloud",
+        body={"requireProvider": True, "requestId": "mock-image", "imageManifestDigest": manifest_digest})
+    assert result["policy"]["provider"] == "cloud"
+    assert result["costSummary"]["actualTotal"] == .1
+    assert gateway.execute(match_id, "tactical_report", requested_provider="cloud",
+        body={"requireProvider": True, "requestId": "mock-image",
+            "imageManifestDigest": manifest_digest})["reportId"] == result["reportId"]
+    assert len(calls) == 1
 
 
 @pytest.mark.integration
