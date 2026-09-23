@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import math
+import json
 import re
 from io import BytesIO
+from pathlib import Path
 from typing import Literal
 
 from pydantic import Field, model_validator
@@ -14,6 +16,8 @@ from .workbench.contracts import StrictModel
 
 MAX_IMAGE_BYTES = 5_000_000
 MAX_IMAGE_PIXELS = 4_194_304
+MAX_SOURCE_PIXELS = 16_777_216
+MAX_MANIFEST_IMAGES = 4
 
 
 class ProviderImage(StrictModel):
@@ -71,3 +75,79 @@ def resolve_provider_image(
             raise ValueError("image format or dimensions mismatch")
         image.load()
     return payload
+
+
+def admit_decoded_image(
+    store: ArtifactStore, source_path: Path, frame, *, match_id: str,
+    generation_id: str, crop: tuple[int, int, int, int] | None = None,
+) -> ProviderImage:
+    """Retain pixels supplied by the server's source decoder with their exact clock."""
+    from .workbench.hashing import stream_sha256
+    from PIL import Image
+
+    if (frame.presentation_clock != "decoder_pts" or frame.pts is None
+            or frame.presentation_time_seconds is None
+            or not math.isfinite(frame.presentation_time_seconds)
+            or frame.presentation_time_seconds < 0
+            or frame.source_frame_index < 0
+            or frame.rotation != 0
+            or frame.colour_order not in {"rgb", "bgr"}
+            or frame.width <= 0 or frame.height <= 0
+            or frame.width * frame.height > MAX_SOURCE_PIXELS
+            or len(frame.payload) != frame.width * frame.height * 3):
+        raise ValueError("decoded frame has no exact bounded source clock or pixels")
+    if frame.presentation_time is None or not math.isclose(
+        float(frame.presentation_time), frame.presentation_time_seconds, rel_tol=0, abs_tol=1e-6
+    ):
+        raise ValueError("decoded frame source clock mismatch")
+    x1, y1, x2, y2 = crop or (0, 0, frame.width, frame.height)
+    if not (0 <= x1 < x2 <= frame.width and 0 <= y1 < y2 <= frame.height) \
+            or (x2 - x1) * (y2 - y1) > MAX_IMAGE_PIXELS:
+        raise ValueError("invalid bounded image crop")
+    source_sha256 = stream_sha256(Path(source_path)).sha256
+    image = Image.frombytes("RGB", (frame.width, frame.height), frame.payload,
+                            "raw", "BGR" if frame.colour_order == "bgr" else "RGB")
+    output = BytesIO()
+    image.crop((x1, y1, x2, y2)).save(output, format="PNG")
+    payload = output.getvalue()
+    if len(payload) > MAX_IMAGE_BYTES:
+        raise ValueError("encoded image exceeds byte limit")
+    digest = store.put(payload, namespace="provider_images")
+    return ProviderImage(matchId=match_id, generationId=generation_id,
+        sourceSha256=source_sha256, sourceFrameId=frame.source_frame_index,
+        ptsSeconds=frame.presentation_time_seconds, sourceWidth=frame.width,
+        sourceHeight=frame.height, crop=(x1, y1, x2, y2), width=x2 - x1,
+        height=y2 - y1, imageSha256=digest, imageBytes=len(payload))
+
+
+def save_image_manifest(store: ArtifactStore, images: list[ProviderImage]) -> str:
+    if not 1 <= len(images) <= MAX_MANIFEST_IMAGES:
+        raise ValueError("image manifest exceeds fixed limit")
+    validated = [ProviderImage.model_validate(item.model_dump()) for item in images]
+    if len({item.imageSha256 for item in validated}) != len(validated) or len({
+        (item.matchId, item.generationId, item.sourceSha256) for item in validated
+    }) != 1:
+        raise ValueError("image manifest has duplicate or mixed source identity")
+    payload = json.dumps({"schemaVersion": "provider_image_manifest_v1",
+                          "images": [item.model_dump(mode="json") for item in validated]},
+                         sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+    return store.put(payload, namespace="provider_image_manifests")
+
+
+def load_image_manifest(
+    store: ArtifactStore, digest: str, *, match_id: str, generation_id: str,
+    source_sha256: str, source_frames: dict[int, float],
+) -> tuple[tuple[ProviderImage, bytes], ...]:
+    document = json.loads(store.get(digest, namespace="provider_image_manifests", max_bytes=16_384))
+    if not isinstance(document, dict) or set(document) != {"schemaVersion", "images"} \
+            or document["schemaVersion"] != "provider_image_manifest_v1" \
+            or not isinstance(document["images"], list) \
+            or not 1 <= len(document["images"]) <= MAX_MANIFEST_IMAGES:
+        raise ValueError("invalid provider image manifest")
+    images = tuple(ProviderImage.model_validate_json(json.dumps(item)) for item in document["images"])
+    approved = {item.imageSha256: item for item in images}
+    if len(approved) != len(images):
+        raise ValueError("duplicate image artifact in manifest")
+    return tuple((item, resolve_provider_image(store, item, match_id=match_id,
+        generation_id=generation_id, source_sha256=source_sha256,
+        source_frames=source_frames, approved_images=approved)) for item in images)

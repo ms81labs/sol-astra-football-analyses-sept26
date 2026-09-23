@@ -63,6 +63,8 @@ class ApprovedEvidencePackage:
     aliases: dict[str, dict] = field(default_factory=dict)
     task_type: str | None = None
     frame_samples: tuple[dict[str, Any], ...] = ()
+    visual_images: tuple[dict[str, Any], ...] = ()
+    image_manifest_digest: str | None = None
 
 
 @dataclass(frozen=True)
@@ -170,7 +172,8 @@ class ProviderGateway:
             reason_codes=tuple(policy_reasons), execution_bound=bound, ticket=ticket,
         )
 
-    def build_evidence(self, match_id: str, generation_id: str, task_type: str | None = None) -> tuple[ApprovedEvidencePackage, dict[str, Any]]:
+    def build_evidence(self, match_id: str, generation_id: str, task_type: str | None = None,
+                       *, image_manifest_digest: str | None = None) -> tuple[ApprovedEvidencePackage, dict[str, Any]]:
         from .report_contracts import digest
         with self.storage.generation_snapshot(match_id, generation_id=generation_id):
             frames = self.storage.load_frames(match_id, generation_id=generation_id)
@@ -212,13 +215,34 @@ class ProviderGateway:
             event_payloads = tuple(item.model_dump(mode="json") for item in events if item.reviewStatus != "rejected")
             from .llm import _sample_frames
             samples = tuple(_sample_frames(frames))
+            visual_images = ()
+            image_payloads = ()
+            if image_manifest_digest is not None:
+                from .provider_images import load_image_manifest
+                from .workbench.artifacts import ArtifactStore
+                if not isinstance(image_manifest_digest, str) or self.storage.get_match(match_id).inputMode != "video":
+                    raise ValueError("provider images require a retained video source and manifest digest")
+                store = ArtifactStore(self.storage.storage_root / "artifacts")
+                try:
+                    resolved = load_image_manifest(store, image_manifest_digest,
+                        match_id=match_id, generation_id=generation_id,
+                        source_sha256=self.storage.source_sha256(match_id),
+                        source_frames={item.frameId: item.timestamp for item in frames})
+                except KeyError as exc:
+                    raise ValueError("unknown provider image manifest") from exc
+                visual_images = tuple(ref.model_dump(mode="json") for ref, _ in resolved)
+                image_payloads = tuple(payload for _, payload in resolved)
             canonical = {"matchId": match_id, "generationId": generation_id, "taskType": task_type,
                          "frameSamples": samples,
                          "aliases": aliases, "metrics": metrics, "events": event_payloads}
+            if visual_images:
+                canonical.update(visualImages=visual_images, imageManifestDigest=image_manifest_digest)
             package = ApprovedEvidencePackage(match_id, generation_id, frozenset(aliases),
-                                              tuple(metrics), event_payloads, digest(canonical), aliases, task_type, samples)
+                                              tuple(metrics), event_payloads, digest(canonical), aliases, task_type,
+                                              samples, visual_images, image_manifest_digest)
             return package, {"frames": frames, "summary": summary, "events": events,
-                             "formation_timeline": formation_timeline, "shots": shots}
+                             "formation_timeline": formation_timeline, "shots": shots,
+                             "visual_image_payloads": image_payloads}
 
     def execute(self, match_id: str, task_type: str, *, requested_provider: str | None = None,
                 body: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -242,7 +266,8 @@ class ProviderGateway:
             if body.get("generationId") not in (None, generation_id):
                 raise StaleEvidenceGeneration("Select the current generation before requesting a report")
             analytical_match = self.storage.get_match(match_id)
-            package, inputs = self.build_evidence(match_id, generation_id, task_type)
+            package, inputs = self.build_evidence(match_id, generation_id, task_type,
+                image_manifest_digest=body.get("imageManifestDigest"))
         # Live policy is read immediately before dispatch, never restored from G.
         with self.storage.generations.guard(match_id, "publication"):
             if self.storage.generations.resolve(match_id).generationId != generation_id:
@@ -254,6 +279,9 @@ class ProviderGateway:
             "taskType": task_type, "inputEvidenceDigest": package.digest,
             "aliases": package.aliases, "metrics": package.metrics, "events": package.events,
             "frameSamples": package.frame_samples})
+        if package.visual_images:
+            approved.update(visualImages=package.visual_images,
+                            imageManifestDigest=package.image_manifest_digest)
         frame_index = body.get("currentFrameIndex")
         if frame_index is not None and (type(frame_index) is not int or not 0 <= frame_index < len(inputs["frames"])):
             raise ValueError("Invalid current frame index")
