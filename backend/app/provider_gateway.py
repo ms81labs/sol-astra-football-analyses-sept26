@@ -266,8 +266,11 @@ class ProviderGateway:
             if body.get("generationId") not in (None, generation_id):
                 raise StaleEvidenceGeneration("Select the current generation before requesting a report")
             analytical_match = self.storage.get_match(match_id)
-            package, inputs = self.build_evidence(match_id, generation_id, task_type,
-                image_manifest_digest=body.get("imageManifestDigest"))
+            if body.get("imageManifestDigest") is None:
+                package, inputs = self.build_evidence(match_id, generation_id, task_type)
+            else:
+                package, inputs = self.build_evidence(match_id, generation_id, task_type,
+                    image_manifest_digest=body["imageManifestDigest"])
         # Live policy is read immediately before dispatch, never restored from G.
         with self.storage.generations.guard(match_id, "publication"):
             if self.storage.generations.resolve(match_id).generationId != generation_id:
