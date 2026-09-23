@@ -3,7 +3,7 @@
   "date": "2026-09-23",
   "repository": "ms81labs/sol-astra-football-analyses-sept26",
   "baseHead": "20c6a2b5443390414d32d368f3d183abdf15af2a",
-  "implementationHead": "3c7503f2843073cc1bbebdc1a2cd0644475de201",
+  "implementationHead": "89a30de35d244a4ff55df41c120e4873bf300454",
   "resumeHeadCommand": "git rev-parse HEAD (the checkpoint commit follows the implementation head)",
   "integrationLine": "integration/catapult-workbench",
   "historicalCheckpoint": "/root/WorkSpace/fotball-analyst/catapult-checkpoint/astra-catapult-w00-checkpoint-2026-09-23/CHECKPOINT.json",
@@ -21,7 +21,8 @@
     "W06 adds a bounded PNG source-frame image reference and resolver that checks match/generation/source/frame PTS, crop transform, pixel/byte limits, complete server-approved metadata and content digest before reading image bytes. Structured FrameData samples are explicitly described as non-image observations in the report prompt.",
     "W06 admits bounded PNGs from decoded retained-source frames, stores a four-image content-addressed manifest, and binds validated image references to the current report evidence digest; ordinary report calls retain their existing signature.",
     "W06 adds a local match route for bounded source-image selection. FFprobe verifies the selected frame ordinal and PTS, FFmpeg seeks to that PTS, and the returned pixels, source hash and current generation are checked before a manifest digest is returned.",
-    "W06 adds an offline single-request Astra Responses payload builder with approved PNG image parts, strict report schema, fixed default tier/low reasoning/no tools, and a conservative image/text/output maximum-cost envelope tied to the request digest. No transport was enabled."
+    "W06 adds an offline single-request Astra Responses payload builder with approved PNG image parts, strict report schema, fixed default tier/low reasoning/no tools, and a conservative image/text/output maximum-cost envelope tied to the request digest. No transport was enabled.",
+    "W06 rejects a visual evidence request under the existing text/output-only synthetic spend policy before reservation or dispatch; real-media regression reproduced the unsafe admission before the shared gateway fix."
   ],
   "verified": [
     {
@@ -130,14 +131,17 @@
       "command": "PATH=/dev/shm/catapult-venv/bin:$PATH TMPDIR=/dev/shm/catapult-tmp GUERILLA_STORAGE_ROOT=/dev/shm/catapult-verify-store VERIFY_DAYTONA=0 ALLOW_DAYTONA_MUTATION=0 scripts/verify.sh",
       "outcome": "Exit 0 at 3c7503f: backend 4525 passed/18 skipped, sidecar 100 passed, frontend 450 passed, lint/typechecks/build/startup/manifest/runtime/preflight/audit passed; production audit found 0 vulnerabilities.",
       "evidence": ".verification/receipt.json SHA-256 5653fd6e022603ede1e90a1034044ff7dc47e192f1c2d585ae1416db37645584 and .verification/logs/"
-    }
+    },
+    {"command": "/dev/shm/catapult-venv/bin/python -m pytest backend/tests/test_provider_image_artifacts.py::test_text_only_spend_policy_cannot_admit_visual_request -q", "outcome": "Expected red before the fix: the visual request reached the text-only adapter; exit 1."},
+    {"command": "/dev/shm/catapult-venv/bin/python -m pytest backend/tests/test_provider_image_artifacts.py backend/tests/test_audit_v3_c04_providers.py backend/tests/test_audit_v2_h01_provider.py -q", "outcome": "40 passed, exit 0; visual request denied with no provider reservation."},
+    {"command": "PATH=/dev/shm/catapult-venv/bin:$PATH TMPDIR=/dev/shm/catapult-tmp GUERILLA_STORAGE_ROOT=/dev/shm/catapult-verify-store VERIFY_DAYTONA=0 ALLOW_DAYTONA_MUTATION=0 scripts/verify.sh", "outcome": "Exit 0 at 89a30de: backend 4526 passed/18 skipped, sidecar 100 passed, frontend 450 passed, lint/typechecks/build/startup/manifest/runtime/preflight/audit passed; production audit found 0 vulnerabilities.", "evidence": ".verification/receipt.json SHA-256 3b26f0420bb3f2a6d4909398937d0490d21d158d7f68a302a5d06db8e7b98d3b and .verification/logs/"}
   ],
   "currentFullVerifier": {
     "command": "PATH=/dev/shm/catapult-venv/bin:$PATH TMPDIR=/dev/shm/catapult-tmp GUERILLA_STORAGE_ROOT=/dev/shm/catapult-verify-store VERIFY_DAYTONA=0 ALLOW_DAYTONA_MUTATION=0 scripts/verify.sh",
-    "sourceHead": "3c7503f2843073cc1bbebdc1a2cd0644475de201",
+    "sourceHead": "89a30de35d244a4ff55df41c120e4873bf300454",
     "status": "passed",
-    "backendProgress": "4525 passed, 18 skipped; sidecar 100 passed; frontend 450 passed; all remaining gates passed",
-    "evidence": ".verification/receipt.json and .verification/logs/; receipt SHA-256 5653fd6e022603ede1e90a1034044ff7dc47e192f1c2d585ae1416db37645584",
+    "backendProgress": "4526 passed, 18 skipped; sidecar 100 passed; frontend 450 passed; all remaining gates passed",
+    "evidence": ".verification/receipt.json and .verification/logs/; receipt SHA-256 3b26f0420bb3f2a6d4909398937d0490d21d158d7f68a302a5d06db8e7b98d3b",
     "priorCompleteAttempt": {
       "sourceHead": "b42b2befecd631c142d582d9992f767de2c554d3",
       "status": "failed_backend_gate",
@@ -168,13 +172,13 @@
     "finding": "Astra supports image input and strict structured output; detail high caps resized image patches at 2500 with a 1.2x billable multiplier, and max_output_tokens includes reasoning. Standard pricing varies by long-context and regional processing. An offline request/bound uses supplied conservative rates and 3001 image tokens per image; no live billing or SDK contract was qualified."
   },
   "units": {
-    "W00": { "status": "blocked_on_evidence", "implemented": true, "verified": true, "accepted": false, "limitation": "Software baseline verifier passed at 3c7503f. Frozen pilot manifest declares 18 tasks, 6 validation/12 held-out, 9297 labels, with zero declared labels or media files present; independent label lock, rights-approved source and camera baseline remain unavailable. No held-out inference." },
+    "W00": { "status": "blocked_on_evidence", "implemented": true, "verified": true, "accepted": false, "limitation": "Software baseline verifier passed at 89a30de. Frozen pilot manifest declares 18 tasks, 6 validation/12 held-out, 9297 labels, with zero declared labels or media files present; independent label lock, rights-approved source and camera baseline remain unavailable. No held-out inference." },
     "W01": { "status": "accepted", "implemented": true, "verified": true, "accepted": true, "limitation": "Milestone A software workflow passed focused, browser, and full verifier checks. Editable reopen requires retained source/store and matching generation; prior browser-generated media were temporary." },
     "W02": { "status": "accepted", "implemented": true, "verified": true, "accepted": true, "limitation": "CPU contract and artifact tests plus normal verifier pass. This is contract acceptance only; no real SAM inference or model qualification." },
     "W03": { "status": "not_started", "implemented": false, "verified": false, "accepted": false, "limitation": "CPU worker admission/rejection tests remain eligible. Real SAM 3.1 qualification awaits approved checkpoint digest/revision, rights-approved source window and paid GPU authorization; W02 CPU contract remains usable." },
     "W04": { "status": "blocked_on_evidence", "implemented": false, "verified": false, "accepted": false, "limitation": "Locked independent labels and real W03 mask artifacts are unavailable; no held-out inference or accuracy claim." },
     "W05": { "status": "blocked_on_evidence", "implemented": false, "verified": false, "accepted": false, "limitation": "Automatic identity promotion depends on W04 paired independent evidence; baseline identity remains unchanged." },
-    "W06": { "status": "in_progress", "implemented": false, "verified": false, "accepted": false, "limitation": "Pre-dispatch, bounded retained-source image selection, and an offline strict single-request Astra payload/cost envelope pass the full software verifier. The request builder is not wired to gateway transport; its pricing inputs and token ceiling have no real billing qualification, and images have not been sent. Generated media only; no measured long-match latency. A concurrent policy write between preflight and transport remains a race. Exact SDK/transport contract, rights-cleared paid smoke, billing reconciliation and analyst review remain. Production cloud adapter stays disabled." },
+    "W06": { "status": "in_progress", "implemented": false, "verified": false, "accepted": false, "limitation": "Pre-dispatch, bounded retained-source image selection, offline strict Astra payload/cost envelope, and rejection of image requests under the text-only synthetic spend policy pass the full software verifier at 89a30de. The request builder is not wired to gateway transport; its pricing inputs and token ceiling have no real billing qualification, and images have not been sent. Generated media only; no measured long-match latency. A concurrent policy write between preflight and transport remains a race. Exact SDK/transport contract, rights-cleared paid smoke, billing reconciliation and analyst review remain. Production cloud adapter stays disabled." },
     "W07": { "status": "not_started" },
     "W08": { "status": "not_started" },
     "W09": { "status": "blocked_on_evidence", "implemented": false, "verified": false, "accepted": false, "limitation": "Requires rights-approved current-source pilot, locked labels, measured model/GPU/billing receipts and analyst acceptance; none supplied or run." }
@@ -183,7 +187,7 @@
   "paidModelApiCalls": 0,
   "liveStoreAccessed": false,
   "remoteMutations": 0,
-  "nextSmallestAction": "Continue W06 by wiring only the exact approved request body, image bytes and request digest through the existing gateway reservation/adapter path, with a mock transport and strict response parser first. Preserve the CLOUD_SPEND_BOUND_UNQUALIFIED production guard until live API contract, current rates, rights-cleared paid smoke and billing reconciliation are qualified under explicit authorization. W03 CPU worker admission tests can proceed independently; W07 follows a selected-evidence request. W04/W05/W09 remain evidence-gated.",
+  "nextSmallestAction": "Continue W06 with a mock transport and strict Responses parser, then bind the exact approved request body, image bytes and digest to the existing gateway reservation. Keep the production CLOUD_SPEND_BOUND_UNQUALIFIED guard until live API contract, current context-tier rates, rights-cleared paid smoke and billing reconciliation are qualified under explicit authorization. W03 CPU worker admission tests can proceed independently; W07 follows a selected-evidence request. W04/W05/W09 remain evidence-gated.",
   "externalMediaDetailsChecked": {
     "date": "2026-09-23",
     "sources": [
