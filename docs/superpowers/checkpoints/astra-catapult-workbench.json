@@ -3,7 +3,8 @@
   "date": "2026-09-23",
   "repository": "ms81labs/sol-astra-football-analyses-sept26",
   "baseHead": "20c6a2b5443390414d32d368f3d183abdf15af2a",
-  "currentHead": "695984dfe3b837e8ba1559351653bf96ee8a7181",
+  "implementationHead": "f4f0d4653cc95b55c280741e02e57f7daa589c7d",
+  "resumeHeadCommand": "git rev-parse HEAD (the checkpoint commit follows the implementation head)",
   "integrationLine": "integration/catapult-workbench",
   "historicalCheckpoint": "/root/WorkSpace/fotball-analyst/catapult-checkpoint/astra-catapult-w00-checkpoint-2026-09-23/CHECKPOINT.json",
   "historicalCi": "Code-only CI and complete-CPU backend passed at the base head with an Ultralytics stub; the historical local full verifier was interrupted. Neither proves this working tree.",
@@ -13,7 +14,8 @@
     "Video-backed saved intervals can render exact MP4 clips on demand; real variable-timestamp marker tests cover a nonzero start and exclusive end.",
     "The match export includes corrections and current match annotations; the UI downloads and reopens an unchanged package from the retained source.",
     "Paged search hits seek by source frame and restore the interval range after page loading.",
-    "W02 adds a CPU-only mask contract, valid RLE codec, bounded rectangle stub, source/model/request identity and content-addressed save/reopen."
+    "W02 adds a CPU-only mask contract, valid RLE codec, bounded rectangle stub, source/model/request identity and content-addressed save/reopen.",
+    "Paged search review ranges use source frame IDs after page loading, matching timeline and playlist semantics."
   ],
   "verified": [
     {
@@ -45,30 +47,45 @@
     {
       "command": "TMPDIR=/dev/shm/catapult-tmp .venv/bin/python -m pytest -q backend/tests/test_segmentation_contract.py backend/tests/test_catapult_clip_markers.py backend/tests/test_workbench_contracts.py",
       "outcome": "149 passed at 695984d, exit 0",
-      "evidence": "/dev/shm/catapult-w02-focused.log"
+      "evidence": "Temporary log was cleared by interruption; command and outcome retained here."
+    },
+    {
+      "command": "npm test -- --run src/App.test.tsx && npm run lint && npm run build",
+      "outcome": "49 App tests passed, lint and 300-module build passed after the f4f0d46 source-frame fix"
+    },
+    {
+      "command": "npm test -- --run",
+      "outcome": "60 files, 450 passed at 695984d before the f4f0d46 source-frame fix; full suite not rerun after that fix. An earlier concurrent run had four 5-second timeouts while Python compilation saturated CPU.",
+      "evidence": "Temporary logs were cleared by interruption."
+    },
+    {
+      "command": "TMPDIR=/dev/shm/catapult-tmp /dev/shm/catapult-venv/bin/python -m pytest -q backend/tests/test_audit_v3_c06_policy.py::test_address_space_limit_is_observed_not_labelled_rss backend/tests/test_run_football_external_soccernet_video_member_extract.py::test_video_member_extract_streams_large_member_under_rss_ceiling backend/tests/test_documented_startup.py::test_root_package_builds_and_imports_documented_asgi_target_outside_checkout backend/tests/test_documented_startup.py::test_sidecar_package_installs_imports_and_exposes_cli_without_pythonpath",
+      "outcome": "4 passed on source-built Python 3.11.16; temporary interpreter was cleared by interruption."
     }
   ],
   "currentFullVerifier": {
-    "command": "PATH=.venv/bin:$PATH TMPDIR=/dev/shm/catapult-tmp GUERILLA_STORAGE_ROOT=/dev/shm/catapult-verify-store VERIFY_DAYTONA=0 ALLOW_DAYTONA_MUTATION=0 scripts/verify.sh",
-    "sourceHead": "b42b2befecd631c142d582d9992f767de2c554d3",
-    "status": "failed_backend_gate",
-    "backendResult": "4493 passed, 18 skipped, 4 failed, exit 1 in 1698.56s",
-    "failures": [
-      "Two documented-startup tests required pip, absent from the initial uv virtualenv; ensurepip restored it and both focused tests now pass.",
-      "Two address-space/RSS tests launch a child under 32 or 48 MiB. The standalone uv Python 3.11.16 binary segfaults before test code runs; system Python 3.12 passes both focused tests. Building official Python 3.11.16 source in temporary storage to restore the intended runtime."
-    ],
-    "evidence": "/dev/shm/catapult-b42-verifier.log"
+    "command": "PATH=/dev/shm/catapult-venv/bin:$PATH TMPDIR=/dev/shm/catapult-tmp GUERILLA_STORAGE_ROOT=/dev/shm/catapult-verify-store VERIFY_DAYTONA=0 ALLOW_DAYTONA_MUTATION=0 scripts/verify.sh",
+    "sourceHead": "f4f0d4653cc95b55c280741e02e57f7daa589c7d",
+    "status": "interrupted_not_completed",
+    "backendProgress": "approximately 38 percent, no failure printed before interruption; no complete gate result or receipt",
+    "evidence": ".verification/logs/backend.log",
+    "priorCompleteAttempt": {
+      "sourceHead": "b42b2befecd631c142d582d9992f767de2c554d3",
+      "status": "failed_backend_gate",
+      "result": "4493 passed, 18 skipped, 4 failed, exit 1 in 1698.56s; two missing-pip failures and two standalone-Python address-space crashes. All four passed focused after runtime repair."
+    }
   },
   "baselineInputs": {
-    "python": "3.11.16 in isolated .venv with backend/requirements/dev.lock; pip restored with ensurepip; address-space behavior of uv standalone build is unsuitable for two verifier cases",
+    "python": "3.11.16 in persistent .venv with backend/requirements/dev.lock and pip restored; standalone uv binary crashes under 32-48 MiB RLIMIT_AS. A source-built Python 3.11.16 and venv passed the four failing cases but lived in /dev/shm and were cleared by interruption.",
+    "pythonSource": "https://www.python.org/ftp/python/3.11.16/Python-3.11.16.tar.xz; SHA-256 91bcdebfdde239a003ae93738a7fce0f9230fee5c4bc2b86f6e6e8c6f98aabe8",
     "frontend": "npm ci completed",
     "sourceMediaAndIndependentLabels": "Absent from supplied checkpoint bundle; no held-out inference run",
     "rootDisk": "Full; Python temporary files and isolated generated media use /dev/shm"
   },
   "units": {
-    "W00": { "status": "in_progress", "implemented": true, "verified": false, "accepted": false, "limitation": "Current full verifier failed on two missing pip tests and two standalone Python address-space crashes. Pip repaired; same-version runtime repair and source/label baseline pending." },
-    "W01": { "status": "in_progress", "implemented": true, "verified": true, "accepted": false, "limitation": "Focused and browser journey pass; provider-disabled verifier has not passed. Editable reopen requires retained source/store and matching generation." },
-    "W02": { "status": "in_progress", "implemented": true, "verified": true, "accepted": false, "limitation": "CPU contract and artifact tests pass; required normal verifier remains pending. No real SAM inference or model qualification." },
+    "W00": { "status": "in_progress", "implemented": true, "verified": false, "accepted": false, "limitation": "Full verifier interrupted after runtime repair. Frozen pilot manifest declares 18 tasks, 6 validation/12 held-out, 9297 labels, with zero declared labels or media files present in this checkout." },
+    "W01": { "status": "in_progress", "implemented": true, "verified": true, "accepted": false, "limitation": "Focused and browser journey pass; provider-disabled verifier has not passed at final head. Editable reopen requires retained source/store and matching generation." },
+    "W02": { "status": "in_progress", "implemented": true, "verified": true, "accepted": false, "limitation": "CPU contract and artifact tests pass; required normal verifier remains incomplete. No real SAM inference or model qualification." },
     "W03": { "status": "not_started" },
     "W04": { "status": "not_started" },
     "W05": { "status": "not_started" },
@@ -81,5 +98,5 @@
   "paidModelApiCalls": 0,
   "liveStoreAccessed": false,
   "remoteMutations": 0,
-  "nextSmallestAction": "Finish the same-version Python 3.11.16 runtime build, rerun the two address-space tests, then run the provider-disabled verifier at the current integration head without changing its gates."
+  "nextSmallestAction": "Recreate the source-built Python 3.11.16 runtime outside the transient /dev/shm if space permits, rerun the four focused baseline cases, then run the unchanged provider-disabled verifier at the integration head. Preserve the interrupted backend log as incomplete evidence."
 }
