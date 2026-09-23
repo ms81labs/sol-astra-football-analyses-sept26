@@ -2,13 +2,136 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
+from decimal import Decimal, ROUND_UP
+from io import BytesIO
 from typing import Any, Callable
+
+from .provider_images import MAX_IMAGE_BYTES, MAX_MANIFEST_IMAGES, ProviderImage
+from .workbench.money import money, text
 
 CONFIGURED_DEFAULT = "disabled_until_policy"
 LOCAL_MODEL_ID = "deepseek-r1:1.5b"
 
 Validator = Callable[[str, Any], dict]
+
+
+def _strict_report_schema(value):
+    if isinstance(value, list):
+        return [_strict_report_schema(item) for item in value]
+    if not isinstance(value, dict):
+        return value
+    result = {key: _strict_report_schema(item) for key, item in value.items()
+              if key not in {"title", "default"}}
+    if result.get("type") == "object":
+        result["additionalProperties"] = False
+        result["required"] = list(result.get("properties", {}))
+    return result
+
+
+def _astra_format():
+    from .report_contracts import ReportDraft
+    return {"format": {"type": "json_schema", "name": "report_draft_v1",
+        "strict": True, "schema": _strict_report_schema(ReportDraft.model_json_schema())}}
+
+
+def build_astra_request(prompt: str, images: list[tuple[ProviderImage, bytes]], *,
+                        approved_images: tuple[dict[str, Any], ...], max_output_tokens: int) -> dict[str, Any]:
+    if not isinstance(prompt, str) or not prompt or len(prompt.encode()) > 256 * 1024:
+        raise ValueError("invalid bounded Astra prompt")
+    if type(max_output_tokens) is not int or not 0 < max_output_tokens <= 25_000:
+        raise ValueError("invalid Astra output token ceiling")
+    if len(images) > MAX_MANIFEST_IMAGES:
+        raise ValueError("too many Astra image parts")
+    content = [{"type": "input_text", "text": prompt}]
+    identities = set()
+    actual_refs = []
+    from PIL import Image
+    for reference, payload in images:
+        if not isinstance(reference, ProviderImage) or not isinstance(payload, bytes) \
+                or not 0 < len(payload) <= MAX_IMAGE_BYTES:
+            raise ValueError("invalid approved image part")
+        ref = ProviderImage.model_validate(reference.model_dump())
+        if len(payload) != ref.imageBytes or hashlib.sha256(payload).hexdigest() != ref.imageSha256:
+            raise ValueError("approved image bytes do not match reference")
+        with Image.open(BytesIO(payload)) as image:
+            if image.format != "PNG" or image.size != (ref.width, ref.height):
+                raise ValueError("approved image shape does not match reference")
+            image.load()
+        identities.add((ref.matchId, ref.generationId, ref.sourceSha256))
+        actual_refs.append(ref.model_dump(mode="json"))
+        content.append({"type": "input_image", "detail": "high",
+                        "image_url": "data:image/png;base64," + base64.b64encode(payload).decode()})
+    if len(identities) > 1:
+        raise ValueError("mixed source image scope")
+    if tuple(actual_refs) != approved_images:
+        raise ValueError("image parts are not the server-approved evidence")
+    return {"model": "gpt-6-astra", "input": [{"role": "user", "content": content}],
+        "text": _astra_format(), "max_output_tokens": max_output_tokens,
+        "reasoning": {"effort": "low"}, "tools": [], "tool_choice": "none",
+        "parallel_tool_calls": False, "service_tier": "default", "store": False,
+        "background": False}
+
+
+def bound_astra_request(body: dict[str, Any], *, input_price_per_million: str,
+                        output_price_per_million: str, authorised_limit: str) -> dict[str, Any]:
+    expected = {"model", "input", "text", "max_output_tokens", "reasoning", "tools",
+                "tool_choice", "parallel_tool_calls", "service_tier", "store", "background"}
+    if not isinstance(body, dict) or set(body) != expected or body.get("model") != "gpt-6-astra" \
+            or body.get("text") != _astra_format() or body.get("reasoning") != {"effort": "low"} \
+            or body.get("tools") != [] or body.get("tool_choice") != "none" \
+            or body.get("parallel_tool_calls") is not False or body.get("service_tier") != "default" \
+            or body.get("store") is not False or body.get("background") is not False:
+        raise ValueError("Astra request is not fixed to a tool-free default service mode")
+    output_limit = body["max_output_tokens"]
+    if type(output_limit) is not int or not 0 < output_limit <= 25_000:
+        raise ValueError("invalid Astra output token ceiling")
+    messages = body.get("input")
+    if not isinstance(messages, list) or len(messages) != 1 or not isinstance(messages[0], dict) \
+            or set(messages[0]) != {"role", "content"} or messages[0]["role"] != "user":
+        raise ValueError("Astra request must contain one approved message")
+    content = messages[0]["content"]
+    if not isinstance(content, list) or not 1 <= len(content) <= MAX_MANIFEST_IMAGES + 1 \
+            or not isinstance(content[0], dict) or set(content[0]) != {"type", "text"} \
+            or content[0]["type"] != "input_text" or not isinstance(content[0]["text"], str):
+        raise ValueError("Astra request has invalid text or image parts")
+    for part in content[1:]:
+        if not isinstance(part, dict) or set(part) != {"type", "detail", "image_url"} \
+                or part["type"] != "input_image" or part["detail"] != "high" \
+                or not isinstance(part["image_url"], str) \
+                or not part["image_url"].startswith("data:image/png;base64,"):
+            raise ValueError("Astra request has invalid image part")
+        encoded_image = part["image_url"].removeprefix("data:image/png;base64,")
+        if len(encoded_image) > 4 * ((MAX_IMAGE_BYTES + 2) // 3):
+            raise ValueError("Astra image exceeds byte ceiling")
+        payload = base64.b64decode(encoded_image, validate=True)
+        if not 0 < len(payload) <= MAX_IMAGE_BYTES:
+            raise ValueError("Astra image exceeds byte ceiling")
+    priced = json.loads(json.dumps(body))
+    for part in priced["input"][0]["content"][1:]:
+        part["image_url"] = "data:image/png;base64,"
+    text_bytes = len(json.dumps(priced, sort_keys=True, separators=(",", ":")).encode())
+    if text_bytes > 256 * 1024:
+        raise ValueError("Astra request text exceeds byte ceiling")
+    # ponytail: two tokens per UTF-8 byte plus fixed message overhead is a loose
+    # ceiling; retain it until real billed usage can justify a tighter policy.
+    image_tokens = 3001 * (len(content) - 1)
+    input_tokens = 2 * text_bytes + 4096 + image_tokens
+    input_price, output_price, limit = (money(item) for item in
+        (input_price_per_million, output_price_per_million, authorised_limit))
+    if not 0 < input_price and 0 < output_price and 0 < limit:
+        raise ValueError("positive verified prices and authorised budget required")
+    maximum = ((input_tokens * input_price + output_limit * output_price) / Decimal(1_000_000)).quantize(
+        Decimal("0.000000000001"), rounding=ROUND_UP)
+    if maximum > limit:
+        raise ValueError("Astra request exceeds authorised budget")
+    encoded = json.dumps(body, sort_keys=True, separators=(",", ":")).encode()
+    return {"schemaVersion": 1, "modelId": "gpt-6-astra", "requestSha256": hashlib.sha256(encoded).hexdigest(),
+        "maxInputTokens": input_tokens, "maxImageTokens": image_tokens,
+        "maxOutputTokens": output_limit, "toolsEnabled": False, "serviceTier": "default",
+        "maximumCost": text(maximum), "currency": "USD"}
 
 
 def execute_local(prompt: str, analysis_type: str, validate: Validator, *, timeout_seconds: float = 120.0) -> dict:
