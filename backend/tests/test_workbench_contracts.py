@@ -493,6 +493,35 @@ def test_natural_and_typed_recovery_filters_return_the_same_evidence() -> None:
     assert [hit.eventId for hit in execute_typed_query(rows, natural, match_id="m1")] == ["wanted"]
 
 
+@pytest.mark.parametrize("spoken,kind", [
+    ("passes", "pass"), ("progressive passes", "progressive_pass"),
+    ("through balls", "through_ball"), ("crosses", "cross"),
+    ("shots", "shot"), ("goals", "goal"), ("turnovers", "turnover"),
+    ("recoveries", "recovery"), ("tackles", "tackle"),
+    ("interceptions", "interception"), ("carries", "carry"),
+    ("box entries", "box_entry"), ("final third entries", "final_third_entry"),
+])
+def test_every_supported_event_family_has_matching_natural_and_typed_evidence(spoken, kind) -> None:
+    rows = [{"id": "wanted", "type": kind, "team": "my_team", "fromTrackId": 7, "timestamp": 1.0},
+            {"id": "other", "type": kind, "team": "enemy", "fromTrackId": 7, "timestamp": 2.0}]
+    natural = parse_typed_query(f"show our {spoken} by player 7")
+    direct = TypedQuery(eventFamily=kind, team="my_team", playerTrackId=7)
+    assert natural.unanswerable is False
+    assert natural.eventFamily == kind
+    assert [hit.eventId for hit in execute_typed_query(rows, natural, match_id="m1")] == [
+        hit.eventId for hit in execute_typed_query(rows, direct, match_id="m1")] == ["wanted"]
+
+
+def test_supported_successor_family_keeps_exact_follow_up_scope() -> None:
+    query = parse_typed_query("our turnovers followed by opponent tackles within 10 seconds")
+    rows = [{"id": "start", "type": "turnover", "team": "my_team", "timestamp": 1.0},
+            {"id": "wrong", "type": "tackle", "team": "my_team", "timestamp": 2.0},
+            {"id": "wanted", "type": "tackle", "team": "enemy", "timestamp": 4.0}]
+    assert query.unanswerable is False
+    assert query.successorEvent == "tackle"
+    assert [hit.eventId for hit in execute_typed_query(rows, query, match_id="m1")] == ["start"]
+
+
 def test_calibrated_pitch_third_uses_the_same_typed_executor() -> None:
     rows = [{"id": "right", "type": "recovery", "timestamp": 1.0, "pitchRegion": "right_third"},
             {"id": "left", "type": "recovery", "timestamp": 2.0, "pitchRegion": "left_third"}]

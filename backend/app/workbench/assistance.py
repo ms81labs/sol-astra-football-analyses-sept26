@@ -104,13 +104,29 @@ class AssistanceDisposition(StrictModel):
     output: dict[str, Any] = Field(default_factory=dict)
 
 
+_EVENT_NAMES = {
+    "pass": "pass", "passes": "pass",
+    "progressive pass": "progressive_pass", "progressive passes": "progressive_pass",
+    "through ball": "through_ball", "through balls": "through_ball",
+    "cross": "cross", "crosses": "cross",
+    "shot": "shot", "shots": "shot",
+    "goal": "goal", "goals": "goal",
+    "turnover": "turnover", "turnovers": "turnover",
+    "recovery": "recovery", "recoveries": "recovery",
+    "tackle": "tackle", "tackles": "tackle",
+    "interception": "interception", "interceptions": "interception",
+    "carry": "carry", "carries": "carry",
+    "box entry": "box_entry", "box entries": "box_entry",
+    "final third entry": "final_third_entry", "final third entries": "final_third_entry",
+}
+_EVENT_PATTERN = "|".join(re.escape(name) for name in sorted(_EVENT_NAMES, key=len, reverse=True))
 _QUERY_RE = re.compile(
     r"(?:(?P<team>our|my team|enemy|opponent) )?"
     r"(?:(?P<period>first-half|second-half|period\s+(?P<period_n>\d+)) )?"
     r"(?:(?P<review>accepted|unreviewed) )?"
-    r"(?P<event>turnovers|turnover|shots|shot|passes|pass|recoveries|recovery)"
+    rf"(?P<event>{_EVENT_PATTERN})"
     r"(?: followed by (?:a )?(?:(?P<successor_team>our|my team|enemy|opponent|same) )?"
-    r"(?P<successor>shots|shot|passes|pass|turnovers|turnover)(?: within (?P<gap>\d+|ten) seconds)?)?",
+    rf"(?P<successor>{_EVENT_PATTERN})(?: within (?P<gap>\d+|ten) seconds)?)?",
     re.IGNORECASE,
 )
 
@@ -328,17 +344,7 @@ def _is_rejected_event(event: dict[str, Any]) -> bool:
 
 
 def _canonical_event(token: str) -> str:
-    mapping = {
-        "turnovers": "turnover",
-        "turnover": "turnover",
-        "shots": "shot",
-        "shot": "shot",
-        "passes": "pass",
-        "pass": "pass",
-        "recoveries": "recovery",
-        "recovery": "recovery",
-    }
-    return mapping.get(token.lower(), token.lower())
+    return _EVENT_NAMES[token.lower()]
 
 
 def events_as_query_rows(events: list[Any], *, match_id: str) -> list[dict[str, Any]]:
