@@ -14,8 +14,9 @@ import uuid
 from collections.abc import Iterator
 from contextlib import contextmanager
 from datetime import datetime, timezone
+from decimal import Decimal
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, TypedDict
 
 from pydantic import Field, field_validator
 
@@ -33,6 +34,11 @@ from .errors import (
 
 from .cache import REBUILD_FOR, cache_identity
 from .contracts import JobPhase, StrictModel
+
+
+class _CurrencyBucket(TypedDict):
+    budget: Decimal
+    attempts: list[AttemptBilling]
 
 
 LOGGER = logging.getLogger(__name__)
@@ -536,8 +542,8 @@ class DurableJobLedger:
                 raise ReconciliationRequired("billing reconciliation required before another attempt")
             settled, reserved, unsettled = self._budget_totals(connection, request.requestId)
             remaining = max(ZERO, money(request.budget) - settled - reserved - unsettled)
-            reservation = admission_money(remaining if reservation is None else reservation)
-            if reservation > remaining or (request.budget > 0 and reservation <= ZERO):
+            reserved_amount = admission_money(remaining if reservation is None else reservation)
+            if reserved_amount > remaining or (request.budget > 0 and reserved_amount <= ZERO):
                 raise BudgetExhausted("authorised budget exhausted")
             if request.authorisedLocation != "local":
                 # An observed overrun must not be escaped by choosing a new request ID.
@@ -556,20 +562,20 @@ class DurableJobLedger:
                         if "BUDGET_BREACH" in view.reasonCodes or "UNBOUNDED_EXPOSURE" in view.reasonCodes:
                             raise BudgetExhausted("group has unresolved unbounded exposure or a budget breach")
                         consumed = total((consumed, total(self._budget_totals(connection, other.requestId))))
-                if consumed + reservation > limit:
+                if consumed + reserved_amount > limit:
                     raise BudgetExhausted("shared provider budget exhausted")
             attempt = JobAttempt(
                 attemptId=str(uuid.uuid4()),
                 requestId=request.requestId,
                 status="submitted",
-                reservedCost=float(reservation),
+                reservedCost=float(reserved_amount),
                 sequence=sequence,
                 ownerId=owner_id,
                 leaseExpiresAt=now_epoch + max(0.0, lease_seconds),
                 dispatchStarted=False,
             )
             self._insert_attempt(connection, attempt, now)
-            self._insert_charge(connection, request.requestId, attempt.attemptId, "reserved", reservation)
+            self._insert_charge(connection, request.requestId, attempt.attemptId, "reserved", reserved_amount)
             return attempt
 
     def submit(self, request: JobRequest) -> JobAttempt:
@@ -1174,7 +1180,7 @@ class DurableJobLedger:
     def cost_summary(self, *, match_id: str | None = None) -> dict[str, Any]:
         with self._connect() as connection:
             connection.execute("BEGIN")
-            grouped = {}
+            grouped: dict[str, _CurrencyBucket] = {}
             reservations = []
             for row in connection.execute("SELECT payload_json FROM job_requests"):
                 req = JobRequest.model_validate_json(row["payload_json"])
@@ -1255,7 +1261,7 @@ def pause_experiment(*, remaining: float, termination_and_recovery: float) -> bo
     return remaining < termination_and_recovery
 
 
-def deployment_mode(name: str) -> dict[str, object]:
+def deployment_mode(name: str) -> dict[str, bool]:
     modes = {
         "local_only": {"admitted": True, "silentCloudFallback": False, "requiresGNetwork": False},
         "local_app_plus_burst_gpu": {"admitted": False, "silentCloudFallback": False, "requiresGNetwork": False, "requiresAuthorisedBudget": True},
@@ -1294,8 +1300,10 @@ def attach_durable_job_view(payload: dict[str, Any], ledger: DurableJobLedger) -
         view["attemptId"] = receipt.attemptId
         view["costReserved"] = receipt.costReserved
         view["costActual"] = receipt.costActual
-        view["costSummary"] = receipt.costSummary.model_dump(mode="json")
-        view.update(receipt.costSummary.model_dump(mode="json"))
+        cost_summary = receipt.costSummary
+        assert cost_summary is not None  # DurableJobLedger.receipt always projects billing.
+        view["costSummary"] = cost_summary.model_dump(mode="json")
+        view.update(view["costSummary"])
         view["cleanupResult"] = receipt.cleanupResult
         view["temporalPolicy"] = receipt.temporalPolicy
         view["cacheIdentity"] = receipt.cacheIdentity

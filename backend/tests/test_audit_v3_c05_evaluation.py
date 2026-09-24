@@ -3,12 +3,10 @@
 No detector/training call. The dummy checkpoint is a byte-identity fixture, not a
 model; scores concern these declared predictions, never checkpoint accuracy.
 """
-from copy import deepcopy
 import hashlib
 import json
 import os
 from pathlib import Path
-import shutil
 
 import pytest
 

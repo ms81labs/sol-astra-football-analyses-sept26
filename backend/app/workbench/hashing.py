@@ -7,10 +7,18 @@ import json
 import os
 import tempfile
 import threading
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from pathlib import Path
+from typing import TypedDict
 
 import fcntl
+
+
+class FileIdentityRecord(TypedDict):
+    sha256: str
+    size: int
+    mtime_ns: int
+    inode: int | None
 
 
 @dataclass(frozen=True)
@@ -66,7 +74,8 @@ class HashCache:
         with self._thread_lock, self.lock_path.open("a+b") as lock:
             fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
             payload = self._load()
-            payload[key] = asdict(identity)
+            payload[key] = {"sha256": identity.sha256, "size": identity.size,
+                            "mtime_ns": identity.mtime_ns, "inode": identity.inode}
             descriptor, temporary_name = tempfile.mkstemp(
                 prefix=f".{self.path.name}.",
                 suffix=".tmp",
@@ -84,7 +93,7 @@ class HashCache:
                 fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
         return identity
 
-    def _load(self) -> dict[str, dict[str, object]]:
+    def _load(self) -> dict[str, FileIdentityRecord]:
         try:
             payload = json.loads(self.path.read_text(encoding="utf-8"))
         except (FileNotFoundError, json.JSONDecodeError, OSError):

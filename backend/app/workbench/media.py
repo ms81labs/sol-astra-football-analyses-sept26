@@ -16,7 +16,8 @@ from fractions import Fraction
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Iterator, Literal
+from typing import Any, Iterator, Literal, TypedDict, cast
+from collections.abc import Sequence
 
 from .contracts import FrameIdentity, SamplingReceipt, SourceClockIdentity
 from .hashing import HashCache, stream_sha256
@@ -194,7 +195,7 @@ class OpenCvFrameSource(FrameSource):
     def _cv(self):
         if self._cv2 is not None:
             return self._cv2
-        import cv2  # type: ignore
+        import cv2
 
         return cv2
 
@@ -261,7 +262,7 @@ class OpenCvFrameSource(FrameSource):
                 presentation_time_seconds, pts, clock = _opencv_presentation_clock(
                     capture, cv2, index, last_msec=last_msec
                 )
-                if clock == "decoder_pts":
+                if clock == "decoder_pts" and presentation_time_seconds is not None:
                     last_msec = presentation_time_seconds * 1000.0
                 yield DecodedFrame(
                     source_frame_index=index,
@@ -293,14 +294,18 @@ class FfmpegFrameSource(FrameSource):
         *, policy: MediaExecutionPolicy | None = None,
     ):
         effective = policy or (probe.policy if probe is not None else MediaExecutionPolicy())
-        overrides = {}
+        decoded_limit = effective.max_decoded_bytes
         if max_output_bytes is not None:
-            overrides["max_decoded_bytes"] = min(max_output_bytes, effective.max_decoded_bytes) if effective.max_decoded_bytes is not None else max_output_bytes
+            decoded_limit = min(max_output_bytes, decoded_limit) if decoded_limit is not None else max_output_bytes
+        job_timeout = effective.job_timeout_seconds
         if wall_timeout_seconds is not None:
-            overrides["job_timeout_seconds"] = min(wall_timeout_seconds, effective.job_timeout_seconds)
-        if threads is not None:
-            overrides["threads"] = threads
-        self.policy = replace(effective, **overrides)
+            job_timeout = min(wall_timeout_seconds, job_timeout)
+        self.policy = replace(
+            effective,
+            max_decoded_bytes=decoded_limit,
+            job_timeout_seconds=job_timeout,
+            threads=threads if threads is not None else effective.threads,
+        )
         self.policy.admit_mode()
         self._frames = list(frames or [])
         self._identity = identity
@@ -347,6 +352,7 @@ class FfmpegFrameSource(FrameSource):
         identity = self._identity or self._probe.probe_identity(
             path, cancel_event=cancel_event, deadline=started + self.policy.job_timeout_seconds)
         frame_size, total_cap = self.policy.decode_budget(identity)
+        assert identity.width is not None and identity.height is not None  # decode_budget admits dimensions.
         width, height = int(identity.width), int(identity.height)
         command = [self._probe.ffmpeg, "-hide_banner", "-nostdin", "-loglevel", "info",
                    "-protocol_whitelist", "file,pipe", "-threads", str(self.policy.threads),
@@ -371,6 +377,7 @@ class FfmpegFrameSource(FrameSource):
                                      timingEntryLimit=64,
                                      bufferScope="producer payload assembly/conversion; excludes caller retention and child RSS")
             assert process.stdout is not None and process.stderr is not None
+            stderr_stream = process.stderr
             condition = threading.Condition()
             pts_by_index: dict[int, tuple[int, float]] = {}
             diagnostics = bytearray()
@@ -396,7 +403,7 @@ class FfmpegFrameSource(FrameSource):
                 parser = _ShowinfoParser(self.policy.diagnostic_tail_bytes)
                 try:
                     while not stopped.is_set() and (chunk := (
-                        process.stderr.read1(65536) if hasattr(process.stderr, "read1") else process.stderr.read(65536)
+                        stderr_stream.read1(65536) if hasattr(stderr_stream, "read1") else stderr_stream.read(65536)
                     )):
                         diagnostics.extend(chunk)
                         del diagnostics[:-self.policy.diagnostic_tail_bytes]
@@ -485,7 +492,7 @@ class FfmpegFrameSource(FrameSource):
             except BaseException as error:
                 execution.receipt.update(media_failure_receipt(error, policy=self.policy, previous=execution.receipt))
                 execution.reason = execution.reason or execution.receipt["outcome"]
-                error.execution_receipt = execution.receipt
+                vars(error)["execution_receipt"] = execution.receipt
                 raise
             finally:
                 stopped.set()
@@ -556,11 +563,15 @@ def first_bgr_frame(
     return None
 
 
+class MediaProcessResult(subprocess.CompletedProcess[bytes]):
+    execution_receipt: dict
+
+
 def _run_bounded_media_process(
     command: list[str], *, timeout: float, output_cap: int, file_cap: int,
     cancel_event: threading.Event | None = None, policy: MediaExecutionPolicy | None = None,
     deadline: float | None = None,
-) -> subprocess.CompletedProcess[bytes]:
+) -> MediaProcessResult:
     """Common process boundary for probe, proxy and export, including cancellation."""
     base = policy or MediaExecutionPolicy()
     timeout = _remaining_media_timeout(deadline, min(timeout, base.job_timeout_seconds), cancel_event)
@@ -608,7 +619,7 @@ def _run_bounded_media_process(
             execution.check(tail=stderr.decode(errors="replace").splitlines()[-256:])
             if errors or any(reader.is_alive() for reader in readers):
                 raise DecoderFailed(process.returncode, tail=["media pipe reader did not finish"])
-            result = subprocess.CompletedProcess(command, process.returncode, b"".join(chunks["stdout"]), stderr)
+            result = cast(MediaProcessResult, subprocess.CompletedProcess(command, process.returncode, b"".join(chunks["stdout"]), stderr))
             result.execution_receipt = execution.receipt
             return result
         finally:
@@ -714,14 +725,13 @@ class FfmpegProbe:
         policy: MediaExecutionPolicy | None = None,
     ):
         effective = policy or MediaExecutionPolicy()
-        changes = {}
-        if max_output_bytes is not None:
-            changes["max_file_bytes"] = min(max_output_bytes, effective.max_file_bytes)
-        if threads is not None:
-            changes["threads"] = threads
-        self.policy = replace(effective, **changes)
+        self.policy = replace(
+            effective,
+            max_file_bytes=min(max_output_bytes, effective.max_file_bytes) if max_output_bytes is not None else effective.max_file_bytes,
+            threads=threads if threads is not None else effective.threads,
+        )
         self.policy.admit_mode()
-        self.last_execution_receipt = None
+        self.last_execution_receipt: dict | None = None
         self.settings = settings
         self.hash_cache = hash_cache
         self.ffprobe = str(resolve_trusted_executable("ffprobe", configured=ffprobe, settings=settings))
@@ -765,7 +775,7 @@ class FfmpegProbe:
             payload = json.loads(stdout)
             if not isinstance(payload.get("streams", []), list) or len(payload.get("streams", [])) > self.policy.max_streams:
                 raise MediaResourceLimit("SOURCE_NOT_ADMITTED: stream count")
-            video = next((stream for stream in payload.get("streams", []) if stream.get("codec_type") == "video"), {})
+            video: dict[str, Any] = next((stream for stream in payload.get("streams", []) if stream.get("codec_type") == "video"), {})
             audio_tracks = sum(1 for stream in payload.get("streams", []) if stream.get("codec_type") == "audio")
             num, den = _parse_rate(video.get("avg_frame_rate") or video.get("r_frame_rate") or "0/1")
             time_base_num, time_base_den = _parse_rate(video.get("time_base") or "1/1")
@@ -926,10 +936,10 @@ def should_export_on_source_grid(
         numerator, denominator = time_base
         if numerator <= 0 or denominator <= 0:
             raise ValueError("time base must be positive")
-        origin = pts if grid_origin_pts is None else grid_origin_pts
-        step = Fraction(denominator, numerator) / Fraction(str(target_fps))
-        completed_steps = (Fraction(last_export_pts - origin, 1) / step).__floor__()
-        return Fraction(pts - origin, 1) >= (completed_steps + 1) * step
+        pts_origin = pts if grid_origin_pts is None else grid_origin_pts
+        pts_step = Fraction(denominator, numerator) / Fraction(str(target_fps))
+        pts_steps = (Fraction(last_export_pts - pts_origin, 1) / pts_step).__floor__()
+        return Fraction(pts - pts_origin, 1) >= (pts_steps + 1) * pts_step
     if presentation_time_seconds is None:
         return frame_count % max(int(frame_interval), 1) == 0
     if last_export_presentation_time is None:
@@ -1172,7 +1182,7 @@ def map_decoded_to_sample(
     if frame_interval <= 0:
         raise ValueError("frame_interval must be positive")
     exported = frame.source_frame_index % frame_interval == 0
-    if not exported:
+    if not exported or frame.presentation_time_seconds is None:
         return None
     return FrameIdentity(
         sourceFrameIndex=frame.source_frame_index,
@@ -1185,10 +1195,13 @@ def map_decoded_to_sample(
     )
 
 
-def detect_camera_cuts(presentation_times: list[float], *, jump_seconds: float = 0.5) -> list[int]:
+def detect_camera_cuts(presentation_times: Sequence[float | None], *, jump_seconds: float = 0.5) -> list[int]:
     cuts: list[int] = []
     for index in range(1, len(presentation_times)):
-        delta = presentation_times[index] - presentation_times[index - 1]
+        current, previous = presentation_times[index], presentation_times[index - 1]
+        if current is None or previous is None:
+            continue
+        delta = current - previous
         if delta < 0 or delta > jump_seconds:
             cuts.append(index)
     return cuts
@@ -1366,6 +1379,15 @@ def resolve_declared_interval(
     return (start_seconds, end_seconds)
 
 
+class ProxyAssets(TypedDict):
+    replacesOriginal: bool
+    originalRetained: bool
+    originalSha256: str
+    assets: dict[str, dict[str, str | int | bool]]
+    ptsMap: list[dict[str, int | float]]
+    frameExactExport: dict[str, bool]
+
+
 def derive_proxy_assets(
     original: Path,
     *,
@@ -1374,7 +1396,7 @@ def derive_proxy_assets(
     time_base: tuple[int, int],
     proxy_height: int = 720,
     hash_cache: HashCache | None = None,
-) -> dict[str, object]:
+) -> ProxyAssets:
     digest = _file_identity(original, hash_cache).sha256
     if digest != original_sha256:
         raise ValueError("original digest mismatch; refusing to replace the source asset")
@@ -1424,10 +1446,10 @@ def torso_colour_pixels(pixels: bytes, *, colour_order: ColourOrder, convert: bo
 
 def colour_round_trip(
     *,
-    source_box: tuple[int, int, int, int],
-    crop: tuple[int, int, int, int],
+    source_box: tuple[int, ...],
+    crop: tuple[int, ...],
     rotation: int,
-) -> tuple[int, int, int, int]:
+) -> tuple[int, ...]:
     del crop
     if rotation % 360 != 0:
         raise ValueError("non-zero rotation must be inverted before publishing source boxes")

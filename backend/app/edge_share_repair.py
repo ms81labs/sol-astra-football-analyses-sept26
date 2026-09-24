@@ -426,7 +426,7 @@ def _run_overlaps_dominant_touchline_window(run_rows: list[dict[str, object]]) -
 def _rows_path_length(rows: list[dict[str, object]]) -> float:
     ordered_rows = _best_ball_rows_by_frame(rows)
     path_length = 0.0
-    for previous_row, current_row in zip(ordered_rows, ordered_rows[1:]):
+    for previous_row, current_row in zip(ordered_rows, ordered_rows[1:], strict=False):
         previous_center = _row_center(previous_row)
         current_center = _row_center(current_row)
         if previous_center is None or current_center is None:

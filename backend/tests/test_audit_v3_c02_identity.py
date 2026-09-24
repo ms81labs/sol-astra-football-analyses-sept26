@@ -2,6 +2,7 @@
 from __future__ import annotations
 import json
 import pytest
+from backend.app.semantic_commands import SemanticCommandError
 from backend.app.schemas import MatchConfig
 from backend.app.storage import Storage
 from backend.app.processor import process_match
@@ -84,7 +85,7 @@ def test_old_pinned_generation_uses_its_own_approval(tmp_path):
 def test_bad_identity_approval_rejected_before_log_or_generation(tmp_path,bad):
     s=Storage(tmp_path/'store');mid=tracking(s,tmp_path)
     old=(s.current_generation(mid).generationId,s.list_corrections(mid))
-    with pytest.raises(Exception):
+    with pytest.raises(SemanticCommandError):
         s.promote_identity_for_match(mid,{'reviewed':True,**bad})
     assert (s.current_generation(mid).generationId,s.list_corrections(mid))==old
 

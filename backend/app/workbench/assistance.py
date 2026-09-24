@@ -116,7 +116,7 @@ def parse_typed_query(text: str, *, include_unknown: bool = False) -> TypedQuery
     event = _canonical_event(match.group("event"))
     successor = _canonical_event(match.group("successor")) if match.group("successor") else None
     team_token = (match.group("team") or "").lower()
-    team = "enemy" if team_token in {"enemy", "opponent"} else ("my_team" if team_token else None)
+    team: Literal["my_team", "enemy"] | None = "enemy" if team_token in {"enemy", "opponent"} else ("my_team" if team_token else None)
     period = None
     if match.group("period_n"):
         period = int(match.group("period_n"))
@@ -129,13 +129,14 @@ def parse_typed_query(text: str, *, include_unknown: bool = False) -> TypedQuery
     if successor and successor not in ALLOWED_EVENT_FAMILIES:
         return TypedQuery(eventFamily=event, unanswerable=True, reason="unknown_successor")
     successor_team_token = (match.group("successor_team") or "").lower()
-    successor_team = {
+    successor_teams: dict[str, Literal["same", "opponent", "my_team", "enemy"]] = {
         "our": "my_team",
         "my team": "my_team",
         "enemy": "enemy",
         "opponent": "opponent",
         "same": "same",
-    }.get(successor_team_token)
+    }
+    successor_team = successor_teams.get(successor_team_token)
     successor_constraint = (
         SuccessorConstraint(kind=successor, team=successor_team, period=period, withinSeconds=gap)
         if successor

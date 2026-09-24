@@ -537,7 +537,7 @@ def project_tracking_frames(
 def normalized_path_distance_m(frames: list[Any], *, pitch_length_m: float, pitch_width_m: float) -> float:
     """Distances of canonical 0..100 pitch coordinates; no image homography."""
     total = 0.0
-    for previous, current in zip(frames, frames[1:]):
+    for previous, current in zip(frames, frames[1:], strict=False):
         if current.timestamp <= previous.timestamp:
             continue
         for field in ("myTeam", "enemies", "unassignedPlayers"):

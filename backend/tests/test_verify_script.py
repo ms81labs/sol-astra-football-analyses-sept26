@@ -10,6 +10,7 @@ import subprocess
 import sys
 
 import pytest
+import yaml
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -725,7 +726,6 @@ def test_ci_keeps_canonical_verifier_and_declares_acceptance_lanes() -> None:
     assert 'python -c "import cv2, pandas"' in workflow
     assert 'python -c "import cv2, pandas, ultralytics"' in workflow
     assert "pytest -m real_media backend/tests" in workflow
-    assert workflow.count("set -o pipefail") == 4
     assert "ruff check backend --select F821,F822,F823" in workflow
     assert "ruff check backend --select RUF100,B023,ANN001,ANN002,ANN003,ANN201,ANN202,ARG002,BLE001,E402,F401,N802,N803,S310 --exit-zero" in workflow
     assert "pip install --require-hashes -r backend/requirements/quality-linux.lock" in workflow
@@ -750,3 +750,19 @@ def test_code_only_exclusion_manifest_is_shared_by_verifier_and_ci() -> None:
     ]
     assert "code_only_exclusions.txt" in VERIFY_SCRIPT.read_text(encoding="utf-8")
     assert "code_only_exclusions.txt" in CI_WORKFLOW.read_text(encoding="utf-8")
+
+
+def test_each_logged_ci_pipeline_propagates_producer_failure():
+    jobs = yaml.safe_load(CI_WORKFLOW.read_text())["jobs"]
+    checked = set()
+    for job_name, job in jobs.items():
+        for step in job.get("steps", []):
+            body = step.get("run", "")
+            if "| tee " not in body or "--exit-zero" in body:
+                continue
+            prefix = body.split("| tee ", 1)[0]
+            guards = "\n".join(line.strip() for line in prefix.splitlines() if line.strip().startswith("set "))
+            result = subprocess.run(["bash", "-e", "-c", guards + "\n(exit 23) | tee /dev/null"], capture_output=True, check=False)
+            assert result.returncode == 23, (job_name, step.get("name"), guards)
+            checked.add(job_name)
+    assert {"python-quality", "complete-backend", "excluded-backend", "integration", "real-media", "gpu-acceptance"} <= checked

@@ -23,7 +23,9 @@ def money(value: Any, *, signed: bool = False) -> Decimal:
         raise ValueError("invalid decimal money") from exc
     if not result.is_finite() or (not signed and result < ZERO) or abs(result) > MAX_MONEY:
         raise ValueError("money is negative, non-finite or outside the supported range")
-    if result.as_tuple().exponent < -12:
+    exponent = result.as_tuple().exponent
+    assert isinstance(exponent, int)  # Non-finite values have already been rejected.
+    if exponent < -12:
         raise ValueError("money supports at most 12 fractional decimal places")
     return result
 

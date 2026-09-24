@@ -1647,7 +1647,7 @@ def _infer_sample_interval_from_rows(rows: list[dict[str, object]]) -> int:
         return 1
     deltas = [
         current - previous
-        for previous, current in zip(frame_ids, frame_ids[1:])
+        for previous, current in zip(frame_ids, frame_ids[1:], strict=False)
         if current > previous
     ]
     if not deltas:

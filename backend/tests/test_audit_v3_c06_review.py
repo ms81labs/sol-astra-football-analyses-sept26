@@ -1,8 +1,6 @@
 """C06 independent failure-mode pass; synthetic fixtures, no model inference."""
 from __future__ import annotations
-import json
 import time
-from pathlib import Path
 
 import pytest
 from backend.app.workbench import media

@@ -17,7 +17,7 @@ def assemble_report(
     known_evidence_ids: set[str],
     narrative: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    grounded = ground_output({"evidence": claimed_evidence_ids}, known_ids=known_evidence_ids) if claimed_evidence_ids else {
+    grounded: dict[str, Any] = ground_output({"evidence": claimed_evidence_ids}, known_ids=known_evidence_ids) if claimed_evidence_ids else {
         "route": "template",
         "reasonCodes": ["GROUNDED"],
         "output": {"evidence": []},

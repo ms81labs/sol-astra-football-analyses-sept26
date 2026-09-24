@@ -52,3 +52,10 @@ provider operation.
 See `docs/runbooks/daytona-gpu-execution.md`, `docs/runbooks/artifact-restore.md`, and `docs/status/current.md`. Historical material lives under `docs/archive/` and is not an active runbook.
 
 RunPod was retired from active execution. No RunPod image was pushed or deployed during this migration. No Git history was rewritten. No model or application data was deleted.
+
+## Research commands and runtime packaging
+
+`backend/scripts/` remains available from a source or editable checkout for existing
+research commands, but is excluded from the runtime wheel. Shared label validation
+and tracking-evaluation functions live in `backend.app.pilot_labels` and
+`backend.app.pilot_tracking`; the original command modules retain compatibility exports.

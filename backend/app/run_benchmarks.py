@@ -5,6 +5,7 @@ from collections import Counter
 from math import hypot
 from pathlib import Path
 from statistics import median
+from typing import SupportsFloat, SupportsInt, TypedDict, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -14,7 +15,7 @@ from .proof_runtime import (
     load_proof_runtime_options,
     save_proof_runtime_options,
 )
-from .schemas import HomographyPoint, MatchConfig
+from .schemas import FrameData, HomographyPoint, MatchConfig
 from .settings import ProcessingSettings
 from .storage import Storage
 from .runtime_options import ArtifactReference, RuntimeOptionsError
@@ -458,11 +459,11 @@ def _selected_cluster_summary_from_benchmark(
     )
 
 
-def _summarize_frame_ball_track(frames: list[object]) -> tuple[float, float, bool, bool]:
+def _summarize_frame_ball_track(frames: list[FrameData]) -> tuple[float, float, bool, bool]:
     ball_positions = [
         (float(frame.ball.x), float(frame.ball.y))
         for frame in frames
-        if getattr(frame, "ball", None) is not None
+        if frame.ball is not None
     ]
     if not ball_positions:
         return 0.0, 0.0, False, False
@@ -659,7 +660,7 @@ def _safe_int(value: object, default: int = 0) -> int:
     if isinstance(value, bool):
         return default
     try:
-        return int(value)
+        return int(cast(SupportsInt | str | bytes | bytearray, value))
     except (TypeError, ValueError):
         return default
 
@@ -668,7 +669,7 @@ def _safe_float(value: object, default: float = 0.0) -> float:
     if isinstance(value, bool):
         return default
     try:
-        return float(value)
+        return float(cast(SupportsFloat | str | bytes | bytearray, value))
     except (TypeError, ValueError):
         return default
 
@@ -867,7 +868,7 @@ def discover_saved_match_slice_suite_entries(storage_root: Path, max_entries: in
 
 def _safe_suite_metric(value: object) -> float:
     try:
-        return float(value)
+        return float(cast(SupportsFloat | str | bytes | bytearray, value))
     except (TypeError, ValueError):
         return 0.0
 
@@ -944,7 +945,7 @@ def diagnose_benchmark_suite_robustness(
     suite_summary: dict[str, object],
     source_summaries: dict[str, dict[str, object]],
 ) -> dict[str, object]:
-    distinct_source_clip_count = int(suite_summary.get("distinctSourceClipCount", 0) or 0)
+    distinct_source_clip_count = int(cast(SupportsInt | str | bytes | bytearray, suite_summary.get("distinctSourceClipCount", 0) or 0))
     if distinct_source_clip_count < 2:
         return {
             "robustnessOutcome": "dataset_still_too_narrow",
@@ -1438,8 +1439,21 @@ def _summarize_recovery_profile_matrix(recovery_profile_matrix: dict[str, object
     }
 
 
-def _summarize_accepted_match_state(payload: dict[str, object] | None) -> dict[str, object]:
-    result: dict[str, object] = {
+class AcceptedMatchStateSummary(TypedDict):
+    accepted_match_state_frames: int
+    accepted_match_state_coverage_ratio: float
+    visible_state_frames: int
+    inferred_state_frames: int
+    hidden_state_frames: int
+    controlled_state_frames: int
+    hidden_controlled_state_frames: int
+    restart_or_out_state_frames: int
+    state_continuity_applied_frames: int
+    match_state_mode_counts: dict[str, int]
+
+
+def _summarize_accepted_match_state(payload: dict[str, object] | None) -> AcceptedMatchStateSummary:
+    result: AcceptedMatchStateSummary = {
         "accepted_match_state_frames": 0,
         "accepted_match_state_coverage_ratio": 0.0,
         "visible_state_frames": 0,
@@ -1495,13 +1509,44 @@ def _summarize_accepted_match_state(payload: dict[str, object] | None) -> dict[s
     return result
 
 
+class BallTruthSummary(TypedDict):
+    ball_truth_layers_present: bool
+    observed_ball_frames: int
+    inferred_ball_frames: int
+    accepted_ball_frames: int
+    tracking_observed_ball_frames: int
+    raw_probe_observed_ball_frames: int
+    filtered_probe_observed_ball_frames: int
+    suppressed_probe_observed_ball_frames: int
+    anchored_probe_observed_ball_frames: int
+    bridge_probe_observed_ball_frames: int
+    probe_observed_ball_frames: int
+    probe_only_observed_ball_frames: int
+    accepted_from_observed_frames: int
+    accepted_from_observed_ratio: float
+    supported_observed_ball_frames: int
+    supported_accepted_ball_frames: int
+    supported_accepted_ball_ratio: float
+    unsupported_accepted_edge_frames: int
+    direct_observation_breakdown_present: bool
+    accepted_ball_ratio: float
+    accepted_segment_count: int
+    unknown_gap_count: int
+    longest_unknown_gap_frames: int
+    accepted_ball_rows: list[object] | None
+    long_gap_treatment_outcome: str | None
+    controlled_possession_assignment_outcome: str | None
+    frozen_primary_acquisition_mode: str | None
+    frozen_detector_model_path: str | None
+
+
 def _summarize_ball_truth_layers(
     payload: dict[str, object] | None,
     *,
     frame_count: int,
     with_ball_frames: int,
-) -> dict[str, object]:
-    result: dict[str, object] = {
+) -> BallTruthSummary:
+    result: BallTruthSummary = {
         "ball_truth_layers_present": payload is not None,
         "observed_ball_frames": 0,
         "inferred_ball_frames": 0,
@@ -1711,8 +1756,10 @@ def _summarize_remote_runtime(storage: Storage, match_id: str, latest_job) -> di
         worker_started_processing = _safe_bool(transport_debug.get("workerStartedProcessing"), False)
         worker_returned_result = _safe_bool(transport_debug.get("workerReturnedResult"), False)
         worker_heartbeat_enabled = _safe_bool(transport_debug.get("workerHeartbeatEnabled"), False)
-        worker_current_stage = transport_debug.get("workerCurrentStage") if isinstance(transport_debug.get("workerCurrentStage"), str) else None
-        worker_stage_status = transport_debug.get("workerStageStatus") if isinstance(transport_debug.get("workerStageStatus"), str) else None
+        raw_current_stage = transport_debug.get("workerCurrentStage")
+        worker_current_stage = raw_current_stage if isinstance(raw_current_stage, str) else None
+        raw_stage_status = transport_debug.get("workerStageStatus")
+        worker_stage_status = raw_stage_status if isinstance(raw_stage_status, str) else None
         raw_worker_last_heartbeat_at = transport_debug.get("workerLastHeartbeatAt")
         if isinstance(raw_worker_last_heartbeat_at, str) and raw_worker_last_heartbeat_at.strip():
             worker_last_heartbeat_at = raw_worker_last_heartbeat_at.strip()

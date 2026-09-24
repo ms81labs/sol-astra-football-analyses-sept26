@@ -1,5 +1,8 @@
 # Backend code-quality follow-up — 24 September 2026
 
+**Continuation:** Current remediation status is recorded in `2026-09-24-backend-quality-continuation.md`. Counts below describe the earlier pass.
+
+
 ## Scope and implementation
 
 Reviewed application source at `20c6a2b5443390414d32d368f3d183abdf15af2a`. Read-only source-audit run `36020617588`, at `d369240219ca487a53ef397d4062f9906a323f91`, captured 1,157 tracked text/source files with a verified SHA-256 manifest and Ruff 0.16.8 results.

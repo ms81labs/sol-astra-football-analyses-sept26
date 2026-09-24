@@ -41,7 +41,9 @@ class ClusterMapping(StrictModel):
 
 
 def cluster_mapping(*, cluster_id: int, selected_semantic: str | None) -> ClusterMapping:
-    semantic = selected_semantic if selected_semantic in {"my_team", "enemy"} else None
+    semantic: Literal["my_team", "enemy"] | None = (
+        "my_team" if selected_semantic == "my_team" else "enemy" if selected_semantic == "enemy" else None
+    )
     return ClusterMapping(clusterId=cluster_id, semanticTeam=semantic, suggestion=semantic is None)
 
 
@@ -152,7 +154,7 @@ def next_available_track_id(frames: list[Any]) -> int:
         ):
             for player in players:
                 try:
-                    ids.append(int(getattr(player, "id")))
+                    ids.append(int(player.id))
                 except (TypeError, ValueError):
                     continue
     return max(ids) + 1

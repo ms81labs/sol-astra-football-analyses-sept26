@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import io
-import json
 import sqlite3
 from pathlib import Path
 from types import SimpleNamespace
@@ -859,7 +858,7 @@ def test_leftover_post_handlers_live_outside_production_main() -> None:
     from backend.app.workbench.leftover_http import LEFTOVER_POST_PATHS
     from backend.app.workbench import leftover_routes
 
-    source = Path(leftover_routes.__file__).read_text(encoding="utf-8")
+    source = "\n".join(path.read_text(encoding="utf-8") for path in Path(leftover_routes.__file__).parent.glob("leftover*routes.py"))
     main_source = Path("backend/app/main.py").read_text(encoding="utf-8")
     assert "create_leftover_post_router" in source
     assert "@app.post(\"/api/support/bundle\")" not in main_source
@@ -881,7 +880,7 @@ def test_production_app_registers_leftover_posts_only_under_dev_prefix(tmp_path:
         and (route.path == "/api/support/bundle" or route.path.endswith("/support/bundle"))
     }
     assert support_posts["/api/support/bundle"].endpoint.__module__ == "backend.app.main"
-    assert support_posts["/api/workbench/dev/support/bundle"].endpoint.__module__.endswith("leftover_routes")
+    assert support_posts["/api/workbench/dev/support/bundle"].endpoint.__module__ == "backend.app.workbench.leftover_analysis_routes"
 
     client = TestClient(app, base_url="http://127.0.0.1")
     public = client.post("/api/support/bundle", json={"consented": True})
@@ -996,7 +995,7 @@ def test_leftover_get_handlers_live_outside_production_main() -> None:
     from backend.app.workbench.leftover_http import LEFTOVER_GET_PATHS
     from backend.app.workbench import leftover_routes
 
-    source = Path(leftover_routes.__file__).read_text(encoding="utf-8")
+    source = "\n".join(path.read_text(encoding="utf-8") for path in Path(leftover_routes.__file__).parent.glob("leftover*routes.py"))
     sibling = Path(leftover_routes.__file__).with_name("leftover_get_routes.py")
     sibling_source = sibling.read_text(encoding="utf-8") if sibling.exists() else ""
     combined = source + sibling_source

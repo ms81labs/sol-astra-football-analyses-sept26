@@ -20,8 +20,8 @@ import tempfile
 
 from .perception_identity import canonical_digest
 from .workbench.evaluation import EvaluationGate, PROTOCOL_VERSION, FROZEN_TASK_COUNT, REQUIRED_MINUTES, score_hota_idf1
-from backend.scripts.validate_football_analysis_pilot_labels import parse_unique_json, validate_label_payload
-from backend.scripts.evaluate_football_analysis_pilot import TRACKEVAL_COMMIT, evaluation_frame_ids
+from .pilot_labels import parse_unique_json, validate_label_payload
+from .pilot_tracking import TRACKEVAL_COMMIT, evaluation_frame_ids
 
 _JSON_LIMIT = 64 * 1024 * 1024
 _SCOPE = "image_space_tracking"
@@ -282,7 +282,7 @@ def main():
     parser.add_argument("--worker-input", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     if args.worker_input:
-        from backend.scripts.evaluate_football_analysis_pilot import build_trackeval_sequence_data, evaluate_tracking
+        from .pilot_tracking import build_trackeval_sequence_data, evaluate_tracking
         _check_scorer(args.trackeval_root)
         inputs = parse_unique_json(args.worker_input.read_bytes())
         scores = {case["task"]["taskId"]: evaluate_tracking(build_trackeval_sequence_data(case["task"], case["labels"],

@@ -74,7 +74,7 @@ def classify_ownership(
         return OwnershipObservation(mode="unknown", reasonCodes=["NEAREST_PLAYER_INSUFFICIENT"])
     if nearest_team not in {"my_team", "enemy"}:
         return OwnershipObservation(mode="loose_ball", controllingTeam="contested", reasonCodes=["UNASSIGNED_NEAR_PLAYER"])
-    return OwnershipObservation(mode="controlled_possession", controllingTeam=nearest_team, reasonCodes=[])
+    return OwnershipObservation(mode="controlled_possession", controllingTeam="my_team" if nearest_team == "my_team" else "enemy", reasonCodes=[])
 
 
 def possession_from_states(states: list[dict[str, Any]], requested_seconds: float) -> PossessionSummary:

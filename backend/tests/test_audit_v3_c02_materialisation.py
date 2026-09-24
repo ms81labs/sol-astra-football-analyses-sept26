@@ -2,6 +2,7 @@
 from __future__ import annotations
 from pathlib import Path
 import pytest
+from backend.app.workbench.errors import CorrectionApplicationError
 import backend.app.processor as processor
 import backend.app.review_service as review_service
 from backend.app.processor import process_match, reprocess_video_match
@@ -73,7 +74,7 @@ def test_v3t20_failed_attempt_recovery_does_exactly_one_new_attempt(tmp_path, mo
     original = processor.detect_events
     monkeypatch.setattr(processor, 'detect_events', lambda *a, **k: (_ for _ in ()).throw(RuntimeError('test interruption')))
     before = storage.current_generation(mid).generationId
-    with pytest.raises(Exception):
+    with pytest.raises(CorrectionApplicationError):
         storage.submit_correction(mid,kind='team_mapping',payload={'swap': True},command_id='retry')
     assert storage.current_generation(mid).generationId == before
     assert counts == {'materialisations': 1, 'summaries': 0, 'detectors': 0}

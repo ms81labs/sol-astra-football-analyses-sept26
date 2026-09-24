@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import pytest
 
 import backend.scripts.run_football_external_benchmark_harness_smoke as smoke
 

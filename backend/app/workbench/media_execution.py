@@ -175,6 +175,7 @@ class MediaExecution:
         self.receipt["executable"] = str(binary)
         self.receipt["executableSha256"] = executable_digest.hexdigest()
         self.receipt["commandSha256"] = hashlib.sha256(json.dumps(list(map(str, command))).encode()).hexdigest()
+        self._limits_fd: int | None
         self._limits_fd, writer = os.pipe()
         os.set_blocking(self._limits_fd, False)
         launcher = Path(__file__).with_name("_media_launcher.py")
@@ -278,6 +279,7 @@ class MediaExecution:
         if code == 0 and isinstance(getattr(self.process, "pid", None), int) and not self.receipt["enforcedLimits"]:
             self.reason = self.reason or "LIMIT_INSTALLATION_UNVERIFIED"
         reason = self.reason
+        error: RuntimeError
         if reason == "CANCELLED":
             error = DecodeCancelled("ffmpeg process cancelled")
         elif reason:
@@ -294,7 +296,7 @@ class MediaExecution:
         else:
             return
         self.receipt.update(outcome=reason, returnCode=code)
-        error.execution_receipt = self.receipt
+        vars(error)["execution_receipt"] = self.receipt
         raise error
 
     def close(self) -> None:
@@ -337,5 +339,5 @@ def media_failure_receipt(error: BaseException, *, policy=None, previous=None) -
         receipt.setdefault("policySha256", policy.digest)
     receipt.setdefault("enforcedLimits", {})
     receipt.setdefault("reaped", False)
-    error.execution_receipt = receipt
+    vars(error)["execution_receipt"] = receipt
     return receipt

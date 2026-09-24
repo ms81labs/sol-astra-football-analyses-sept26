@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import Field
 
@@ -318,7 +318,7 @@ def evaluate_metric_spec(
     if "controlled_frames" in required and denominator <= 0:
         reasons.append("ZERO_DENOMINATOR")
     if reasons:
-        availability = "unknown" if reasons == ["ZERO_DENOMINATOR"] else "withheld"
+        availability: Literal["unknown", "withheld"] = "unknown" if reasons == ["ZERO_DENOMINATOR"] else "withheld"
         return MetricAvailability(
             metric=metric,
             definitionVersion=DEFINITION_VERSION,

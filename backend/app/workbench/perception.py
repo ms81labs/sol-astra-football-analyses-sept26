@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Any, Literal, cast
+from collections.abc import Iterable, Sequence
 
 import numpy as np
 from pydantic import Field
@@ -49,7 +50,7 @@ class BenchmarkReceipt(StrictModel):
     labelsIndependent: bool
 
 
-def _iou(a: tuple[float, float, float, float], b: tuple[float, float, float, float]) -> float:
+def _iou(a: Sequence[float], b: Sequence[float]) -> float:
     ax1, ay1, ax2, ay2 = a
     bx1, by1, bx2, by2 = b
     ix1, iy1, ix2, iy2 = max(ax1, bx1), max(ay1, by1), min(ax2, bx2), min(ay2, by2)
@@ -185,7 +186,7 @@ def unwrap_ultralytics_track_result(tracked: object) -> object:
             raise RuntimeError("ultralytics track returned no results")
         return tracked[0]
     try:
-        return next(iter(tracked))  # type: ignore[arg-type]
+        return next(iter(cast(Iterable[object], tracked)))
     except StopIteration as exc:
         raise RuntimeError("ultralytics track returned no results") from exc
 
@@ -505,7 +506,7 @@ class IouAssociationFallback:
                     previous_bbox = previous.get("bbox")
                     if not previous_bbox:
                         continue
-                    score = _iou(detection.bbox, tuple(previous_bbox))  # type: ignore[arg-type]
+                    score = _iou(detection.bbox, tuple(previous_bbox))
                     if score >= best_iou:
                         best_iou = score
                         best_index = index

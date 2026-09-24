@@ -2807,7 +2807,7 @@ def test_sdk_image_factory_context_lives_through_create_and_always_cleans():
 @pytest.mark.parametrize("delete_fails", [False, True])
 def test_sdk_create_cleans_raw_sandbox_when_image_context_exit_fails(delete_fails):
     from backend.app.daytona import (
-        DaytonaExecutionError, DaytonaSandboxSpec, _SdkClient,
+        DaytonaSandboxSpec, _SdkClient,
         _UnreturnedSandboxCleanupError,
     )
 

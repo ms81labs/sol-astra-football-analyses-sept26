@@ -146,7 +146,7 @@ def _detect_cuda() -> dict[str, bool]:
     except Exception:
         nvidia = False
     try:
-        import torch  # type: ignore
+        import torch
 
         torch_cuda = bool(getattr(torch, "cuda", None) and torch.cuda.is_available())
     except Exception:

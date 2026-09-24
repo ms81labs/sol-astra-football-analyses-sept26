@@ -197,7 +197,7 @@ def evaluate_prediction_result(
         else np.empty((0, 2))
     )
     predictions_by_frame: dict[int, list[np.ndarray]] = {frame: [] for frame in sampled_frames}
-    for row, point in zip(rows, projected):
+    for row, point in zip(rows, projected, strict=False):
         predictions_by_frame[int(row["Frame_ID"])].append(point)
 
     references_by_frame: dict[int, list[list[float]]] = {frame: [] for frame in sampled_frames}

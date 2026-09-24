@@ -43,7 +43,7 @@ def validate_state(
     identities = {(p["id"], team) for f in frames
                   for team, players in (("my_team", f.get("myTeam", [])), ("enemy", f.get("enemies", [])))
                   for p in players}
-    for frame, payload, assignment_payload in zip(frames, value["frames"], assignments):
+    for frame, payload, assignment_payload in zip(frames, value["frames"], assignments, strict=False):
         state = MatchStateFrame.model_validate(payload)
         assignment = BallOwnership.model_validate(assignment_payload)
         if (assignment.frameId, assignment.timestamp) != (state.frameId, state.timestamp):

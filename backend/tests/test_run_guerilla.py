@@ -2262,7 +2262,7 @@ def test_recovery_profile_matrix_marks_reviewed_positive_acceptance_override():
 def test_reviewed_positive_selected_segment_profile_records_continuity_gate_trace():
     profile_name = "source_robustness_shadow_promoted_v6_reviewed_positive_selected_segment_profile_v1"
     rows = _reviewed_positive_segment_rows()
-    for row, x in zip(rows, [20.0, 50.0, 80.0, 50.0, 20.0]):
+    for row, x in zip(rows, [20.0, 50.0, 80.0, 50.0, 20.0], strict=False):
         row["X"] = x
         row["Y"] = 34.0
 

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 from backend.scripts import run_promoted_v6_reviewed_positive_proposal_generation_fix
 

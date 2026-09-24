@@ -107,7 +107,7 @@ def materialize_reference_intervals(
     if len(offsets) != len(selected) or any(not math.isfinite(float(offset)) for offset in offsets):
         raise ValueError("one finite reference clock offset is required per interval")
     reference_intervals = [(round(start + float(offset), 3), round(end + float(offset), 3))
-                           for (start, end), offset in zip(selected, offsets)]
+                           for (start, end), offset in zip(selected, offsets, strict=False)]
     if any(start < 0 for start, _end in reference_intervals) or any(
         reference_intervals[index][0] < reference_intervals[index - 1][1]
         for index in range(1, len(reference_intervals))
@@ -231,7 +231,7 @@ def main() -> None:
     tasks.sort(key=lambda task: float(task["globalStartSeconds"]))
     if len(tasks) != len(intervals) or any(
         [float(task["globalStartSeconds"]), float(task["globalEndSeconds"])] != interval
-        for task, interval in zip(tasks, intervals)
+        for task, interval in zip(tasks, intervals, strict=False)
     ):
         parser.error("frozen task intervals differ from selected source intervals")
     clock_offsets = reference_clock_offsets(tasks, candidates[0]["paths"], args.metadata_xml)

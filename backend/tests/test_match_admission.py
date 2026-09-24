@@ -4,7 +4,6 @@ import json
 import sqlite3
 import threading
 from contextlib import asynccontextmanager
-from io import BytesIO
 from pathlib import Path
 
 import anyio

@@ -72,7 +72,6 @@ def test_v3t23_missing_required_events_is_not_empty_success(tmp_path):
 # Candidate-only acceptance extensions use the new explicit report schema.
 import copy
 import hashlib
-import json
 import threading
 from concurrent.futures import ThreadPoolExecutor
 

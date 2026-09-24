@@ -160,7 +160,7 @@ def score_hota_idf1(
         if units not in {"fraction", "percentage"}:
             reasons.append("SCORE_UNITS_REQUIRED")
         elif numeric_results and any(not 0 <= float(value) <= (1 if units == "fraction" else 100)
-                                     for value in (hota, idf1)):
+                                     for value in (hota, idf1) if value is not None):
             reasons.append("SCORE_OUT_OF_RANGE")
         if not numeric_results:
             reasons.append("EVALUATION_RESULT_NOT_RECORDED")

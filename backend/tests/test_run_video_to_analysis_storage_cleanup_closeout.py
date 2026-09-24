@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import backend.scripts.run_video_to_analysis_storage_cleanup_approval as approval

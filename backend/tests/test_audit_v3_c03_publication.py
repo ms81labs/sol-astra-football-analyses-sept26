@@ -13,7 +13,6 @@ pytestmark = pytest.mark.integration
 def _export_reader(root, mid, pipe):
     _child_setup()
     try:
-        from backend.app.main import create_app
         from backend.app.report_export import build_match_report_export
         from backend.app.report_store import ReportStore
         from backend.app.match_bundle import build_match_bundle

@@ -16,6 +16,7 @@ import sys
 import tracemalloc
 
 import pytest
+from pydantic import ValidationError
 
 from backend.app.remote_contracts import (
     CompletionReceipt,
@@ -934,7 +935,7 @@ def test_worker_retains_failed_generation_without_public_marker_or_destructive_c
     monkeypatch.setattr(worker.os, "unlink", record_unlink)
     monkeypatch.setattr(worker.os, "rmdir", record_rmdir)
 
-    with pytest.raises(Exception):
+    with pytest.raises(OSError):
         worker.run_worker(request_path, logical_result, completion_path)
 
     generation = tmp_path / worker._generation_layout(
@@ -1055,7 +1056,7 @@ def test_direct_generation_writer_retains_partial_fixed_file_on_failure(
         ),
     }[artifact]
 
-    with pytest.raises(Exception):
+    with pytest.raises(worker.WorkerError):
         call()
 
     target = tmp_path / getattr(layout, artifact)
@@ -1769,7 +1770,7 @@ def test_worker_output_overlap_preserves_every_sealed_input(
         lambda *args, **kwargs: process_calls.append(1) or {"rows": [{"Frame_ID": 0}]},
     )
 
-    with pytest.raises(Exception):
+    with pytest.raises(worker.WorkerError):
         worker.run_worker(request_path, result_path, completion_path)
 
     assert process_calls == []
@@ -1806,7 +1807,7 @@ def test_worker_output_overlap_rejects_collisions_among_publications_before_clea
         lambda *args, **kwargs: process_calls.append(1) or {"rows": [{"Frame_ID": 0}]},
     )
 
-    with pytest.raises(Exception):
+    with pytest.raises(worker.WorkerError):
         worker.run_worker(request_path, result_path, completion_path)
 
     assert process_calls == []
@@ -1824,7 +1825,7 @@ def test_worker_malformed_preserves_all_preexisting_publications(tmp_path):
         path.write_bytes(f"original-{index}".encode())
     before = {path: path.read_bytes() for path in publication_paths}
 
-    with pytest.raises(Exception):
+    with pytest.raises(RemoteContractError):
         worker.run_worker(request_path, result_path, completion_path)
 
     assert {path: path.read_bytes() for path in publication_paths} == before
@@ -1904,7 +1905,7 @@ def test_worker_match_config_rejects_every_authoritative_schema_failure(payload)
     import backend.app.gpu_worker as worker
     from backend.app.schemas import MatchConfig
 
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         MatchConfig.model_validate(payload)
     with pytest.raises(worker.WorkerError, match="match config"):
         worker._match_config(payload)
@@ -2704,7 +2705,7 @@ def test_generation_progress_enforces_validation_and_limits(tmp_path, monkeypatc
             worker.ProgressEvent(1, "job-1", 1, 2, "run", "ok", stamp),
         )
     elif mutation == "credentials":
-        with pytest.raises(Exception):
+        with pytest.raises(RemoteContractError):
             worker.ProgressEvent(1, "job-1", 1, 1, "run", "api_key=secret", stamp)
         return
     elif mutation == "line":
@@ -2722,7 +2723,7 @@ def test_generation_progress_enforces_validation_and_limits(tmp_path, monkeypatc
         )
     layout = _generation_layout(worker, generation_id="a" * 32)
     owned = worker._create_owned_generation(tmp_path, layout)
-    with pytest.raises(Exception):
+    with pytest.raises(worker.WorkerError):
         worker._write_generation_progress(tmp_path, owned, events, "job-1")
     assert (tmp_path / layout.progress).exists()
 
@@ -2943,7 +2944,7 @@ def test_validation_failure_precedes_materialization_and_processing(tmp_path, mo
     materialize_calls = []
     monkeypatch.setattr(worker, "process_video_input", lambda *args, **kwargs: process_calls.append(1))
     monkeypatch.setattr(worker, "_materialize_local_options", lambda *args, **kwargs: materialize_calls.append(1))
-    with pytest.raises(Exception):
+    with pytest.raises(RemoteContractError):
         worker.run_worker(request_path, result_path, completion_path)
     assert process_calls == [] and materialize_calls == []
     assert not result_path.exists() and not completion_path.exists()
@@ -2986,7 +2987,7 @@ def test_manifest_and_sealed_artifact_sets_must_match_before_materialization(tmp
     materialize_calls = []
     monkeypatch.setattr(worker, "process_video_input", lambda *args, **kwargs: process_calls.append(1))
     monkeypatch.setattr(worker, "_materialize_local_options", lambda *args, **kwargs: materialize_calls.append(1))
-    with pytest.raises(Exception):
+    with pytest.raises(worker.WorkerError):
         worker.run_worker(request_path, result_path, completion_path)
     assert process_calls == [] and materialize_calls == []
 
@@ -3120,7 +3121,7 @@ def test_unsafe_processor_results_roll_back_publication(tmp_path, monkeypatch, b
 
     request_path, result_path, completion_path = _bundle(tmp_path)
     monkeypatch.setattr(worker, "process_video_input", lambda *args, **kwargs: bad_result)
-    with pytest.raises(Exception):
+    with pytest.raises(worker.WorkerError):
         worker.run_worker(request_path, result_path, completion_path)
     assert not result_path.exists() and not completion_path.exists()
 
@@ -3136,7 +3137,7 @@ def test_malicious_progress_fails_and_removes_outputs(tmp_path, monkeypatch):
         return {"rows": [{"Frame_ID": 0}]}
 
     monkeypatch.setattr(worker, "process_video_input", process)
-    with pytest.raises(Exception):
+    with pytest.raises(worker.WorkerError):
         worker.run_worker(request_path, result_path, completion_path)
     assert not result_path.exists() and not completion_path.exists()
 
@@ -3164,7 +3165,7 @@ def test_oversized_wrong_job_or_sensitive_progress_fails_safely(tmp_path, monkey
         return {"rows": [{"Frame_ID": 0}]}
 
     monkeypatch.setattr(worker, "process_video_input", process)
-    with pytest.raises(Exception):
+    with pytest.raises(worker.WorkerError):
         worker.run_worker(request_path, result_path, completion_path)
     assert not result_path.exists() and not completion_path.exists()
 
@@ -3267,7 +3268,7 @@ def test_private_completion_failure_retains_generation_without_public_outputs(tm
         "_write_generation_completion",
         lambda *args, **kwargs: (_ for _ in ()).throw(OSError("publication failed")),
     )
-    with pytest.raises(Exception):
+    with pytest.raises(OSError):
         worker.run_worker(request_path, result_path, completion_path)
     assert not result_path.exists() and not completion_path.exists()
     assert (tmp_path / "outputs/result.json.generations" / generation_id).is_dir()

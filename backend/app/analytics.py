@@ -248,7 +248,7 @@ def _summarize_defensive_shape(
         "enemy": {"line_height": 0.0, "team_length": 0.0, "count": 0},
     }
 
-    for frame, assignment in zip(frames, assignments):
+    for frame, assignment in zip(frames, assignments, strict=False):
         defending_team = "my_team" if assignment.team == "enemy" else "enemy" if assignment.team == "my_team" else None
         if defending_team is None:
             continue
@@ -753,7 +753,7 @@ def build_accepted_match_state(
     evidence_by_frame = _normalize_match_state_evidence(match_state_evidence)
 
     states: list[MatchStateFrame] = []
-    for frame, assignment in zip(canonical_frames, canonical_assignments):
+    for frame, assignment in zip(canonical_frames, canonical_assignments, strict=False):
         evidence_payload = evidence_by_frame.get(frame.frameId, {})
         accepted_source = evidence_payload.get("acceptedSource")
         if accepted_source not in {"observed", "inferred"}:
@@ -1079,7 +1079,7 @@ def summarize_match(
     eligible_seconds = 0.0
     requested_seconds = 0.0
     my_team_seconds = 0.0
-    for current, following in zip(assignments, assignments[1:]):
+    for current, following in zip(assignments, assignments[1:], strict=False):
         duration = following.timestamp - current.timestamp
         if duration <= 0:
             continue
@@ -1427,7 +1427,7 @@ def detect_events(frames: list[FrameData | dict], assignments: list[BallOwnershi
 
     segments = _build_segments(assignments)
 
-    for index, (previous_segment, current_segment) in enumerate(zip(segments, segments[1:])):
+    for index, (previous_segment, current_segment) in enumerate(zip(segments, segments[1:], strict=False)):
         previous_frame = canonical_frames[previous_segment.endIndex]
         current_frame = canonical_frames[current_segment.startIndex]
         previous_position = _lookup_player_position(previous_frame, previous_segment.end.team, previous_segment.end.trackId)

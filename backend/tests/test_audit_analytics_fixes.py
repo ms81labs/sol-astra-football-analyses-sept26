@@ -1,7 +1,7 @@
 """Behavioral regressions for the September code audit."""
 import pytest
 import lap
-from backend.app.analytics import assign_ball_possession, detect_events, build_shot_analytics, summarize_match
+from backend.app.analytics import assign_ball_possession, summarize_match
 from backend.app.processor import _compute_outputs_and_match_state
 from backend.app.schemas import BallData, FrameData, PlayerData
 from backend.app.semantic_search import _parse_nl_query, search_matches_by_tactical_themes

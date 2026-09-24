@@ -439,7 +439,7 @@ class ReviewService:
                     {player.id for player in getattr(frame, field)}
                     for field in ("myTeam", "enemies")
                 )
-                for previous, frame in zip(frames, frames[1:])
+                for previous, frame in zip(frames, frames[1:], strict=False)
             )
             cuts = detect_camera_cuts([frame.timestamp for frame in frames])
             identity_context["geometryReasonCodes"] = (

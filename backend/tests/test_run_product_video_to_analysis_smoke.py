@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import backend.scripts.run_product_video_to_analysis_smoke as smoke

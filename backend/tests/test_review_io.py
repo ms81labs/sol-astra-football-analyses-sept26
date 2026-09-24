@@ -9,6 +9,7 @@ import stat
 import threading
 
 import pytest
+from backend.scripts.review_io import ReviewWriteError
 
 
 MODULES = [
@@ -98,7 +99,7 @@ def test_writer_fdopen_failure_closes_raw_descriptor(consumer, monkeypatch):
 
     monkeypatch.setattr(os, "fdopen", fail_fdopen)
     try:
-        with pytest.raises(Exception):
+        with pytest.raises(ReviewWriteError):
             module._write_json_atomic(path, {"new": True})
         assert path.read_bytes() == before
         assert list(path.parent.iterdir()) == [path]

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 from pathlib import Path
 
 from .access import stale_permissions
@@ -39,7 +41,7 @@ from .media import (
 from .perception import Detection, Label
 from .receipts import promotion_receipt
 
-def _as_bytes(values: object) -> bytes:
+def _as_bytes(values: Iterable[int | str] | bytes | bytearray | str | None) -> bytes:
     if isinstance(values, (bytes, bytearray)):
         return bytes(values)
     if isinstance(values, str):
@@ -47,7 +49,7 @@ def _as_bytes(values: object) -> bytes:
     return bytes(int(item) for item in list(values or []))
 
 
-def _as_box(values: object) -> tuple[float, float, float, float]:
+def _as_box(values: Iterable[float | str] | None) -> tuple[float, float, float, float]:
     box = list(values or [0.0, 0.0, 1.0, 1.0])
     return (float(box[0]), float(box[1]), float(box[2]), float(box[3]))
 

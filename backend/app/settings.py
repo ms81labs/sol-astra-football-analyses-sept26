@@ -6,7 +6,7 @@ import re
 from dataclasses import dataclass, field
 from ipaddress import IPv6Address
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, cast
 
 if TYPE_CHECKING:
     from .provider_billing import ProviderSpendPolicy
@@ -76,7 +76,7 @@ class ProcessingSettings:
     ffmpeg_sha256: str | None = None
     ffprobe_sha256: str | None = None
     deployment_mode: DeploymentMode = "local"
-    auth_backend: Literal["hmac"] | None = None
+    auth_backend: str | None = None
     auth_secret: str | None = field(default=None, repr=False)
     bind_host: str = "127.0.0.1"
     tls_terminated: bool = False
@@ -187,7 +187,7 @@ class ProcessingSettings:
                 trusted_bin_dirs=trusted_bin_dirs,
                 ffmpeg_sha256=os.environ.get("GA_FFMPEG_SHA256"),
                 ffprobe_sha256=os.environ.get("GA_FFPROBE_SHA256"),
-                deployment_mode=os.environ.get("GA_DEPLOYMENT_MODE", "local"),
+                deployment_mode=cast(DeploymentMode, os.environ.get("GA_DEPLOYMENT_MODE", "local")),
                 auth_backend=os.environ.get("GA_AUTH_BACKEND"),
                 auth_secret=os.environ.get("GA_AUTH_SECRET"),
                 bind_host=os.environ.get("GA_BIND_HOST", "127.0.0.1"),
@@ -210,7 +210,7 @@ class ProcessingSettings:
             trusted_bin_dirs=trusted_bin_dirs,
             ffmpeg_sha256=os.environ.get("GA_FFMPEG_SHA256"),
             ffprobe_sha256=os.environ.get("GA_FFPROBE_SHA256"),
-            deployment_mode=os.environ.get("GA_DEPLOYMENT_MODE", "local"),
+            deployment_mode=cast(DeploymentMode, os.environ.get("GA_DEPLOYMENT_MODE", "local")),
             auth_backend=os.environ.get("GA_AUTH_BACKEND"),
             auth_secret=os.environ.get("GA_AUTH_SECRET"),
             bind_host=os.environ.get("GA_BIND_HOST", "127.0.0.1"),

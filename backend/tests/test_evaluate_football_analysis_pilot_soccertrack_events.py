@@ -1,6 +1,4 @@
-import hashlib
 import json
-from pathlib import Path
 
 from backend.scripts.evaluate_football_analysis_pilot_soccertrack_events import (
     build_event_truth,

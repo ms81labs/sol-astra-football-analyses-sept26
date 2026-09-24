@@ -339,7 +339,7 @@ def test_generation_paths_accept_nested_and_distinct_logical_result_names():
     f"outputs/result.json.generations/{GENERATION}/bundle.json",
     f"outputs/result.generations/{GENERATION}/result.json",
     f"outputs/result.json.generations/{'A' * 32}/result.json",
-    f"outputs/result.json.generations/short/result.json",
+    "outputs/result.json.generations/short/result.json",
 ])
 def test_completion_rejects_wrong_fixed_name_namespace_or_generation(bad_path):
     value = SCHEMAS[5][1](); value["resultPath"] = bad_path
@@ -508,7 +508,7 @@ def test_direct_collection_construction_copies_and_requires_contract_items():
     mutable_files.clear()
     assert len(rebuilt.files) == len(rec.files)
     assert all(type(item) is FileEntry for item in rebuilt.files)
-    assert all(rebuilt_item is not original_item for rebuilt_item, original_item in zip(rebuilt.files, rec.files))
+    assert all(rebuilt_item is not original_item for rebuilt_item, original_item in zip(rebuilt.files, rec.files, strict=False))
     with pytest.raises(RemoteContractError, match="FileEntry"):
         JobReceipt(rec.schema_version, rec.source_commit, rec.manifest_sha256, rec.evidence_sha256, rec.job_request_sha256, {}, ({"role": "manifest"},))
     result = result_for(receipt=rec); mutable_artifacts = list(result.artifacts)
@@ -516,7 +516,7 @@ def test_direct_collection_construction_copies_and_requires_contract_items():
     mutable_artifacts.clear()
     assert rebuilt_result.artifacts == result.artifacts
     assert all(type(item) is FileEntry for item in rebuilt_result.artifacts)
-    assert all(rebuilt_item is not original_item for rebuilt_item, original_item in zip(rebuilt_result.artifacts, result.artifacts))
+    assert all(rebuilt_item is not original_item for rebuilt_item, original_item in zip(rebuilt_result.artifacts, result.artifacts, strict=False))
 
 
 def test_each_direct_constructor_field_is_independently_validated():
@@ -1006,7 +1006,7 @@ def test_path_and_confinement_errors_suppress_secret_context(tmp_path):
 
 def test_receipt_entries_duplicates_bindings_and_real_files(tmp_path):
     req = request(); rec = receipt_for(req)
-    for item, content in zip(rec.files, (b"source", b"manifest", b"evidence", b"video", canonical_json_bytes(req.to_mapping()))):
+    for item, content in zip(rec.files, (b"source", b"manifest", b"evidence", b"video", canonical_json_bytes(req.to_mapping())), strict=False):
         target = tmp_path / item.relative_path.as_posix(); target.parent.mkdir(parents=True, exist_ok=True); target.write_bytes(content)
     receipt_target = tmp_path / req.receipt_path.as_posix(); receipt_target.parent.mkdir(parents=True); receipt_target.write_bytes(canonical_json_bytes(rec.to_mapping()))
     validate_receipt_files(tmp_path, req, rec)
@@ -1021,7 +1021,7 @@ def test_receipt_entries_duplicates_bindings_and_real_files(tmp_path):
 
 def test_receipt_path_rejects_receipt_substitution(tmp_path):
     req = request(); rec = receipt_for(req)
-    for item, content in zip(rec.files, (b"source", b"manifest", b"evidence", b"video", canonical_json_bytes(req.to_mapping()))):
+    for item, content in zip(rec.files, (b"source", b"manifest", b"evidence", b"video", canonical_json_bytes(req.to_mapping())), strict=False):
         target = tmp_path / item.relative_path.as_posix(); target.parent.mkdir(parents=True, exist_ok=True); target.write_bytes(content)
     target = tmp_path / req.receipt_path.as_posix(); target.parent.mkdir(parents=True); target.write_bytes(canonical_json_bytes({"substitute": True}))
     with pytest.raises(RemoteContractError, match="receipt.*mismatch"):
@@ -1035,7 +1035,7 @@ def test_receipt_payload_binding_is_type_exact_for_nested_json(tmp_path, expecte
     rec_value["requestedRuntimeOptions"] = {"nested": [{"value": expected}]}
     rec = JobReceipt.from_mapping(rec_value)
     contents = (b"source", b"manifest", b"evidence", b"video", canonical_json_bytes(req.to_mapping()))
-    for item, content in zip(rec.files, contents):
+    for item, content in zip(rec.files, contents, strict=False):
         target = tmp_path / item.relative_path.as_posix()
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(content)
@@ -1170,7 +1170,7 @@ def test_atomic_write_closes_unowned_descriptor_on_setup_failure(tmp_path, monke
         return fd, name
 
     monkeypatch.setattr(module.tempfile, "mkstemp", capture_mkstemp)
-    monkeypatch.setattr(getattr(module, "os"), stage, lambda *_args, **_kwargs: (_ for _ in ()).throw(failure_type(sentinel)))
+    monkeypatch.setattr(module.os, stage, lambda *_args, **_kwargs: (_ for _ in ()).throw(failure_type(sentinel)))
 
     for index in range(3):
         with pytest.raises(RemoteContractError) as failure:
@@ -1386,7 +1386,7 @@ def test_match_config_and_runtime_options_are_distinct_sealed_contracts(tmp_path
         validate_result(req, rec, result_for(req, rec))
         return
     contents = (b"source", b"manifest", b"evidence", b"video", canonical_json_bytes(req.to_mapping()))
-    for item, content in zip(rec.files, contents):
+    for item, content in zip(rec.files, contents, strict=False):
         target = tmp_path / item.relative_path.as_posix()
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(content)
@@ -1400,7 +1400,7 @@ def test_match_config_substitution_without_new_request_digest_is_rejected(tmp_pa
     req = request()
     rec = receipt_for(req)
     contents = (b"source", b"manifest", b"evidence", b"video", canonical_json_bytes(req.to_mapping()))
-    for item, content in zip(rec.files, contents):
+    for item, content in zip(rec.files, contents, strict=False):
         target = tmp_path / item.relative_path.as_posix()
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(content)

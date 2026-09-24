@@ -611,7 +611,7 @@ def _infer_ball_sample_interval(frame_ids: list[int]) -> int:
         return 1
 
     inferred_interval = 0
-    for previous_frame_id, current_frame_id in zip(ordered_frame_ids, ordered_frame_ids[1:]):
+    for previous_frame_id, current_frame_id in zip(ordered_frame_ids, ordered_frame_ids[1:], strict=False):
         frame_delta = current_frame_id - previous_frame_id
         if frame_delta <= 0:
             continue
@@ -699,7 +699,7 @@ def _normalize_ball_truth_layers_for_persistence(
         )
 
     unknown_gaps = []
-    for previous_segment, next_segment in zip(accepted_segments, accepted_segments[1:]):
+    for previous_segment, next_segment in zip(accepted_segments, accepted_segments[1:], strict=False):
         gap_start = int(previous_segment["endFrame"]) + sample_interval
         gap_end = int(next_segment["startFrame"]) - sample_interval
         if gap_start > gap_end:

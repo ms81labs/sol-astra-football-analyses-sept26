@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 import json
 import os
+import logging
 from pathlib import Path
 import sys
 import cv2
@@ -19,6 +20,8 @@ from backend.app.edge_share_repair_profiles import (
 from backend.app.homography_utils import build_homography_from_points as _build_H, point_to_pitch as _point_to_pitch
 from backend.app.analytics import MAX_OWNER_DISTANCE
 from backend.app.runtime_options import SUPPORTED_PRIMARY_ACQUISITION_MODE, validate_primary_acquisition_mode
+
+LOGGER = logging.getLogger(__name__)
 
 HEADLESS = os.environ.get("QT_QPA_PLATFORM") == "offscreen" or (
     sys.platform.startswith("linux")
@@ -2887,7 +2890,7 @@ def _infer_ball_sample_interval(frame_ids):
         return 1
 
     inferred_interval = 0
-    for previous_frame_id, current_frame_id in zip(ordered_frame_ids, ordered_frame_ids[1:]):
+    for previous_frame_id, current_frame_id in zip(ordered_frame_ids, ordered_frame_ids[1:], strict=False):
         frame_delta = current_frame_id - previous_frame_id
         if frame_delta <= 0:
             continue
@@ -3310,7 +3313,7 @@ def _build_ball_truth_layers(
         )
 
     unknown_gaps = []
-    for previous_segment, next_segment in zip(accepted_segments, accepted_segments[1:]):
+    for previous_segment, next_segment in zip(accepted_segments, accepted_segments[1:], strict=False):
         gap_start = int(previous_segment["endFrame"]) + sample_interval
         gap_end = int(next_segment["startFrame"]) - sample_interval
         if gap_start > gap_end:
@@ -3866,7 +3869,7 @@ def ball_rows_need_supplemental_recovery(rows, frame_interval):
     ball_frame_ids = sorted({int(row["Frame_ID"]) for row in ball_rows})
     return any(
         (current_frame_id - previous_frame_id) > int(frame_interval)
-        for previous_frame_id, current_frame_id in zip(ball_frame_ids, ball_frame_ids[1:])
+        for previous_frame_id, current_frame_id in zip(ball_frame_ids, ball_frame_ids[1:], strict=False)
     )
 
 
@@ -4219,7 +4222,7 @@ def _segment_is_continuity_safe(segment):
     if len(segment) <= 1:
         return True
     ordered_rows = sorted(segment, key=lambda row: int(row["Frame_ID"]))
-    for prior_row, row in zip(ordered_rows, ordered_rows[1:]):
+    for prior_row, row in zip(ordered_rows, ordered_rows[1:], strict=False):
         if not _proposal_candidate_continuity_ok(row, prior_row):
             return False
     return True
@@ -8201,7 +8204,7 @@ def process_video(
                     try:
                         result.orig_img = frame
                     except Exception:
-                        pass
+                        LOGGER.debug("Optional frame-source metadata could not be attached")
                 detector.from_ultralytics(result, frame_id=decoded.source_frame_index)
                 tracker.from_ultralytics(result)
                 try:
@@ -8211,7 +8214,7 @@ def process_video(
                     result.time_base = decoded.time_base
                     result.presentation_clock = getattr(decoded, "presentation_clock", "decoder_pts")
                 except Exception:
-                    pass
+                    LOGGER.debug("Optional frame-source metadata could not be attached")
                 yield result
 
     results = _frame_source_track_results()

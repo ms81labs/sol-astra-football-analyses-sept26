@@ -36,7 +36,7 @@ from backend.app.workbench.media import (
 )
 from backend.app.workbench.store import WorkbenchStore
 from backend.app.workbench.native import native_gate, probe_gpu
-from backend.app.workbench.perception import Detection, IdentityRepair, Label, TrackerAdapter, score_detections, score_detections_by_stratum, separate_ball_states
+from backend.app.workbench.perception import Detection, IdentityRepair, Label, score_detections, score_detections_by_stratum, separate_ball_states
 from backend.app.workbench.review import CorrectionLog, new_correction, playlist_export_interval
 
 

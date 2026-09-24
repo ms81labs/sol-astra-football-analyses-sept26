@@ -1,7 +1,5 @@
 """C05 behavioural counterexamples and positive controls; no model/network calls."""
 import json
-from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
