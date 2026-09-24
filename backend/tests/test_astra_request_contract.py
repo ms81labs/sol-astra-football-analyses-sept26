@@ -79,6 +79,34 @@ def test_astra_request_without_visuals_contains_only_text():
     assert bound["maxImageTokens"] == 0
 
 
+def test_event_proposal_uses_distinct_strict_schema_and_rejects_report_shape():
+    from backend.app.provider_adapters import parse_astra_response
+
+    reference, payload = _image()
+    request = build_astra_request("Review source frame 2", [(reference, payload)],
+        approved_images=(reference.model_dump(mode="json"),), max_output_tokens=4096,
+        task_type="event_proposal")
+    assert request["text"]["format"]["name"] == "event_proposal_v1"
+    assert set(request["text"]["format"]["schema"]["required"]) == {"type", "frameId", "team", "description"}
+    bound = bound_astra_request(request, input_price_per_million="22",
+        output_price_per_million="82.5", authorised_limit="5", task_type="event_proposal")
+    with pytest.raises(ValueError, match="fixed"):
+        bound_astra_request(request, input_price_per_million="22",
+            output_price_per_million="82.5", authorised_limit="5")
+    response = {"id": "resp_event", "model": "gpt-6-astra", "status": "completed",
+        "service_tier": "default", "incomplete_details": None, "error": None,
+        "output": [{"type": "message", "role": "assistant", "status": "completed",
+            "content": [{"type": "output_text", "text": '{"type":"shot","frameId":2,"team":null,"description":"Possible shot"}'}]}],
+        "usage": {"input_tokens": 100, "output_tokens": 100, "total_tokens": 200}}
+    parsed, _ = parse_astra_response(response, {**bound, "taskType": "event_proposal"})
+    assert parsed == {"type": "shot", "frameId": 2, "team": None, "description": "Possible shot"}
+    with pytest.raises(ValueError):
+        parse_astra_response({**response, "output": [{"type": "message", "role": "assistant",
+            "status": "completed", "content": [{"type": "output_text",
+            "text": '{"type":"shot","frameId":2,"team":null,"description":"Possible shot","modelId":"client"}'}]}]},
+            {**bound, "taskType": "event_proposal"})
+
+
 def test_astra_response_requires_one_completed_draft_with_bounded_usage():
     from backend.app.provider_adapters import parse_astra_response
     from backend.app.report_contracts import ReportDraft

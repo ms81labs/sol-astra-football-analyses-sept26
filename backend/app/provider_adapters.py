@@ -7,9 +7,12 @@ import hashlib
 import json
 from decimal import Decimal, ROUND_UP
 from io import BytesIO
-from typing import Any, Callable
+from typing import Any, Callable, Literal
+
+from pydantic import Field
 
 from .provider_images import MAX_IMAGE_BYTES, MAX_MANIFEST_IMAGES, ProviderImage
+from .workbench.contracts import StrictModel
 from .workbench.money import money, text
 
 CONFIGURED_DEFAULT = "disabled_until_policy"
@@ -31,10 +34,23 @@ def _strict_report_schema(value):
     return result
 
 
-def _astra_format():
+class EventProposalDraft(StrictModel):
+    type: Literal["pass", "turnover", "recovery", "shot", "none"]
+    frameId: int = Field(ge=0)
+    team: Literal["my_team", "enemy"] | None
+    description: str = Field(min_length=1, max_length=512)
+
+
+def _astra_format(task_type: str = "tactical_report"):
     from .report_contracts import ReportDraft
-    return {"format": {"type": "json_schema", "name": "report_draft_v1",
-        "strict": True, "schema": _strict_report_schema(ReportDraft.model_json_schema())}}
+    if task_type == "event_proposal":
+        name, model = "event_proposal_v1", EventProposalDraft
+    elif task_type in {"tactical_report", "drills"}:
+        name, model = "report_draft_v1", ReportDraft
+    else:
+        raise ValueError("Unsupported Astra task")
+    return {"format": {"type": "json_schema", "name": name,
+        "strict": True, "schema": _strict_report_schema(model.model_json_schema())}}
 
 
 def _unique_json_keys(pairs):
@@ -47,7 +63,8 @@ def _unique_json_keys(pairs):
 
 
 def build_astra_request(prompt: str, images: list[tuple[ProviderImage, bytes]], *,
-                        approved_images: tuple[dict[str, Any], ...], max_output_tokens: int) -> dict[str, Any]:
+                        approved_images: tuple[dict[str, Any], ...], max_output_tokens: int,
+                        task_type: str = "tactical_report") -> dict[str, Any]:
     if not isinstance(prompt, str) or not prompt or len(prompt.encode()) > 256 * 1024:
         raise ValueError("invalid bounded Astra prompt")
     if type(max_output_tokens) is not int or not 0 < max_output_tokens <= 25_000:
@@ -78,18 +95,19 @@ def build_astra_request(prompt: str, images: list[tuple[ProviderImage, bytes]], 
     if tuple(actual_refs) != approved_images:
         raise ValueError("image parts are not the server-approved evidence")
     return {"model": "gpt-6-astra", "input": [{"role": "user", "content": content}],
-        "text": _astra_format(), "max_output_tokens": max_output_tokens,
+        "text": _astra_format(task_type), "max_output_tokens": max_output_tokens,
         "reasoning": {"effort": "low"}, "tools": [], "tool_choice": "none",
         "parallel_tool_calls": False, "service_tier": "default", "store": False,
         "background": False}
 
 
 def bound_astra_request(body: dict[str, Any], *, input_price_per_million: str,
-                        output_price_per_million: str, authorised_limit: str) -> dict[str, Any]:
+                        output_price_per_million: str, authorised_limit: str,
+                        task_type: str = "tactical_report") -> dict[str, Any]:
     expected = {"model", "input", "text", "max_output_tokens", "reasoning", "tools",
                 "tool_choice", "parallel_tool_calls", "service_tier", "store", "background"}
     if not isinstance(body, dict) or set(body) != expected or body.get("model") != "gpt-6-astra" \
-            or body.get("text") != _astra_format() or body.get("reasoning") != {"effort": "low"} \
+            or body.get("text") != _astra_format(task_type) or body.get("reasoning") != {"effort": "low"} \
             or body.get("tools") != [] or body.get("tool_choice") != "none" \
             or body.get("parallel_tool_calls") is not False or body.get("service_tier") != "default" \
             or body.get("store") is not False or body.get("background") is not False:
@@ -172,7 +190,8 @@ def parse_astra_response(response: dict[str, Any], bound: dict[str, Any]) -> tup
             or not 0 <= usage["output_tokens"] <= bound.get("maxOutputTokens", -1) \
             or usage["total_tokens"] != usage["input_tokens"] + usage["output_tokens"]:
         raise ValueError("Astra response usage is missing or exceeds its bound")
-    draft = ReportDraft.model_validate(json.loads(content[0]["text"], object_pairs_hook=_unique_json_keys))
+    model = EventProposalDraft if bound.get("taskType") == "event_proposal" else ReportDraft
+    draft = model.model_validate(json.loads(content[0]["text"], object_pairs_hook=_unique_json_keys))
     return draft.model_dump(mode="json"), {"responseId": response["id"],
         "inputTokens": usage["input_tokens"], "outputTokens": usage["output_tokens"]}
 

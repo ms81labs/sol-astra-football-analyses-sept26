@@ -153,6 +153,9 @@ class ProviderGateway:
                         authorised_limit=str(self.settings.provider_call_reservation))
                         if isinstance(spend, AstraSpendPolicy) else
                         spend.bind(prompt=prompt, task=task_type, model=self.settings.cloud_model_id))
+                    if task_type == "event_proposal":
+                        bound = {**bound, "generationId": generation_id,
+                                 "modelVersion": self.settings.cloud_model_id}
                     if money(bound["maximumCost"]) > money(self.settings.provider_call_reservation):
                         reasons.append("REQUEST_BOUND_EXCEEDS_AUTHORISED_BUDGET")
                 except ValueError as exc:
@@ -400,6 +403,123 @@ class ProviderGateway:
                   "validationDisposition": record["validationDisposition"]}
         if ticket is not None:
             result.update(requestId=request_id, costSummary=self.budget_ledger.ledger.cost_for(request_id))
+            self.budget_ledger.save_result(request_id, result)
+        return result
+
+    def execute_event_proposal(self, match_id: str, *, body: dict[str, Any]) -> dict[str, Any]:
+        """Reserve one visual review suggestion; never apply it to match truth."""
+        import copy
+        from .provider_adapters import EventProposalDraft, build_astra_request
+        from .provider_images import ProviderImage
+        from .report_store import StaleEvidenceGeneration, StaleReportPolicy, policy_revision
+        from .workbench.events import ModelEventProposal
+
+        if not isinstance(body, dict) or set(body) != {"generationId", "imageManifestDigest", "requestId"} \
+                or not isinstance(body["generationId"], str) \
+                or not isinstance(body["imageManifestDigest"], str) \
+                or not isinstance(body["requestId"], str) or not 1 <= len(body["requestId"]) <= 160:
+            raise ValueError("Current generation, image manifest and bounded request ID required")
+        with self.storage.generation_snapshot(match_id) as generation:
+            generation_id = generation.generationId
+            if body["generationId"] != generation_id:
+                raise StaleEvidenceGeneration("Select the current generation before requesting an event proposal")
+            package, inputs = self.build_evidence(match_id, generation_id, "event_proposal",
+                image_manifest_digest=body["imageManifestDigest"])
+        images = package.visual_images
+        if not 1 <= len(images) <= 4 or len({item["sourceFrameId"] for item in images}) != len(images):
+            raise ValueError("One to four distinct source images required")
+        frame_times = {item["sourceFrameId"]: item["ptsSeconds"] for item in images}
+        interval_start, interval_end = min(frame_times.values()), max(frame_times.values())
+        if interval_end - interval_start > 10:
+            raise ValueError("Event source images exceed ten seconds")
+        source_sha = self.storage.source_sha256(match_id)
+        if any(item["sourceSha256"] != source_sha for item in images):
+            raise StaleEvidenceGeneration("Source changed before event dispatch")
+        with self.storage.generations.guard(match_id, "publication"):
+            if self.storage.generations.resolve(match_id).generationId != generation_id:
+                raise StaleEvidenceGeneration("Evidence changed before dispatch")
+            live_match = self.storage.get_match(match_id)
+        revision = policy_revision(live_match, self.settings)
+        prompt = ("Suggest at most one pass, turnover, recovery or shot visible in the ordered source images. "
+                  "Use type none if the visual evidence is insufficient. Do not infer unseen motion, "
+                  "player identity or a team from kit color alone. Choose a frameId from: "
+                  + json.dumps([{"frameId": item["sourceFrameId"], "ptsSeconds": item["ptsSeconds"]}
+                      for item in images], separators=(",", ":")))
+        approved_images = [(ProviderImage.model_validate_json(json.dumps(item)), payload) for item, payload in
+            zip(images, inputs["visual_image_payloads"], strict=True)]
+        spend = self.settings.provider_spend_policy
+        adapter = self.adapter_factory()
+        prepared = (build_astra_request(prompt, approved_images, approved_images=images,
+            max_output_tokens=spend.max_output_tokens, task_type="event_proposal")
+            if isinstance(spend, AstraSpendPolicy) and
+            getattr(adapter, "billing_contract_id", None) == spend.adapter_id else None)
+        request_id = "provider:" + hashlib.sha256(json.dumps([match_id, body["requestId"]]).encode()).hexdigest()
+        policy = self.resolve_policy(live_match, requested_provider="cloud", task_type="event_proposal",
+            generation_id=generation_id, require_provider=True, prompt=prompt,
+            request_id=request_id, source_identity=source_sha, adapter=adapter,
+            visual_images=images, prepared_request=prepared)
+        ticket = policy.ticket
+        if ticket is None:
+            raise ProviderDenied(["PROVIDER_RESERVATION_MISSING"])
+        with self.storage.generations.guard(match_id, "publication"):
+            stale_generation = self.storage.generations.resolve(match_id).generationId != generation_id
+            stale_policy = policy_revision(self.storage.get_match(match_id), self.settings) != revision \
+                or self.storage.source_sha256(match_id) != source_sha
+            if stale_generation or stale_policy:
+                current = self.budget_ledger.ledger.latest_attempt(request_id)
+                self.budget_ledger.ledger.transition(current.attemptId, expected_revision=current.revision,
+                    owner_id=ticket.owner_id, status="failed", noChargeReason="NO_DISPATCH_CONFIRMED",
+                    error="STALE_EVIDENCE_GENERATION" if stale_generation else "STALE_REPORT_POLICY")
+                if stale_generation:
+                    raise StaleEvidenceGeneration("Evidence changed before dispatch")
+                raise StaleReportPolicy("Policy changed before dispatch")
+            original = self.budget_ledger.result(request_id)
+            if original is not None:
+                return {key: value for key, value in original.items() if key != "costSummary"}
+            self.budget_ledger.claim(ticket)
+        try:
+            with maintain_job_lease(self.budget_ledger.ledger, request_id, owner_id=ticket.owner_id):
+                raw = adapter("event_proposal", inputs["frames"], gateway_token=self._token,
+                    provider="cloud", model_id=policy.model_id, deadline_seconds=policy.deadline_seconds,
+                    prepared_request=copy.deepcopy(prepared),
+                    execution_bound=copy.deepcopy(policy.execution_bound))
+        except BaseException as exc:
+            current = self.budget_ledger.ledger.latest_attempt(request_id)
+            self.budget_ledger.ledger.transition(current.attemptId, expected_revision=current.revision,
+                owner_id=ticket.owner_id,
+                status="failed" if isinstance(exc, ProviderNotDispatched) else "outcome_unknown",
+                noChargeReason="NO_DISPATCH_CONFIRMED" if isinstance(exc, ProviderNotDispatched) else None,
+                error="NO_DISPATCH_CONFIRMED" if isinstance(exc, ProviderNotDispatched) else "PROVIDER_OUTCOME_UNKNOWN")
+            raise
+        current = self.budget_ledger.ledger.latest_attempt(request_id)
+        self.budget_ledger.ledger.transition(current.attemptId, expected_revision=current.revision,
+            owner_id=ticket.owner_id, status="complete")
+        if isinstance(raw, ProviderResult):
+            if raw.usage is not None:
+                usage = raw.usage
+                self.budget_ledger.ledger.reconcile_attempt(current.attemptId, provider_outcome="complete",
+                    settled_cost=usage.total, billing_complete=usage.final,
+                    receipt_id=request_id + ":" + usage.receipt_id)
+            raw = raw.output
+        draft = EventProposalDraft.model_validate(raw)
+        with self.storage.generations.guard(match_id, "publication"):
+            if self.storage.generations.resolve(match_id).generationId != generation_id:
+                raise StaleEvidenceGeneration("Evidence changed during event proposal")
+            if policy_revision(self.storage.get_match(match_id), self.settings) != revision \
+                    or self.storage.source_sha256(match_id) != source_sha:
+                raise StaleReportPolicy("Policy or source changed during event proposal")
+            if draft.frameId not in frame_times:
+                raise ValueError("Proposed frame is not in the approved source images")
+            proposal = None
+            if draft.type != "none":
+                proposal = ModelEventProposal(type=draft.type, frameId=draft.frameId,
+                    timestamp=frame_times[draft.frameId], intervalStart=interval_start,
+                    intervalEnd=interval_end, team=draft.team, description=draft.description,
+                    modelId=policy.model_id, modelVersion=policy.model_id,
+                    evidenceIds=[f"frame:{draft.frameId}"]).model_dump(mode="json")
+            result = {"schemaVersion": "event_proposal_receipt_v1", "requestId": request_id,
+                "matchId": match_id, "generationId": generation_id, "sourceSha256": source_sha,
+                "modelId": policy.model_id, "modelVersion": policy.model_id, "proposal": proposal}
             self.budget_ledger.save_result(request_id, result)
         return result
 

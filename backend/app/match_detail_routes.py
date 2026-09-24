@@ -330,6 +330,19 @@ def create_match_detail_router(
     
         return result
 
+    @router.post("/api/matches/{match_id}/event-proposals")
+    def post_event_proposal(match: MatchRecord = Depends(require_match), body: dict | None = None) -> dict:
+        try:
+            return provider_gateway.execute_event_proposal(match.id, body=body or {})
+        except DomainError:
+            raise
+        except ProviderDenied as exc:
+            raise HTTPException(status_code=403, detail={"reasonCodes": exc.reason_codes}) from exc
+        except (KeyError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=404, detail="Source frames not ready") from exc
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     @router.post("/api/matches/{match_id}/provider-images")
     def prepare_provider_images(match: MatchRecord = Depends(require_match), body: dict | None = None) -> dict:
         from .provider_images import select_source_image_manifest

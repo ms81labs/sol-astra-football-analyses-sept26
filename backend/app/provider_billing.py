@@ -93,7 +93,8 @@ class AstraSpendPolicy:
                 or request.get("max_output_tokens") != self.max_output_tokens:
             raise ValueError("MODEL_TASK_BOUND_MISMATCH")
         bound = bound_astra_request(request, input_price_per_million=self.input_price_per_million,
-            output_price_per_million=self.output_price_per_million, authorised_limit=authorised_limit)
+            output_price_per_million=self.output_price_per_million, authorised_limit=authorised_limit,
+            task_type=task)
         return {**bound, "policyId": self.policy_id, "adapterId": self.adapter_id,
             "taskType": task, "billableComponents": ["text_tokens", "image_tokens", "output_tokens"]}
 
