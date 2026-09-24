@@ -50,6 +50,12 @@ it('shows coordinate space and definition version from the evidence page', () =>
   expect(screen.getByText('1')).toBeTruthy();
 });
 
+it('shows the server provider request linked to a proposed event', () => {
+  render(<EvidenceInspector frame={frame} proposal={{ modelId: 'visual-model', modelVersion: 'v1',
+    evidenceIds: ['frame:1'], requestId: 'provider-request-1' }} />);
+  expect(screen.getByText(/Provider request: provider-request-1/)).toBeTruthy();
+});
+
 it('keeps detector score, calibrated probability and confidence interval as distinct quantities', () => {
   render(
     <EvidenceInspector

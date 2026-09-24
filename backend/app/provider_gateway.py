@@ -206,6 +206,9 @@ class ProviderGateway:
             for record in records:
                 if record.reviewStatus in {"rejected", "superseded"} or record.supersededBy:
                     continue
+                event = record.payload.get("event") if isinstance(record.payload, dict) else None
+                if event and event.get("proposalModelId") and not event.get("proposalRequestId"):
+                    continue
                 kind, _, local_id = record.evidenceId.partition(":")
                 if kind in {"event", "frame"}:
                     permit(kind, local_id)
@@ -223,7 +226,8 @@ class ProviderGateway:
                 if item["value"] is None:
                     aliases.pop(alias)
                 metrics.append(item)
-            event_payloads = tuple(item.model_dump(mode="json") for item in events if item.reviewStatus != "rejected")
+            event_payloads = tuple(item.model_dump(mode="json") for item in events
+                if item.reviewStatus != "rejected" and (not item.proposalModelId or item.proposalRequestId))
             from .llm import _sample_frames
             samples = tuple(_sample_frames(frames))
             visual_images = ()

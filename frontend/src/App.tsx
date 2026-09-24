@@ -1547,7 +1547,8 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
               reviewStatus={selectedHit?.reviewStatus ?? currentEvent?.reviewStatus ?? 'unreviewed'}
               proposal={selectedProposal?.proposalModelId && selectedProposal.proposalModelVersion
                 ? { modelId: selectedProposal.proposalModelId, modelVersion: selectedProposal.proposalModelVersion,
-                    evidenceIds: selectedProposal.proposalEvidenceIds ?? [] } : null}
+                    evidenceIds: selectedProposal.proposalEvidenceIds ?? [],
+                    requestId: selectedProposal.proposalRequestId } : null}
               onProposalDecision={selectedProposal?.reviewStatus === 'unreviewed' ? (decision) => {
                 if (!activeMatch || !selectedProposal.eventId) return;
                 void executeCommand((controls) => submitMatchCorrection(activeMatch.id, {

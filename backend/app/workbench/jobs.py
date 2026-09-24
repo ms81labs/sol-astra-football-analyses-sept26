@@ -451,6 +451,13 @@ class DurableJobLedger:
             raise KeyError(request_id)
         return JobRequest.model_validate_json(row["payload_json"])
 
+    def provider_result(self, request_id: str) -> dict | None:
+        with self._connect() as connection:
+            row = connection.execute(
+                "SELECT response_json FROM provider_results WHERE request_id=?", (request_id,)
+            ).fetchone()
+        return json.loads(row["response_json"]) if row is not None else None
+
     def latest_attempt(self, request_id: str) -> JobAttempt:
         with self._connect() as connection:
             connection.execute("BEGIN")

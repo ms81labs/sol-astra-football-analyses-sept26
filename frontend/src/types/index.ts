@@ -285,6 +285,7 @@ export interface BackendEvent {
     proposalModelId?: string | null;
     proposalModelVersion?: string | null;
     proposalEvidenceIds?: string[];
+    proposalRequestId?: string | null;
 }
 
 export interface PassNetworkEdge {

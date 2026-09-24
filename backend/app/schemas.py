@@ -220,6 +220,7 @@ class DetectedEvent(BaseModel):
     proposalModelId: str | None = None
     proposalModelVersion: str | None = None
     proposalEvidenceIds: list[str] = Field(default_factory=list)
+    proposalRequestId: str | None = None
 
 
 class ColorClusterSummary(BaseModel):

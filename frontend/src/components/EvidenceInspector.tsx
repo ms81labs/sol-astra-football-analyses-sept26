@@ -18,7 +18,7 @@ interface EvidenceInspectorProps {
   detectorScore?: number | null;
   calibratedProbability?: number | null;
   confidenceInterval?: [number, number] | null;
-  proposal?: { modelId: string; modelVersion: string; evidenceIds: string[] } | null;
+  proposal?: { modelId: string; modelVersion: string; evidenceIds: string[]; requestId?: string | null } | null;
   onProposalDecision?: (decision: 'accept' | 'reject') => void;
 }
 
@@ -80,6 +80,7 @@ export default function EvidenceInspector({
       </p>
       {selectedInterval && <p>Selected source interval: {selectedInterval.start}s to {selectedInterval.end}s. Selected evidence: {selectedInterval.evidenceIds.join(', ') || 'unavailable'}.</p>}
       {proposal && <p>Model proposal: {proposal.modelId} · {proposal.modelVersion}</p>}
+      {proposal?.requestId && <p>Provider request: {proposal.requestId}</p>}
       {proposal && reviewStatus === 'unreviewed' && onProposalDecision && (
         <div className="flex gap-2">
           <button type="button" className="rounded bg-emerald-700 px-2 py-1 text-white" onClick={() => onProposalDecision('accept')}>Accept proposed event</button>

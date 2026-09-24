@@ -823,6 +823,7 @@ class Storage(_IdentityStorageMixin, _CalibrationStorageMixin, _RemoteResultStor
                     "proposalModelId": event.proposalModelId,
                     "proposalModelVersion": event.proposalModelVersion,
                     "proposalEvidenceIds": event.proposalEvidenceIds,
+                    "proposalRequestId": event.proposalRequestId,
                 }
             )
         return previous

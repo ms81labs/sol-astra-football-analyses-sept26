@@ -133,20 +133,53 @@ class ReviewService:
             self._effective_config(match_id, active_commands(history))
         if kind in {"event_accept", "event_reject"}:
             previous = self.storage._event_review_snapshot(match_id, payload)
+            if kind == "event_accept" and any(item.get("proposalModelId") and not item.get("proposalRequestId")
+                                               for item in previous):
+                raise SemanticCommandError("MODEL_PROPOSAL_RECEIPT_REQUIRED", "A provider receipt is required to accept a model event", status_code=409)
             canonical = {key: value for key, value in payload.items() if key not in {"previous", "proposal"}}
             if len(previous) == 1 and previous[0].get("proposalModelId"):
                 canonical["proposal"] = {"modelId": previous[0]["proposalModelId"],
                     "modelVersion": previous[0]["proposalModelVersion"],
-                    "evidenceIds": previous[0]["proposalEvidenceIds"]}
+                    "evidenceIds": previous[0]["proposalEvidenceIds"],
+                    "providerRequestId": previous[0]["proposalRequestId"]}
             return {**canonical, "previous": previous}
         if kind == "event_propose":
             from .workbench.events import ModelEventProposal
             from pydantic import ValidationError
 
             try:
-                proposal = ModelEventProposal.model_validate(payload)
+                proposal = ModelEventProposal.model_validate({key: value for key, value in payload.items()
+                    if key != "providerRequestId"})
             except ValidationError as exc:
                 raise SemanticCommandError("INVALID_EVENT_PROPOSAL", "Visual event proposal is invalid") from exc
+            receipt_id = payload.get("providerRequestId")
+            if not isinstance(receipt_id, str) or not 0 < len(receipt_id) <= 160:
+                raise SemanticCommandError("MODEL_PROPOSAL_RECEIPT_REQUIRED", "A server-owned provider receipt is required", status_code=409)
+            ledger = self.storage.job_ledger
+            try:
+                request = ledger.request(receipt_id)
+                attempt = ledger.latest_attempt(receipt_id)
+                result = ledger.provider_result(receipt_id)
+            except KeyError:
+                result = None
+            source_sha = self.storage.source_sha256(match_id)
+            generation_id = self.storage.current_generation(match_id).generationId
+            bound = (request.executionBound or {}) if result is not None else {}
+            if not isinstance(result, dict) or not (
+                request.scope == "provider" and request.providerTask == "event_proposal"
+                and request.matchId == match_id and request.sourceSha256 == source_sha
+                and request.modelHash == proposal.modelId
+                and bound.get("generationId") == generation_id
+                and bound.get("modelVersion") == proposal.modelVersion
+                and attempt.status == "complete" and attempt.dispatchStarted is True
+                and result.get("schemaVersion") == "event_proposal_receipt_v1"
+                and result.get("requestId") == receipt_id and result.get("matchId") == match_id
+                and result.get("generationId") == generation_id and result.get("sourceSha256") == source_sha
+                and result.get("modelId") == proposal.modelId
+                and result.get("modelVersion") == proposal.modelVersion
+                and result.get("proposal") == proposal.model_dump(mode="json")
+            ):
+                raise SemanticCommandError("MODEL_PROPOSAL_RECEIPT_REQUIRED", "A matching server-owned provider receipt is required", status_code=409)
             frame = next((item for item in self.storage.load_frames(match_id)
                           if item.frameId == proposal.frameId), None)
             if frame is None or abs(frame.timestamp - proposal.timestamp) > 1e-6:
@@ -155,7 +188,7 @@ class ReviewService:
             if any(item.eventId == event_id for item in self.storage.load_events(match_id)):
                 raise SemanticCommandError("DUPLICATE_EVENT_PROPOSAL", "Visual event proposal already exists", status_code=409)
             return {**proposal.model_dump(mode="json"), "eventId": event_id,
-                    "sourceSha256": self.storage.source_sha256(match_id)}
+                    "providerRequestId": receipt_id, "sourceSha256": source_sha}
         if kind == "config_set":
             if set(payload) != {"values"}:
                 raise SemanticCommandError("INVALID_SEMANTIC_CONFIG", "config_set requires only values")

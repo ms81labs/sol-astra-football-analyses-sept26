@@ -41,12 +41,13 @@ def event_from_proposal(payload: dict[str, Any]):
     from backend.app.schemas import DetectedEvent
 
     proposal = ModelEventProposal.model_validate({key: value for key, value in payload.items()
-        if key not in {"eventId", "sourceSha256"}})
+        if key not in {"eventId", "sourceSha256", "providerRequestId"}})
     return DetectedEvent(type=proposal.type, frameId=proposal.frameId, timestamp=proposal.timestamp,
         team=proposal.team, description=proposal.description, eventId=payload["eventId"],
         intervalStart=proposal.intervalStart, intervalEnd=proposal.intervalEnd,
         reviewStatus="unreviewed", heuristicName="model_event_proposal",
         proposalModelId=proposal.modelId, proposalModelVersion=proposal.modelVersion,
+        proposalRequestId=payload.get("providerRequestId"),
         proposalEvidenceIds=proposal.evidenceIds)
 
 
@@ -163,7 +164,8 @@ def learned_temporal(*, labelled_errors_justify: bool) -> dict[str, bool]:
 
 
 def partition_events(events: list[dict[str, Any]]) -> dict[str, Any]:
-    accepted = [item for item in events if item.get("reviewStatus") == "accepted"]
+    accepted = [item for item in events if item.get("reviewStatus") == "accepted"
+                and (not item.get("proposalModelId") or item.get("proposalRequestId"))]
     retained = [item for item in events if item.get("reviewStatus") == "rejected"]
     return {
         "acceptedViews": accepted,

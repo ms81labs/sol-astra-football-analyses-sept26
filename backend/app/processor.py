@@ -502,7 +502,7 @@ def _compute_outputs_and_match_state(
     # Unreviewed suggestions retain their existing experimental status. A review
     # excludes rejected events; unrelated edits must not silently erase suggestions.
     reviewed = [e for e in events if e.reviewStatus != "rejected"
-                and (e.proposalModelId is None or e.reviewStatus == "accepted")]
+                and (e.proposalModelId is None or (e.reviewStatus == "accepted" and e.proposalRequestId))]
     shots = build_shot_analytics(frames, reviewed, attack_direction=attack_direction)
     summary = summarize_match(frames, assignments, shots, reviewed, attack_direction=attack_direction,
                               **(summary_options or {}))

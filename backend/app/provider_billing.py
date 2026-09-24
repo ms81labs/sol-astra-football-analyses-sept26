@@ -223,11 +223,10 @@ class ProviderBudgetLedger:
         return self.ledger.latest_attempt(ticket.request.requestId)
 
     def result(self, request_id: str) -> dict | None:
-        with self.ledger._connect() as connection:
-            row = connection.execute('SELECT response_json FROM provider_results WHERE request_id=?', (request_id,)).fetchone()
-        if row is None:
+        result = self.ledger.provider_result(request_id)
+        if result is None:
             return None
-        return {**json.loads(row['response_json']), 'costSummary': self.ledger.cost_for(request_id)}
+        return {**result, 'costSummary': self.ledger.cost_for(request_id)}
 
     def save_result(self, request_id: str, result: dict) -> None:
         payload = json.dumps(result, allow_nan=False, sort_keys=True)
