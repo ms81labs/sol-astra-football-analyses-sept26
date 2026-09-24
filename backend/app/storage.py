@@ -429,7 +429,7 @@ class Storage(_IdentityStorageMixin, _CalibrationStorageMixin, _RemoteResultStor
 
     def update_match_config(self, match_id: str, config: MatchConfig) -> MatchRecord:
         now = _utcnow().isoformat()
-        with self._connect() as connection:
+        with self.generations.guard(match_id, "publication", exclusive=True), self._connect() as connection:
             connection.execute(
                 """
                 UPDATE matches SET config_json = ?, updated_at = ?

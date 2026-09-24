@@ -1,5 +1,7 @@
 """C04 fake bounded adapters test accounting without any provider network access."""
 import hashlib
+import threading
+from concurrent.futures import ThreadPoolExecutor, TimeoutError
 from dataclasses import replace
 import pytest
 from backend.app.settings import ProcessingSettings
@@ -85,6 +87,49 @@ def test_rights_revoked_after_reservation_prevents_provider_dispatch(tmp_path, m
     assert calls == []
     cost = storage.job_ledger.cost_summary()
     assert cost['unsettledAttemptCount'] == 0
+
+
+def test_policy_write_waits_for_dispatch_claim(tmp_path, monkeypatch):
+    from backend.app.report_store import StaleReportPolicy
+
+    write_done = threading.Event()
+    def adapter(*args, **kwargs):
+        assert write_done.wait(5)
+        return _interprets(*args, **kwargs)
+
+    storage, mid, gateway = gateway_fixture(tmp_path, adapter)
+    claim_entered = threading.Event()
+    release_claim = threading.Event()
+    write_entered = threading.Event()
+    original_claim = gateway.budget_ledger.claim
+
+    def held_claim(ticket):
+        claim_entered.set()
+        assert release_claim.wait(5)
+        return original_claim(ticket)
+
+    monkeypatch.setattr(gateway.budget_ledger, 'claim', held_claim)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        report = pool.submit(run, gateway, mid)
+        assert claim_entered.wait(5)
+        config = storage.get_match(mid).config.model_copy(deep=True)
+        config.rights.cloudPermission = False
+        def write_policy():
+            write_entered.set()
+            try:
+                return storage.update_match_config(mid, config)
+            finally:
+                write_done.set()
+        policy_write = pool.submit(write_policy)
+        try:
+            assert write_entered.wait(5)
+            with pytest.raises(TimeoutError):
+                policy_write.result(timeout=.1)
+        finally:
+            release_claim.set()
+        policy_write.result(timeout=5)
+        with pytest.raises(StaleReportPolicy):
+            report.result(timeout=5)
 
 
 @pytest.mark.parametrize('mode', ['timeout', 'cancel', 'malformed'])
