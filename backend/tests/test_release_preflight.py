@@ -348,6 +348,15 @@ def test_git_archive_receives_only_the_sanitized_git_environment(
     }
 
 
+def test_git_archive_reader_can_stop_at_tar_end_without_sigpipe(release_repo: dict[str, object]) -> None:
+    root = Path(release_repo["root"])
+    (root / "large.bin").write_bytes(os.urandom(1_000_000))
+    _git(root, "add", "large.bin")
+    _git(root, "commit", "-m", "large archive")
+    with preflight_module._git_archive_stream(root, _git(root, "rev-parse", "HEAD")) as stream:
+        assert stream.read(1)
+
+
 def test_receipt_generated_pre_cloud_evidence_passes_with_distinct_source_and_verifier(
     release_repo: dict[str, object], tmp_path: Path
 ) -> None:
