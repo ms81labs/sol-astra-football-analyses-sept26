@@ -1003,18 +1003,28 @@ def validate_shadow_inputs(request: JobRequest, receipt: JobReceipt) -> Mapping[
             or not isinstance(rights, Mapping) or rights.get("cloudPermission") is not True \
             or rights.get("processingScope") not in {"local_plus_burst", "hosted"}:
         raise RemoteContractError("shadow job identity or permission is missing")
-    shadow = _exact(shadow, frozenset({"schemaVersion", "matchId", "generationId", "requestDigest",
-        "sourceSha256", "checkpointDigest", "jobIdentity", "deadlineSeconds"}), "shadow job")
-    if shadow.get("schemaVersion") != 1 or shadow.get("matchId") != request.match_id:
+    version = shadow.get("schemaVersion")
+    if type(version) is not int or version not in (1, 2):
+        raise RemoteContractError("shadow job identity is invalid")
+    keys = {"schemaVersion", "matchId", "generationId", "requestDigest",
+        "sourceSha256", "checkpointDigest", "jobIdentity", "deadlineSeconds"}
+    if version == 2:
+        keys.add("windowDigest")
+    shadow = _exact(shadow, frozenset(keys), "shadow job")
+    if shadow.get("matchId") != request.match_id:
         raise RemoteContractError("shadow job identity is invalid")
     _text(shadow.get("generationId"), "generationId", 32, _GENERATION_ID)
     for key in ("requestDigest", "sourceSha256", "checkpointDigest", "jobIdentity"):
         _digest(shadow.get(key), key)
+    if version == 2:
+        _digest(shadow.get("windowDigest"), "windowDigest")
     deadline = shadow.get("deadlineSeconds")
     if type(deadline) not in (int, float) or not math.isfinite(deadline) or not 0 < deadline <= 3600:
         raise RemoteContractError("shadow job deadline is invalid")
-    identity_inputs = {key: shadow[key] for key in
-        ("matchId", "generationId", "requestDigest", "checkpointDigest")}
+    identity_keys = ("matchId", "generationId", "requestDigest", "checkpointDigest")
+    if version == 2:
+        identity_keys += ("windowDigest",)
+    identity_inputs = {key: shadow[key] for key in identity_keys}
     expected = hashlib.sha256(json.dumps(identity_inputs, sort_keys=True,
         separators=(",", ":"), allow_nan=False).encode()).hexdigest()
     if shadow["jobIdentity"] != expected:
@@ -1023,8 +1033,11 @@ def validate_shadow_inputs(request: JobRequest, receipt: JobReceipt) -> Mapping[
     sealed_inputs = {item.relative_path: item for item in receipt.files if item.role == "runtime_artifact"}
     checkpoint = sealed_inputs.get(PurePosixPath("inputs/checkpoint.bin"))
     segmentation_request = sealed_inputs.get(PurePosixPath("inputs/segmentation-request.json"))
-    if by_role["input_video"].sha256 != shadow["sourceSha256"] \
-            or checkpoint is None or checkpoint.sha256 != shadow["checkpointDigest"] \
+    input_media = by_role["input_video"]
+    if (version == 1 and input_media.sha256 != shadow["sourceSha256"]) or (
+        version == 2 and (request.input_video_path != PurePosixPath("inputs/window/window.json")
+            or input_media.sha256 != shadow["windowDigest"])
+    ) or checkpoint is None or checkpoint.sha256 != shadow["checkpointDigest"] \
             or segmentation_request is None or segmentation_request.sha256 != shadow["requestDigest"]:
         raise RemoteContractError("shadow input artifact identity mismatch")
     return shadow

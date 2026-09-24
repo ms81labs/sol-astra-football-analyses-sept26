@@ -524,9 +524,19 @@ def _preflight(execution: DaytonaExecutionRequest) -> tuple[Path, Path, JobReque
         if request.config.get("jobKind") == "segmentation_shadow":
             shadow = validate_shadow_inputs(request, receipt)
             from .segmentation_worker import validate_sealed_shadow_request
-            validate_sealed_shadow_request(confined_path(root, "inputs/segmentation-request.json"), shadow)
+            segmentation = validate_sealed_shadow_request(
+                confined_path(root, "inputs/segmentation-request.json"), shadow)
             shadow_paths = {PurePosixPath("inputs/checkpoint.bin"),
                             PurePosixPath("inputs/segmentation-request.json")}
+            if shadow["schemaVersion"] == 2:
+                from .segmentation_worker import validate_sam_source_window
+                validate_sam_source_window(confined_path(root, "inputs/window"), segmentation)
+                window_paths = {PurePosixPath(f"inputs/window/{index}.png")
+                    for index in range(len(segmentation.frames))}
+                if {e.relative_path for e in receipt.files if e.role == "runtime_artifact"
+                    and e.relative_path.parts[:2] == ("inputs", "window")} != window_paths:
+                    raise ValueError
+                shadow_paths.update(window_paths)
         sealed = [(e.relative_path, e.sha256, e.size_bytes) for e in receipt.files
                   if e.role == "runtime_artifact" and e.relative_path not in shadow_paths]
         if sorted(proof_ids) != sorted(sealed): raise ValueError

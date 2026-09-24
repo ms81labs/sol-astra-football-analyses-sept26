@@ -214,6 +214,104 @@ def test_shadow_preflight_allows_only_sealed_request_and_checkpoint_beside_relea
         _preflight(execution)
 
 
+def test_shadow_window_contract_uploads_only_sealed_frames_and_rechecks_worker_pixels(tmp_path):
+    from io import BytesIO
+    from PIL import Image
+    from backend.app.daytona import DaytonaExecutionError, DaytonaExecutionRequest, _preflight
+    from backend.app.remote_contracts import RemoteContractError, validate_shadow_inputs
+    from backend.app.segmentation import SegmentationRequest, FramePoint, Prompt, request_identity
+    from backend.app.segmentation_worker import load_sealed_shadow_bundle
+
+    root, workspace, proof, request, receipt, *_ = _bundle(tmp_path)
+    checkpoint = b"approved checkpoint fixture"
+    segmentation = SegmentationRequest(sourceSha256=hashlib.sha256(b"video").hexdigest(),
+        baseTrackingDigest="a" * 64, modelAlias="sam31-video", modelDigest="b" * 64,
+        checkpointDigest=hashlib.sha256(checkpoint).hexdigest(), workerDigest="c" * 64,
+        executionMode="sam31_object_multiplex", cropDigest="d" * 64, precision="bf16",
+        width=2, height=2, intervalStart=0, intervalEnd=1,
+        frames=[FramePoint(frameId=0, ptsSeconds=0)],
+        prompts=[Prompt(objectId="o1", trackId="t1", frameId=0, point=(0, 0))],
+        maxFrames=1, maxObjects=1)
+    segmentation_bytes = json.dumps(segmentation.model_dump(mode="json"), sort_keys=True,
+        separators=(",", ":"), allow_nan=False).encode()
+    image = BytesIO()
+    Image.new("RGB", (2, 2), (7, 11, 13)).save(image, format="PNG")
+    png = image.getvalue()
+    window = {"schemaVersion": 1, "sourceSha256": segmentation.sourceSha256,
+        "requestDigest": request_identity(segmentation), "frames": [{"localIndex": 0,
+            "sourceFrameId": 0, "ptsSeconds": 0, "path": "0.png",
+            "sha256": hashlib.sha256(png).hexdigest(), "sizeBytes": len(png)}]}
+    window_bytes = canonical_json_bytes(window)
+    shadow = {"schemaVersion": 2, "matchId": request.match_id, "generationId": GENERATION,
+        "requestDigest": request_identity(segmentation),
+        "sourceSha256": segmentation.sourceSha256,
+        "checkpointDigest": segmentation.checkpointDigest,
+        "windowDigest": hashlib.sha256(window_bytes).hexdigest(), "deadlineSeconds": 30}
+    shadow["jobIdentity"] = hashlib.sha256(json.dumps({key: shadow[key] for key in
+        ("matchId", "generationId", "requestDigest", "checkpointDigest", "windowDigest")},
+        sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    request = replace(request, input_video_path=PurePosixPath("inputs/window/window.json"),
+        config={"jobKind": "segmentation_shadow", "rights": {"cloudPermission": True,
+            "processingScope": "local_plus_burst"}, "shadowSegmentation": shadow})
+    payloads = {"job-request.json": canonical_json_bytes(request.to_mapping()),
+        "inputs/window/window.json": window_bytes, "inputs/window/0.png": png,
+        "inputs/checkpoint.bin": checkpoint, "inputs/segmentation-request.json": segmentation_bytes}
+    for relative, payload in payloads.items():
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(payload)
+    entries = tuple(_entry(item.role, item.relative_path.as_posix(),
+        payloads.get(item.relative_path.as_posix(), (root / item.relative_path).read_bytes()))
+        if item.role != "input_video" else _entry("input_video", "inputs/window/window.json", window_bytes)
+        for item in receipt.files)
+    receipt = replace(receipt, job_request_sha256=hashlib.sha256(payloads["job-request.json"]).hexdigest(),
+        files=(*entries, _entry("runtime_artifact", "inputs/checkpoint.bin", checkpoint),
+            _entry("runtime_artifact", "inputs/segmentation-request.json", segmentation_bytes),
+            _entry("runtime_artifact", "inputs/window/0.png", png)))
+    (root / request.receipt_path).write_bytes(canonical_json_bytes(receipt.to_mapping()))
+    execution = DaytonaExecutionRequest("fixture-key", load_daytona_policy(), root, workspace, proof)
+    _, _, admitted, sealed, uploads, _ = _preflight(execution)
+    assert admitted == request and sealed == receipt
+    assert PurePosixPath("inputs/window/window.json") in uploads
+    assert PurePosixPath("inputs/window/0.png") in uploads
+    assert PurePosixPath("inputs/match.mp4") not in uploads
+    assert load_sealed_shadow_bundle(root) == (request, receipt, segmentation)
+    with pytest.raises(RemoteContractError):
+        validate_shadow_inputs(replace(request, match_id="another-match"), receipt)
+    wrong_window = {**shadow, "windowDigest": "f" * 64}
+    with pytest.raises(RemoteContractError):
+        validate_shadow_inputs(replace(request, config={**request.config,
+            "shadowSegmentation": wrong_window}), receipt)
+    original_receipt = receipt
+    changed = b"not a PNG"
+    (root / "inputs/window/0.png").write_bytes(changed)
+    receipt = replace(receipt, files=tuple(_entry(item.role, item.relative_path.as_posix(), changed)
+        if item.relative_path == PurePosixPath("inputs/window/0.png") else item
+        for item in receipt.files))
+    (root / request.receipt_path).write_bytes(canonical_json_bytes(receipt.to_mapping()))
+    with pytest.raises(DaytonaExecutionError, match="preflight"):
+        _preflight(execution)
+    with pytest.raises(ValueError, match="sealed shadow bundle"):
+        load_sealed_shadow_bundle(root)
+    (root / "inputs/window/0.png").write_bytes(png)
+    missing = replace(original_receipt, files=tuple(item for item in original_receipt.files
+        if item.relative_path != PurePosixPath("inputs/window/0.png")))
+    (root / request.receipt_path).write_bytes(canonical_json_bytes(missing.to_mapping()))
+    with pytest.raises(DaytonaExecutionError, match="preflight"):
+        _preflight(execution)
+    with pytest.raises(ValueError, match="sealed shadow bundle"):
+        load_sealed_shadow_bundle(root)
+    (root / request.receipt_path).write_bytes(canonical_json_bytes(original_receipt.to_mapping()))
+    (root / "inputs/window/1.png").write_bytes(png)
+    extra = replace(original_receipt, files=(*original_receipt.files,
+        _entry("runtime_artifact", "inputs/window/1.png", png)))
+    (root / request.receipt_path).write_bytes(canonical_json_bytes(extra.to_mapping()))
+    with pytest.raises(DaytonaExecutionError, match="preflight"):
+        _preflight(execution)
+    with pytest.raises(ValueError, match="sealed shadow bundle"):
+        load_sealed_shadow_bundle(root)
+
+
 class _Response:
     def __init__(self, exit_code=0, result="ok"):
         self.exit_code = exit_code

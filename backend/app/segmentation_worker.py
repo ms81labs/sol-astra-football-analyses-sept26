@@ -14,7 +14,7 @@ from collections.abc import Callable, Mapping
 from collections import Counter
 from fractions import Fraction
 from io import BytesIO
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from time import monotonic
 
 from .report_contracts import digest
@@ -223,6 +223,13 @@ def load_sealed_shadow_bundle(root: Path):
         shadow = validate_shadow_inputs(request, receipt)
         segmentation = validate_sealed_shadow_request(
             confined_path(root, "inputs/segmentation-request.json"), shadow)
+        if shadow["schemaVersion"] == 2:
+            validate_sam_source_window(confined_path(root, "inputs/window"), segmentation)
+            expected = {PurePosixPath(f"inputs/window/{index}.png")
+                for index in range(len(segmentation.frames))}
+            if {entry.relative_path for entry in receipt.files if entry.role == "runtime_artifact"
+                and entry.relative_path.parts[:2] == ("inputs", "window")} != expected:
+                raise ValueError
         return request, receipt, segmentation
     except Exception:
         raise ValueError("sealed shadow bundle is invalid") from None
