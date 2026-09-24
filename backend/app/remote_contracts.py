@@ -30,6 +30,7 @@ MAX_JSON_STRING = 64 * 1024
 MAX_CONFIG_BYTES = 512 * 1024
 MAX_RESULT_BYTES = 4 * 1024 * 1024
 MAX_PROCESSOR_RESULT_BYTES = 1 << 30
+MAX_SEGMENTATION_RESULT_BYTES = 128 * 1024 * 1024
 MAX_PROCESSOR_METADATA_LINE_BYTES = 64 * 1024 * 1024
 MAX_PROCESSOR_ROW_LINE_BYTES = 64 * 1024
 MAX_FILES = 1024
@@ -47,6 +48,7 @@ _GENERATION_NAMESPACE_SUFFIX = ".json.generations"
 _RESULT_FILENAME = "result.json"
 _PROCESSOR_RESULT_FILENAME = "result.processor-result.json"
 _PROCESSOR_RESULT_V2_FILENAME = "result.processor-result.jsonl"
+_SEGMENTATION_RESULT_FILENAME = "result.segmentation-result.json"
 _PROGRESS_FILENAME = "result.progress.jsonl"
 _ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 _STAGE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._ -]{0,127}$")
@@ -147,10 +149,10 @@ def _schema(value: object) -> int:
 
 def _result_schema(value: object) -> int:
     if isinstance(value, bool) or not isinstance(value, int):
-        raise RemoteContractError("result schemaVersion must be integer 1 or 2")
+        raise RemoteContractError("result schemaVersion must be integer 1, 2 or 3")
     safe = int.__int__(value)
-    if safe not in (1, 2):
-        raise RemoteContractError("result schemaVersion must be integer 1 or 2")
+    if safe not in (1, 2, 3):
+        raise RemoteContractError("result schemaVersion must be integer 1, 2 or 3")
     return safe
 
 
@@ -683,7 +685,7 @@ class ResultBundle:
             )
             processor_filename = _PROCESSOR_RESULT_FILENAME
             processor_row_count = None
-        else:
+        elif self.schema_version == 2:
             result_value = _exact(
                 self.result,
                 frozenset({"processorResultPath", "processorResultFormat", "processorRowCount", "progressPath", "progressEventCount"}),
@@ -698,10 +700,14 @@ class ResultBundle:
                 0,
                 MAX_PROCESSOR_ROW_COUNT,
             )
+        else:
+            result_value = _exact(self.result, frozenset({"maskResultPath", "progressPath", "progressEventCount",
+                "generationId", "requestDigest", "sourceSha256", "checkpointDigest", "jobIdentity"}), "result")
+            processor_filename = _SEGMENTATION_RESULT_FILENAME
+            processor_row_count = None
+        primary_key = "maskResultPath" if self.schema_version == 3 else "processorResultPath"
         processor_path, processor_namespace, processor_generation = _generation_path(
-            result_value["processorResultPath"],
-            "processorResultPath",
-            processor_filename,
+            result_value[primary_key], primary_key, processor_filename,
         )
         progress_path, progress_namespace, progress_generation = _generation_path(
             result_value["progressPath"],
@@ -717,10 +723,14 @@ class ResultBundle:
             MAX_PROGRESS_EVENTS,
         )
         result = {
-            "processorResultPath": processor_path.as_posix(),
+            primary_key: processor_path.as_posix(),
             "progressPath": progress_path.as_posix(),
             "progressEventCount": progress_count,
         }
+        if self.schema_version == 3:
+            result.update({key: _digest(result_value[key], key) for key in
+                ("requestDigest", "sourceSha256", "checkpointDigest", "jobIdentity")})
+            result["generationId"] = _text(result_value["generationId"], "generationId", 32, _GENERATION_ID)
         if processor_row_count is not None:
             result["processorResultFormat"] = PROCESSOR_RESULT_FORMAT
             result["processorRowCount"] = processor_row_count
@@ -735,6 +745,8 @@ class ResultBundle:
         by_path = {item.relative_path: item for item in artifacts}
         if set(by_path) != {processor_path, progress_path}:
             raise RemoteContractError("result artifact path binding mismatch")
+        if self.schema_version == 3 and by_path[processor_path].size_bytes > MAX_SEGMENTATION_RESULT_BYTES:
+            raise RemoteContractError("segmentation result size exceeds limit")
         object.__setattr__(self, "artifacts", artifacts)
         canonical_json_bytes(self.to_mapping(), max_bytes=MAX_RESULT_BYTES)
 
@@ -750,11 +762,18 @@ class ResultBundle:
 
     @property
     def processor_format(self) -> str:
+        if self.schema_version == 3:
+            raise RemoteContractError("segmentation result has no processor format")
         return PROCESSOR_RESULT_FORMAT if self.schema_version == 2 else "json-v1"
 
     @property
     def processor_row_count(self) -> int | None:
         return self.result["processorRowCount"] if self.schema_version == 2 else None  # type: ignore[return-value]
+
+    @property
+    def primary_artifact_path(self) -> PurePosixPath:
+        key = "maskResultPath" if self.schema_version == 3 else "processorResultPath"
+        return PurePosixPath(self.result[key])
 
 
 @dataclass(frozen=True, slots=True)
@@ -988,6 +1007,31 @@ def validate_result(request: JobRequest, receipt: JobReceipt, result: ResultBund
     receipt_digest = hashlib.sha256(canonical_json_bytes(receipt.to_mapping())).hexdigest()
     if result.receipt_sha256 != receipt_digest:
         raise RemoteContractError("result receipt identity mismatch")
+    if result.schema_version == 3:
+        shadow = request.config.get("shadowSegmentation")
+        if request.config.get("jobKind") != "segmentation_shadow" or not isinstance(shadow, Mapping):
+            raise RemoteContractError("shadow job identity is missing")
+        if shadow.get("matchId") != request.match_id or any(result.result[key] != shadow.get(key) for key in
+            ("generationId", "requestDigest", "sourceSha256", "checkpointDigest", "jobIdentity")):
+            raise RemoteContractError("shadow result identity mismatch")
+        identity_inputs = {key: shadow.get(key) for key in
+            ("matchId", "generationId", "requestDigest", "checkpointDigest")}
+        expected_job_identity = hashlib.sha256(json.dumps(identity_inputs, sort_keys=True,
+            separators=(",", ":"), allow_nan=False).encode()).hexdigest()
+        if shadow.get("schemaVersion") != 1 or shadow.get("jobIdentity") != expected_job_identity \
+                or type(shadow.get("deadlineSeconds")) not in (int, float) \
+                or not 0 < shadow["deadlineSeconds"] <= 3600:
+            raise RemoteContractError("shadow job identity is invalid")
+        by_role = {item.role: item for item in receipt.files if item.role != "runtime_artifact"}
+        sealed_inputs = {item.relative_path: item for item in receipt.files if item.role == "runtime_artifact"}
+        checkpoint = sealed_inputs.get(PurePosixPath("inputs/checkpoint.bin"))
+        segmentation_request = sealed_inputs.get(PurePosixPath("inputs/segmentation-request.json"))
+        if by_role["input_video"].sha256 != result.result["sourceSha256"] \
+                or checkpoint is None or checkpoint.sha256 != result.result["checkpointDigest"] \
+                or segmentation_request is None or segmentation_request.sha256 != result.result["requestDigest"]:
+            raise RemoteContractError("shadow input artifact identity mismatch")
+    elif request.config.get("jobKind") == "segmentation_shadow":
+        raise RemoteContractError("shadow job requires segmentation result schema")
     if output_root is not None:
         progress_path = PurePosixPath(result.result["progressPath"])
         for item in result.artifacts:
@@ -1019,10 +1063,11 @@ def validate_completion(root: Path | str, request: JobRequest, receipt: JobRecei
         "resultPath",
         _RESULT_FILENAME,
     )
+    primary_key = "maskResultPath" if result.schema_version == 3 else "processorResultPath"
+    primary_filename = (_SEGMENTATION_RESULT_FILENAME if result.schema_version == 3 else
+        _PROCESSOR_RESULT_V2_FILENAME if result.schema_version == 2 else _PROCESSOR_RESULT_FILENAME)
     _, processor_namespace, processor_generation = _generation_path(
-        result.result["processorResultPath"],
-        "processorResultPath",
-        _PROCESSOR_RESULT_V2_FILENAME if result.schema_version == 2 else _PROCESSOR_RESULT_FILENAME,
+        result.result[primary_key], primary_key, primary_filename,
     )
     _, progress_namespace, progress_generation = _generation_path(
         result.result["progressPath"],

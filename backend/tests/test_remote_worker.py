@@ -1005,19 +1005,19 @@ def test_processor_loader_binds_the_processor_path_and_completion_identity(
         sandbox_id="sandbox-bindings",
         progress_payload=b'{"rows":[]}\n',
     )
-    swapped_path = replace(result, processor_path=result.progress_path)
+    with pytest.raises(daytona_adapter.DaytonaExecutionError, match="paths"):
+        replace(result, processor_path=result.progress_path)
     wrong_completion = replace(
         result,
         completion=replace(result.completion, match_id="different-match"),
     )
 
-    for invalid in (swapped_path, wrong_completion):
-        with pytest.raises(RuntimeError, match="processor result is invalid"):
-            remote_worker._load_processor_result(
-                invalid,
-                job_id="job-bindings-1",
-                match_id="match-bindings-1",
-            )
+    with pytest.raises(RuntimeError, match="processor result is invalid"):
+        remote_worker._load_processor_result(
+            wrong_completion,
+            job_id="job-bindings-1",
+            match_id="match-bindings-1",
+        )
 
 
 @pytest.mark.parametrize("field", ["size", "digest"])
@@ -1365,7 +1365,9 @@ def test_v2_loader_binds_artifact_and_completion_identity(tmp_path, field):
                         sha256="f" * 64 if field == "digest" else processor.sha256)
         result = replace(result, result=replace(result.result, artifacts=(entry, progress)))
     elif field == "path":
-        result = replace(result, processor_path=result.progress_path)
+        with pytest.raises(daytona_adapter.DaytonaExecutionError, match="paths"):
+            replace(result, processor_path=result.progress_path)
+        return
     elif field == "job":
         result = replace(result, completion=replace(result.completion, job_id="wrong-job"))
     else:

@@ -9,6 +9,7 @@ import json
 import os
 from pathlib import Path, PurePosixPath
 import traceback
+from types import SimpleNamespace
 
 import pytest
 
@@ -46,6 +47,7 @@ RESULT_PATH = f"outputs/result.json.generations/{GENERATION}/result.json"
 PROCESSOR_PATH = f"outputs/result.json.generations/{GENERATION}/result.processor-result.json"
 PROCESSOR_V2_PATH = f"outputs/result.json.generations/{GENERATION}/result.processor-result.jsonl"
 PROGRESS_PATH = f"outputs/result.json.generations/{GENERATION}/result.progress.jsonl"
+MASK_PATH = f"outputs/result.json.generations/{GENERATION}/result.segmentation-result.json"
 
 
 def entry(role="manifest", path="manifest.json", data=b"x"):
@@ -96,6 +98,125 @@ def result_for(req=None, receipt=None, artifact=b"output", progress=b"", progres
         },
         "artifacts": [processor.to_mapping(), progress_artifact.to_mapping()],
     })
+
+
+def shadow_contracts(mask=b'{"schemaVersion":"segmentation_result_v1"}\n',
+                     namespace="outputs/result.json.generations", job_identity=None):
+    mask_path = f"{namespace}/{GENERATION}/result.segmentation-result.json"
+    progress_path = f"{namespace}/{GENERATION}/result.progress.jsonl"
+    request_bytes = b"sealed segmentation request"
+    shadow = {"schemaVersion": 1, "matchId": "match-1", "generationId": GENERATION,
+              "requestDigest": hashlib.sha256(request_bytes).hexdigest(),
+              "sourceSha256": hashlib.sha256(b"video").hexdigest(),
+              "checkpointDigest": hashlib.sha256(b"checkpoint").hexdigest(),
+              "deadlineSeconds": 30}
+    shadow["jobIdentity"] = job_identity or hashlib.sha256(json.dumps({key: shadow[key] for key in
+        ("matchId", "generationId", "requestDigest", "checkpointDigest")},
+        sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    req = JobRequest.from_mapping({**request_mapping(), "config":
+        {"jobKind": "segmentation_shadow", "shadowSegmentation": shadow}})
+    rec = receipt_for(req)
+    rec = replace(rec, files=(*rec.files, entry("runtime_artifact", "inputs/checkpoint.bin", b"checkpoint"),
+                              entry("runtime_artifact", "inputs/segmentation-request.json", request_bytes)))
+    result = ResultBundle.from_mapping({
+        "schemaVersion": 3, "jobId": req.job_id, "matchId": req.match_id,
+        "sourceCommit": rec.source_commit, "manifestSha256": rec.manifest_sha256,
+        "receiptSha256": hashlib.sha256(canonical_json_bytes(rec.to_mapping())).hexdigest(),
+        "requestedRuntimeOptions": rec.requested_runtime_options,
+        "result": {"maskResultPath": mask_path, "progressPath": progress_path, "progressEventCount": 0,
+                   **{key: shadow[key] for key in ("generationId", "requestDigest", "sourceSha256",
+                                                     "checkpointDigest", "jobIdentity")}},
+        "artifacts": [entry("result_artifact", mask_path, mask).to_mapping(),
+                      entry("result_artifact", progress_path, b"").to_mapping()],
+    })
+    return req, rec, result, mask
+
+
+def test_shadow_result_is_sealed_to_job_source_checkpoint_and_generation(tmp_path):
+    req, rec, result, mask = shadow_contracts()
+    result_bytes = canonical_json_bytes(result.to_mapping())
+    for path, payload in ((MASK_PATH, mask), (PROGRESS_PATH, b""), (RESULT_PATH, result_bytes)):
+        destination = tmp_path / path
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(payload)
+    validate_completion(tmp_path, req, rec, result, completion_for(req, rec, result_bytes))
+    for changed in ({"jobIdentity": "d" * 64}, {"sourceSha256": "d" * 64},
+                    {"checkpointDigest": "d" * 64}, {"generationId": "f" * 32}):
+        bad = result.to_mapping()
+        bad["result"].update(changed)
+        with pytest.raises(RemoteContractError):
+            validate_result(req, rec, ResultBundle.from_mapping(bad))
+    bad = result.to_mapping()
+    bad["result"]["maskResultPath"] = "../../arbitrary.json"
+    with pytest.raises(RemoteContractError):
+        ResultBundle.from_mapping(bad)
+    bad = result.to_mapping()
+    bad["artifacts"].append(bad["artifacts"][0])
+    with pytest.raises(RemoteContractError):
+        ResultBundle.from_mapping(bad)
+    bad = result.to_mapping()
+    bad["artifacts"][0]["sizeBytes"] = 128 * 1024 * 1024 + 1
+    with pytest.raises(RemoteContractError, match="size"):
+        ResultBundle.from_mapping(bad)
+    other = JobRequest.from_mapping({**req.to_mapping(), "matchId": "another-match"})
+    with pytest.raises(RemoteContractError):
+        validate_result(other, rec, result)
+    forged_req, forged_rec, forged_result, _ = shadow_contracts(job_identity="d" * 64)
+    with pytest.raises(RemoteContractError):
+        validate_result(forged_req, forged_rec, forged_result)
+    unsealed = replace(rec, files=tuple(item for item in rec.files
+        if item.relative_path != PurePosixPath("inputs/checkpoint.bin")))
+    rebound = replace(result, receipt_sha256=hashlib.sha256(canonical_json_bytes(
+        unsealed.to_mapping())).hexdigest())
+    with pytest.raises(RemoteContractError, match="shadow input"):
+        validate_result(req, unsealed, rebound)
+    with pytest.raises(RemoteContractError, match="shadow job requires"):
+        validate_result(req, rec, result_for(req, rec))
+
+
+def test_daytona_collects_only_sealed_shadow_result_files(tmp_path):
+    from backend.app.daytona import (_collect_result, DaytonaDiagnostics,
+        DaytonaExecutionError, DaytonaExecutionResult)
+
+    req, rec, result, mask = shadow_contracts(namespace="result-bundle.json.generations")
+    result_bytes = canonical_json_bytes(result.to_mapping())
+    result_path = f"result-bundle.json.generations/{GENERATION}/result.json"
+    mask_path = result.result["maskResultPath"]
+    progress_path = result.result["progressPath"]
+    completion = completion_for(req, rec, result_bytes, result_path)
+    remote = {
+        "/home/daytona/job/completion-receipt.json": canonical_json_bytes(completion.to_mapping()),
+        f"/home/daytona/job/{result_path}": result_bytes,
+        f"/home/daytona/job/{mask_path}": mask,
+        f"/home/daytona/job/{progress_path}": b"",
+        "/home/daytona/job/unrequested-mask.json": b"do not fetch",
+    }
+    downloads = []
+    class Files:
+        def download_file_stream(self, path, timeout):
+            downloads.append(path)
+            return iter((remote[path],))
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    owner, received_completion, received_result, primary, progress = _collect_result(
+        SimpleNamespace(fs=Files()), workspace, req, rec, 10)
+    try:
+        assert received_completion == completion and received_result == result
+        assert primary.read_bytes() == mask and progress.read_bytes() == b""
+        assert primary.relative_to(owner.staging).as_posix() == mask_path
+        accepted = DaytonaExecutionResult("sandbox-1", completion, result, owner.staging,
+            primary, progress, DaytonaDiagnostics("[REDACTED]"))
+        assert accepted.processor_path == primary
+        with pytest.raises(DaytonaExecutionError, match="paths"):
+            DaytonaExecutionResult("sandbox-1", completion, result, owner.staging,
+                progress, progress, DaytonaDiagnostics("[REDACTED]"))
+    finally:
+        owner.cleanup()
+    assert set(downloads) == set(remote) - {"/home/daytona/job/unrequested-mask.json"}
+    remote[f"/home/daytona/job/{mask_path}"] = b"tampered mask"
+    with pytest.raises(DaytonaExecutionError, match="download"):
+        _collect_result(SimpleNamespace(fs=Files()), workspace, req, rec, 10)
+    assert not list(workspace.iterdir()), "failed transfers must remove local staging"
 
 
 def v2_result_mapping(req=None, receipt=None, processor=b"output", progress=b"", progress_count=0, row_count=2):
