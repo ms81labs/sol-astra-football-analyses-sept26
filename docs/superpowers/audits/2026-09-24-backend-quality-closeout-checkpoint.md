@@ -1,5 +1,53 @@
 # Backend quality close-out checkpoint
 
+## Match-detail dependency continuation — 25 September 2026
+
+The artifact-route batch is accepted at `2d8cf998b39c67a34e4cff88f68f81d758cb203c`
+(tree `5daa12d8aafc62660ffa619bb0ab3bfcbf68ef8b`). Its normal CI `36070192303`
+completed with 4,636 complete-backend passes / 18 skips, 4,042 canonical backend
+passes / 18 skips, 100 sidecar passes, 441 frontend passes, and all other canonical
+gates successful. Integration was 360 passed / 15 skipped; generated media 23
+passed / 4 skipped. C05 `36070192457` and C06 `36070192275` also passed. The GPU
+lane stayed intentionally skipped. Do not reapply the artifact batch.
+
+This next bounded batch changes exactly 47 match-bound dependency declarations in
+`backend/app/match_detail_routes.py` to eager `Annotated` metadata. The factory,
+callback identity, handler bodies, registration order, defaults, storage/snapshot
+operations and provider policy remain unchanged. Removing postponed annotations
+is intentional: each invocation must retain its own callback in runtime metadata,
+not resolve a factory-local name from module globals. No global state is added.
+
+The 122 new cases pin 47 callback bindings and 75 behavioral/contract cases:
+authorization and overrides for all routes, interleaved application instances,
+optional generations, omitted versus empty request bodies, existing falsy defaults,
+render argument conversion, local geometry bypass and provider denial. The path
+fixture came from unchanged source. Pinned validation must compare the full original
+and modified test-application OpenAPI documents, not refresh expectations from the
+candidate. Tests-only RED must produce exactly 47 named metadata failures and
+75 passes; focused GREEN 258 passes and console pytest 122 passes.
+
+Only the 47 corresponding B008 identities are retired; Ruff is 449 (235 C901,
+175 BLE001, 39 B008). All baseline metadata, existing mypy scope, locks, scorer pins,
+HTTP contracts and test selections remain unchanged. Scoped and explicit
+match-detail mypy must both remain zero. This does not close the wider BQ03 route
+extraction or full-application typing effort.
+
+Acceptance is this batch's completed pinned validation and final published-head
+normal CI, not this checkpoint or the accepted parent's results. No new remote
+branch, force push, deployment, live-store mutation or paid provider/GPU execution
+is authorized by this continuation. Any temporary validation workflow is removed
+from the final source tree. Review is author self-review, not an independent agent.
+
+Exact resume action: inspect normal CI on the revision containing this 47-dependency
+migration. After all applicable lanes complete successfully, continue the remaining
+39 B008 declarations by module with original-contract tests. Do not redo BQ00 or
+the eight artifact dependencies. BQ01 broader typing/contracts, BQ02 exception and
+complexity work, BQ03 structural extraction, BQ04/BQ05 storage and pipeline work,
+BQ06 research/command separation and BQ07 final closure remain open.
+
+The older sections below retain history; the current counts and resume instruction
+in this section supersede older current-batch paragraphs.
+
 ## Current accepted base and next bounded batch
 
 BQ00 is accepted at `ef714ca0bf839b9d67dc0ea5664ada329b8d6c41`, source tree

@@ -1,0 +1,2429 @@
+{
+  "/api/matches/{match_id}/analysis/{analysis_type}": {
+    "post": {
+      "operationId": "analyze_match_api_matches__match_id__analysis__analysis_type__post",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "analysis_type",
+          "required": true,
+          "schema": {
+            "title": "Analysis Type",
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Body"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Analyze Match Api Matches  Match Id  Analysis  Analysis Type  Post",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Analyze Match"
+    }
+  },
+  "/api/matches/{match_id}/assistance/report": {
+    "post": {
+      "operationId": "post_match_assistance_report_api_matches__match_id__assistance_report_post",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Payload"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Post Match Assistance Report Api Matches  Match Id  Assistance Report Post",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Post Match Assistance Report"
+    }
+  },
+  "/api/matches/{match_id}/attack-direction": {
+    "get": {
+      "operationId": "get_match_attack_direction_api_matches__match_id__attack_direction_get",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Get Match Attack Direction Api Matches  Match Id  Attack Direction Get",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Get Match Attack Direction"
+    },
+    "post": {
+      "operationId": "post_match_attack_direction_api_matches__match_id__attack_direction_post",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Payload"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Post Match Attack Direction Api Matches  Match Id  Attack Direction Post",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Post Match Attack Direction"
+    }
+  },
+  "/api/matches/{match_id}/benchmark": {
+    "get": {
+      "operationId": "get_match_benchmark_api_matches__match_id__benchmark_get",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "includeSelectedClusterProbe",
+          "required": false,
+          "schema": {
+            "default": false,
+            "title": "Includeselectedclusterprobe",
+            "type": "boolean"
+          }
+        },
+        {
+          "in": "query",
+          "name": "generationId",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generationid"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Get Match Benchmark Api Matches  Match Id  Benchmark Get",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Get Match Benchmark"
+    }
+  },
+  "/api/matches/{match_id}/cache": {
+    "get": {
+      "operationId": "get_match_cache_api_matches__match_id__cache_get",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Get Match Cache Api Matches  Match Id  Cache Get",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Get Match Cache"
+    }
+  },
+  "/api/matches/{match_id}/calibration": {
+    "get": {
+      "operationId": "get_match_calibration_api_matches__match_id__calibration_get",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Get Match Calibration Api Matches  Match Id  Calibration Get",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Get Match Calibration"
+    },
+    "post": {
+      "operationId": "post_match_calibration_api_matches__match_id__calibration_post",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Payload"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Post Match Calibration Api Matches  Match Id  Calibration Post",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Post Match Calibration"
+    }
+  },
+  "/api/matches/{match_id}/calibration/commit": {
+    "post": {
+      "operationId": "commit_match_calibration_api_matches__match_id__calibration_commit_post",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Payload"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Commit Match Calibration Api Matches  Match Id  Calibration Commit Post",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Commit Match Calibration"
+    }
+  },
+  "/api/matches/{match_id}/clock": {
+    "get": {
+      "operationId": "get_match_clock_api_matches__match_id__clock_get",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Get Match Clock Api Matches  Match Id  Clock Get",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Get Match Clock"
+    }
+  },
+  "/api/matches/{match_id}/config": {
+    "patch": {
+      "operationId": "update_match_config_api_matches__match_id__config_patch",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Payload"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Update Match Config Api Matches  Match Id  Config Patch",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Update Match Config"
+    }
+  },
+  "/api/matches/{match_id}/edits": {
+    "get": {
+      "operationId": "get_match_edits_api_matches__match_id__edits_get",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "generationId",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generationid"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Get Match Edits Api Matches  Match Id  Edits Get",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Get Match Edits"
+    }
+  },
+  "/api/matches/{match_id}/edits/render": {
+    "post": {
+      "operationId": "post_match_edit_render_api_matches__match_id__edits_render_post",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Payload"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Post Match Edit Render Api Matches  Match Id  Edits Render Post",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Post Match Edit Render"
+    }
+  },
+  "/api/matches/{match_id}/events/partition": {
+    "get": {
+      "operationId": "get_match_event_partition_api_matches__match_id__events_partition_get",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Get Match Event Partition Api Matches  Match Id  Events Partition Get",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Get Match Event Partition"
+    }
+  },
+  "/api/matches/{match_id}/formation": {
+    "get": {
+      "operationId": "get_match_formation_api_matches__match_id__formation_get",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "generationId",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generationid"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Get Match Formation Api Matches  Match Id  Formation Get",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Get Match Formation"
+    }
+  },
+  "/api/matches/{match_id}/geometry/distance": {
+    "get": {
+      "operationId": "get_match_derived_distance_api_matches__match_id__geometry_distance_get",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "generationId",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generationid"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Get Match Derived Distance Api Matches  Match Id  Geometry Distance Get",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Get Match Derived Distance"
+    }
+  },
+  "/api/matches/{match_id}/heatmap": {
+    "get": {
+      "operationId": "get_match_heatmap_api_matches__match_id__heatmap_get",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "generationId",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generationid"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Get Match Heatmap Api Matches  Match Id  Heatmap Get",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Get Match Heatmap"
+    }
+  },
+  "/api/matches/{match_id}/history": {
+    "get": {
+      "operationId": "get_match_history_api_matches__match_id__history_get",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Get Match History Api Matches  Match Id  History Get",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Get Match History"
+    }
+  },
+  "/api/matches/{match_id}/identity": {
+    "get": {
+      "operationId": "get_match_identity_api_matches__match_id__identity_get",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "generationId",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generationid"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Get Match Identity Api Matches  Match Id  Identity Get",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Get Match Identity"
+    }
+  },
+  "/api/matches/{match_id}/identity/promote": {
+    "post": {
+      "operationId": "post_match_identity_promote_api_matches__match_id__identity_promote_post",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Payload"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Post Match Identity Promote Api Matches  Match Id  Identity Promote Post",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Post Match Identity Promote"
+    }
+  },
+  "/api/matches/{match_id}/identity/repair": {
+    "post": {
+      "operationId": "post_match_identity_repair_api_matches__match_id__identity_repair_post",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Payload"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Post Match Identity Repair Api Matches  Match Id  Identity Repair Post",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Post Match Identity Repair"
+    }
+  },
+  "/api/matches/{match_id}/incidents/geometry": {
+    "get": {
+      "operationId": "get_match_incident_geometry_api_matches__match_id__incidents_geometry_get",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Get Match Incident Geometry Api Matches  Match Id  Incidents Geometry Get",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Get Match Incident Geometry"
+    }
+  },
+  "/api/matches/{match_id}/incidents/package": {
+    "get": {
+      "operationId": "get_match_incident_package_api_matches__match_id__incidents_package_get",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Get Match Incident Package Api Matches  Match Id  Incidents Package Get",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Get Match Incident Package"
+    }
+  },
+  "/api/matches/{match_id}/incidents/review": {
+    "get": {
+      "operationId": "get_match_incident_review_api_matches__match_id__incidents_review_get",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "generationId",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generationid"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Get Match Incident Review Api Matches  Match Id  Incidents Review Get",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Get Match Incident Review"
+    }
+  },
+  "/api/matches/{match_id}/media/proxy": {
+    "get": {
+      "operationId": "get_match_proxy_api_matches__match_id__media_proxy_get",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Get Match Proxy Api Matches  Match Id  Media Proxy Get",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Get Match Proxy"
+    }
+  },
+  "/api/matches/{match_id}/metrics": {
+    "get": {
+      "operationId": "get_match_metrics_api_matches__match_id__metrics_get",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "generationId",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generationid"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Get Match Metrics Api Matches  Match Id  Metrics Get",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Get Match Metrics"
+    }
+  },
+  "/api/matches/{match_id}/metrics/inspect/{metric}": {
+    "get": {
+      "operationId": "inspect_stored_metric_api_matches__match_id__metrics_inspect__metric__get",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "metric",
+          "required": true,
+          "schema": {
+            "title": "Metric",
+            "type": "string"
+          }
+        },
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "generationId",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generationid"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Inspect Stored Metric Api Matches  Match Id  Metrics Inspect  Metric  Get",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Inspect Stored Metric"
+    }
+  },
+  "/api/matches/{match_id}/ownership": {
+    "get": {
+      "operationId": "get_match_ownership_api_matches__match_id__ownership_get",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Get Match Ownership Api Matches  Match Id  Ownership Get",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Get Match Ownership"
+    }
+  },
+  "/api/matches/{match_id}/package": {
+    "get": {
+      "operationId": "get_match_package_api_matches__match_id__package_get",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Get Match Package Api Matches  Match Id  Package Get",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Get Match Package"
+    }
+  },
+  "/api/matches/{match_id}/players": {
+    "get": {
+      "operationId": "get_match_players_api_matches__match_id__players_get",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "generationId",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generationid"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Get Match Players Api Matches  Match Id  Players Get",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Get Match Players"
+    }
+  },
+  "/api/matches/{match_id}/privacy": {
+    "get": {
+      "operationId": "get_match_privacy_api_matches__match_id__privacy_get",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Get Match Privacy Api Matches  Match Id  Privacy Get",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Get Match Privacy"
+    }
+  },
+  "/api/matches/{match_id}/promotion": {
+    "get": {
+      "operationId": "get_match_promotion_api_matches__match_id__promotion_get",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Get Match Promotion Api Matches  Match Id  Promotion Get",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Get Match Promotion"
+    }
+  },
+  "/api/matches/{match_id}/quality": {
+    "get": {
+      "operationId": "get_match_quality_api_matches__match_id__quality_get",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "generationId",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generationid"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Get Match Quality Api Matches  Match Id  Quality Get",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Get Match Quality"
+    }
+  },
+  "/api/matches/{match_id}/queries": {
+    "post": {
+      "operationId": "post_match_query_api_matches__match_id__queries_post",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Payload"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Post Match Query Api Matches  Match Id  Queries Post",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Post Match Query"
+    }
+  },
+  "/api/matches/{match_id}/rates": {
+    "get": {
+      "operationId": "match_rates_api_matches__match_id__rates_get",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Match Rates Api Matches  Match Id  Rates Get",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Match Rates"
+    }
+  },
+  "/api/matches/{match_id}/recompute": {
+    "post": {
+      "operationId": "post_match_recompute_api_matches__match_id__recompute_post",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Payload"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Post Match Recompute Api Matches  Match Id  Recompute Post",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Post Match Recompute"
+    }
+  },
+  "/api/matches/{match_id}/recompute/execute": {
+    "post": {
+      "operationId": "post_match_recompute_execute_api_matches__match_id__recompute_execute_post",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Payload"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Post Match Recompute Execute Api Matches  Match Id  Recompute Execute Post",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Post Match Recompute Execute"
+    }
+  },
+  "/api/matches/{match_id}/records/migrate": {
+    "get": {
+      "operationId": "get_match_legacy_migrate_api_matches__match_id__records_migrate_get",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Get Match Legacy Migrate Api Matches  Match Id  Records Migrate Get",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Get Match Legacy Migrate"
+    }
+  },
+  "/api/matches/{match_id}/recovery/import": {
+    "post": {
+      "operationId": "post_match_corrupted_import_api_matches__match_id__recovery_import_post",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Payload"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Post Match Corrupted Import Api Matches  Match Id  Recovery Import Post",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Post Match Corrupted Import"
+    }
+  },
+  "/api/matches/{match_id}/reports": {
+    "post": {
+      "operationId": "post_match_report_api_matches__match_id__reports_post",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Payload"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Post Match Report Api Matches  Match Id  Reports Post",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Post Match Report"
+    }
+  },
+  "/api/matches/{match_id}/reports/coverage": {
+    "get": {
+      "operationId": "get_match_report_coverage_api_matches__match_id__reports_coverage_get",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "generationId",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generationid"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Get Match Report Coverage Api Matches  Match Id  Reports Coverage Get",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Get Match Report Coverage"
+    }
+  },
+  "/api/matches/{match_id}/reports/provenance": {
+    "get": {
+      "operationId": "get_match_report_provenance_api_matches__match_id__reports_provenance_get",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Get Match Report Provenance Api Matches  Match Id  Reports Provenance Get",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Get Match Report Provenance"
+    }
+  },
+  "/api/matches/{match_id}/setup": {
+    "get": {
+      "operationId": "match_setup_api_matches__match_id__setup_get",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "generationId",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generationid"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Match Setup Api Matches  Match Id  Setup Get",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Match Setup"
+    }
+  },
+  "/api/matches/{match_id}/setup/preview": {
+    "get": {
+      "operationId": "get_match_setup_preview_api_matches__match_id__setup_preview_get",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "generationId",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Generationid"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Get Match Setup Preview Api Matches  Match Id  Setup Preview Get",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Get Match Setup Preview"
+    }
+  },
+  "/api/matches/{match_id}/shots/features": {
+    "get": {
+      "operationId": "get_match_shot_features_api_matches__match_id__shots_features_get",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Get Match Shot Features Api Matches  Match Id  Shots Features Get",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Get Match Shot Features"
+    }
+  },
+  "/api/matches/{match_id}/shots/quality": {
+    "get": {
+      "operationId": "get_match_shot_quality_api_matches__match_id__shots_quality_get",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Get Match Shot Quality Api Matches  Match Id  Shots Quality Get",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Get Match Shot Quality"
+    }
+  },
+  "/api/matches/{match_id}/tracklets": {
+    "get": {
+      "operationId": "get_match_tracklets_api_matches__match_id__tracklets_get",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Get Match Tracklets Api Matches  Match Id  Tracklets Get",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Get Match Tracklets"
+    }
+  }
+}
