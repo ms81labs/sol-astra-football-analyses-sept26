@@ -1,0 +1,33 @@
+name: Quality maintenance snapshot
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/quality-maintenance-snapshot.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Retain pinned offline analysis tools and exact tracked source
+        run: |
+          mkdir -p .quality-snapshot/wheels
+          python -m pip download --only-binary=:all: --dest .quality-snapshot/wheels ruff==0.16.8 mypy==2.3.1 pydantic==2.13.5
+          git archive --format=zip HEAD > .quality-snapshot/source.zip
+          git rev-parse HEAD > .quality-snapshot/commit.txt
+          sha256sum .quality-snapshot/wheels/* > .quality-snapshot/wheel-sha256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: quality-maintenance-snapshot
+          path: .quality-snapshot/
+          include-hidden-files: true
+          retention-days: 3
+          if-no-files-found: error
