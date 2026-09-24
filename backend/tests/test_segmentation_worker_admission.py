@@ -58,6 +58,14 @@ def test_shadow_preflight_binds_current_source_rights_and_approved_runtime(tmp_p
     assert admission["checkpointDigest"] == checkpoint_sha
     assert admission["jobIdentity"] == preflight_shadow_window(storage, match_id, generation_id,
         request.model_dump(mode="json"), **kwargs)["jobIdentity"]
+    with pytest.raises(ValueError, match="source dimensions"):
+        preflight_shadow_window(storage, match_id, generation_id,
+            {**request.model_dump(mode="json"), "width": 999}, **kwargs)
+    # The stored 0.2s observation for frame 1 differs from this video's 0.25s PTS.
+    with pytest.raises(ValueError, match="source frame"):
+        preflight_shadow_window(storage, match_id, generation_id,
+            {**request.model_dump(mode="json"), "frames": [{"frameId": 1, "ptsSeconds": frames[1].timestamp}],
+             "prompts": [{"objectId": "o1", "trackId": "7", "frameId": 1, "box": [1, 1, 3, 3]}]}, **kwargs)
     for changed in (
         {"sourceSha256": "d" * 64}, {"checkpointDigest": "d" * 64},
         {"baseTrackingDigest": "d" * 64}, {"modelDigest": "d" * 64},

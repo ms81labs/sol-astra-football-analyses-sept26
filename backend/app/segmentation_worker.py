@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import stat
+from collections import Counter
+from fractions import Fraction
 from pathlib import Path
 
 from .report_contracts import digest
@@ -52,6 +55,39 @@ def preflight_shadow_window(storage, match_id: str, generation_id: str, payload:
             for item in request.frames) \
             or request.baseTrackingDigest != digest([frame.model_dump(mode="json") for frame in frames]):
         raise ValueError("shadow frames do not match frozen tracking")
+    from .workbench.media import FfmpegProbe, _assert_safe_ffmpeg_argv, _run_bounded_media_process
+    from .workbench.media_execution import MediaExecutionPolicy
+
+    timeout = min(30.0, deadline_seconds)
+    policy = MediaExecutionPolicy(max_duration_seconds=10_800,
+        max_frames=500_000, job_timeout_seconds=timeout, probe_timeout_seconds=timeout,
+        cpu_soft_seconds=31, cpu_hard_seconds=32, captured_output_bytes=8 * 1024**2)
+    probe = FfmpegProbe(policy=policy)
+    media_identity = probe.probe_identity(source)
+    # ponytail: only full-frame source geometry is admitted until a sealed crop manifest binds cropped pixels.
+    if (media_identity.sourceSha256 != source_sha or (request.width, request.height) != (media_identity.width, media_identity.height)
+            or not media_identity.timeBaseNum or not media_identity.timeBaseDen):
+        raise ValueError("shadow source dimensions or identity mismatch")
+    command = [probe.ffprobe, "-protocol_whitelist", "file,pipe", "-threads", str(policy.threads),
+        "-v", "error", "-select_streams", "v:0", "-show_entries", "frame=best_effort_timestamp",
+        "-of", "csv=p=0", str(source)]
+    _assert_safe_ffmpeg_argv(command)
+    result = _run_bounded_media_process(command, timeout=timeout,
+        output_cap=policy.captured_output_bytes, file_cap=policy.max_file_bytes, policy=policy)
+    if result.returncode != 0:
+        raise ValueError("shadow source frame index unavailable")
+    rows = [line.strip().rstrip(",") for line in result.stdout.decode().splitlines() if line.strip()]
+    if len(rows) > policy.max_frames or any(not re.fullmatch(r"-?\d+", row) for row in rows):
+        raise ValueError("shadow source frame index ambiguous")
+    ticks = [int(row) for row in rows]
+    tick_counts = Counter(ticks)
+    time_base = Fraction(media_identity.timeBaseNum, media_identity.timeBaseDen)
+    if any(item.frameId >= len(ticks) or tick_counts[ticks[item.frameId]] != 1
+           or not math.isclose(float(ticks[item.frameId] * time_base), item.ptsSeconds,
+                               rel_tol=0, abs_tol=1e-6) for item in request.frames):
+        raise ValueError("shadow source frame PTS mismatch")
+    if stream_sha256(source).sha256 != source_sha:
+        raise ValueError("shadow source changed during preflight")
     return {"schemaVersion": 1, "matchId": match_id, "generationId": generation_id,
         "requestDigest": identity, "sourceSha256": source_sha,
         "checkpointDigest": checkpoint_sha, "deadlineSeconds": deadline_seconds,
