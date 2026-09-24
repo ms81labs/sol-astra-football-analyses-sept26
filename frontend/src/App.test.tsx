@@ -566,7 +566,7 @@ describe('App match workspace loading', () => {
     stubSnapshotWorkspace({ ...loadedWorkspace('match-a', 'Match A'), events: [{
       eventId: 'ev_model_1', type: 'shot', frameId: 0, timestamp: 0, description: 'Possible shot',
       reviewStatus: 'unreviewed', proposalModelId: 'visual-model',
-      proposalModelVersion: 'v1', proposalEvidenceIds: ['frame:0'],
+      proposalModelVersion: 'v1', proposalEvidenceIds: ['frame:0'], proposalRequestId: 'provider-request-1',
     }] });
     const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
       const url = String(input);
@@ -596,6 +596,8 @@ describe('App match workspace loading', () => {
       expect(request?.[1]?.body).toContain('"kind":"event_accept"');
       expect(request?.[1]?.body).toContain('"eventId":"ev_model_1"');
     });
+    await waitFor(() => expect(screen.getByTestId('analysis-generation').textContent).toContain('g-match-a-next'));
+    expect(within(inspector).queryByRole('button', { name: /accept proposed event/i })).toBeNull();
   });
 
   it('seeks a search hit by source frame and restores its range after a paged frame load', async () => {

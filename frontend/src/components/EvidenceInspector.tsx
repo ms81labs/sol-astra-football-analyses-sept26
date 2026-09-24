@@ -81,9 +81,10 @@ export default function EvidenceInspector({
       {selectedInterval && <p>Selected source interval: {selectedInterval.start}s to {selectedInterval.end}s. Selected evidence: {selectedInterval.evidenceIds.join(', ') || 'unavailable'}.</p>}
       {proposal && <p>Model proposal: {proposal.modelId} · {proposal.modelVersion}</p>}
       {proposal?.requestId && <p>Provider request: {proposal.requestId}</p>}
+      {proposal && !proposal.requestId && <p>Provider receipt unavailable; this proposal cannot be accepted.</p>}
       {proposal && reviewStatus === 'unreviewed' && onProposalDecision && (
         <div className="flex gap-2">
-          <button type="button" className="rounded bg-emerald-700 px-2 py-1 text-white" onClick={() => onProposalDecision('accept')}>Accept proposed event</button>
+          <button type="button" disabled={!proposal.requestId} className="rounded bg-emerald-700 px-2 py-1 text-white disabled:opacity-50" onClick={() => onProposalDecision('accept')}>Accept proposed event</button>
           <button type="button" className="rounded bg-slate-700 px-2 py-1 text-white" onClick={() => onProposalDecision('reject')}>Reject proposed event</button>
         </div>
       )}
