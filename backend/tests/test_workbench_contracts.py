@@ -493,6 +493,52 @@ def test_natural_and_typed_recovery_filters_return_the_same_evidence() -> None:
     assert [hit.eventId for hit in execute_typed_query(rows, natural, match_id="m1")] == ["wanted"]
 
 
+def test_calibrated_pitch_third_uses_the_same_typed_executor() -> None:
+    rows = [{"id": "right", "type": "recovery", "timestamp": 1.0, "pitchRegion": "right_third"},
+            {"id": "left", "type": "recovery", "timestamp": 2.0, "pitchRegion": "left_third"}]
+    direct = TypedQuery(eventFamily="recovery", pitchRegion="right_third")
+    natural = parse_typed_query("recoveries in the right third")
+    assert natural.unanswerable is False
+    assert natural.interpreted["pitchRegion"] == "right_third"
+    assert [hit.eventId for hit in execute_typed_query(rows, direct, match_id="m1")] == ["right"]
+    assert [hit.eventId for hit in execute_typed_query(rows, natural, match_id="m1")] == ["right"]
+
+
+@pytest.mark.integration
+@pytest.mark.real_media
+def test_pitch_region_search_requires_measured_calibration_and_reports_missing_actor(tmp_path, monkeypatch) -> None:
+    from backend.app.schemas import DetectedEvent
+    from backend.app.storage import Storage
+    from backend.tests.test_audit_v3_final_journey import _install_video
+
+    storage = Storage(tmp_path / "store")
+    match_id = _install_video(storage, tmp_path)
+    frame = storage.load_frames(match_id)[0]
+    assert any(player.id == 7 and player.x > 67 for player in frame.myTeam)
+    storage.save_events(match_id, [
+        DetectedEvent(eventId="located", type="recovery", frameId=frame.frameId,
+            timestamp=frame.timestamp, fromTrackId=7, team="my_team", description="Located recovery"),
+        DetectedEvent(eventId="unknown", type="recovery", frameId=frame.frameId,
+            timestamp=frame.timestamp, team="my_team", description="Unknown actor"),
+    ])
+    located_id = next(event.eventId for event in storage.load_events(match_id)
+                      if event.description == "Located recovery")
+    result = storage.query_match_events(match_id, "our recoveries in the right third")
+    assert [hit["eventId"] for hit in result["results"]] == [located_id]
+    assert result["coverageState"] == "partial"
+    assert result["unknownLocationCount"] == 1
+    monkeypatch.setattr(storage, "_stored_calibration_accepted", lambda _match_id: False)
+    withheld = storage.query_match_events(match_id, "our recoveries in the right third")
+    assert withheld["results"] == []
+    assert withheld["coverageState"] == "insufficient"
+    assert withheld["unknownLocationCount"] == 2
+    monkeypatch.setattr(storage, "_stored_calibration_accepted", lambda _match_id: True)
+    monkeypatch.setattr(storage, "load_frames", lambda _match_id: [frame.model_copy(update={"geometryAvailable": False})])
+    frame_unavailable = storage.query_match_events(match_id, "our recoveries in the right third")
+    assert frame_unavailable["coverageState"] == "insufficient"
+    assert frame_unavailable["unknownLocationCount"] == 2
+
+
 def test_typed_query_rejects_unsupported_or_invalid_predicates() -> None:
     from pydantic import ValidationError
     from backend.app.workbench.assistance import SuccessorConstraint
@@ -522,6 +568,10 @@ def test_model_query_proposal_is_scope_bound_and_uses_existing_python_search() -
     proposal = {"matchId": "m1", "generationId": "g1", "query": {
         "eventFamily": "recovery", "team": "my_team", "playerTrackId": 7}}
     query = validate_query_proposal(proposal, match_id="m1", generation_id="g1")
+    assert validate_query_proposal(
+        {**proposal, "query": {**proposal["query"], "pitchRegion": "right_third"}},
+        match_id="m1", generation_id="g1",
+    ).pitchRegion == "right_third"
     rows = [
         {"id": "wanted", "type": "recovery", "team": "my_team", "fromTrackId": 7, "timestamp": 1.0},
         {"id": "other", "type": "recovery", "team": "my_team", "fromTrackId": 8, "timestamp": 2.0},
@@ -543,12 +593,15 @@ def test_model_query_proposal_is_scope_bound_and_uses_existing_python_search() -
 def test_query_result_distinguishes_no_match_from_missing_event_coverage(tmp_path, monkeypatch) -> None:
     from backend.app.storage import Storage
     storage = Storage(tmp_path / "store")
+    source = tmp_path / "empty.json"
+    source.write_text("[]")
+    match = storage.create_match("empty", "tracking_json", source.name, source, MatchConfig())
     monkeypatch.setattr(storage, "load_events", lambda *_: [])
-    assert storage.query_match_events("m1", "recoveries")["coverageState"] == "no_match"
+    assert storage.query_match_events(match.id, "recoveries")["coverageState"] == "no_match"
     def missing(*_):
         raise FileNotFoundError
     monkeypatch.setattr(storage, "load_events", missing)
-    assert storage.query_match_events("m1", "recoveries")["coverageState"] == "insufficient"
+    assert storage.query_match_events(match.id, "recoveries")["coverageState"] == "insufficient"
 
 
 def test_assistance_rejects_fabricated_evidence_and_falls_back_without_provider() -> None:

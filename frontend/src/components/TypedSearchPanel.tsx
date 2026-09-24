@@ -42,6 +42,7 @@ export default function TypedSearchPanel({ matchId, onSeek, onSelectHit, generat
           filter.team === 'my_team' ? 'our team' : filter.team === 'enemy' ? 'opponent' : null,
           filter.playerTrackId != null ? `player ${filter.playerTrackId}` : null,
           filter.reviewStatus,
+          filter.pitchRegion?.replace('_', ' '),
           filter.period != null ? `period ${filter.period}` : null,
           filter.timeStartSeconds != null || filter.timeEndSeconds != null
             ? `${filter.timeStartSeconds ?? 'start'}–${filter.timeEndSeconds ?? 'end'}s` : null];
@@ -49,10 +50,15 @@ export default function TypedSearchPanel({ matchId, onSeek, onSelectHit, generat
       }
       if (result.results.length === 0) {
         setMessage(result.coverageState === 'insufficient'
-          ? 'Event coverage unavailable for this match.' : 'No evidence-linked intervals matched.');
+          ? result.unknownLocationCount
+            ? `${result.unknownLocationCount} matching event${result.unknownLocationCount === 1 ? '' : 's'} ${result.unknownLocationCount === 1 ? 'has' : 'have'} no verified location.`
+            : 'Event coverage unavailable for this match.'
+          : 'No evidence-linked intervals matched.');
         return;
       }
-      setMessage(`${result.results.length} evidence-linked interval${result.results.length === 1 ? '' : 's'}.`);
+      setMessage(`${result.results.length} evidence-linked interval${result.results.length === 1 ? '' : 's'}.` +
+        (result.coverageState === 'partial' && result.unknownLocationCount
+          ? ` ${result.unknownLocationCount} matching event${result.unknownLocationCount === 1 ? '' : 's'} ${result.unknownLocationCount === 1 ? 'has' : 'have'} no verified location.` : ''));
       setResults(result.results);
     } catch (error) {
       if (operation !== scopeVersion.current) return;

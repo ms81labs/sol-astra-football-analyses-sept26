@@ -121,3 +121,23 @@ it('shows the interpreted filter and explains unsupported search terms', async (
   fireEvent.click(screen.getByRole('button', { name: /search evidence/i }));
   expect(await screen.findByText(/event coverage unavailable/i)).toBeTruthy();
 });
+
+it('shows calibrated pitch-region filters with partial location coverage', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({
+    query: { unanswerable: false, interpreted: { eventFamily: 'recovery', pitchRegion: 'right_third' } },
+    coverageState: 'partial', unknownLocationCount: 1,
+    results: [{ eventId: 'r1', matchId: 'match-a', timestamp: 12, label: 'recovery', evidenceIds: ['e1'] }],
+  }) } as Response)));
+  render(<TypedSearchPanel matchId="match-a" />);
+  fireEvent.change(screen.getByLabelText(/^query$/i), { target: { value: 'recoveries in the right third' } });
+  fireEvent.click(screen.getByRole('button', { name: /search evidence/i }));
+  expect((await screen.findByLabelText('Interpreted filter')).textContent).toContain('right third');
+  expect(await screen.findByText(/1 matching event has no verified location/i)).toBeTruthy();
+  expect(screen.getByRole('button', { name: /recovery.*12s/i })).toBeTruthy();
+  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({
+    query: { unanswerable: false, interpreted: { eventFamily: 'recovery', pitchRegion: 'right_third' } },
+    coverageState: 'insufficient', unknownLocationCount: 2, results: [],
+  }) } as Response)));
+  fireEvent.click(screen.getByRole('button', { name: /search evidence/i }));
+  expect(await screen.findByText(/2 matching events have no verified location/i)).toBeTruthy();
+});

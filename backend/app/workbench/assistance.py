@@ -45,6 +45,7 @@ class TypedQuery(StrictModel):
     eventFamily: str
     playerTrackId: int | None = Field(default=None, ge=0, le=1_000_000)
     reviewStatus: Literal["accepted", "unreviewed"] | None = None
+    pitchRegion: Literal["left_third", "middle_third", "right_third"] | None = None
     successor: SuccessorConstraint | None = None
     timeStartSeconds: float | None = Field(default=None, ge=0, le=86_400, allow_inf_nan=False)
     timeEndSeconds: float | None = Field(default=None, ge=0, le=86_400, allow_inf_nan=False)
@@ -176,6 +177,10 @@ def parse_typed_query(text: str, *, include_unknown: bool = False) -> TypedQuery
     end = float(time_match.group("end")) if time_match else None
     if time_match:
         outside = outside.replace(time_match.group(), " ", 1)
+    region_match = re.search(r"\bin (?:the )?(left|middle|right) third\b", outside, re.IGNORECASE)
+    region = f"{region_match.group(1).lower()}_third" if region_match else None
+    if region_match:
+        outside = outside[:region_match.start()] + " " + outside[region_match.end():]
     if start is not None and end is not None and (start > end or end > 86_400):
         return TypedQuery(eventFamily=event, unanswerable=True, reason="invalid_time_range",
             interpreted={"eventFamily": event, "timeStartSeconds": start, "timeEndSeconds": end})
@@ -190,6 +195,7 @@ def parse_typed_query(text: str, *, include_unknown: bool = False) -> TypedQuery
         "eventFamily": event,
         "playerTrackId": player_id,
         "reviewStatus": match.group("review").lower() if match.group("review") else None,
+        "pitchRegion": region,
         "timeStartSeconds": start,
         "timeEndSeconds": end,
         "successor": successor_constraint.model_dump(mode="json") if successor_constraint else None,
@@ -201,6 +207,7 @@ def parse_typed_query(text: str, *, include_unknown: bool = False) -> TypedQuery
         eventFamily=event,
         playerTrackId=player_id,
         reviewStatus=match.group("review").lower() if match.group("review") else None,
+        pitchRegion=region,
         timeStartSeconds=start,
         timeEndSeconds=end,
         successor=successor_constraint,
@@ -219,7 +226,7 @@ def validate_query_proposal(raw: dict[str, Any], *, match_id: str, generation_id
         raise ValueError("query proposal scope does not match")
     fields = raw["query"]
     allowed = {"eventFamily", "team", "playerTrackId", "period", "reviewStatus",
-               "timeStartSeconds", "timeEndSeconds", "successor"}
+               "pitchRegion", "timeStartSeconds", "timeEndSeconds", "successor"}
     if not isinstance(fields, dict) or "eventFamily" not in fields or set(fields) - allowed:
         raise ValueError("unsupported query proposal predicate")
     return TypedQuery.model_validate(fields)
@@ -242,6 +249,8 @@ def execute_typed_query(events: list[dict[str, Any]], query: TypedQuery, *, matc
         if query.playerTrackId is not None and query.playerTrackId not in (event.get("fromTrackId"), event.get("toTrackId")):
             continue
         if query.reviewStatus is not None and event.get("reviewStatus") != query.reviewStatus:
+            continue
+        if query.pitchRegion is not None and event.get("pitchRegion") != query.pitchRegion:
             continue
         timestamp = event.get("timestamp")
         if query.timeStartSeconds is not None and not _at_or_after(timestamp, query.timeStartSeconds, query.includeUnknown):

@@ -875,6 +875,7 @@ class Storage(_IdentityStorageMixin, _CalibrationStorageMixin, _RemoteResultStor
             return
         self.save_events(match_id, restore_event_review(events, previous))
 
+    @_generation_reader
     def query_match_events(self, match_id: str, query_text: str, *, include_unknown: bool = False) -> dict:
         from .workbench.assistance import events_as_query_rows, execute_typed_query, parse_typed_query
 
@@ -885,13 +886,40 @@ class Storage(_IdentityStorageMixin, _CalibrationStorageMixin, _RemoteResultStor
             events = []
             coverage_state = "insufficient"
         query = parse_typed_query(query_text, include_unknown=include_unknown)
-        hits = execute_typed_query(events_as_query_rows(events, match_id=match_id), query, match_id=match_id)
+        rows = events_as_query_rows(events, match_id=match_id)
+        unknown_location_count = 0
+        if query.pitchRegion and not query.unanswerable:
+            if self._stored_calibration_accepted(match_id):
+                try:
+                    frames = {frame.frameId: frame for frame in self.load_frames(match_id)}
+                except FileNotFoundError:
+                    frames = {}
+                for row in rows:
+                    frame = frames.get(row.get("frameId"))
+                    track_id = row.get("fromTrackId")
+                    if (frame is None or not frame.geometryAvailable or
+                            frame.coordinateSpace != "pitch_normalized_0_100" or track_id is None):
+                        continue
+                    players = (frame.myTeam if row.get("team") == "my_team" else
+                               frame.enemies if row.get("team") == "enemy" else
+                               [*frame.myTeam, *frame.enemies])
+                    actors = [player for player in players if player.id == track_id]
+                    if len(actors) == 1 and 0 <= actors[0].x <= 100 and 0 <= actors[0].y <= 100:
+                        row["pitchRegion"] = ("left_third" if actors[0].x < 100 / 3 else
+                                              "middle_third" if actors[0].x < 200 / 3 else "right_third")
+            candidates = execute_typed_query(rows, query.model_copy(update={"pitchRegion": None}), match_id=match_id)
+            by_id = {row["id"]: row for row in rows}
+            unknown_location_count = sum(by_id[hit.eventId].get("pitchRegion") is None for hit in candidates)
+        hits = execute_typed_query(rows, query, match_id=match_id)
+        if query.pitchRegion and unknown_location_count:
+            coverage_state = "partial" if hits else "insufficient"
         return {
             "query": query.model_dump(mode="json"),
             "interpreted": query.interpreted,
             "unsupportedTerms": query.unsupportedTerms,
             "results": [hit.model_dump(mode="json") for hit in hits],
-            "coverageState": ("unsupported" if query.unanswerable else "matched" if hits else
+            "unknownLocationCount": unknown_location_count,
+            "coverageState": ("unsupported" if query.unanswerable else coverage_state if coverage_state == "partial" else "matched" if hits else
                               "insufficient" if coverage_state == "insufficient" else "no_match"),
         }
 

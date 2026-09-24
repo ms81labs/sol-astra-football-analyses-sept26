@@ -100,9 +100,10 @@ export async function searchWorkbenchEvents(query: string, matchId: string, even
     query: { unanswerable: boolean; reason: string | null; eventFamily: string;
       unsupportedTerms?: string[];
       interpreted?: { eventFamily?: string; team?: string | null; playerTrackId?: number | null;
-        reviewStatus?: string | null; period?: number | null;
+        reviewStatus?: string | null; pitchRegion?: string | null; period?: number | null;
         timeStartSeconds?: number | null; timeEndSeconds?: number | null } };
-    coverageState?: 'matched' | 'no_match' | 'insufficient' | 'unsupported';
+    coverageState?: 'matched' | 'no_match' | 'partial' | 'insufficient' | 'unsupported';
+    unknownLocationCount?: number;
     results: SearchHit[];
   } & { generationId?: string | null }>(response);
   assertGeneration(payload, generationId);
