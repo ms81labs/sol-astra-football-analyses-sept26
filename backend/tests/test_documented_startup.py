@@ -242,6 +242,7 @@ def test_root_package_metadata_declares_release_data_without_runtime_storage() -
     assert pyproject["tool"]["setuptools"]["packages"]["find"]["exclude"] == [
         "backend.storage*",
         "backend.tests*",
+        "backend.scripts*",
     ]
     assert pyproject["tool"]["setuptools"]["package-data"]["backend"] == [
         "release/*.json",
@@ -336,9 +337,10 @@ def test_root_package_builds_and_imports_documented_asgi_target_outside_checkout
     wheel = _build_wheel(REPOSITORY_ROOT, tmp_path / "root-wheels")
     with zipfile.ZipFile(wheel) as archive:
         packaged_paths = archive.namelist()
-    assert not any(path.startswith("backend/tests/") for path in packaged_paths)
+    assert not any(path.startswith(("backend/tests/", "backend/scripts/")) for path in packaged_paths)
     assert "backend/app/main.py" in packaged_paths
-    assert "backend/scripts/run_daytona_gpu_smoke.py" in packaged_paths
+    assert "backend/app/pilot_labels.py" in packaged_paths
+    assert "backend/app/pilot_tracking.py" in packaged_paths
     assert "backend/release/v7.3.json" in packaged_paths
     python = _create_venv(tmp_path / "root-venv")
     _install_wheel(python, wheel, tmp_path)
@@ -378,6 +380,8 @@ def test_root_package_builds_and_imports_documented_asgi_target_outside_checkout
             "import sys; "
             "import backend.app.main as main; "
             "import backend.app.run_benchmarks; "
+            "import backend.app.evaluation_verifier; "
+            "assert find_spec('backend.scripts') is None; "
             "assert app.title == 'Guerilla Analytics API'; "
             f"assert app.state.storage.storage_root == Path({str(configured_storage)!r}); "
             f"assert not Path(lap.__file__).resolve().is_relative_to(Path({str(REPOSITORY_ROOT)!r})); "
