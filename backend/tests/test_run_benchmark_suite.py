@@ -84,7 +84,6 @@ def _write_artifact_only_entry(
                 playerId=7,
                 x=39.0,
                 y=17.0,
-                onTarget=True,
                 inBox=False,
                 distanceToGoal=20.0,
                 angleDegrees=22.0,

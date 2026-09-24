@@ -1,6 +1,46 @@
 # Backend quality close-out checkpoint
 
-## Source and acceptance boundary
+## Current accepted base and next bounded batch
+
+BQ00 is accepted at `ef714ca0bf839b9d67dc0ea5664ada329b8d6c41`, source tree
+`2f3a635ee78d1f87b47e270db536b9284d373baf`. Normal CI `36064523152` completed
+successfully: 4,604 complete-backend passes / 18 skips; canonical verification
+4,010 backend passes / 18 skips, 100 sidecar passes and 441 frontend passes,
+with all remaining canonical gates successful. C05 `36064523157` and C06
+`36064523108` also passed on that revision. GPU acceptance stayed skipped.
+Do not reapply or reopen its CI-contract, packaging-test or WAL-startup repairs.
+
+This continuation migrates the eight dependencies in `artifact_routes.py` to
+`Annotated` without changing handler bodies. Eager annotations intentionally bind
+each factory invocation's callback; no global dependency or application state is
+introduced. The original complete OpenAPI hash in the unpublished draft depended
+on FastAPI-generated validation schemas: 0.128.2 includes input/context properties
+not in locked 0.121.0. A readable route-path fixture replaces that version-specific
+hash. Pinned validation must additionally compare the complete original and
+candidate schemas in the same environment; do not refresh expected data from the
+modified implementation.
+
+The 32 new cases cover all eight callback identities/defaults, unchanged OpenAPI
+paths, interleaved two-app authorization/overrides, optional generation values,
+missing artifacts in a genuinely initialized but unprocessed Storage, and four
+fixture/model keyword boundaries. The four fixture keywords were silently ignored:
+three ShotAnalytics `onTarget=True` inputs and one MatchConfig `inputMode="video"`.
+Only those fixture inputs are removed; model fields and extra-field policy stay
+unchanged. The tests-only pre-repair run yields 12 expected failures / 20 passes.
+
+Only eight B008 identities are removed from the Ruff baseline, leaving 496:
+235 C901, 175 BLE001 and 86 B008. The existing mypy scope remains zero. Locks,
+quality configuration/metadata, scorer pins and all existing suite selections are
+unchanged. Local diagnostics use isolated quality tools; exposing sandbox NumPy
+stubs instead adds two pre-existing perception array-shape diagnostics, which are
+not hidden with source changes or added to the canonical baseline.
+
+The candidate's pinned and final normal-CI receipts are the acceptance authority
+for this new batch. Do not infer full-head acceptance from focused tests, this
+checkpoint, or a running workflow. Author self-review is not independent review.
+The single-use validation workflow must be absent from the final published tree.
+
+## Historical source and acceptance boundary
 
 The resumed CI-contract repair is `d37a9b942378e9039c6f5488165edc4accd01249`.
 Its child `0cad959eb1592c5719cfd3f1148068262aa177cc` deliberately aligned the
@@ -89,16 +129,13 @@ than overwriting current work. Its passing tests are not current-source evidence
 
 ## Remaining work and exact resume action
 
-First inspect normal CI for the revision containing the shared WAL connector.
-A failed/pending/cancelled required lane remains open; diagnose its retained logs.
-Do not reapply the already committed CI-contract or SQLite connector repairs.
-
-Once BQ00 is accepted, the next bounded batch is the eight B008 declarations in
-`backend/app/artifact_routes.py`, with parameter/OpenAPI, response, authorization
-and interleaved two-application isolation tests. A local probe found that blindly
-moving factory-local callbacks into postponed Annotated expressions can leave
-unresolved names. Preserve callback identity and verify the chosen annotation
-strategy under the pinned profile before publishing.
+BQ00 is closed by the accepted-base evidence above. Resume by inspecting the
+normal CI of the revision containing this artifact-route migration. A pending or
+failed required lane is not acceptance; diagnose its retained evidence first.
+After acceptance, continue with the next dependency group, starting with the
+next match-bound group in `backend/app/match_detail_routes.py`. Capture original
+OpenAPI/authorization/generation behavior before changing annotations; keep
+factory-local dependencies eager and preserve registration order.
 
 BQ01: the initial 108 scoped typing findings were retired by the preceding
 continuation, not by this SQLite batch. Other model compatibility policies and
@@ -106,7 +143,7 @@ broader runtime typing remain open. A separate read-only local full-app inventor
 reports 326 diagnostics across 35 files; it is not the configured CI scope, not
 a locked-Python-3.11 baseline, and not comparable to the old 596-error inventory.
 
-BQ02: 235 C901, 175 BLE001 and 94 B008 entries remain. No blanket suppressions.
+BQ02 after this batch: 235 C901, 175 BLE001 and 86 B008 entries remain. No blanket suppressions.
 BQ03: root leftover assemblers were split earlier; other routes/domain complexity
 remain. BQ04/BQ05: storage and pipeline/CLI responsibility extraction remain.
 BQ06: runtime evaluator extraction and a script-free wheel are present; physical

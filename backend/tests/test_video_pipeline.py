@@ -21,7 +21,6 @@ PRODUCER_RECEIPT = {
 
 def _cfg(points):
     return MatchConfig(
-        inputMode="video",
         attackDirection="left_to_right",
         manualHomographyPoints=[HomographyPoint(x=p[0], y=p[1]) for p in points],
     )

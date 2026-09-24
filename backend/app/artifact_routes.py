@@ -1,8 +1,7 @@
 """Match event, artifact export, and report retrieval routes."""
 
-from __future__ import annotations
-
 from collections.abc import Callable
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import HTMLResponse, Response
@@ -27,11 +26,12 @@ def create_artifact_router(
     require_match: Callable[..., MatchRecord],
     bundle_builder: Callable[..., dict[str, object]],
 ) -> APIRouter:
+    # Eager annotations retain this factory invocation's dependency callback.
     router = APIRouter()
 
     @router.get("/api/matches/{match_id}/events")
     def get_events(
-        match: MatchRecord = Depends(require_match),
+        match: Annotated[MatchRecord, Depends(require_match)],
         generationId: str | None = None,
     ) -> dict:
         try:
@@ -65,28 +65,28 @@ def create_artifact_router(
 
     @router.get("/api/matches/{match_id}/export/frames.csv")
     def export_frames_csv(
-        match: MatchRecord = Depends(require_match),
+        match: Annotated[MatchRecord, Depends(require_match)],
         generationId: str | None = None,
     ) -> Response:
         return snapshot_csv(match, generationId, "frames")
 
     @router.get("/api/matches/{match_id}/export/events.csv")
     def export_events_csv(
-        match: MatchRecord = Depends(require_match),
+        match: Annotated[MatchRecord, Depends(require_match)],
         generationId: str | None = None,
     ) -> Response:
         return snapshot_csv(match, generationId, "events")
 
     @router.get("/api/matches/{match_id}/export/metrics.csv")
     def export_metrics_csv(
-        match: MatchRecord = Depends(require_match),
+        match: Annotated[MatchRecord, Depends(require_match)],
         generationId: str | None = None,
     ) -> Response:
         return snapshot_csv(match, generationId, "metrics")
 
     @router.get("/api/matches/{match_id}/export/match.json")
     def export_match_json(
-        match: MatchRecord = Depends(require_match),
+        match: Annotated[MatchRecord, Depends(require_match)],
         generationId: str | None = None,
     ) -> dict:
         try:
@@ -96,7 +96,7 @@ def create_artifact_router(
 
     @router.get("/api/matches/{match_id}/reports")
     def get_generation_reports(
-        match: MatchRecord = Depends(require_match),
+        match: Annotated[MatchRecord, Depends(require_match)],
         generationId: str | None = None,
     ) -> dict:
         try:
@@ -107,7 +107,7 @@ def create_artifact_router(
     @router.get("/api/matches/{match_id}/reports/legacy/{task_type}")
     def get_legacy_report(
         task_type: str,
-        match: MatchRecord = Depends(require_match),
+        match: Annotated[MatchRecord, Depends(require_match)],
     ) -> dict:
         try:
             return ReportStore(storage).legacy(match.id, task_type)
@@ -116,7 +116,7 @@ def create_artifact_router(
 
     @router.get("/api/matches/{match_id}/report/html")
     def get_match_report_html(
-        match: MatchRecord = Depends(require_match),
+        match: Annotated[MatchRecord, Depends(require_match)],
         generationId: str | None = None,
     ) -> HTMLResponse:
         try:

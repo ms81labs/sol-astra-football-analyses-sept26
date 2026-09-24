@@ -183,7 +183,6 @@ def _write_artifact_backed_match(
                 playerId=7,
                 x=42.0,
                 y=18.0,
-                onTarget=True,
                 inBox=False,
                 distanceToGoal=18.5,
                 angleDegrees=24.0,
