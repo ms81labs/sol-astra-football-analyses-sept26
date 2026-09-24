@@ -12,6 +12,34 @@ from backend.app.storage import Storage
 from backend.tests.test_audit_v3_final_journey import _install_video
 
 
+def test_sam3_prompt_mapping_uses_local_frame_indices_and_normalised_points():
+    from backend.app.segmentation_worker import sam3_prompt_requests
+
+    request = SegmentationRequest(sourceSha256="a" * 64, baseTrackingDigest="b" * 64,
+        modelAlias="sam31-video", modelDigest="c" * 64, checkpointDigest="d" * 64,
+        workerDigest="e" * 64, executionMode="sam31_object_multiplex", cropDigest="f" * 64,
+        precision="bf16", width=200, height=100, intervalStart=1, intervalEnd=3,
+        frames=[FramePoint(frameId=10, ptsSeconds=1), FramePoint(frameId=15, ptsSeconds=2)],
+        prompts=[Prompt(objectId="b", trackId="t2", frameId=15, point=(20, 10)),
+                 Prompt(objectId="a", trackId="t1", frameId=10, point=(50, 25))],
+        maxFrames=2, maxObjects=2)
+    objects, prompts = sam3_prompt_requests(request)
+    assert objects == {"a": 1, "b": 2}
+    assert prompts == [
+        {"type": "add_prompt", "frame_index": 1, "obj_id": 2,
+         "points": [[.1, .1]], "point_labels": [1],
+         "rel_coordinates": True},
+        {"type": "add_prompt", "frame_index": 0, "obj_id": 1,
+         "points": [[.25, .25]], "point_labels": [1], "rel_coordinates": True},
+    ]
+    with pytest.raises(ValueError, match="frame geometry"):
+        sam3_prompt_requests(request.model_copy(update={"prompts": [
+            Prompt(objectId="b", trackId="t2", frameId=15, point=(201, 60))]}))
+    with pytest.raises(ValueError, match="box prompts"):
+        sam3_prompt_requests(request.model_copy(update={"prompts": [
+            Prompt(objectId="b", trackId="t2", frameId=15, box=(20, 10, 120, 60))]}))
+
+
 def test_shadow_preflight_import_does_not_load_sam_or_torch():
     completed = subprocess.run([sys.executable, "-c",
         "import sys; import backend.app.segmentation_worker; "
@@ -42,7 +70,7 @@ def test_shadow_preflight_binds_current_source_rights_and_approved_runtime(tmp_p
         workerDigest=worker_sha, executionMode="sam31_object_multiplex", cropDigest=crop_sha,
         precision="bf16", width=1000, height=600, intervalStart=0, intervalEnd=.5,
         frames=[FramePoint(frameId=0, ptsSeconds=frames[0].timestamp)],
-        prompts=[Prompt(objectId="o1", trackId="7", frameId=0, box=(1, 1, 3, 3))],
+        prompts=[Prompt(objectId="o1", trackId="7", frameId=0, point=(1, 1))],
         maxFrames=1, maxObjects=1)
     kwargs = dict(checkpoint_path=checkpoint, approved_model_digest=model_sha,
         approved_worker_digest=worker_sha, approved_crop_digest=crop_sha,
@@ -96,13 +124,15 @@ def test_shadow_preflight_binds_current_source_rights_and_approved_runtime(tmp_p
     with pytest.raises(ValueError, match="source frame"):
         preflight_shadow_window(storage, match_id, generation_id,
             {**request.model_dump(mode="json"), "frames": [{"frameId": 1, "ptsSeconds": frames[1].timestamp}],
-             "prompts": [{"objectId": "o1", "trackId": "7", "frameId": 1, "box": [1, 1, 3, 3]}]}, **kwargs)
+             "prompts": [{"objectId": "o1", "trackId": "7", "frameId": 1, "point": [1, 1]}]}, **kwargs)
     for changed in (
         {"sourceSha256": "d" * 64}, {"checkpointDigest": "d" * 64},
         {"baseTrackingDigest": "d" * 64}, {"modelDigest": "d" * 64},
         {"workerDigest": "d" * 64}, {"cropDigest": "d" * 64},
         {"sourceUrl": "https://example.invalid/video"}, {"artifactPath": "../../weights"},
         {"frames": [{"frameId": 0, "ptsSeconds": .25}]},
+        {"prompts": [{"objectId": "o1", "trackId": "7", "frameId": 0,
+                      "box": [1, 1, 1001, 3]}]},
         {"maxFrames": 121}, {"maxObjects": 33},
     ):
         with pytest.raises(ValueError):

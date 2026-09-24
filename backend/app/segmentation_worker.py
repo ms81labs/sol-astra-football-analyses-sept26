@@ -19,6 +19,25 @@ from .segmentation import SegmentationRequest, request_identity
 from .workbench.hashing import stream_sha256
 
 
+def sam3_prompt_requests(request: SegmentationRequest) -> tuple[dict[str, int], list[dict]]:
+    """Map source-frame prompts to the official Object Multiplex request shape."""
+    frame_indices = {frame.frameId: index for index, frame in enumerate(request.frames)}
+    object_ids = {name: index + 1 for index, name in enumerate(sorted({
+        prompt.objectId for prompt in request.prompts}))}
+    commands = []
+    for prompt in request.prompts:
+        if prompt.box is not None:
+            # Box prompts take SAM3's semantic path, which resets state and ignores obj_id.
+            raise ValueError("SAM3.1 box prompts require verified object association")
+        x, y = prompt.point
+        if not (0 <= x < request.width and 0 <= y < request.height):
+            raise ValueError("shadow prompt exceeds source frame geometry")
+        commands.append({"type": "add_prompt", "frame_index": frame_indices[prompt.frameId],
+            "obj_id": object_ids[prompt.objectId], "points": [[x / request.width, y / request.height]],
+            "point_labels": [1], "rel_coordinates": True})
+    return object_ids, commands
+
+
 def load_sealed_shadow_bundle(root: Path):
     """Recheck transferred inputs in the worker before loading a model."""
     from .daytona import _open_preflight_regular_file, _preflight_file_identity
@@ -63,6 +82,7 @@ def validate_sealed_shadow_request(path: Path, shadow: Mapping[str, object]) -> 
                 or request.executionMode != "sam31_object_multiplex"
                 or request.precision != "bf16"):
             raise ValueError
+        sam3_prompt_requests(request)
         return request
     except Exception:
         raise ValueError("sealed shadow request is invalid") from None
@@ -96,6 +116,7 @@ def preflight_shadow_window(storage, match_id: str, generation_id: str, payload:
             or request.workerDigest != approved_worker_digest \
             or request.cropDigest != approved_crop_digest:
         raise ValueError("shadow runtime identity is not approved")
+    sam3_prompt_requests(request)
     source = storage.get_match_input_path(match_id)
     checkpoint = Path(checkpoint_path)
     for path in (source, checkpoint):

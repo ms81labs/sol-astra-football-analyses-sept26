@@ -117,7 +117,7 @@ def test_shadow_preflight_allows_only_sealed_request_and_checkpoint_beside_relea
         executionMode="sam31_object_multiplex", cropDigest="d" * 64, precision="bf16",
         width=2, height=2, intervalStart=0, intervalEnd=1,
         frames=[FramePoint(frameId=0, ptsSeconds=0)],
-        prompts=[Prompt(objectId="o1", trackId="t1", frameId=0, box=(0, 0, 1, 1))],
+        prompts=[Prompt(objectId="o1", trackId="t1", frameId=0, point=(0, 0))],
         maxFrames=1, maxObjects=1,
     )
     shadow_request = json.dumps(segmentation.model_dump(mode="json"), sort_keys=True,
@@ -154,6 +154,7 @@ def test_shadow_preflight_allows_only_sealed_request_and_checkpoint_beside_relea
     with pytest.raises(DaytonaExecutionError, match="shadow runtime is unavailable"):
         execute_daytona_job(execution, client_factory=forbidden_client)
     from backend.app.segmentation_worker import load_sealed_shadow_bundle
+    from backend.app.segmentation_worker import validate_sealed_shadow_request
     assert load_sealed_shadow_bundle(root) == (request, receipt, segmentation)
     (root / "inputs/checkpoint.bin").write_bytes(b"changed after transport preflight")
     with pytest.raises(ValueError, match="sealed shadow bundle"):
@@ -164,6 +165,10 @@ def test_shadow_preflight_allows_only_sealed_request_and_checkpoint_beside_relea
         json.dumps({**payload, "sourceSha256": "e" * 64}, sort_keys=True, separators=(",", ":")).encode(),
         json.dumps({**payload, "checkpointDigest": "e" * 64}, sort_keys=True, separators=(",", ":")).encode(),
         json.dumps({**payload, "maxFrames": 121}, sort_keys=True, separators=(",", ":")).encode(),
+        json.dumps(SegmentationRequest.model_validate_json(json.dumps({**payload,
+            "prompts": [{"objectId": "o1", "trackId": "t1", "frameId": 0,
+                "box": [0, 0, 1, 1]}]})).model_dump(mode="json"),
+            sort_keys=True, separators=(",", ":")).encode(),
         json.dumps({**payload, "sourceUrl": "https://example.invalid/video"},
             sort_keys=True, separators=(",", ":")).encode())
     for bad_payload in invalid:
@@ -181,6 +186,8 @@ def test_shadow_preflight_allows_only_sealed_request_and_checkpoint_beside_relea
                 PurePosixPath("inputs/segmentation-request.json") else (root / item.relative_path).read_bytes())
                 for item in receipt.files))
         (root / request.receipt_path).write_bytes(canonical_json_bytes(bad_receipt.to_mapping()))
+        with pytest.raises(ValueError, match="sealed shadow request"):
+            validate_sealed_shadow_request(root / "inputs/segmentation-request.json", corrupt)
         with pytest.raises(DaytonaExecutionError, match="preflight"):
             _preflight(execution)
     (root / "job-request.json").write_bytes(request_bytes)
