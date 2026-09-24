@@ -330,9 +330,136 @@ def load_sealed_shadow_bundle(root: Path):
             if {entry.relative_path for entry in receipt.files if entry.role == "runtime_artifact"
                 and entry.relative_path.parts[:2] == ("inputs", "window")} != expected:
                 raise ValueError
+        if "samRelease" in request.config:
+            _validate_sam_release(root, request, receipt, segmentation)
         return request, receipt, segmentation
     except Exception:
         raise ValueError("sealed shadow bundle is invalid") from None
+
+
+def _validate_sam_release(root: Path, job, receipt, segmentation: SegmentationRequest) -> dict:
+    """Bind a distinct SAM release declaration to sealed files and request identity."""
+    from .remote_contracts import confined_path, load_canonical_json
+
+    request_release = job.config.get("samRelease")
+    manifest = load_canonical_json(confined_path(root, "release/sam-manifest.json"))
+    evidence = load_canonical_json(confined_path(root, "release/sam-evidence.json"))
+    expected = {"schemaVersion", "sourceCommit", "upstreamCommit", "imageDigest",
+        "modelDigest", "workerDigest", "checkpointDigest", "sourceArchiveDigest"}
+    if not isinstance(manifest, dict) or set(manifest) != expected \
+            or manifest["schemaVersion"] != "sam_shadow_release_v1" \
+            or not isinstance(evidence, dict) or set(evidence) != {"schemaVersion", "qualification"} \
+            or evidence["schemaVersion"] != "sam_shadow_evidence_v1" \
+            or evidence["qualification"] != "cpu_contract_only" \
+            or not isinstance(request_release, Mapping) \
+            or set(request_release) != {"imageDigest", "upstreamCommit"}:
+        raise ValueError("SAM release identity is invalid")
+    if not all(isinstance(manifest[key], str) and re.fullmatch(r"[a-f0-9]{64}", manifest[key])
+               for key in ("imageDigest", "modelDigest", "workerDigest", "checkpointDigest", "sourceArchiveDigest")) \
+            or not all(isinstance(manifest[key], str) and re.fullmatch(r"[a-f0-9]{40}", manifest[key])
+               for key in ("sourceCommit", "upstreamCommit")) \
+            or manifest["modelDigest"] != segmentation.modelDigest \
+            or manifest["workerDigest"] != segmentation.workerDigest \
+            or manifest["checkpointDigest"] != segmentation.checkpointDigest \
+            or manifest["sourceCommit"] != receipt.source_commit \
+            or request_release != {"imageDigest": manifest["imageDigest"],
+                "upstreamCommit": manifest["upstreamCommit"]}:
+        raise ValueError("SAM release identity is invalid")
+    by_path = {entry.relative_path.as_posix(): entry for entry in receipt.files}
+    expected_paths = {"source/source.tar", "release/sam-manifest.json",
+        "release/sam-evidence.json", "models/sam-worker.bin",
+        "inputs/window/window.json", "inputs/checkpoint.bin",
+        "inputs/segmentation-request.json", "job-request.json"}
+    expected_paths.update(f"inputs/window/{index}.png" for index in range(len(segmentation.frames)))
+    if set(by_path) != expected_paths:
+        raise ValueError("SAM release contains an undeclared file")
+    if by_path["release/sam-manifest.json"].sha256 != receipt.manifest_sha256 \
+            or by_path["release/sam-evidence.json"].sha256 != receipt.evidence_sha256 \
+            or by_path["source/source.tar"].sha256 != manifest["sourceArchiveDigest"] \
+            or by_path["models/sam-worker.bin"].sha256 != manifest["workerDigest"]:
+        raise ValueError("SAM release artifact identity mismatch")
+    return manifest
+
+
+def seal_shadow_job(storage, root: Path, shadow: dict, *, release_root: Path):
+    """Seal staged schema-2 inputs with separate SAM release files; dispatch stays closed."""
+    from .remote_contracts import (JobReceipt, JobRequest, canonical_json_bytes,
+        load_canonical_json)
+    from .remote_worker import _copy_regular_file, _entry
+
+    root, release_root = Path(root), Path(release_root)
+    if not root.is_absolute() or root.is_symlink() or not root.is_dir() \
+            or not release_root.is_absolute() or release_root.is_symlink() or not release_root.is_dir() \
+            or shadow.get("schemaVersion") != 2:
+        raise ValueError("SAM staging or release root is invalid")
+    def check_current():
+        if storage.current_generation(shadow["matchId"]).generationId != shadow["generationId"]:
+            raise ValueError("SAM shadow generation changed before sealing")
+        match = storage.get_match(shadow["matchId"])
+        if match.inputMode != "video" or not match.config.rights.cloudPermission \
+                or match.config.rights.processingScope == "local_only":
+            raise ValueError("SAM shadow rights changed before sealing")
+        if storage.source_sha256(shadow["matchId"]) != shadow["sourceSha256"]:
+            raise ValueError("SAM shadow source changed before sealing")
+    check_current()
+    segmentation = validate_sealed_shadow_request(root / "inputs/segmentation-request.json", shadow)
+    validate_sam_source_window(root / "inputs/window", segmentation)
+    source = release_root / "source.tar"
+    manifest_source = release_root / "sam-manifest.json"
+    evidence_source = release_root / "sam-evidence.json"
+    worker = release_root / "worker.bin"
+    manifest = load_canonical_json(manifest_source)
+    if not isinstance(manifest, dict) or manifest.get("schemaVersion") != "sam_shadow_release_v1" \
+            or manifest.get("modelDigest") != segmentation.modelDigest \
+            or manifest.get("workerDigest") != segmentation.workerDigest \
+            or manifest.get("checkpointDigest") != segmentation.checkpointDigest:
+        raise ValueError("SAM release does not match staged model inputs")
+    for name in ("source", "release", "models", "sealed", "job-request.json"):
+        if (root / name).exists() or (root / name).is_symlink():
+            raise ValueError("SAM job output path is occupied")
+    try:
+        for name in ("source", "release", "models", "sealed"):
+            (root / name).mkdir(mode=0o700)
+        fixed = ((source, "source/source.tar"), (manifest_source, "release/sam-manifest.json"),
+            (evidence_source, "release/sam-evidence.json"), (worker, "models/sam-worker.bin"))
+        for source_path, relative in fixed:
+            _copy_regular_file(source_path, root / relative, maximum_bytes=512 * 1024**2)
+        input_files = [("runtime_artifact", f"inputs/window/{index}.png")
+            for index in range(len(segmentation.frames))]
+        input_files += [("runtime_artifact", "inputs/checkpoint.bin"),
+            ("runtime_artifact", "inputs/segmentation-request.json")]
+        config = {"jobKind": "segmentation_shadow", "rights": {"cloudPermission": True,
+            "processingScope": "local_plus_burst"}, "shadowSegmentation": shadow,
+            "samRelease": {"imageDigest": manifest["imageDigest"],
+                "upstreamCommit": manifest["upstreamCommit"]}}
+        job = JobRequest(1, "sam-" + shadow["jobIdentity"], shadow["matchId"],
+            PurePosixPath("sealed/job-receipt.json"), PurePosixPath("inputs/window/window.json"), config)
+        (root / "job-request.json").write_bytes(canonical_json_bytes(job.to_mapping()))
+        paths = (("source_archive", "source/source.tar"),
+            ("manifest", "release/sam-manifest.json"),
+            ("evidence", "release/sam-evidence.json"),
+            ("runtime_artifact", "models/sam-worker.bin"),
+            ("input_video", "inputs/window/window.json"), *input_files,
+            ("job_request", "job-request.json"))
+        entries = tuple(_entry(role, root, PurePosixPath(path)) for role, path in paths)
+        by_role = {entry.role: entry for entry in entries if entry.role != "runtime_artifact"}
+        receipt = JobReceipt(1, manifest["sourceCommit"], by_role["manifest"].sha256,
+            by_role["evidence"].sha256, by_role["job_request"].sha256,
+            {"jobKind": "segmentation_shadow", "modelAlias": segmentation.modelAlias,
+             "executionMode": segmentation.executionMode, "precision": segmentation.precision}, entries)
+        (root / job.receipt_path).write_bytes(canonical_json_bytes(receipt.to_mapping()))
+        load_sealed_shadow_bundle(root)
+        check_current()
+        return job, receipt
+    except Exception:
+        try:
+            for name in ("source", "release", "models", "sealed"):
+                if (root / name).exists():
+                    shutil.rmtree(root / name)
+            (root / "job-request.json").unlink(missing_ok=True)
+        except Exception:
+            raise RuntimeError("SAM seal cleanup could not be confirmed") from None
+        raise
 
 
 def validate_sealed_shadow_request(path: Path, shadow: Mapping[str, object]) -> SegmentationRequest:
@@ -471,7 +598,6 @@ def stage_shadow_inputs(storage, match_id: str, generation_id: str, payload: dic
                         deadline_seconds: float, workspace: Path,
                         cancelled: bool | Callable[[], bool] = False) -> tuple[Path, dict]:
     """Stage current, sealed SAM inputs; a separate SAM release proof is needed for dispatch."""
-    from .remote_contracts import canonical_json_bytes
     from .remote_worker import _copy_regular_file
 
     started = monotonic()
@@ -498,8 +624,9 @@ def stage_shadow_inputs(storage, match_id: str, generation_id: str, payload: dic
             inputs / "checkpoint.bin", maximum_bytes=16 * 1024**3)
         if checkpoint_identity.sha256 != admitted["checkpointDigest"]:
             raise ValueError("shadow checkpoint changed during staging")
-        (inputs / "segmentation-request.json").write_bytes(
-            canonical_json_bytes(request.model_dump(mode="json")))
+        (inputs / "segmentation-request.json").write_bytes(json.dumps(
+            request.model_dump(mode="json"), sort_keys=True,
+            separators=(",", ":"), allow_nan=False).encode())
         if (cancelled() if callable(cancelled) else cancelled):
             raise ValueError("shadow job cancelled during staging")
         if monotonic() - started >= deadline_seconds:

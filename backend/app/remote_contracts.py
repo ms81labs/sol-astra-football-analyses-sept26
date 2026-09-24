@@ -44,6 +44,7 @@ PROCESSOR_RESULT_FORMAT = "jsonl-v1"
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _GIT_SHA1 = re.compile(r"^[0-9a-f]{40}$")
 _GENERATION_ID = re.compile(r"^[0-9a-f]{32}$")
+_SHADOW_GENERATION_ID = re.compile(r"^(?:gen_)?[0-9a-f]{32}$")
 _GENERATION_NAMESPACE_SUFFIX = ".json.generations"
 _RESULT_FILENAME = "result.json"
 _PROCESSOR_RESULT_FILENAME = "result.processor-result.json"
@@ -1013,7 +1014,7 @@ def validate_shadow_inputs(request: JobRequest, receipt: JobReceipt) -> Mapping[
     shadow = _exact(shadow, frozenset(keys), "shadow job")
     if shadow.get("matchId") != request.match_id:
         raise RemoteContractError("shadow job identity is invalid")
-    _text(shadow.get("generationId"), "generationId", 32, _GENERATION_ID)
+    _text(shadow.get("generationId"), "generationId", 36, _SHADOW_GENERATION_ID)
     for key in ("requestDigest", "sourceSha256", "checkpointDigest", "jobIdentity"):
         _digest(shadow.get(key), key)
     if version == 2:

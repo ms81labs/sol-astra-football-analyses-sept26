@@ -366,7 +366,6 @@ def test_shadow_preflight_binds_current_source_rights_and_approved_runtime(tmp_p
 def test_shadow_input_staging_seals_current_window_and_cleans_revoked_rights(tmp_path, monkeypatch):
     from backend.app import segmentation_worker
     from backend.app.segmentation_worker import stage_shadow_inputs, validate_sam_source_window
-    from backend.app.remote_contracts import load_canonical_json
 
     storage = Storage(tmp_path / "store")
     match_id = _install_video(storage, tmp_path)
@@ -400,7 +399,9 @@ def test_shadow_input_staging_seals_current_window_and_cleans_revoked_rights(tmp
     assert shadow["windowDigest"] == hashlib.sha256(
         (root / "inputs/window/window.json").read_bytes()).hexdigest()
     assert validate_sam_source_window(root / "inputs/window", request)["requestDigest"] == shadow["requestDigest"]
-    assert load_canonical_json(root / "inputs/segmentation-request.json") == request.model_dump(mode="json")
+    assert SegmentationRequest.model_validate_json(
+        (root / "inputs/segmentation-request.json").read_bytes()) == request
+    assert hashlib.sha256((root / "inputs/segmentation-request.json").read_bytes()).hexdigest() == shadow["requestDigest"]
     assert (root / "inputs/checkpoint.bin").read_bytes() == checkpoint.read_bytes()
     assert sorted(path.name for path in workspace.iterdir()) == [root.name]
 
