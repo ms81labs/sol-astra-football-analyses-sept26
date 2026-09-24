@@ -221,14 +221,18 @@ describe('CoachInsights', () => {
 it('C03 displays scoped zero, experimental and unavailable facts without inventing a rating', () => {
   render(<CoachInsights activeTab="report" llmThinking={false} matchId="m" generationId="N" currentFrame={0}
     events={[]} tacticalReport={{ matchId: 'm', generationId: 'N', status: 'historical', grounding: 'interpretive',
-      metricClaims: [{ metric: 'shot_quality', value: 0, unit: 'score', availability: 'experimental', teamScope: 'my_team' }],
-      metrics: [{ metric: 'distance', value: null, unit: 'm', availability: 'withheld' }],
+      metricClaims: [{ metric: 'shot_quality', value: 0, unit: 'score', availability: 'experimental', teamScope: 'my_team',
+        eligibleSeconds: 2, requestedSeconds: 5, denominator: 'eligible source seconds', reasonCodes: ['PARTIAL_CAMERA_COVERAGE'] }],
+      metrics: [{ metric: 'distance', value: null, unit: 'm', availability: 'withheld', reasonCodes: ['IDENTITY_GAP'] }],
       interpretation: '<script>unsafe()</script>',
       evidence: [{ matchId: 'm', generationId: 'N', kind: 'event', localId: '0' }],
     }} drillResponse={null} onGenerateReport={vi.fn()} onGenerateDrills={vi.fn()} />);
   expect(screen.getByText(/shot_quality/).textContent).toContain('0');
   expect(screen.getByText(/distance/).textContent).toContain('unavailable');
   expect(screen.getByText(/experimental/)).toBeTruthy();
+  expect(screen.getByText(/shot_quality/).textContent).toContain('Coverage: 2/5 source seconds');
+  expect(screen.getByText(/shot_quality/).textContent).toContain('PARTIAL_CAMERA_COVERAGE');
+  expect(screen.getByText(/distance/).textContent).toContain('IDENTITY_GAP');
   expect(document.querySelector('script')).toBeNull();
   expect(screen.getByText(/unsafe\(\)/)).toBeTruthy();
   expect(screen.queryByText(/out of 10/i)).toBeNull();

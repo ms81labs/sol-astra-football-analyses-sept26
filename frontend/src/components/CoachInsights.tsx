@@ -48,6 +48,10 @@ function ScopedReportDetails({ report, matchId, generationId, onSelectEvidence }
     {([...(report.metricClaims ?? []), ...(report.metrics ?? [])]).map((claim, index) => <p key={`${claim.metric}-${index}`}>
       {claim.metric}: {claim.value == null ? 'unavailable' : claim.value} {claim.unit} · {claim.teamScope ?? 'match'} · {claim.availability}
       {claim.intervalStart != null && claim.intervalEnd != null && <> · {claim.intervalStart}s to {claim.intervalEnd}s</>}
+      {' · Coverage: '}{claim.eligibleSeconds != null && claim.requestedSeconds != null && claim.requestedSeconds > 0
+        ? `${claim.eligibleSeconds}/${claim.requestedSeconds} source seconds` : 'unavailable'}
+      {claim.denominator && <> · Denominator: {claim.denominator}</>}
+      {claim.reasonCodes?.length ? <> · Limitations: {claim.reasonCodes.join(', ')}</> : null}
       {claim.evidence?.length ? <> · <EvidenceLinks items={claim.evidence} matchId={matchId} generationId={generationId} onSelectEvidence={onSelectEvidence} /></> : null}
     </p>)}
     {report.observations?.map((claim, index) => <p key={index}>Referenced observation: {claim.text} · <EvidenceLinks items={claim.evidence} matchId={matchId} generationId={generationId} onSelectEvidence={onSelectEvidence} /></p>)}

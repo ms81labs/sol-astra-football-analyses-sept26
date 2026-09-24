@@ -578,7 +578,7 @@ export interface ReportEvidenceRef {
 }
 
 export interface ScopedCoachReport {
-  metrics?: Array<{ metric: string; value: number | null; unit?: string | null; availability: string; teamScope?: string | null; intervalStart?: number; intervalEnd?: number; evidence?: Array<string | ReportEvidenceRef> }>;
+  metrics?: Array<{ metric: string; value: number | null; unit?: string | null; availability: string; teamScope?: string | null; intervalStart?: number; intervalEnd?: number; evidence?: Array<string | ReportEvidenceRef>; eligibleSeconds?: number | null; requestedSeconds?: number | null; denominator?: string | null; reasonCodes?: string[] }>;
     schemaVersion?: string;
     matchId?: string;
     generationId?: string;
@@ -588,7 +588,7 @@ export interface ScopedCoachReport {
     validationDisposition?: string;
     interpretation?: string;
     recommendations?: string[];
-    metricClaims?: Array<{ metric: string; value: number; unit: string; availability: string; teamScope: string | null; intervalStart?: number; intervalEnd?: number; evidence?: Array<string | ReportEvidenceRef> }>;
+    metricClaims?: Array<{ metric: string; value: number; unit: string; availability: string; teamScope: string | null; intervalStart?: number; intervalEnd?: number; evidence?: Array<string | ReportEvidenceRef>; eligibleSeconds?: number | null; requestedSeconds?: number | null; denominator?: string | null; reasonCodes?: string[] }>;
     observations?: Array<{ text: string; grounding: 'referenced'; evidence: Array<string | ReportEvidenceRef> }>;
     reasonCodes?: string[];
 }

@@ -150,7 +150,11 @@ def validate_metric(claim: dict, package) -> dict:
     if metric_ref is None or metric_ref not in refs:
         raise ValueError("METRIC_REFERENCE_REQUIRED")
     return {**parsed, "evidence": refs, "availability": expected["availability"],
-            "grounding": "grounded", "publishedLabel": expected.get("publishedLabel")}
+            "grounding": "grounded", "publishedLabel": expected.get("publishedLabel"),
+            "eligibleSeconds": expected.get("eligibleSeconds"),
+            "requestedSeconds": expected.get("requestedSeconds"),
+            "denominator": expected.get("denominator"),
+            "reasonCodes": copy.deepcopy(expected.get("reasonCodes", []))}
 
 
 def check_output(raw: Any, package) -> tuple[dict, str, tuple[str, ...]]:

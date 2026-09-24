@@ -201,6 +201,10 @@ def test_v3t26_exact_scope_numbers_availability_and_positive_controls(tmp_path):
     valid=validate_output(raw,package)
     assert valid.grounding=='grounded'
     assert valid.payload['metricClaims'][0]['availability']==metric['availability']
+    assert valid.payload['metricClaims'][0]['eligibleSeconds']==metric['eligibleSeconds']
+    assert valid.payload['metricClaims'][0]['requestedSeconds']==metric['requestedSeconds']
+    assert valid.payload['metricClaims'][0]['denominator']==metric['denominator']
+    assert valid.payload['metricClaims'][0]['reasonCodes']==metric['reasonCodes']
     for field,value in [('teamScope','enemy' if good['teamScope']!='enemy' else 'my_team'),
         ('intervalStart',-1.0),('intervalEnd',good['intervalEnd']+1),('unit','invented'),
         ('definitionVersion','future'),('value',good['value']+1),('value',float('nan')),

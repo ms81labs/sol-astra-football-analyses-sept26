@@ -7,6 +7,7 @@ short report commit; it is not a second analytical generation commit point.
 from __future__ import annotations
 
 from datetime import datetime
+import math
 import re
 from pathlib import Path
 import uuid
@@ -115,7 +116,8 @@ def _validate_narrative_payload(payload, match_id, generation_id, task, schema, 
         items = base.get(name, [])
         if not isinstance(items, list) or any(not isinstance(item, dict) for item in items):
             raise ValueError("Malformed stored report collection")
-        extra = {"grounding", "availability", "publishedLabel"} if name == "metricClaims" else {"grounding"}
+        extra = {"grounding", "availability", "publishedLabel", "eligibleSeconds", "requestedSeconds",
+                 "denominator", "reasonCodes"} if name == "metricClaims" else {"grounding"}
         for item in items:
             if set(item) - (model.model_fields.keys() | extra):
                 raise ValueError("Unknown stored claim fields")
@@ -124,6 +126,19 @@ def _validate_narrative_payload(payload, match_id, generation_id, task, schema, 
                 raise ValueError("Stored claim disposition mismatch")
             if name == "metricClaims" and item.get("availability") not in {"available", "experimental"}:
                 raise ValueError("Stored metric claim is not publishable")
+            if name == "metricClaims":
+                eligible, requested = item.get("eligibleSeconds"), item.get("requestedSeconds")
+                if (eligible is not None or requested is not None) and not (
+                    type(eligible) in (int, float) and type(requested) in (int, float)
+                    and math.isfinite(eligible) and math.isfinite(requested)
+                    and 0 <= eligible <= requested
+                ):
+                    raise ValueError("Malformed stored metric coverage")
+                if item.get("denominator") is not None and not isinstance(item["denominator"], str):
+                    raise ValueError("Malformed stored metric denominator")
+                reasons = item.get("reasonCodes", [])
+                if not isinstance(reasons, list) or any(not isinstance(reason, str) for reason in reasons):
+                    raise ValueError("Malformed stored metric limitations")
         base[name] = [{key: value for key, value in item.items() if key in model.model_fields} for item in items]
     parsed = ReportDraft.model_validate(base)
     if parsed.taskType != task or payload.get("requiresAnalyst") is not True:
