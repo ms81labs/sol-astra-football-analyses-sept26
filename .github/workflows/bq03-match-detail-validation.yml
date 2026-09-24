@@ -1,0 +1,176 @@
+name: BQ03 match-detail validation
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/bq03-match-detail-validation.yml']
+
+permissions:
+  contents: read
+
+env:
+  VERIFY_DAYTONA: '0'
+  ALLOW_DAYTONA_MUTATION: '0'
+  PYTHON_DOTENV_DISABLED: '1'
+
+jobs:
+  candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Load exact reviewed patch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$(git rev-parse HEAD^)" = 2d8cf998b39c67a34e4cff88f68f81d758cb203c
+          mkdir -p .bq03-match-detail
+          python - <<'PY'
+          import base64, hashlib, json, lzma, os, pathlib, urllib.request
+          url = 'https://api.github.com/repos/ms81labs/sol-astra-football-analyses-sept26/git/blobs/d4bc568bd3c0fb35d382a65d3bd559c9f1847664'
+          request = urllib.request.Request(url, headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json'})
+          with urllib.request.urlopen(request, timeout=60) as response:
+              packed = base64.b64decode(json.load(response)['content'])
+          assert hashlib.sha256(packed).hexdigest() == '05bc50f67a522c062441a72c2e70597f343fca2e229a3ab93d1b5ae1c7505361'
+          patch = lzma.decompress(packed)
+          assert hashlib.sha256(patch).hexdigest() == '91f82b3c83035c89d1114ccc9dd40ae4784607dc07a52586aae79d77d3762ca7'
+          pathlib.Path('.bq03-match-detail/candidate.patch').write_bytes(patch)
+          PY
+          git apply --check .bq03-match-detail/candidate.patch
+      - name: Install required media executables
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install locked runtime and isolated quality tools
+        run: |
+          python -m pip install --require-hashes -r backend/requirements/dev.lock
+          python -m pip install -e . --no-deps
+          python -m venv .quality-tools
+          .quality-tools/bin/python -m pip install --require-hashes -r backend/requirements/quality-linux.lock -r backend/requirements/typing-linux.lock
+          python - <<'PY'
+          import fastapi, pydantic, pathlib, sys
+          assert sys.version_info[:2] == (3, 11)
+          assert fastapi.__version__ == '0.121.0'
+          assert pydantic.__version__ == '2.13.5'
+          pathlib.Path('.bq03-match-detail/runtime.json').write_text(__import__('json').dumps({'python': sys.version, 'fastapi': fastapi.__version__, 'pydantic': pydantic.__version__}, indent=2) + '\n')
+          PY
+      - name: Prove 47 expected failures against unchanged production code
+        run: |
+          git apply --include=backend/tests/test_match_detail_route_dependencies.py --include=backend/tests/fixtures/match_detail_openapi_paths.json .bq03-match-detail/candidate.patch
+          python - <<'PY'
+          import json, pathlib, runpy, subprocess, sys, xml.etree.ElementTree as ET
+          out = pathlib.Path('.bq03-match-detail')
+          with (out / 'red.log').open('w') as stream:
+              result = subprocess.run([sys.executable, '-m', 'pytest', '-q', 'backend/tests/test_match_detail_route_dependencies.py', '--junitxml=' + str(out / 'red.xml')], stdout=stream, stderr=subprocess.STDOUT)
+          cases = ET.parse(out / 'red.xml').findall('.//testcase')
+          failed = [case for case in cases if case.find('failure') is not None]
+          assert result.returncode == 1, result.returncode
+          assert len(cases) == 122 and len(failed) == 47, (len(cases), len(failed))
+          assert all(case.attrib['name'].startswith('test_match_detail_dependencies_resolve_factory_local_callback[') for case in failed)
+          assert not any(case.find('error') is not None or case.find('skipped') is not None for case in cases)
+          namespace = runpy.run_path('backend/tests/test_match_detail_route_dependencies.py')
+          schema = namespace['_application']('first')[0].openapi()
+          (out / 'openapi-before.json').write_text(json.dumps(schema, sort_keys=True, indent=2) + '\n')
+          print('Confirmed 47 expected metadata failures and 75 behavior passes; captured original complete test-app OpenAPI')
+          PY
+      - name: Apply exact candidate and compare all handler bodies and OpenAPI
+        run: |
+          git apply --exclude=backend/tests/test_match_detail_route_dependencies.py --exclude=backend/tests/fixtures/match_detail_openapi_paths.json .bq03-match-detail/candidate.patch
+          git rm -- .github/workflows/bq03-match-detail-validation.yml
+          git add backend/app/match_detail_routes.py backend/quality/ruff-baseline.json backend/tests/test_match_detail_route_dependencies.py backend/tests/fixtures/match_detail_openapi_paths.json docs/superpowers/audits/2026-09-24-backend-quality-closeout-checkpoint.md
+          git diff --cached --check
+          test "$(git write-tree)" = ea7b259498cfa7bbd85f410e0b5fbf17e2b332b9
+          python - <<'PY'
+          import ast, collections, json, pathlib, runpy, subprocess
+          out = pathlib.Path('.bq03-match-detail')
+          namespace = runpy.run_path('backend/tests/test_match_detail_route_dependencies.py')
+          schema = namespace['_application']('first')[0].openapi()
+          assert schema == json.loads((out / 'openapi-before.json').read_text())
+          (out / 'openapi-after.json').write_text(json.dumps(schema, sort_keys=True, indent=2) + '\n')
+          path = 'backend/app/match_detail_routes.py'
+          original = ast.parse(subprocess.check_output(['git', 'show', 'HEAD:' + path]).decode())
+          changed = ast.parse(pathlib.Path(path).read_text())
+          def bodies(tree):
+              return {node.name: ast.dump(ast.Module(body=node.body, type_ignores=[]), include_attributes=False) for node in ast.walk(tree) if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name != 'create_match_detail_router'}
+          assert bodies(original) == bodies(changed)
+          assert len(bodies(original)) == 47
+          before = json.loads(subprocess.check_output(['git', 'show', 'HEAD:backend/quality/ruff-baseline.json']))
+          after = json.loads(pathlib.Path('backend/quality/ruff-baseline.json').read_text())
+          assert before['metadata'] == after['metadata']
+          old = collections.Counter(json.dumps(item, sort_keys=True) for item in before['diagnostics'])
+          new = collections.Counter(json.dumps(item, sort_keys=True) for item in after['diagnostics'])
+          assert not new - old
+          removed = list((old - new).elements())
+          assert len(removed) == 47 and len(after['diagnostics']) == 449
+          for item in removed:
+              identity = json.loads(json.loads(item))
+              assert identity[0] == path and identity[2] == 'B008'
+          (out / 'equivalence.json').write_text(json.dumps({'handlerBodies': 47, 'identicalOpenAPI': True, 'removedB008': 47, 'ruffRemaining': 449, 'unchangedBaselineMetadata': True}, indent=2) + '\n')
+          print('All 47 handler bodies and complete test-app OpenAPI identical; only 47 matching B008 identities removed')
+          PY
+      - name: Verify route, API, report and fixture behavior
+        run: |
+          set -o pipefail
+          python -m pytest -q backend/tests/test_match_detail_route_dependencies.py backend/tests/test_artifact_route_dependencies.py backend/tests/test_fixture_model_keywords.py backend/tests/test_api.py backend/tests/test_audit_v3_c03_reports.py backend/tests/test_audit_v3_c03_journey.py backend/tests/test_audit_v3_c03_publication.py backend/tests/test_audit_v3_c03_report_envelopes.py --junitxml=.bq03-match-detail/focused.xml 2>&1 | tee .bq03-match-detail/focused.log
+          pytest -q backend/tests/test_match_detail_route_dependencies.py --junitxml=.bq03-match-detail/console.xml 2>&1 | tee .bq03-match-detail/console.log
+          python - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+          for name, expected in [('focused', 258), ('console', 122)]:
+              cases = ET.parse(Path('.bq03-match-detail') / (name + '.xml')).findall('.//testcase')
+              assert len(cases) == expected, (name, len(cases))
+              assert not any(case.find('failure') is not None or case.find('error') is not None or case.find('skipped') is not None for case in cases)
+          PY
+      - name: Verify unchanged pinned quality configuration
+        run: |
+          export PATH="$PWD/.quality-tools/bin:$PATH"
+          set -o pipefail
+          ruff check backend --select F,S110,B904 | tee .bq03-match-detail/ruff-clean.log
+          python scripts/check_python_quality.py ruff | tee .bq03-match-detail/ruff-ratchet.log
+          python scripts/check_python_quality.py mypy | tee .bq03-match-detail/mypy-ratchet.log
+          python -m mypy --config-file pyproject.toml backend/app/match_detail_routes.py | tee .bq03-match-detail/explicit-mypy.log
+      - name: Retain verified Git objects without publishing a ref
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import hashlib, json, os, pathlib, subprocess, urllib.request
+          expected = {
+              'backend/app/match_detail_routes.py': '85a39531e2cb991bef3b3ddbea6594873e3dbe5c',
+              'backend/quality/ruff-baseline.json': '99dd1bc99c2ecbcecc702c912619cc719e72ab4b',
+              'backend/tests/fixtures/match_detail_openapi_paths.json': '47da787b7e08e5faff29f2b1c8f36c68e0b25672',
+              'backend/tests/test_match_detail_route_dependencies.py': '8079bbfd5f9940610b0bcc610f254a76e875103e',
+              'docs/superpowers/audits/2026-09-24-backend-quality-closeout-checkpoint.md': 'a065004251448b0b19fba3d55a7fd85b084a44fa',
+          }
+          def api(endpoint, data):
+              request = urllib.request.Request('https://api.github.com/repos/ms81labs/sol-astra-football-analyses-sept26/' + endpoint, data=json.dumps(data).encode(), method='POST', headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json'})
+              with urllib.request.urlopen(request, timeout=60) as response:
+                  return json.load(response)
+          assert subprocess.check_output(['git', 'write-tree']).decode().strip() == 'ea7b259498cfa7bbd85f410e0b5fbf17e2b332b9'
+          entries = []
+          for name, sha in expected.items():
+              data = pathlib.Path(name).read_bytes()
+              assert hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest() == sha, name
+              blob = api('git/blobs', {'content': data.decode('utf-8'), 'encoding': 'utf-8'})
+              assert blob['sha'] == sha
+              entries.append({'path': name, 'mode': '100644', 'type': 'blob', 'sha': sha})
+          tree = api('git/trees', {'base_tree': '5daa12d8aafc62660ffa619bb0ab3bfcbf68ef8b', 'tree': entries})
+          assert tree['sha'] == 'ea7b259498cfa7bbd85f410e0b5fbf17e2b332b9'
+          receipt = {'base': '2d8cf998b39c67a34e4cff88f68f81d758cb203c', 'parent': os.environ['GITHUB_SHA'], 'tree': tree['sha'], 'files': expected, 'workflowRun': os.environ['GITHUB_RUN_ID'], 'publication': 'No ref or commit created; publish exact tree via authorized connector after fresh head check; inspect completed final normal CI.'}
+          pathlib.Path('.bq03-match-detail/candidate.json').write_text(json.dumps(receipt, indent=2) + '\n')
+          PY
+      - name: Retain source-bound evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bq03-match-detail-validation
+          path: .bq03-match-detail/
+          include-hidden-files: true
+          retention-days: 30
+          if-no-files-found: error
