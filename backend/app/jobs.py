@@ -108,6 +108,8 @@ class JobRunner:
             raise
 
     def _dispatch(self, job_id: str) -> None:
+        if self.ledger.request(job_id).outputSchema != "evidence_v1":
+            raise JobDispatchError("unsupported job output schema")
         backend = self.settings.processing_backend
         if backend == "daytona":
             if self.run_jobs_inline:
