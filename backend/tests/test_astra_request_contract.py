@@ -193,3 +193,63 @@ def test_astra_http_transport_sends_canonical_json_and_caps_stream(monkeypatch):
     monotonic = iter((0, 6))
     with pytest.raises(TimeoutError):
         astra_http_transport(request, 5, api_key="test-key")
+
+
+def test_guarded_astra_adapter_uses_bound_request_and_leaves_billing_unsettled():
+    import json
+    from backend.app.provider_adapters import make_astra_adapter
+    from backend.app.provider_billing import AstraSpendPolicy, ProviderResult
+    from backend.app.provider_gateway import ProviderGateway
+    from backend.app.report_contracts import ReportDraft
+    from backend.app.settings import ProcessingSettings
+
+    request = build_astra_request("Approved evidence", [], approved_images=(), max_output_tokens=4096)
+    policy = AstraSpendPolicy(task_types=("tactical_report",), max_output_tokens=4096,
+        input_price_per_million="22", output_price_per_million="82.5")
+    bound = policy.bind_request(request, task="tactical_report", model="gpt-6-astra", authorised_limit="5")
+    draft = ReportDraft(schemaVersion="report_draft_v1", matchId="m", generationId="g",
+        taskType="tactical_report")
+    response = {"id": "mock-response", "model": "gpt-6-astra", "status": "completed",
+        "service_tier": "default", "incomplete_details": None, "error": None,
+        "output": [{"type": "message", "role": "assistant", "status": "completed",
+            "content": [{"type": "output_text", "text": draft.model_dump_json()}]}],
+        "usage": {"input_tokens": 100, "output_tokens": 100, "total_tokens": 200}}
+    calls = []
+    def transport(body, timeout, *, api_key):
+        calls.append((body, timeout, api_key))
+        return json.dumps(response).encode()
+    adapter = make_astra_adapter("test-only", transport=transport)
+    token = ProviderGateway(None, ProcessingSettings(), adapter_factory=lambda: adapter)._token
+    result = adapter("tactical_report", [], gateway_token=token, provider="cloud",
+        model_id="gpt-6-astra", deadline_seconds=5, prepared_request=request,
+        execution_bound=bound)
+    assert isinstance(result, ProviderResult)
+    assert result.output["taskType"] == "tactical_report"
+    assert result.usage is None  # API token counts are not a settled provider invoice.
+    assert calls == [(request, 5, "test-only")]
+    local_calls = []
+    fallback = make_astra_adapter("test-only", transport=transport,
+        local_adapter=lambda *args, **kwargs: local_calls.append((args, kwargs)) or {"offline": True})
+    assert fallback("tactical_report", [], gateway_token=token, provider="local") == {"offline": True}
+    assert len(local_calls) == 1 and len(calls) == 1
+    with pytest.raises(ValueError):
+        adapter("tactical_report", [], gateway_token=token, provider="cloud",
+            model_id="gpt-6-astra", deadline_seconds=5,
+            prepared_request={**request, "store": True}, execution_bound=bound)
+    assert len(calls) == 1
+
+
+def test_app_selects_astra_adapter_only_for_explicit_spend_policy(tmp_path):
+    from backend.app.main import create_app
+    from backend.app.provider_billing import AstraSpendPolicy
+    from backend.app.settings import ProcessingSettings
+
+    default = create_app(storage_root=tmp_path / "default")
+    assert getattr(default.state.provider_gateway.adapter_factory(), "billing_contract_id", None) is None
+    policy = AstraSpendPolicy(task_types=("tactical_report",), max_output_tokens=4096,
+        input_price_per_million="22", output_price_per_million="82.5")
+    settings = ProcessingSettings(cloud_provider_enabled=True, cloud_provider_api_key="test-only",
+        allowed_model_ids=("gpt-6-astra",), cloud_model_id="gpt-6-astra",
+        provider_call_reservation=5, provider_budget_limit=10, provider_spend_policy=policy)
+    app = create_app(storage_root=tmp_path / "astra", settings=settings)
+    assert app.state.provider_gateway.adapter_factory().billing_contract_id == "astra-responses-v1"

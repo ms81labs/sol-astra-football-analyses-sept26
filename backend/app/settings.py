@@ -171,6 +171,37 @@ class ProcessingSettings:
         except ValueError:
             raise SettingsError("provider budget environment values must be numbers") from None
 
+        astra_mode = os.environ.get("GA_ASTRA_ENABLED", "0")
+        if astra_mode not in {"0", "1"}:
+            raise SettingsError("GA_ASTRA_ENABLED must be 0 or 1")
+        cloud_options = dict(
+            cloud_provider_enabled=os.environ.get("GA_CLOUD_PROVIDER_ENABLED") == "1",
+            cloud_provider_api_key=os.environ.get("OPENROUTER_API_KEY"),
+            allowed_model_ids=tuple(filter(None, os.environ.get("GA_ALLOWED_MODEL_IDS", "").split(","))),
+            cloud_model_id=os.environ.get("OPENROUTER_MODEL", "anthropic/claude-3.5-haiku"),
+            provider_call_reservation=provider_call_reservation,
+            provider_budget_limit=provider_budget_limit,
+        )
+        if astra_mode == "1":
+            from .provider_billing import AstraSpendPolicy
+            from .workbench.money import money
+            key = os.environ.get("OPENAI_API_KEY")
+            try:
+                input_price = money(os.environ.get("GA_ASTRA_INPUT_PRICE_PER_MILLION"))
+                output_price = money(os.environ.get("GA_ASTRA_OUTPUT_PRICE_PER_MILLION"))
+            except (TypeError, ValueError):
+                raise SettingsError("Astra requires explicit positive token prices") from None
+            # Conservative published long-context standard rates plus regional uplift;
+            # a real invoice and current price check are still required for acceptance.
+            if not cloud_options["cloud_provider_enabled"] or not key or not key.strip() \
+                    or "gpt-6-astra" not in cloud_options["allowed_model_ids"] \
+                    or input_price < 22 or output_price < 82.5:
+                raise SettingsError("Astra requires cloud opt-in, key, model allowlist and conservative prices")
+            cloud_options.update(cloud_provider_api_key=key, cloud_model_id="gpt-6-astra",
+                provider_spend_policy=AstraSpendPolicy(task_types=("tactical_report", "drills"),
+                    max_output_tokens=4096, input_price_per_million=str(input_price),
+                    output_price_per_million=str(output_price)))
+
         backend = os.environ.get("PROCESSING_BACKEND", "local")
         if backend not in {"local", "daytona"}:
             raise SettingsError("PROCESSING_BACKEND must be exactly 'local' or 'daytona'")
@@ -178,12 +209,7 @@ class ProcessingSettings:
             return cls(
                 max_upload_bytes=max_upload_bytes,
                 trusted_frontend_origins=trusted_frontend_origins,
-                cloud_provider_enabled=os.environ.get("GA_CLOUD_PROVIDER_ENABLED") == "1",
-                cloud_provider_api_key=os.environ.get("OPENROUTER_API_KEY"),
-                allowed_model_ids=tuple(filter(None, os.environ.get("GA_ALLOWED_MODEL_IDS", "").split(","))),
-                cloud_model_id=os.environ.get("OPENROUTER_MODEL", "anthropic/claude-3.5-haiku"),
-                provider_call_reservation=provider_call_reservation,
-                provider_budget_limit=provider_budget_limit,
+                **cloud_options,
                 trusted_bin_dirs=trusted_bin_dirs,
                 ffmpeg_sha256=os.environ.get("GA_FFMPEG_SHA256"),
                 ffprobe_sha256=os.environ.get("GA_FFPROBE_SHA256"),
@@ -215,4 +241,5 @@ class ProcessingSettings:
             auth_secret=os.environ.get("GA_AUTH_SECRET"),
             bind_host=os.environ.get("GA_BIND_HOST", "127.0.0.1"),
             tls_terminated=os.environ.get("GA_TLS_TERMINATED") == "1",
+            **(cloud_options if astra_mode == "1" else {}),
         )

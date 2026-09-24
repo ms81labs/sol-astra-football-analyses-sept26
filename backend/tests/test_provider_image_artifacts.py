@@ -289,6 +289,25 @@ def test_mock_astra_request_binds_exact_approved_image_and_reservation(tmp_path)
         body={"requireProvider": True, "requestId": "mock-image",
             "imageManifestDigest": manifest_digest})["reportId"] == result["reportId"]
     assert len(calls) == 1
+    from backend.app.provider_adapters import make_astra_adapter
+    def offline_transport(request, timeout, *, api_key):
+        assert api_key == "test-only" and timeout > 0
+        assert request["input"][0]["content"][1]["image_url"] == (
+            "data:image/png;base64," + base64.b64encode(image_bytes).decode())
+        draft = ReportDraft(schemaVersion="report_draft_v1", matchId=match_id,
+            generationId=generation_id, taskType="tactical_report")
+        return json.dumps({"id": "mock-unbilled", "model": "gpt-6-astra", "status": "completed",
+            "service_tier": "default", "incomplete_details": None, "error": None,
+            "output": [{"type": "message", "role": "assistant", "status": "completed",
+                "content": [{"type": "output_text", "text": draft.model_dump_json()}]}],
+            "usage": {"input_tokens": 100, "output_tokens": 100, "total_tokens": 200}}).encode()
+    guarded = make_astra_adapter("test-only", transport=offline_transport)
+    guarded_gateway = ProviderGateway(storage, settings, adapter_factory=lambda: guarded,
+        budget_ledger=ProviderBudgetLedger(storage.job_ledger.db_path, 40))
+    unbilled = guarded_gateway.execute(match_id, "tactical_report", requested_provider="cloud",
+        body={"requireProvider": True, "requestId": "mock-unbilled", "imageManifestDigest": manifest_digest})
+    assert unbilled["policy"]["provider"] == "cloud"
+    assert unbilled["costSummary"]["billingComplete"] is False
 
 
 @pytest.mark.integration

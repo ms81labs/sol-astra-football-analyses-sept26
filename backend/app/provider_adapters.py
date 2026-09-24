@@ -225,6 +225,32 @@ def astra_http_transport(request: dict, timeout_seconds: float, *, api_key: str)
     return b"".join(chunks)
 
 
+def make_astra_adapter(api_key: str, *, transport=astra_http_transport, local_adapter=None):
+    """Use the gateway's reserved request; leave provider billing unsettled."""
+    from .provider_billing import ProviderNotDispatched, ProviderResult
+    from .provider_gateway import is_valid_gateway_token
+
+    def adapter(analysis_type, frames, *, gateway_token=None, provider=None, model_id=None,
+                deadline_seconds=120, prepared_request=None, execution_bound=None, **kwargs):
+        if not is_valid_gateway_token(gateway_token):
+            raise ProviderNotDispatched("Astra gateway reservation is required")
+        if provider == "local":
+            from .llm import run_analysis
+            return (local_adapter or run_analysis)(analysis_type, frames, gateway_token=gateway_token,
+                provider=provider, model_id=model_id, deadline_seconds=deadline_seconds, **kwargs)
+        if provider != "cloud" or model_id != "gpt-6-astra" or not isinstance(execution_bound, dict) \
+                or execution_bound.get("adapterId") != "astra-responses-v1" \
+                or execution_bound.get("taskType") != analysis_type:
+            raise ProviderNotDispatched("Astra gateway reservation is required")
+        draft, _tokens = execute_astra_bound(prepared_request, execution_bound,
+            transport=lambda request, seconds: transport(request, seconds, api_key=api_key),
+            timeout_seconds=deadline_seconds)
+        return ProviderResult(draft)  # Token counts do not prove the final invoice.
+
+    adapter.billing_contract_id = "astra-responses-v1"
+    return adapter
+
+
 def execute_local(prompt: str, analysis_type: str, validate: Validator, *, timeout_seconds: float = 120.0) -> dict:
     import requests
 
