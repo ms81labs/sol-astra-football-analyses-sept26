@@ -48,6 +48,11 @@ def test_mocked_event_request_produces_reviewable_source_bound_receipt(tmp_path)
     gateway = ProviderGateway(storage, settings,
         adapter_factory=lambda: make_astra_adapter("test-only", transport=transport),
         budget_ledger=ProviderBudgetLedger(storage.job_ledger.db_path, 10))
+    from fastapi.testclient import TestClient
+    from backend.app.main import create_app
+    enabled = TestClient(create_app(storage_root=storage.storage_root, settings=settings),
+        base_url="http://127.0.0.1").get(f"/api/matches/{match_id}/event-proposals")
+    assert enabled.json() == {"generationId": generation_id, "available": True}
     receipt = gateway.execute_event_proposal(match_id, body={"generationId": generation_id,
         "imageManifestDigest": manifest, "requestId": "visual-review-1"})
     assert len(sent) == 1
@@ -90,6 +95,8 @@ def test_event_proposal_api_refuses_cloud_disabled_without_dispatch(tmp_path):
     generation_id = storage.current_generation(match_id).generationId
     manifest = select_source_image_manifest(storage, match_id, generation_id, [0])
     client = TestClient(create_app(storage_root=root), base_url="http://127.0.0.1")
+    capability = client.get(f"/api/matches/{match_id}/event-proposals")
+    assert capability.json() == {"generationId": generation_id, "available": False}
     response = client.post(f"/api/matches/{match_id}/event-proposals", json={
         "generationId": generation_id, "imageManifestDigest": manifest,
         "requestId": "disabled-cloud"})

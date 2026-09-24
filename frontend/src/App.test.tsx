@@ -600,6 +600,135 @@ describe('App match workspace loading', () => {
     expect(within(inspector).queryByRole('button', { name: /accept proposed event/i })).toBeNull();
   });
 
+  it('requests a visual suggestion for the selected source frame and sends its receipt into review', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    const loaded = loadedWorkspace('match-a', 'Match A');
+    stubSnapshotWorkspace({ ...loaded, detail: { ...loaded.detail, inputMode: 'video',
+      config: { rights: { cloudPermission: true, processingScope: 'local_plus_burst', retentionClass: 'review' } } } });
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/api/matches/match-a/event-proposals') && !init?.method) {
+        return Promise.resolve({ ok: true, json: async () => ({ generationId: 'g-match-a', available: true }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/queries') && init?.method === 'POST') {
+        return Promise.resolve({ ok: true, json: async () => ({ generationId: 'g-match-a',
+          query: { unanswerable: false }, results: [{ eventId: 'ev-1', matchId: 'match-a',
+            frameId: 0, timestamp: 0, evidenceIds: ['frame:0'], label: 'shot' }] }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/provider-images') && init?.method === 'POST') {
+        return Promise.resolve({ ok: true, json: async () => ({ generationId: 'g-match-a', imageManifestDigest: 'manifest-1' }) } as Response);
+      }
+      if (url.endsWith('/api/matches/match-a/event-proposals') && init?.method === 'POST') {
+        return Promise.resolve({ ok: true, json: async () => ({ schemaVersion: 'event_proposal_receipt_v1',
+          requestId: 'provider:receipt-1', generationId: 'g-match-a', proposal: { type: 'shot', frameId: 0,
+            timestamp: 0, intervalStart: 0, intervalEnd: 0, team: null, description: 'Possible shot',
+            modelId: 'gpt-6-astra', modelVersion: 'gpt-6-astra', evidenceIds: ['frame:0'] } }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && init?.method === 'POST') {
+        return Promise.resolve({ ok: true, json: async () => ({ correctionId: 'candidate-1', kind: 'event_propose',
+          saveState: 'saved', applyState: 'applied', appliedGeneration: 'g-match-a-next' }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    fireEvent.click(screen.getByRole('button', { name: /search evidence/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /shot.*0s/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /request visual suggestion/i }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => String(url).includes('/corrections')
+      && init?.method === 'POST' && String(init.body).includes('"kind":"event_propose"'))).toBe(true));
+    const imageCall = fetchMock.mock.calls.find(([url]) => String(url).includes('/provider-images'));
+    expect(imageCall?.[1]?.body).toContain('"sourceFrameIds":[0]');
+    const proposalCall = fetchMock.mock.calls.find(([url, init]) => String(url).endsWith('/event-proposals') && init?.method === 'POST');
+    expect(proposalCall?.[1]?.body).toContain('"requestId":"event:g-match-a:manifest-1"');
+    const correction = fetchMock.mock.calls.find(([url, init]) => String(url).includes('/corrections') && init?.method === 'POST');
+    expect(correction?.[1]?.body).toContain('"providerRequestId":"provider:receipt-1"');
+  });
+
+  it('does not attach an old visual suggestion after switching matches', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A'), readyMatch('match-b', 'Match B')]);
+    const a = loadedWorkspace('match-a', 'Match A');
+    vi.mocked(api.fetchMatchWorkspace).mockImplementation(async (matchId) => matchId === 'match-a'
+      ? { ...a, detail: { ...a.detail, inputMode: 'video',
+        config: { rights: { cloudPermission: true, processingScope: 'local_plus_burst', retentionClass: 'review' } } } }
+      : loadedWorkspace('match-b', 'Match B'));
+    const late = deferred<Response>();
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/api/matches/match-a/event-proposals') && !init?.method) {
+        return Promise.resolve({ ok: true, json: async () => ({ generationId: 'g-match-a', available: true }) } as Response);
+      }
+      if (url.endsWith('/api/matches/match-b/event-proposals') && !init?.method) {
+        return Promise.resolve({ ok: true, json: async () => ({ generationId: 'g-match-b', available: false }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/queries') && init?.method === 'POST') {
+        return Promise.resolve({ ok: true, json: async () => ({ generationId: 'g-match-a',
+          query: { unanswerable: false }, results: [{ eventId: 'ev-1', matchId: 'match-a',
+            frameId: 0, timestamp: 0, evidenceIds: ['frame:0'], label: 'shot' }] }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/provider-images') && init?.method === 'POST') {
+        return Promise.resolve({ ok: true, json: async () => ({ generationId: 'g-match-a', imageManifestDigest: 'manifest-1' }) } as Response);
+      }
+      if (url.endsWith('/api/matches/match-a/event-proposals') && init?.method === 'POST') return late.promise;
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    fireEvent.click(screen.getByRole('button', { name: /search evidence/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /shot.*0s/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /request visual suggestion/i }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith('/event-proposals')
+      && init?.method === 'POST')).toBe(true));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Active match' }), { target: { value: 'match-b' } });
+    await screen.findByText('Match B', { selector: 'header span' });
+    await act(async () => late.resolve({ ok: true, json: async () => ({ generationId: 'g-match-a',
+      requestId: 'provider:old', proposal: { type: 'shot', frameId: 0, timestamp: 0,
+        intervalStart: 0, intervalEnd: 0, team: null, description: 'Old candidate',
+        modelId: 'gpt-6-astra', modelVersion: 'gpt-6-astra', evidenceIds: ['frame:0'] } }) } as Response));
+    expect(fetchMock.mock.calls.some(([url, init]) => String(url).includes('/corrections') && init?.method === 'POST')).toBe(false);
+    expect(screen.queryByRole('button', { name: /request visual suggestion/i })).toBeNull();
+  });
+
+  it('shows an abstention without creating a review event', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    const loaded = loadedWorkspace('match-a', 'Match A');
+    stubSnapshotWorkspace({ ...loaded, detail: { ...loaded.detail, inputMode: 'video',
+      config: { rights: { cloudPermission: true, processingScope: 'local_plus_burst', retentionClass: 'review' } } } });
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/api/matches/match-a/event-proposals') && !init?.method) {
+        return Promise.resolve({ ok: true, json: async () => ({ generationId: 'g-match-a', available: true }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/queries') && init?.method === 'POST') {
+        return Promise.resolve({ ok: true, json: async () => ({ generationId: 'g-match-a',
+          query: { unanswerable: false }, results: [{ eventId: 'ev-1', matchId: 'match-a',
+            frameId: 0, timestamp: 0, evidenceIds: ['frame:0'], label: 'shot' }] }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/provider-images') && init?.method === 'POST') {
+        return Promise.resolve({ ok: true, json: async () => ({ generationId: 'g-match-a', imageManifestDigest: 'manifest-1' }) } as Response);
+      }
+      if (url.endsWith('/api/matches/match-a/event-proposals') && init?.method === 'POST') {
+        return Promise.resolve({ ok: true, json: async () => ({ generationId: 'g-match-a',
+          requestId: 'provider:abstain', proposal: null }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    fireEvent.click(screen.getByRole('button', { name: /search evidence/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /shot.*0s/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /request visual suggestion/i }));
+    expect(await screen.findByText(/visual evidence was insufficient/i)).toBeTruthy();
+    expect(fetchMock.mock.calls.some(([url, init]) => String(url).includes('/corrections') && init?.method === 'POST')).toBe(false);
+    expect(screen.getByRole('button', { name: /request visual suggestion/i })).toHaveProperty('disabled', true);
+  });
+
   it('seeks a search hit by source frame and restores its range after a paged frame load', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);

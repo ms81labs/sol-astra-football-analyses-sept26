@@ -330,6 +330,11 @@ def create_match_detail_router(
     
         return result
 
+    @router.get("/api/matches/{match_id}/event-proposals")
+    def get_event_proposal_capability(match: MatchRecord = Depends(require_match)) -> dict:
+        return {"generationId": storage.current_generation(match.id).generationId,
+                "available": provider_gateway.event_proposal_available(match)}
+
     @router.post("/api/matches/{match_id}/event-proposals")
     def post_event_proposal(match: MatchRecord = Depends(require_match), body: dict | None = None) -> dict:
         try:

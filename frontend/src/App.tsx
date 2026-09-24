@@ -59,7 +59,7 @@ import { getUploadFailureGuidance } from './utils/uploadErrors';
 import { findNearestFrameIndex } from './utils/videoSync';
 import { playlistClipsFromCorrections } from './utils/playlist';
 import { applyReviewShortcut, type ReviewAction } from './utils/reviewShortcuts';
-import { fetchAssistance, fetchCorrectionHistory, fetchPendingCorrections, fetchHeatmap, fetchIncidentReview, fetchMatchFormation, fetchMatchMetrics, fetchNative, fetchNativeMemory, fetchQualityTimeline, fetchRecovery, fetchSecurity, fetchWorkbenchDossier, promoteMatchIdentity, recoverMatchCorrection, repairMatchIdentity, requestAccessDeletion, submitMatchCorrection, undoMatchCorrection, type FormationAvailability, type MetricAvailability, type SearchHit } from './utils/workbench';
+import { fetchAssistance, fetchCorrectionHistory, fetchEventProposalAvailability, fetchPendingCorrections, fetchHeatmap, fetchIncidentReview, fetchMatchFormation, fetchMatchMetrics, fetchNative, fetchNativeMemory, fetchQualityTimeline, fetchRecovery, fetchSecurity, fetchWorkbenchDossier, prepareEventProposalImages, promoteMatchIdentity, recoverMatchCorrection, repairMatchIdentity, requestAccessDeletion, requestEventProposal, submitMatchCorrection, undoMatchCorrection, type FormationAvailability, type MetricAvailability, type SearchHit } from './utils/workbench';
 import { windowedTimelineProps } from './utils/windowedTimeline';
 import { splitScores } from './utils/quantities';
 
@@ -195,6 +195,10 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
   const [comparisonLoadError, setComparisonLoadError] = useState<string | null>(null);
   const [events, setEvents] = useState<EventTag[]>([]);
   const [selectedSearch, setSelectedSearch] = useState<{ generationId: string | null; hit: SearchHit } | null>(null);
+  const [eventProposalAvailable, setEventProposalAvailable] = useState(false);
+  const [proposalRequestState, setProposalRequestState] = useState<'idle' | 'pending' | 'done' | 'unknown'>('idle');
+  const [proposalRequestMessage, setProposalRequestMessage] = useState<string | null>(null);
+  const proposalSelectionVersionRef = useRef(0);
   const [reportEvidenceNotice, setReportEvidenceNotice] = useState<string | null>(null);
   const reportEvidenceRequestRef = useRef(0);
   const [jobStatus, setJobStatus] = useState<string | null>(null);
@@ -234,6 +238,24 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
     activeMatchIdRef.current = activeMatch?.id ?? null;
     activeGenerationRef.current = activeMatch?.detail.generationId ?? null;
   }, [activeMatch?.id, activeMatch?.detail.generationId]);
+  useLayoutEffect(() => {
+    proposalSelectionVersionRef.current += 1;
+    setProposalRequestState('idle');
+    setProposalRequestMessage(null);
+    return () => { proposalSelectionVersionRef.current += 1; };
+  }, [activeMatch?.id, activeMatch?.detail.generationId, selectedSearch]);
+  useEffect(() => {
+    const matchId = activeMatch?.id;
+    const generationId = activeMatch?.detail.generationId;
+    let cancelled = false;
+    setEventProposalAvailable(false);
+    if (matchId && generationId && activeMatch?.detail.inputMode === 'video') {
+      void fetchEventProposalAvailability(matchId, generationId)
+        .then((available) => { if (!cancelled) setEventProposalAvailable(available); })
+        .catch(() => { if (!cancelled) setEventProposalAvailable(false); });
+    }
+    return () => { cancelled = true; };
+  }, [activeMatch?.id, activeMatch?.detail.generationId, activeMatch?.detail.inputMode]);
   useEffect(() => {
     reportEvidenceRequestRef.current += 1;
     setReportEvidenceNotice(null);
@@ -1049,6 +1071,53 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
     if (!receipt || commandState(receipt) !== 'applied') throw new Error('Clip application is not confirmed. See the correction status.');
   }, [activeMatch, executeCommand]);
 
+  const handleRequestEventProposal = useCallback(async () => {
+    if (!activeMatch || !selectedHit || selectedHit.frameId == null || !eventProposalAvailable
+      || activeMatch.detail.inputMode !== 'video' || !activeMatch.detail.generationId) return;
+    const matchId = activeMatch.id;
+    const generationId = activeMatch.detail.generationId;
+    const workspaceVersion = activeWorkspaceRequestRef.current;
+    const selectionVersion = proposalSelectionVersionRef.current;
+    const stillSelected = () => activeWorkspaceRequestRef.current === workspaceVersion
+      && proposalSelectionVersionRef.current === selectionVersion
+      && activeMatchIdRef.current === matchId && activeGenerationRef.current === generationId;
+    const start = selectedHit.intervalStart ?? selectedHit.timestamp;
+    const end = selectedHit.intervalEnd ?? selectedHit.timestamp;
+    const sourceFrameIds = [selectedHit.frameId, ...matchData
+      .filter((frame) => frame.Frame_ID !== selectedHit.frameId
+        && frame.Timestamp >= start && frame.Timestamp <= end)
+      .slice(0, 3).map((frame) => frame.Frame_ID)].sort((a, b) => a - b);
+    setProposalRequestState('pending');
+    setProposalRequestMessage(null);
+    try {
+      const manifest = await prepareEventProposalImages(matchId, generationId, sourceFrameIds);
+      if (!stillSelected()) return;
+      const receipt = await requestEventProposal(matchId, generationId, manifest,
+        `event:${generationId}:${manifest}`);
+      if (!stillSelected()) return;
+      const proposal = receipt.proposal;
+      if (!proposal) {
+        setProposalRequestState('done');
+        setProposalRequestMessage('Visual evidence was insufficient for a suggested event.');
+        return;
+      }
+      const correction = await executeCommand((controls) => submitMatchCorrection(matchId, {
+        kind: 'event_propose', payload: { ...proposal, providerRequestId: receipt.requestId }, ...controls,
+      }));
+      if (stillSelected()) {
+        setProposalRequestState('done');
+        setProposalRequestMessage(correction ? 'Suggested event is ready for review.'
+          : 'The provider receipt is saved; check correction status before another request.');
+      }
+    } catch (error) {
+      if (!stillSelected()) return;
+      setProposalRequestState('unknown');
+      setProposalRequestMessage(error instanceof Error
+        ? `${error.message} Check the request outcome before trying again.`
+        : 'Request outcome unknown. Check the request before trying again.');
+    }
+  }, [activeMatch, eventProposalAvailable, executeCommand, matchData, selectedHit]);
+
   const handleSwapTeams = useCallback(() => {
     if (!activeMatch || requiresTeamSelection) return;
     void executeCommand((controls) => submitMatchCorrection(activeMatch.id, { kind: 'team_mapping', payload: { swap: true }, ...controls }));
@@ -1496,7 +1565,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
             />
           </div>
           <div className="mb-3 shrink-0">
-            <AiUnavailableBanner providersEnabled={providersEnabled} />
+            <AiUnavailableBanner providersEnabled={providersEnabled || eventProposalAvailable} />
           </div>
           <div className="mb-3 shrink-0">
             <LoopbackBanner deploymentBoundary={deploymentBoundary} />
@@ -1549,6 +1618,10 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
                 ? { modelId: selectedProposal.proposalModelId, modelVersion: selectedProposal.proposalModelVersion,
                     evidenceIds: selectedProposal.proposalEvidenceIds ?? [],
                     requestId: selectedProposal.proposalRequestId } : null}
+              onRequestProposal={eventProposalAvailable && isVideoMatch && selectedHit?.frameId != null && !selectedProposal
+                ? () => { void handleRequestEventProposal(); } : undefined}
+              proposalRequestState={proposalRequestState}
+              proposalRequestMessage={proposalRequestMessage}
               onProposalDecision={selectedProposal?.reviewStatus === 'unreviewed' ? (decision) => {
                 if (!activeMatch || !selectedProposal.eventId) return;
                 void executeCommand((controls) => submitMatchCorrection(activeMatch.id, {

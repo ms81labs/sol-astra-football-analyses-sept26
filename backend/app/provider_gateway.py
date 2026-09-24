@@ -83,6 +83,15 @@ class ProviderGateway:
         self.budget_ledger = budget_ledger
         self._token = GatewayToken(_GATEWAY_SECRET)
 
+    def event_proposal_available(self, match) -> bool:
+        spend = self.settings.provider_spend_policy
+        return (match.inputMode == "video" and match.config.rights.cloudPermission
+            and match.config.rights.processingScope != "local_only"
+            and self.settings.cloud_provider_enabled and bool(self.settings.cloud_provider_api_key)
+            and self.settings.cloud_model_id in self.settings.allowed_model_ids
+            and isinstance(spend, AstraSpendPolicy) and "event_proposal" in spend.task_types
+            and self.budget_ledger is not None)
+
     def resolve_policy(
         self,
         match,

@@ -20,6 +20,9 @@ interface EvidenceInspectorProps {
   confidenceInterval?: [number, number] | null;
   proposal?: { modelId: string; modelVersion: string; evidenceIds: string[]; requestId?: string | null } | null;
   onProposalDecision?: (decision: 'accept' | 'reject') => void;
+  onRequestProposal?: () => void;
+  proposalRequestState?: 'idle' | 'pending' | 'done' | 'unknown';
+  proposalRequestMessage?: string | null;
 }
 
 function sourceLabel(frame: FrameData | null): string {
@@ -45,6 +48,9 @@ export default function EvidenceInspector({
   confidenceInterval,
   proposal,
   onProposalDecision,
+  onRequestProposal,
+  proposalRequestState = 'idle',
+  proposalRequestMessage,
 }: EvidenceInspectorProps) {
   const [matchClockOffsetSeconds, setMatchClockOffsetSeconds] = useState(0);
   const presentationTimeSeconds = frame?.Timestamp ?? 0;
@@ -79,6 +85,13 @@ export default function EvidenceInspector({
         {' '}Review status: <span className="font-mono text-amber-300">{reviewStatus}</span>
       </p>
       {selectedInterval && <p>Selected source interval: {selectedInterval.start}s to {selectedInterval.end}s. Selected evidence: {selectedInterval.evidenceIds.join(', ') || 'unavailable'}.</p>}
+      {onRequestProposal && <button type="button" onClick={onRequestProposal}
+        disabled={proposalRequestState !== 'idle'}
+        className="rounded bg-slate-700 px-2 py-1 text-white disabled:opacity-50">
+        {proposalRequestState === 'pending' ? 'Requesting visual suggestion…' : 'Request visual suggestion'}
+      </button>}
+      {onRequestProposal && <p className="text-slate-500">Uses the selected source frames; a cloud request may incur cost. Review is required before use.</p>}
+      {proposalRequestMessage && <p role="status">{proposalRequestMessage}</p>}
       {proposal && <p>Model proposal: {proposal.modelId} · {proposal.modelVersion}</p>}
       {proposal?.requestId && <p>Provider request: {proposal.requestId}</p>}
       {proposal && !proposal.requestId && <p>Provider receipt unavailable; this proposal cannot be accepted.</p>}

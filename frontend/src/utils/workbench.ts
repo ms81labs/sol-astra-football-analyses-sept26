@@ -89,6 +89,40 @@ export interface SearchHit {
   evidenceIds: string[];
 }
 
+export interface EventProposalReceipt {
+  generationId: string;
+  requestId: string;
+  proposal: ({ type: 'pass' | 'turnover' | 'recovery' | 'shot'; frameId: number;
+    timestamp: number; intervalStart: number; intervalEnd: number; team: 'my_team' | 'enemy' | null;
+    description: string; modelId: string; modelVersion: string; evidenceIds: string[] }) | null;
+}
+
+export async function fetchEventProposalAvailability(matchId: string, generationId: string) {
+  const payload = await parseJson<{ generationId: string; available: boolean }>(
+    await fetch(`/api/matches/${matchId}/event-proposals`));
+  assertGeneration(payload, generationId);
+  return payload.available;
+}
+
+export async function prepareEventProposalImages(matchId: string, generationId: string, sourceFrameIds: number[]) {
+  const payload = await parseJson<{ generationId: string; imageManifestDigest: string }>(
+    await fetch(`/api/matches/${matchId}/provider-images`, { method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ generationId, sourceFrameIds }) }));
+  assertGeneration(payload, generationId);
+  return payload.imageManifestDigest;
+}
+
+export async function requestEventProposal(matchId: string, generationId: string,
+  imageManifestDigest: string, requestId: string) {
+  const payload = await parseJson<EventProposalReceipt>(await fetch(`/api/matches/${matchId}/event-proposals`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ generationId, imageManifestDigest, requestId }),
+  }));
+  assertGeneration(payload, generationId);
+  return payload;
+}
+
 export interface TypedSearchFilter {
   eventFamily: string;
   team?: string;
