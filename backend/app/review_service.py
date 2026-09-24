@@ -132,7 +132,30 @@ class ReviewService:
             # Fail ambiguous legacy replay before appending a new command.
             self._effective_config(match_id, active_commands(history))
         if kind in {"event_accept", "event_reject"}:
-            return {**payload, "previous": self.storage._event_review_snapshot(match_id, payload)}
+            previous = self.storage._event_review_snapshot(match_id, payload)
+            canonical = {key: value for key, value in payload.items() if key not in {"previous", "proposal"}}
+            if len(previous) == 1 and previous[0].get("proposalModelId"):
+                canonical["proposal"] = {"modelId": previous[0]["proposalModelId"],
+                    "modelVersion": previous[0]["proposalModelVersion"],
+                    "evidenceIds": previous[0]["proposalEvidenceIds"]}
+            return {**canonical, "previous": previous}
+        if kind == "event_propose":
+            from .workbench.events import ModelEventProposal
+            from pydantic import ValidationError
+
+            try:
+                proposal = ModelEventProposal.model_validate(payload)
+            except ValidationError as exc:
+                raise SemanticCommandError("INVALID_EVENT_PROPOSAL", "Visual event proposal is invalid") from exc
+            frame = next((item for item in self.storage.load_frames(match_id)
+                          if item.frameId == proposal.frameId), None)
+            if frame is None or abs(frame.timestamp - proposal.timestamp) > 1e-6:
+                raise SemanticCommandError("STALE_EVENT_PROPOSAL", "Source frame or timestamp changed", status_code=409)
+            event_id = "ev_model_" + digest({"matchId": match_id, **proposal.model_dump(mode="json")})[:16]
+            if any(item.eventId == event_id for item in self.storage.load_events(match_id)):
+                raise SemanticCommandError("DUPLICATE_EVENT_PROPOSAL", "Visual event proposal already exists", status_code=409)
+            return {**proposal.model_dump(mode="json"), "eventId": event_id,
+                    "sourceSha256": self.storage.source_sha256(match_id)}
         if kind == "config_set":
             if set(payload) != {"values"}:
                 raise SemanticCommandError("INVALID_SEMANTIC_CONFIG", "config_set requires only values")
@@ -472,6 +495,7 @@ class ReviewService:
 
         enriched, summary, events, assignments, formations, shots, accepted = processor._compute_outputs_and_match_state(
             frames,
+            source_sha256=self.storage.source_sha256(match_id),
             attack_direction=config.attackDirection,
             ball_truth_layers=ball_truth_layers,
             match_state_evidence=match_state_evidence,

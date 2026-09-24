@@ -457,6 +457,7 @@ def _compute_outputs_and_match_state(
     ball_truth_layers: dict[str, object] | None = None,
     match_state_evidence: dict[str, object] | None = None,
     review_commands=None,
+    source_sha256: str | None = None,
     summary_options: dict[str, Any] | None = None,
 ) -> tuple[
     list[FrameData],
@@ -483,17 +484,25 @@ def _compute_outputs_and_match_state(
     events = detect_events(frames, assignments, attack_direction=attack_direction)
     orphaned = []
     if review_commands is not None:
-        from .workbench.events import apply_event_review, with_stable_event_id
+        from .workbench.events import apply_event_review, event_from_proposal, with_stable_event_id
         events = [with_stable_event_id(e) for e in events]
         for command in review_commands:
-            if command.kind in {"event_accept", "event_reject"}:
+            if command.kind == "event_propose":
+                if (source_sha256 is None or command.payload.get("sourceSha256") == source_sha256) \
+                        and any(frame.frameId == command.payload["frameId"]
+                       and abs(frame.timestamp - command.payload["timestamp"]) <= 1e-6 for frame in frames):
+                    events.append(event_from_proposal(command.payload))
+                else:
+                    orphaned.append(command.payload["eventId"])
+            elif command.kind in {"event_accept", "event_reject"}:
                 events, previous = apply_event_review(events, kind=command.kind, payload=command.payload,
                                                       match_id=command.matchId)
                 if not previous:
                     orphaned.append(str(command.payload.get("eventId") or command.correctionId))
     # Unreviewed suggestions retain their existing experimental status. A review
     # excludes rejected events; unrelated edits must not silently erase suggestions.
-    reviewed = [e for e in events if e.reviewStatus != "rejected"]
+    reviewed = [e for e in events if e.reviewStatus != "rejected"
+                and (e.proposalModelId is None or e.reviewStatus == "accepted")]
     shots = build_shot_analytics(frames, reviewed, attack_direction=attack_direction)
     summary = summarize_match(frames, assignments, shots, reviewed, attack_direction=attack_direction,
                               **(summary_options or {}))

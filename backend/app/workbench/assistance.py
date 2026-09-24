@@ -337,8 +337,8 @@ def events_as_query_rows(events: list[Any], *, match_id: str) -> list[dict[str, 
     for index, event in enumerate(events):
         payload = event.model_dump(mode="json") if hasattr(event, "model_dump") else dict(event)
         evidence_id = f"event:{payload.get('frameId')}:{payload.get('type')}:{payload.get('timestamp')}"
-        payload["id"] = payload.get("id") or f"{match_id}:{index}"
-        payload["evidenceIds"] = list(payload.get("evidenceIds") or [evidence_id])
+        payload["id"] = payload.get("id") or payload.get("eventId") or f"{match_id}:{index}"
+        payload["evidenceIds"] = list(payload.get("evidenceIds") or payload.get("proposalEvidenceIds") or [evidence_id])
         rows.append(payload)
     return rows
 

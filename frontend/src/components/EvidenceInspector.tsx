@@ -18,6 +18,8 @@ interface EvidenceInspectorProps {
   detectorScore?: number | null;
   calibratedProbability?: number | null;
   confidenceInterval?: [number, number] | null;
+  proposal?: { modelId: string; modelVersion: string; evidenceIds: string[] } | null;
+  onProposalDecision?: (decision: 'accept' | 'reject') => void;
 }
 
 function sourceLabel(frame: FrameData | null): string {
@@ -41,6 +43,8 @@ export default function EvidenceInspector({
   detectorScore,
   calibratedProbability,
   confidenceInterval,
+  proposal,
+  onProposalDecision,
 }: EvidenceInspectorProps) {
   const [matchClockOffsetSeconds, setMatchClockOffsetSeconds] = useState(0);
   const presentationTimeSeconds = frame?.Timestamp ?? 0;
@@ -75,6 +79,13 @@ export default function EvidenceInspector({
         {' '}Review status: <span className="font-mono text-amber-300">{reviewStatus}</span>
       </p>
       {selectedInterval && <p>Selected source interval: {selectedInterval.start}s to {selectedInterval.end}s. Selected evidence: {selectedInterval.evidenceIds.join(', ') || 'unavailable'}.</p>}
+      {proposal && <p>Model proposal: {proposal.modelId} · {proposal.modelVersion}</p>}
+      {proposal && reviewStatus === 'unreviewed' && onProposalDecision && (
+        <div className="flex gap-2">
+          <button type="button" className="rounded bg-emerald-700 px-2 py-1 text-white" onClick={() => onProposalDecision('accept')}>Accept proposed event</button>
+          <button type="button" className="rounded bg-slate-700 px-2 py-1 text-white" onClick={() => onProposalDecision('reject')}>Reject proposed event</button>
+        </div>
+      )}
       {cameraProfile && <p>Camera profile: <span className="font-mono">{cameraProfile}</span></p>}
       {modelHash && <p>Model: <span className="font-mono">{modelHash}</span></p>}
       {configVersion && <p>Config: <span className="font-mono">{configVersion}</span></p>}

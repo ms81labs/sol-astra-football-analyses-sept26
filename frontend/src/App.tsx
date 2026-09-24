@@ -448,6 +448,8 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
   const currentEvent = events.find((event) => event.frame === currentFrame) ?? events.find((event) => Math.abs(event.timestamp - currentTimestamp) < 0.2) ?? null;
   const selectedHit = selectedSearch && selectedSearch.hit.matchId === activeMatch?.id
     && selectedSearch.generationId === (activeMatch?.detail.generationId ?? null) ? selectedSearch.hit : null;
+  const selectedProposal = activeMatch?.backendEvents.find((event) =>
+    event.eventId === selectedHit?.eventId && event.proposalModelId) ?? null;
   const incidentTouchStart = storedIncident?.touchStart ?? currentEvent?.intervalStart ?? currentTimestamp;
   const incidentTouchEnd = storedIncident?.touchEnd ?? currentEvent?.intervalEnd ?? Number((currentTimestamp + 0.12).toFixed(2));
   const incidentSamples = storedIncident?.samples ?? [];
@@ -1475,6 +1477,16 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
               selectedInterval={selectedHit ? { start: selectedHit.intervalStart ?? selectedHit.timestamp, end: selectedHit.intervalEnd ?? selectedHit.timestamp, evidenceIds: selectedHit.evidenceIds } : null}
               cameraProfile={activeMatch?.detail.config?.cameraProfile ?? uploadCameraProfile}
               reviewStatus={selectedHit?.reviewStatus ?? currentEvent?.reviewStatus ?? 'unreviewed'}
+              proposal={selectedProposal?.proposalModelId && selectedProposal.proposalModelVersion
+                ? { modelId: selectedProposal.proposalModelId, modelVersion: selectedProposal.proposalModelVersion,
+                    evidenceIds: selectedProposal.proposalEvidenceIds ?? [] } : null}
+              onProposalDecision={selectedProposal?.reviewStatus === 'unreviewed' ? (decision) => {
+                if (!activeMatch || !selectedProposal.eventId) return;
+                void executeCommand((controls) => submitMatchCorrection(activeMatch.id, {
+                  kind: decision === 'accept' ? 'event_accept' : 'event_reject',
+                  payload: { eventId: selectedProposal.eventId }, ...controls,
+                }));
+              } : undefined}
               configVersion={activeMatch?.evidence?.items[0]?.schemaVersion ?? 'evidence_v1'}
               coordinateSpace={activeMatch?.evidence?.coordinateSpace}
               definitionVersion={activeMatch?.evidence?.definitionVersion}

@@ -820,6 +820,9 @@ class Storage(_IdentityStorageMixin, _CalibrationStorageMixin, _RemoteResultStor
                     "timestamp": event.timestamp,
                     "type": event.type,
                     "reviewStatus": event.reviewStatus,
+                    "proposalModelId": event.proposalModelId,
+                    "proposalModelVersion": event.proposalModelVersion,
+                    "proposalEvidenceIds": event.proposalEvidenceIds,
                 }
             )
         return previous

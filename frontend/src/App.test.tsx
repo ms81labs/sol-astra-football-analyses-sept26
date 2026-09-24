@@ -560,6 +560,44 @@ describe('App match workspace loading', () => {
     expect(within(screen.getByRole('region', { name: 'Evidence inspector' })).getAllByText('1.2s').length).toBeGreaterThan(0);
   });
 
+  it('opens a source-linked visual event proposal in review without auto-accepting it', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    stubSnapshotWorkspace({ ...loadedWorkspace('match-a', 'Match A'), events: [{
+      eventId: 'ev_model_1', type: 'shot', frameId: 0, timestamp: 0, description: 'Possible shot',
+      reviewStatus: 'unreviewed', proposalModelId: 'visual-model',
+      proposalModelVersion: 'v1', proposalEvidenceIds: ['frame:0'],
+    }] });
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/queries') && init?.method === 'POST') {
+        return Promise.resolve({ ok: true, json: async () => ({ generationId: 'g-match-a',
+          query: { unanswerable: false }, results: [{ eventId: 'ev_model_1', matchId: 'match-a',
+            frameId: 0, timestamp: 0, evidenceIds: ['frame:0'], label: 'shot', reviewStatus: 'unreviewed' }] }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && init?.method === 'POST') {
+        return Promise.resolve({ ok: true, json: async () => ({ generationId: 'g-match-a',
+          correctionId: 'accept-model-1', saveState: 'saved', applyState: 'applied',
+          appliedGeneration: 'g-match-a-next', kind: 'event_accept' }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    fireEvent.click(screen.getByRole('button', { name: /search evidence/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /shot.*0s/i }));
+    const inspector = screen.getByRole('region', { name: 'Evidence inspector' });
+    expect(within(inspector).getByText(/visual-model.*v1/i)).toBeTruthy();
+    expect(within(inspector).getByText(/frame:0/i)).toBeTruthy();
+    fireEvent.click(within(inspector).getByRole('button', { name: /accept proposed event/i }));
+    await waitFor(() => {
+      const request = fetchMock.mock.calls.find(([url, init]) => String(url).includes('/corrections') && init?.method === 'POST');
+      expect(request?.[1]?.body).toContain('"kind":"event_accept"');
+      expect(request?.[1]?.body).toContain('"eventId":"ev_model_1"');
+    });
+  });
+
   it('seeks a search hit by source frame and restores its range after a paged frame load', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);

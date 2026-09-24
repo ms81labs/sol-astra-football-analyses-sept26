@@ -236,6 +236,90 @@ def test_t04_event_review_rebuilds_shots_metrics_and_report_inputs(tmp_path: Pat
     assert "tactical_report" in json.loads(manifest_path.read_text(encoding="utf-8"))["stale"]
 
 
+def test_model_event_candidate_stays_provisional_through_accept_undo_and_rebuild(tmp_path: Path) -> None:
+    storage_root = tmp_path / "storage"
+    storage = Storage(storage_root)
+    match_id = install_tracking_match(storage)
+    frame = storage.load_frames(match_id)[0]
+    baseline_shots = len(storage.load_analytics(match_id)[3])
+    candidate = storage.submit_correction(match_id, kind="event_propose", payload={
+        "type": "shot", "frameId": frame.frameId, "timestamp": frame.timestamp,
+        "intervalStart": frame.timestamp, "intervalEnd": frame.timestamp + 0.1,
+        "team": "my_team", "description": "Possible shot",
+        "modelId": "visual-model", "modelVersion": "v1",
+        "evidenceIds": [f"frame:{frame.frameId}"],
+    })
+    assert candidate.applyState == "applied"
+    assert candidate.payload["sourceSha256"] == storage.source_sha256(match_id)
+    event_id = candidate.payload["eventId"]
+    proposed = next(event for event in storage.load_events(match_id) if event.eventId == event_id)
+    assert proposed.reviewStatus == "unreviewed"
+    assert proposed.proposalModelId == "visual-model"
+    assert proposed.proposalModelVersion == "v1"
+    assert proposed.proposalEvidenceIds == [f"frame:{frame.frameId}"]
+    assert len(storage.load_analytics(match_id)[3]) == baseline_shots
+    proposal_hit = next(hit for hit in storage.query_match_events(match_id, "shots")["results"]
+                        if hit["eventId"] == event_id)
+    assert proposal_hit["evidenceIds"] == [f"frame:{frame.frameId}"]
+    assert event_id not in {item["id"] for item in storage.partition_events_for_match(match_id)["acceptedViews"]}
+    from backend.app.processor import _compute_outputs_and_match_state
+    changed_frames = [frame.model_copy(update={"frameId": 999}), *storage.load_frames(match_id)[1:]]
+    _frames, _summary, stale_events, _assignments, _formations, _shots, state = _compute_outputs_and_match_state(
+        changed_frames, review_commands=[candidate])
+    assert all(event.eventId != event_id for event in stale_events)
+    assert event_id in state["orphanedDecisions"]
+    _frames, _summary, stale_events, _assignments, _formations, _shots, state = _compute_outputs_and_match_state(
+        storage.load_frames(match_id), review_commands=[candidate], source_sha256="different-source")
+    assert all(event.eventId != event_id for event in stale_events)
+    assert event_id in state["orphanedDecisions"]
+
+    accepted = storage.submit_correction(match_id, kind="event_accept", payload={"eventId": event_id})
+    assert accepted.applyState == "applied"
+    assert accepted.payload["proposal"] == {
+        "modelId": "visual-model", "modelVersion": "v1", "evidenceIds": [f"frame:{frame.frameId}"]}
+    assert next(event for event in storage.load_events(match_id) if event.eventId == event_id).reviewStatus == "accepted"
+    assert event_id in {item["eventId"] for item in storage.partition_events_for_match(match_id)["acceptedViews"]}
+    process_match(storage, storage.create_job(match_id).id)
+    restarted = Storage(storage_root)
+    assert next(event for event in restarted.load_events(match_id) if event.eventId == event_id).reviewStatus == "accepted"
+
+    restarted.undo_correction(match_id, accepted.correctionId)
+    assert next(event for event in restarted.load_events(match_id) if event.eventId == event_id).reviewStatus == "unreviewed"
+    assert len(restarted.load_analytics(match_id)[3]) == baseline_shots
+    rejected = restarted.submit_correction(match_id, kind="event_reject", payload={"eventId": event_id})
+    assert next(event for event in restarted.load_events(match_id) if event.eventId == event_id).reviewStatus == "rejected"
+    assert len(restarted.load_analytics(match_id)[3]) == baseline_shots
+    restarted.undo_correction(match_id, rejected.correctionId)
+    restarted.undo_correction(match_id, candidate.correctionId)
+    assert all(event.eventId != event_id for event in restarted.load_events(match_id))
+
+
+def test_model_event_proposal_requires_current_source_frame_and_provenance(tmp_path: Path) -> None:
+    from backend.app.semantic_commands import SemanticCommandError
+
+    storage = Storage(tmp_path / "storage")
+    match_id = install_tracking_match(storage)
+    frame = storage.load_frames(match_id)[0]
+    payload = {"type": "shot", "frameId": frame.frameId, "timestamp": frame.timestamp,
+               "intervalStart": frame.timestamp, "intervalEnd": frame.timestamp + 0.1,
+               "team": "my_team", "description": "Possible shot", "modelId": "visual-model",
+               "modelVersion": "v1", "evidenceIds": [f"frame:{frame.frameId}"]}
+    for invalid in (
+        {**payload, "timestamp": frame.timestamp + 1},
+        {**payload, "frameId": 999},
+        {**payload, "type": "offside"},
+        {**payload, "type": "press"},
+        {**payload, "evidenceIds": ["frame:999"]},
+        {**payload, "modelId": " "},
+        {**payload, "intervalEnd": frame.timestamp + 11},
+    ):
+        with pytest.raises(SemanticCommandError):
+            storage.submit_correction(match_id, kind="event_propose", payload=invalid)
+    storage.submit_correction(match_id, kind="event_propose", payload=payload)
+    with pytest.raises(SemanticCommandError):
+        storage.submit_correction(match_id, kind="event_propose", payload=payload)
+
+
 def _report_html(summary) -> str:
     return render_match_report_html(
         match_name="Shot review",

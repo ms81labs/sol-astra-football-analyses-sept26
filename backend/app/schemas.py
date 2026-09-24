@@ -217,6 +217,9 @@ class DetectedEvent(BaseModel):
     evidenceVersion: str | None = None
     intervalStart: float | None = None
     intervalEnd: float | None = None
+    proposalModelId: str | None = None
+    proposalModelVersion: str | None = None
+    proposalEvidenceIds: list[str] = Field(default_factory=list)
 
 
 class ColorClusterSummary(BaseModel):

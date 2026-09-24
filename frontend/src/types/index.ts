@@ -282,6 +282,9 @@ export interface BackendEvent {
     evidenceVersion?: string;
     intervalStart?: number;
     intervalEnd?: number;
+    proposalModelId?: string | null;
+    proposalModelVersion?: string | null;
+    proposalEvidenceIds?: string[];
 }
 
 export interface PassNetworkEdge {

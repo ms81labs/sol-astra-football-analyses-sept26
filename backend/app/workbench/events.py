@@ -5,13 +5,49 @@ from __future__ import annotations
 import hashlib
 from typing import Any, Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from .contracts import StrictModel
 from .jobs import DurableJobLedger
 
 FROZEN_EVENT_TOLERANCE_SECONDS = 0.5
 EVENT_FAMILIES = ("pass", "turnover", "recovery", "shot", "carry", "press")
+
+
+class ModelEventProposal(StrictModel):
+    type: str
+    frameId: int = Field(ge=0)
+    timestamp: float = Field(ge=0, allow_inf_nan=False)
+    intervalStart: float = Field(ge=0, allow_inf_nan=False)
+    intervalEnd: float = Field(ge=0, allow_inf_nan=False)
+    team: Literal["my_team", "enemy"] | None = None
+    description: str = Field(min_length=1, max_length=512)
+    modelId: str = Field(min_length=1, max_length=128)
+    modelVersion: str = Field(min_length=1, max_length=128)
+    evidenceIds: list[str] = Field(min_length=1, max_length=1)
+
+    @model_validator(mode="after")
+    def source_bound(self) -> "ModelEventProposal":
+        if self.type not in {"pass", "turnover", "recovery", "shot"} \
+                or not self.intervalStart <= self.timestamp <= self.intervalEnd \
+                or self.intervalEnd - self.intervalStart > 10 \
+                or self.evidenceIds != [f"frame:{self.frameId}"] \
+                or not self.modelId.strip() or not self.modelVersion.strip():
+            raise ValueError("Unsupported or unbound visual event proposal")
+        return self
+
+
+def event_from_proposal(payload: dict[str, Any]):
+    from backend.app.schemas import DetectedEvent
+
+    proposal = ModelEventProposal.model_validate({key: value for key, value in payload.items()
+        if key not in {"eventId", "sourceSha256"}})
+    return DetectedEvent(type=proposal.type, frameId=proposal.frameId, timestamp=proposal.timestamp,
+        team=proposal.team, description=proposal.description, eventId=payload["eventId"],
+        intervalStart=proposal.intervalStart, intervalEnd=proposal.intervalEnd,
+        reviewStatus="unreviewed", heuristicName="model_event_proposal",
+        proposalModelId=proposal.modelId, proposalModelVersion=proposal.modelVersion,
+        proposalEvidenceIds=proposal.evidenceIds)
 
 
 class FootballEvent(StrictModel):
@@ -145,6 +181,8 @@ def event_review_status(kind: str) -> str | None:
 
 
 def with_stable_event_id(event: Any):
+    if event.heuristicName == "model_event_proposal" and event.eventId:
+        return event
     primary_track = event.fromTrackId if event.fromTrackId is not None else event.toTrackId
     identity = "|".join(
         (event.type, str(event.team or ""), f"{round(event.timestamp, 1):.1f}", str(primary_track or ""))
