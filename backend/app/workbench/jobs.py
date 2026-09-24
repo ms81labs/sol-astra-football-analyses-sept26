@@ -20,6 +20,8 @@ from typing import Any, Literal, TypedDict
 
 from pydantic import Field, field_validator
 
+from ..sqlite_connections import open_wal_connection
+
 from .money import ZERO, admission_money, money, text, total
 from .billing import AttemptBilling, CostSummary
 
@@ -176,12 +178,7 @@ class DurableJobLedger:
         self._migrate_billing_evidence()
 
     def _open_connection(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(str(self.db_path), check_same_thread=False, timeout=30.0)
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA journal_mode=WAL")
-        connection.execute("PRAGMA busy_timeout=5000")
-        connection.execute("PRAGMA foreign_keys=ON")
-        return connection
+        return open_wal_connection(self.db_path, foreign_keys=True)
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:

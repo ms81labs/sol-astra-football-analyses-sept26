@@ -18,6 +18,8 @@ from pathlib import Path
 from typing import BinaryIO, TextIO
 
 
+from .sqlite_connections import open_wal_connection
+
 from .storage_jobs import (
     AdmissionOutcomeUncertainError as AdmissionOutcomeUncertainError,
     JobCancellationRequested as JobCancellationRequested,
@@ -233,11 +235,7 @@ class Storage(_IdentityStorageMixin, _CalibrationStorageMixin, _RemoteResultStor
             ledger.close()
 
     def _open_connection(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(str(self.db_path), check_same_thread=False, timeout=30.0)
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA journal_mode=WAL")
-        connection.execute("PRAGMA busy_timeout=5000")
-        return connection
+        return open_wal_connection(self.db_path)
 
     def _connect(self) -> _ClosingConnection:
         return _ClosingConnection(self._open_connection())
