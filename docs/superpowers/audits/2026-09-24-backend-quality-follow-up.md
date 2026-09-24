@@ -1,65 +1,71 @@
 # Backend code-quality follow-up — 24 September 2026
 
-## Source and decision
+## Scope and implementation
 
-Reviewed application source at `20c6a2b5443390414d32d368f3d183abdf15af2a`. The read-only source-audit commit was `d369240219ca487a53ef397d4062f9906a323f91`; audit run `36020617588` captured 1,157 tracked text/source files with SHA-256 manifest verification and Ruff 0.16.8 results. Production repairs remain on the single existing integration line. No deployment, live-store modification, provider invocation, or paid GPU run is part of this work.
+Reviewed application source at `20c6a2b5443390414d32d368f3d183abdf15af2a`. Read-only source-audit run `36020617588`, at `d369240219ca487a53ef397d4062f9906a323f91`, captured 1,157 tracked text/source files with a verified SHA-256 manifest and Ruff 0.16.8 results.
 
-The supplied review identified a real data-loss defect. Several other findings were accurate but needed qualification before editing. This pass repairs the verified contract, unused-binding, and lifecycle-observability defects and introduces enforceable quality ratchets. It does **not** claim that all typing or structural debt has disappeared.
+The implementation repairs the reproduced benchmark data loss, unused bindings, prompt interpretation, and silent lifecycle cleanup. It adds stricter production linting and check-only Ruff/mypy baselines. Structural and remaining typing debt is explicitly still open. All work uses the existing `main` integration line; there is no additional remote branch, merge, force-push, deployment, live-store operation, or paid GPU/provider execution.
 
-## Verified and repaired
+## Reproduced and repaired
 
-### Selected-cluster match-state metrics
+### Benchmark metrics
 
-`SelectedClusterBenchmarkSummary` omitted ten fields already supplied by `_selected_cluster_summary_from_benchmark`. They are now declared with the same types/defaults as `MatchBenchmarkSummary`. Both benchmark summary contracts forbid undeclared fields. Existing historical payloads missing the new optional/defaulted fields remain valid; unknown extra keys are intentionally rejected for these two contracts only.
+`SelectedClusterBenchmarkSummary` omitted ten fields already supplied by `_selected_cluster_summary_from_benchmark`: accepted match-state frames and coverage; visible, inferred, hidden, controlled, hidden-controlled, and restart/out frames; continuity-applied frames; and mode counts. All ten are now declared with the same types/defaults as `MatchBenchmarkSummary`. Both summary models explicitly forbid undeclared extra fields.
 
-Tests exercise every metric through the actual conversion and JSON round-trip, typo rejection, zero defaults, and independent mutable dictionaries. Before the fix, the contract/prompt regressions produced 17 failures and one pass; afterwards the new tests plus existing benchmark/prompt tests produced 55 passes locally.
+Tests exercise the actual converter, JSON serialization and revalidation, unknown-key rejection, zero defaults, and independent dictionary defaults. Runtime strictness is limited to these two verified contracts, not applied indiscriminately to historical payload models. The new contract/prompt regressions produced 17 failures and one pass before the fix; the new tests plus existing benchmark/prompt tests then passed 55 cases locally.
 
 ### Prompt direction
 
-The original audit overstated the omission: both legacy prompts already included `attackDirection` in JSON, and the approved-evidence prompt already stated the direction. The unused `direction_context` additionally explained increasing/decreasing x and the opponent's opposite direction. That explanation now reaches both legacy prompt types. The approved-evidence branch is unchanged.
+The supplied review overstated the omission: the legacy prompts already included `attackDirection` in JSON, and the approved-evidence branch already stated the direction. The unused `direction_context` additionally explained increasing/decreasing x and the opponent's opposite direction. That explanation now reaches both legacy prompt types. Approved-evidence behavior is unchanged.
 
 ### Unused variables without deleting required work
 
-Removed unused processor result unpacking, the report's unused `has_drills` flag, and the identified unused storage/script bindings. Kept `ReviewService.materialize_and_publish`, `get_match`, `plan_recompute`, fixture setup, and the required JSON load. Those calls publish artifacts or validate preconditions; deleting them merely because their return values were unused would be a behavior regression.
+Removed unused processor output unpacking, the report's unused `has_drills` flag, and the identified storage/script/test bindings. Kept `ReviewService.materialize_and_publish`, `get_match`, `plan_recompute`, fixture setup, and the required JSON load: these publish artifacts or validate preconditions. Removing those calls would change behavior.
 
-The C05 imported pytest fixture is now an explicit re-export, not deleted. Earlier compatibility re-exports and module entry points are preserved.
+The C05 imported pytest fixture is now an explicit re-export, not deleted. Earlier compatibility re-exports and script module entry points remain intact.
 
-### Cleanup observability and exception chaining
+### Cleanup observability and exception intent
 
-Sixteen broad pass-only handlers in `app/` now emit fixed-message warnings covering provider cleanup/confirmation, download and artifact stream closing, progress delivery, atomic JSON rollback, storage checkpoint/rollback, admission connection cleanup, and ledger rollback. Messages contain neither raw exception values nor tracebacks, transport payloads, credentials, or inline artifacts. Existing retries, callback behavior, absence confirmation, indeterminate outcomes, and propagation remain unchanged.
+Sixteen broad pass-only handlers in `app/` now emit fixed-message warnings covering provider cleanup/confirmation, download/artifact stream closing, progress delivery, atomic JSON rollback, storage checkpoint/rollback, admission connection cleanup, and ledger rollback. Warnings include neither raw exception values nor tracebacks, transport payloads, credentials, or inline artifacts. Existing retry counts, cleanup outcomes, callback handling, and primary exception identity are covered by failure-injection tests.
 
-The four reported B904 sites now make intent explicit: generation recovery and missing explicit playlist generations retain a cause with `from exc`; invalid hostname validation and the original failed SDK create deliberately suppress incidental secondary context with `from None`. Python already retained implicit exception context before these changes; the original report's claim that it was simply lost was inaccurate.
+Four B904 sites now express deliberate chaining or suppression. Generation recovery and missing explicit playlist generations use `from exc`. Invalid-hostname validation and the original failed SDK create use `from None` to suppress incidental secondary context. Python already retained implicit context before these changes; the review's claim that it was simply lost was inaccurate.
 
-Failure-injection tests verify primary-error identity, retry counts, uncertain cleanup outcomes, successfully materialized bytes, progress retention, and secret-safe logs. All 136 existing Daytona fake-client tests passed locally after the changes.
+The tests check uncertain cleanup outcomes, successfully materialized bytes, retained progress, original failures, and secret-safe logs. All 136 existing Daytona fake-client tests passed locally. This is not live-provider acceptance.
 
 ### SHA-1
 
-Stable event identifiers explicitly use `usedforsecurity=False` and retain identical digest bytes. The evaluator's separate SHA-1 operation checks Git blob object IDs against pinned scorer source. It participates in source-integrity admission, not just an incidental display identifier; it is deliberately unchanged. No weakened scorer verification or hash migration is bundled into this cleanup.
+Stable event identifiers now explicitly use `usedforsecurity=False` with identical digest bytes. The evaluator's separate SHA-1 operation checks Git blob object IDs against pinned scorer source; it participates in source-integrity admission and is deliberately unchanged. No weakened scorer verification or hash migration is included.
 
-## Tooling verification and new enforcement
+## Quality measurement and enforcement
 
-The old CI claim was partly stale. In addition to F821/F822/F823, current main already gated F401 in app/scripts and script hygiene. Those gates remain. The new clean production gate covers all `F` plus `S110` and `B904` in app/scripts. Expanded Ruff and scoped mypy use explicit diagnostic baselines rather than whole-file ignores or an `--exit-zero` success shortcut.
+The old CI claim was partly stale: main already gated F401 in app/scripts and script hygiene, in addition to F821/F822/F823. All those checks remain. A new zero-debt production gate covers all `F`, `S110`, and `B904` in app/scripts.
 
-The original expanded Ruff measurement found 626 diagnostics: C901 228, BLE001 175, B008 94, F401 32, B905 31, S110 18, B017 17, F841 15, F811 5, B904 4, UP045 4, B009 2, F541 1. The new baseline omits UP045, which was an extra inventory rule outside the requested rollout, and records the actual post-repair output. Exact versions, configuration identity, paths, source anchors and messages are in `backend/quality/*-baseline.json`.
+The original expanded Ruff inventory contained 626 diagnostics, including four UP045 findings from an auxiliary inventory rule. Under the comparable requested rules, the total fell from 622 to **581**, eliminating **41** diagnostics. The remaining baseline is explicit: C901 228; BLE001 175; B008 94; B905 31; F401 31; B017 17; B009 2; S110 2; F541 1. The two remaining S110 sites are in `run_guerilla.py`, outside the clean app/scripts gate.
 
-The supplied “596 errors in 53 files” cannot be treated as a reproducible current result without its mypy version/configuration/environment. This pass introduces a pinned Python 3.11 mypy/Pydantic configuration and records its own measured diagnostics. The starting scope includes the requested workbench/schemas/settings plus the benchmark module that contained the concrete bug. It is not a claim of full-app strict typing. Missing third-party stubs and dynamic mappings still limit static coverage.
+Pinned mypy 2.3.1 with Pydantic 2.13.5, under the new Python 3.11 configuration, records **108 diagnostics in 17 files**. The scope is workbench, schemas, settings, and the benchmark module. This is not an apples-to-apples reduction from the supplied 596/53 figure: that result's exact configuration/environment was not supplied, and full-app strict typing is not claimed. Missing third-party stubs and dynamic mappings still limit coverage.
 
-The gate's tests verify new errors, duplicate occurrences, stale entries, line movement, function identity, invalid diagnostic output and tool failure. Baseline generation is an explicit maintainer operation; CI only checks. Runtime dependency locks are untouched.
+`backend/quality/*-baseline.json` records tool/configuration identity and exact diagnostic paths, enclosing scopes, source anchors, messages, and occurrence counts. CI fails on additions, stale entries, incompatible metadata, invalid output, and tool failures. CI never regenerates baselines. The Pydantic plugin was exercised with a real misspelled constructor-field canary, which correctly failed with `call-arg`.
 
-## Structure: confirmed debt, not blindly rewritten
+The typing tools have an isolated, hash-locked Python 3.11 Linux requirements profile. Runtime dependency locks are unchanged. A baseline is a no-new-debt gate, not closure of the retained findings.
 
-The source inventory confirms 125 app Python files / 41,442 lines; 322 scripts / 116,395 lines; 380 tests / 108,244 lines; and 8,938 lines in `run_guerilla.py`. Additional Python files elsewhere in `backend/` are not included in those four subtotals.
+## Structural assessment and open work
 
-An AST import graph found 213 local import statements. With lazy runtime imports included, it found strongly connected groups of 17, two, and two app modules. Excluding function-local and TYPE_CHECKING edges, it found **no import-time cycle**. This is static evidence, not a guarantee about dynamic imports or a reason to move every lazy import to module scope.
+The original inventory confirms app: 125 files / 41,442 lines; scripts: 322 / 116,395; tests: 380 / 108,244; and `run_guerilla.py`: 8,938 lines. Additional Python files elsewhere in backend are outside those four subtotals.
 
-Large closure-based route factories, remaining storage responsibilities, analytical branches and `run_guerilla.py` remain maintainability debt. Their aggregate complexity includes nested handlers; moving them to module-level mutable routers merely to reduce a score can break per-app isolation. Remaining work requires endpoint-level ownership, characterization tests for route/auth/OpenAPI equivalence, two-app isolation, and incremental extraction preserving the Storage facade and generation boundaries.
+The AST import scan found 213 local import statements and three strongly connected groups of 17, two, and two app modules when lazy runtime imports are included. Excluding function-local and TYPE_CHECKING edges, it found no import-time cycle. This is static evidence, not a guarantee about dynamic imports or justification for moving every local import to module scope.
 
-Do not exclude or move all scripts from packaging yet. `app/evaluation_verifier.py` imports symbols from `backend.scripts.validate_football_analysis_pilot_labels` and `backend.scripts.evaluate_football_analysis_pilot` at three sites, including runtime tracking evaluation. First extract the shared runtime evaluator/validator core, preserve command wrappers, and test installed-wheel evaluation without the source tree. Only then exclude research-only scripts and relocate them with CLI/release compatibility tests. This dependency is a concrete blocker to the blanket packaging change, not a reason to leave the debt untracked.
+Large route factories, storage responsibilities, analytical branches, and `run_guerilla.py` remain maintainability debt. Factory complexity includes nested handlers. Their extraction needs route/auth/OpenAPI equivalence tests and two-app isolation checks; replacing per-app closures with mutable global routers merely to reduce a score is not an acceptable shortcut. Preserve the Storage facade and generation boundaries during extraction.
 
-## Verification record and remaining work
+Do not exclude or relocate all scripts from packaging yet. `app/evaluation_verifier.py` imports runtime symbols from `backend.scripts.validate_football_analysis_pilot_labels` and `backend.scripts.evaluate_football_analysis_pilot` at three sites. First extract shared runtime evaluator/validator utilities, preserve command wrappers, and verify installed-wheel evaluation outside the source tree. Then relocate and exclude research-only scripts with CLI/release compatibility tests.
 
-Local checks used Python 3.13 and Pydantic 2.13.4 with the repository's `ultralytics` test stub; they are preflight evidence, not proof of the pinned production environment. Recorded completed batches include 55 benchmark/prompt tests, 345 storage/runtime/remote-contract tests, 136 Daytona tests, and 11 gate tests. These batches overlap; do not sum them as unique coverage. The combined new contract/lifecycle/gate plus Daytona batch passed 176 tests. A larger combined pipeline run was stopped by the local command time limit; that truncated run is not counted as a pass.
+Remaining work is therefore explicit: reduce retained mypy/BLE/B/C901 debt; perform characterization-backed route/storage/pipeline extraction; separate runtime evaluator utilities before research packaging changes; and review other Pydantic contracts for compatible strictness.
 
-The authoritative CPU verification uses the exact detached candidate commit, locked dependencies, the complete backend suite, and canonical code-only verifier in GitHub Actions. The final workflow run and its retained logs/receipt are the source-bound status record; no GPU/model-quality acceptance is implied by CPU tests. The temporary audit/repair workflow is absent from the candidate source tree.
+## Verification and publication evidence
 
-Remaining items are explicit: reduce the retained mypy/BLE/B/C901 debt; complete route and pipeline decomposition behind characterization tests; separate runtime evaluator utilities before research packaging changes; review other Pydantic contracts for compatible strictness. Do not mark these closed merely because a baseline now exists.
+Local preflight used Python 3.13 / Pydantic 2.13.4 with the repository's `ultralytics` test stub. Completed batches include 55 benchmark/prompt tests, 345 storage/runtime/remote-contract tests, 136 Daytona tests, and 11 quality-gate tests. These overlap and must not be summed as unique coverage. The combined new-regression/Daytona batch passed 176 cases; a final run of all three new regression modules passed **40 cases**. A separate locally time-limited pipeline run is not counted as passing.
+
+Detached implementation candidate: `1d99f9e835446edfd5fe68e5534fc44fa89658c3`, parent `4ba5d487e4cadd50ff4995f11d7aa3f216e2c9ea`. All 31 candidate file blobs were checked against the locally reviewed contents. Candidate workflow `36024815707` rechecked both locked quality baselines and runs complete CPU backend and canonical code-only verification on that exact candidate. Candidate artifact `10818423181` binds the commit, tree, paths, and blobs.
+
+The publication commit retains those implementation bytes and adds the reviewed CI workflow while removing the temporary source-audit/repair workflow. The workflow write is performed through the authorized GitHub connector, separately from the Actions token's content-only candidate creation. The temporary workflow therefore existed in the implementation candidate but is absent from the published tree.
+
+Final acceptance is the published commit's normal GitHub Actions results and retained complete-backend/verify/quality evidence. Do not infer final-head success from the earlier local batches or a running workflow. This document records implementation and evidence locations; the source-bound CI receipts record the completed acceptance result. CPU verification does not imply GPU/model-quality acceptance.

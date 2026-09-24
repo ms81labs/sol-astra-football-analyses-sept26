@@ -108,14 +108,28 @@ jobs:
         with:
           python-version: '3.11'
           cache: pip
-          cache-dependency-path: backend/requirements/quality-linux.lock
+          cache-dependency-path: |
+            backend/requirements/quality-linux.lock
+            backend/requirements/typing-linux.lock
       - name: Install Python quality tool
-        run: pip install --require-hashes -r backend/requirements/quality-linux.lock
+        run: pip install --require-hashes -r backend/requirements/quality-linux.lock -r backend/requirements/typing-linux.lock
       - name: Ruff correctness gate
         run: ruff check backend --select F821,F822,F823
       - run: ruff check backend/app backend/scripts --select F401
+      - name: Clean production correctness and cleanup gate
+        run: ruff check backend/app backend/scripts --select F,S110,B904
       - name: Script hygiene gate
         run: python backend/tests/test_script_hygiene.py
+      - name: Wider Ruff diagnostic ratchet
+        run: |
+          set -o pipefail
+          mkdir -p .verification/logs
+          python scripts/check_python_quality.py ruff | tee .verification/logs/ruff-ratchet.log
+      - name: Mypy Pydantic contract ratchet
+        run: |
+          set -o pipefail
+          mkdir -p .verification/logs
+          python scripts/check_python_quality.py mypy | tee .verification/logs/mypy-ratchet.log
       - name: Report Ruff legacy debt
         if: always()
         run: |
@@ -126,7 +140,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ruff-debt-evidence
-          path: .verification/logs/ruff-debt.log
+          path: |
+            .verification/logs/ruff-debt.log
+            .verification/logs/ruff-ratchet.log
+            .verification/logs/mypy-ratchet.log
           if-no-files-found: error
 
   excluded-backend:

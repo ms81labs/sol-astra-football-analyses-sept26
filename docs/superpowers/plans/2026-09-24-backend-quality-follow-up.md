@@ -1,74 +1,33 @@
-# Backend quality follow-up implementation plan
+# Backend quality follow-up — implementation and acceptance map
 
-> For agentic workers: use Superpowers executing-plans; resume from source and recorded evidence, not a historical summary.
+Source reviewed: `20c6a2b5443390414d32d368f3d183abdf15af2a`. Implementation candidate: `1d99f9e835446edfd5fe68e5534fc44fa89658c3`. Detailed findings and evidence are in `docs/superpowers/audits/2026-09-24-backend-quality-follow-up.md`.
 
-**Goal:** Verify the supplied audit and repair confirmed defects without reopening completed C01–C06 work or changing product direction.
+## Implemented scope
 
-**Source:** Application source at `20c6a2b5443390414d32d368f3d183abdf15af2a`; source-only audit workflow at `d369240219ca487a53ef397d4062f9906a323f91`.
+- [x] Reproduce selected-cluster metric loss and prompt interpretation gaps with failing tests; add all ten fields, targeted summary strictness, and legacy direction explanations.
+- [x] Remove unused bindings while retaining publication, validation, fixture, and required-load operations.
+- [x] Add failure-injection regressions before adding sixteen safe lifecycle warnings and deliberate exception chaining/suppression.
+- [x] Preserve stable event identifier bytes while explicitly marking that hash non-security; retain scorer-source integrity hashing unchanged.
+- [x] Run the targeted contract, storage/runtime, remote-contract, and Daytona fake-client batches; final new-regression preflight: 40 passing cases.
+- [x] Measure pinned Ruff and scoped mypy; retain exact diagnostic baselines rather than broad file ignores or success overrides.
+- [x] Exercise the actual Pydantic mypy constructor check with a misspelled-field canary; verify the baseline checker rejects new, duplicate, stale, malformed, and failed-tool outcomes.
+- [x] Recheck locked quality baselines on GitHub Actions and compare all 31 implementation candidate blobs with the reviewed local source.
+- [x] Confirm actual import-graph and packaging dependencies before considering structural moves.
 
-**Architecture:** Retain native FastAPI composition, the Storage facade, module/import compatibility, generation publication, rollback, and provider-budget boundaries. Make local contract/observability repairs before introducing check-only quality gates.
+## Publication and acceptance
 
-**Tech stack:** Python 3.11, Pydantic 2, pytest, existing hash-locked Ruff, GitHub Actions CPU verification.
+Publish the candidate implementation unchanged, add the reviewed permanent CI gates, and remove the temporary audit workflow through the authorized GitHub connector. Remain on the existing `main` line: no new remote branch, merge, force-push, deployment, live-store mutation, or paid provider/GPU execution.
 
-## Global constraints
+Candidate verification is bound to workflow run `36024815707`. Final acceptance is bound to the published commit's normal CI: complete CPU backend, canonical code-only verification, expanded Python quality gate, and applicable profile/media/integration checks. Read the completed checks and retained receipts; a queued/running job or a baseline containing legacy debt is not a passing result. The current-head CI records acceptance without requiring a self-referential documentation commit.
 
-- Existing `main` only; no new remote branch, merge, force-push, paid GPU/API execution, deployment, or live-store operation.
-- Preserve prior explicit re-exports and script module entry points.
-- Do not turn historical payload compatibility into runtime failures by blanket-forbidding extras.
-- Keep calls that validate state or persist published artifacts, even when their return values are unused.
-- Never log raw provider errors, credentials, transport payloads, or inline artifacts.
-- Require regression failures before fixes and current-source verification afterwards.
-- Remove the temporary source-audit workflow from the final source tree.
+## Deliberately open structural work
 
-## Review focus
+1. Reduce the retained scoped mypy and broader Ruff debt without widening ignores or weakening constructor checks.
+2. Extract route responsibilities behind route/auth/OpenAPI equivalence and two-app isolation tests; preserve dependency injection and the Storage facade.
+3. Split remaining pipeline/storage responsibilities behind artifact-publication and generation-boundary characterization tests.
+4. Extract runtime evaluator/validator utilities from the two script modules imported by `evaluation_verifier.py`; preserve CLI wrappers and test installed-wheel execution before relocating/excluding research scripts.
+5. Review other Pydantic contracts individually for compatible strictness; do not blanket-forbid historical extras.
 
-- All ten match-state values survive selected-cluster conversion and JSON round-trip, including zeros and independent mutable defaults.
-- Unexpected summary keys fail loudly; no existing legitimate summary construction becomes invalid.
-- Both attack directions reach both legacy prompt types with correct coordinate interpretation; approved-evidence behavior remains unchanged.
-- Cleanup/logging changes preserve return values, retry counts, original failures, and redaction.
-- Wider quality checks reject new diagnostics rather than concealing entire legacy files or disabling existing gates.
+## Invariants
 
-## Task 1 — Benchmark and prompt regressions
-
-Files: `backend/app/run_benchmarks.py`, `backend/app/llm.py`, `backend/tests/test_quality_contract_regressions.py`.
-
-- [x] Add real model/conversion/serialization and prompt tests; run `python -m pytest -q backend/tests/test_quality_contract_regressions.py` and record the expected failures.
-- [x] Declare all ten missing selected-cluster metrics with the same defaults/types as the match summary. Forbid extras on these two verified summary contracts.
-- [x] Include the already-built direction explanation in both legacy prompt strings without changing the approved-evidence path.
-- [ ] Run the new tests and existing `test_run_benchmarks.py`, `test_llm.py`, and report/generation tests.
-
-## Task 2 — Unused bindings and safe lifecycle diagnostics
-
-Files: the exact F841/B904/S110 sites in the source-bound Ruff report; tests in `backend/tests/`.
-
-- [x] Trace each expression/caller before editing. Keep `get_match`, `plan_recompute`, publication, and cleanup operations.
-- [x] Add regression assertions for safe static diagnostics and exception propagation before changing lifecycle handling.
-- [x] Remove only unused local bindings and pure dead expressions. Make non-security SHA-1 intent explicit while preserving digest bytes.
-- [x] Add deliberate exception chaining or deliberate suppression as appropriate to each boundary, not an automated global rewrite.
-- [ ] Run processor, storage, report, runtime-contract, and Daytona fake-client suites; no real provider execution.
-
-## Task 3 — Measurable quality gates
-
-Files: `pyproject.toml`, `.github/workflows/ci.yml`, isolated quality requirements, a small baseline checker and its tests.
-
-- [ ] Record exact Ruff version/commands/counts and reproduce mypy under a pinned, documented configuration.
-- [ ] Enforce clean correctness rules immediately where feasible; retain all existing gates.
-- [ ] Baseline remaining requested diagnostics with explicit diagnostic identity; fail on additions, stale entries, tool failures, or incompatible baseline metadata.
-- [ ] Enable the Pydantic mypy plugin so constructor field omissions are visible statically; introduce a clearly scoped type baseline, not an assertion that all legacy typing debt is fixed.
-- [ ] Add mutation-style tests demonstrating that a new diagnostic fails the gate and a tool crash cannot pass.
-
-## Task 4 — Structural/packaging assessment and closure
-
-- [x] Inventory local imports and actual dependency edges; do not equate every local import with an import cycle.
-- [x] Inspect factory closure isolation before any router move. Do not replace per-app state with module-level mutable singletons.
-- [x] Check imports, packaging tests, runtime modules, release tools, and module entry points before excluding or relocating scripts.
-- [x] Record genuinely open structural work and its acceptance criteria in the follow-up report; no closure by renaming files or suppressing diagnostics.
-- [ ] Run complete CPU backend and canonical code-only verification on final source, inspect the exact published diff, then confirm current-head CI.
-
-## Execution rulings
-
-- Preserve required computation/publication and validation calls; remove only unused bindings.
-- Keep strict runtime extras limited to the two reproduced benchmark contracts; use the mypy plugin for broader constructor checking.
-- Preserve Git scorer source-integrity hashing. Only stable event IDs are explicitly non-security SHA-1.
-- Defer wholesale router/script relocation: per-app closure isolation and runtime imports from scripts require separate characterization-backed extraction.
-- Verification status is tied to the exact candidate commit and retained GitHub Actions evidence, not to an uncommitted source snapshot.
+Preserve compatibility re-exports and module entry points. Keep calls with persistence or validation effects even when returns are unused. Do not log raw provider exceptions, secrets, tracebacks, or transport payloads. Do not replace per-app factory closures with mutable global routers solely to lower complexity. Do not call architectural or typing debt closed merely because a baseline now exists.
