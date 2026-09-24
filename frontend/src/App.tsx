@@ -195,6 +195,8 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
   const [comparisonLoadError, setComparisonLoadError] = useState<string | null>(null);
   const [events, setEvents] = useState<EventTag[]>([]);
   const [selectedSearch, setSelectedSearch] = useState<{ generationId: string | null; hit: SearchHit } | null>(null);
+  const [reportEvidenceNotice, setReportEvidenceNotice] = useState<string | null>(null);
+  const reportEvidenceRequestRef = useRef(0);
   const [jobStatus, setJobStatus] = useState<string | null>(null);
   const uploadAbortControllerRef = useRef<AbortController | null>(null);
   const activeWorkspaceRequestRef = useRef(0);
@@ -231,6 +233,10 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
   useLayoutEffect(() => {
     activeMatchIdRef.current = activeMatch?.id ?? null;
     activeGenerationRef.current = activeMatch?.detail.generationId ?? null;
+  }, [activeMatch?.id, activeMatch?.detail.generationId]);
+  useEffect(() => {
+    reportEvidenceRequestRef.current += 1;
+    setReportEvidenceNotice(null);
   }, [activeMatch?.id, activeMatch?.detail.generationId]);
   useEffect(() => {
     setStoredIncident(null);
@@ -610,20 +616,45 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
     else if (anchorLoaded && anchor >= 0 && matchData[anchor]) handleSeek(matchData[anchor].Frame_ID);
   };
 
-  const selectReportEvidence = (reference: import('./types').ReportEvidenceRef) => {
+  const selectReportEvidence = async (reference: import('./types').ReportEvidenceRef) => {
     if (!activeMatch || reference.matchId !== activeMatch.id
       || reference.generationId !== activeMatch.detail.generationId) return;
+    const requestId = ++reportEvidenceRequestRef.current;
+    const workspaceRequestId = activeWorkspaceRequestRef.current;
+    setReportEvidenceNotice(null);
     if (reference.kind === 'event') {
       const event = activeMatch.backendEvents.find((item) =>
         reference.localId === `${item.frameId}:${item.type}:${item.timestamp}` && item.reviewStatus !== 'rejected');
-      if (!event) return;
+      if (!event) {
+        setSelectedSearch(null);
+        setReportEvidenceNotice('Report evidence is unavailable in this generation.');
+        return;
+      }
       selectSearchHit({ matchId: activeMatch.id, eventId: event.eventId ?? reference.localId,
         frameId: event.frameId, timestamp: event.timestamp, intervalStart: event.intervalStart,
         intervalEnd: event.intervalEnd, label: event.description,
         reviewStatus: event.reviewStatus, evidenceIds: [`event:${reference.localId}`] });
     } else if (reference.kind === 'frame') {
-      const frame = matchData.find((item) => String(item.Frame_ID) === reference.localId);
-      if (!frame) return;
+      let frame = matchData.find((item) => String(item.Frame_ID) === reference.localId);
+      if (!frame && /^(0|[1-9]\d*)$/.test(reference.localId) && Number.isSafeInteger(Number(reference.localId))) {
+        try {
+          const page = await fetchMatchFrames(activeMatch.id, { afterFrame: Number(reference.localId), limit: 1,
+            generationId: reference.generationId });
+          if (requestId !== reportEvidenceRequestRef.current || workspaceRequestId !== activeWorkspaceRequestRef.current
+            || activeMatchIdRef.current !== reference.matchId || activeGenerationRef.current !== reference.generationId) return;
+          frame = page.frames.find((item) => String(item.Frame_ID) === reference.localId);
+          if (frame) setActiveMatch((previous) => previous && previous.id === reference.matchId
+            && previous.detail.generationId === reference.generationId ? { ...previous, data: page.frames } : previous);
+        } catch {
+          if (requestId !== reportEvidenceRequestRef.current || workspaceRequestId !== activeWorkspaceRequestRef.current
+            || activeMatchIdRef.current !== reference.matchId || activeGenerationRef.current !== reference.generationId) return;
+        }
+      }
+      if (!frame) {
+        setSelectedSearch(null);
+        setReportEvidenceNotice('Report evidence is unavailable in this generation.');
+        return;
+      }
       selectSearchHit({ matchId: activeMatch.id, eventId: reference.localId, frameId: frame.Frame_ID,
         timestamp: frame.Timestamp, label: `Frame ${frame.Frame_ID}`, evidenceIds: [`frame:${reference.localId}`] });
     }
@@ -1686,6 +1717,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
                 )}
 
                 {!isTacticalInterpretationPaused && (coach.activeTab === 'report' || coach.activeTab === 'drills') && (
+                <>
                 <CoachInsights
                   activeTab={coach.activeTab === 'report' ? 'report' : 'drills'}
                   llmThinking={coach.llmThinking}
@@ -1700,8 +1732,10 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
                   onSwitchMatch={loadWorkspaceIntoState}
                   onGenerateReport={() => coach.runScenario({ matchId: activeMatch?.id ?? null, currentFrame, scenario: 'tactical_report' })}
                   onGenerateDrills={() => coach.runScenario({ matchId: activeMatch?.id ?? null, currentFrame, scenario: 'drills' })}
-                  onSelectEvidence={selectReportEvidence}
+                  onSelectEvidence={(reference) => { void selectReportEvidence(reference); }}
                 />
+                {reportEvidenceNotice && <p role="status" className="text-xs text-amber-200">{reportEvidenceNotice}</p>}
+                </>
               )}
                 {isTacticalInterpretationPaused && coach.activeTab !== 'analysis' && (
                   <div className="rounded-lg border border-slate-700 bg-slate-900/70 p-3 text-xs text-slate-400">

@@ -2849,6 +2849,32 @@ describe('App analysis provider capabilities', () => {
     expect(screen.getByText(/Selected evidence: event:1:turnover:4.2/)).toBeTruthy();
   });
 
+  it('loads a report frame outside the current page and reports a missing event', async () => {
+    mockReadyReviewMatch();
+    stubPitchCanvas();
+    const snapshot = reviewWorkspace();
+    snapshot.frameCount = 10;
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(snapshot);
+    vi.mocked(api.fetchMatchFrames).mockResolvedValue({ generationId: 'g-match-review', frameCount: 10,
+      nextCursor: null, frames: [{ ...snapshot.frames[0], Frame_ID: 7, Timestamp: 1.4 }] });
+    vi.mocked(api.runMatchAnalysis).mockResolvedValue({ matchId: 'match-review', generationId: 'g-match-review',
+      status: 'current', grounding: 'referenced', observations: [{ text: 'Late frame', grounding: 'referenced',
+        evidence: [{ matchId: 'match-review', generationId: 'g-match-review', kind: 'frame', localId: '7' },
+          { matchId: 'match-review', generationId: 'g-match-review', kind: 'event', localId: '7:shot:1.4' }] }] });
+    render(<App runtimeCapabilities={localOnlyCapabilities} />);
+    await screen.findByText('Review Match');
+    fireEvent.click(screen.getByRole('button', { name: 'Report' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Full Report' }));
+    fireEvent.click(await screen.findByRole('button', { name: /frame:7/i }));
+    await waitFor(() => expect(api.fetchMatchFrames).toHaveBeenCalledWith('match-review', expect.objectContaining({
+      afterFrame: 7, generationId: 'g-match-review',
+    })));
+    expect(await screen.findByText(/Selected source interval: 1.4s to 1.4s/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /event:7:shot:1.4/i }));
+    expect(screen.getByText(/Report evidence is unavailable in this generation/i)).toBeTruthy();
+    expect(screen.queryByText(/Selected source interval: 1.4s to 1.4s/)).toBeNull();
+  });
+
   it('keeps cloud unavailable and runs locally when only local analysis is supported', async () => {
     mockReadyReviewMatch();
     stubPitchCanvas();
