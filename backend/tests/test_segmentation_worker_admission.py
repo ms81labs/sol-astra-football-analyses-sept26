@@ -22,8 +22,10 @@ def test_shadow_preflight_import_does_not_load_sam_or_torch():
 
 @pytest.mark.integration
 @pytest.mark.real_media
-def test_shadow_preflight_binds_current_source_rights_and_approved_runtime(tmp_path):
+def test_shadow_preflight_binds_current_source_rights_and_approved_runtime(tmp_path, monkeypatch):
+    from backend.app import segmentation_worker
     from backend.app.segmentation_worker import preflight_shadow_window
+    from backend.app.workbench.media import FfmpegProbe
 
     storage = Storage(tmp_path / "store")
     match_id = _install_video(storage, tmp_path)
@@ -58,6 +60,35 @@ def test_shadow_preflight_binds_current_source_rights_and_approved_runtime(tmp_p
     assert admission["checkpointDigest"] == checkpoint_sha
     assert admission["jobIdentity"] == preflight_shadow_window(storage, match_id, generation_id,
         request.model_dump(mode="json"), **kwargs)["jobIdentity"]
+    clock = iter((0.0, 301.0))
+    with monkeypatch.context() as patch:
+        patch.setattr(segmentation_worker, "monotonic", lambda: next(clock))
+        with pytest.raises(ValueError, match="deadline"):
+            preflight_shadow_window(storage, match_id, generation_id,
+                request.model_dump(mode="json"), **kwargs)
+    original_probe = FfmpegProbe.probe_identity
+    def change_checkpoint_during_probe(probe, path):
+        identity = original_probe(probe, path)
+        checkpoint.write_bytes(b"changed during probe")
+        return identity
+    with monkeypatch.context() as patch:
+        patch.setattr(FfmpegProbe, "probe_identity", change_checkpoint_during_probe)
+        with pytest.raises(ValueError, match="checkpoint"):
+            preflight_shadow_window(storage, match_id, generation_id,
+                request.model_dump(mode="json"), **kwargs)
+    checkpoint.write_bytes(b"CPU preflight fixture, not SAM weights")
+    def revoke_rights_during_probe(probe, path):
+        identity = original_probe(probe, path)
+        revoked = storage.get_match(match_id).config.model_copy(deep=True)
+        revoked.rights.cloudPermission = False
+        storage.update_match_config(match_id, revoked)
+        return identity
+    with monkeypatch.context() as patch:
+        patch.setattr(FfmpegProbe, "probe_identity", revoke_rights_during_probe)
+        with pytest.raises(ValueError, match="rights"):
+            preflight_shadow_window(storage, match_id, generation_id,
+                request.model_dump(mode="json"), **kwargs)
+    storage.update_match_config(match_id, config)
     with pytest.raises(ValueError, match="source dimensions"):
         preflight_shadow_window(storage, match_id, generation_id,
             {**request.model_dump(mode="json"), "width": 999}, **kwargs)
@@ -101,3 +132,12 @@ def test_shadow_preflight_binds_current_source_rights_and_approved_runtime(tmp_p
         request.model_dump(mode="json"), **kwargs)
     assert other["requestDigest"] == admission["requestDigest"]
     assert other["jobIdentity"] != admission["jobIdentity"]
+    def replace_generation_during_probe(probe, path):
+        identity = original_probe(probe, path)
+        storage.save_frames(match_id, frames)
+        return identity
+    with monkeypatch.context() as patch:
+        patch.setattr(FfmpegProbe, "probe_identity", replace_generation_during_probe)
+        with pytest.raises(ValueError, match="generation"):
+            preflight_shadow_window(storage, match_id, generation_id,
+                request.model_dump(mode="json"), **kwargs)

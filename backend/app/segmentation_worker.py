@@ -9,6 +9,7 @@ import stat
 from collections import Counter
 from fractions import Fraction
 from pathlib import Path
+from time import monotonic
 
 from .report_contracts import digest
 from .segmentation import SegmentationRequest, request_identity
@@ -24,6 +25,7 @@ def preflight_shadow_window(storage, match_id: str, generation_id: str, payload:
     if type(deadline_seconds) not in (int, float) or not math.isfinite(deadline_seconds) \
             or not 0 < deadline_seconds <= 3600:
         raise ValueError("invalid shadow job deadline")
+    started = monotonic()
     if storage.current_generation(match_id).generationId != generation_id:
         raise ValueError("stale shadow generation")
     match = storage.get_match(match_id)
@@ -86,8 +88,19 @@ def preflight_shadow_window(storage, match_id: str, generation_id: str, payload:
            or not math.isclose(float(ticks[item.frameId] * time_base), item.ptsSeconds,
                                rel_tol=0, abs_tol=1e-6) for item in request.frames):
         raise ValueError("shadow source frame PTS mismatch")
-    if stream_sha256(source).sha256 != source_sha:
-        raise ValueError("shadow source changed during preflight")
+    for path, expected, label in ((source, source_sha, "source"),
+                                  (checkpoint, checkpoint_sha, "checkpoint")):
+        if path.is_symlink() or not stat.S_ISREG(path.stat(follow_symlinks=False).st_mode) \
+                or stream_sha256(path).sha256 != expected:
+            raise ValueError(f"shadow {label} changed during preflight")
+    if storage.current_generation(match_id).generationId != generation_id:
+        raise ValueError("stale shadow generation")
+    live_match = storage.get_match(match_id)
+    if live_match.inputMode != "video" or not live_match.config.rights.cloudPermission \
+            or live_match.config.rights.processingScope == "local_only":
+        raise ValueError("source rights changed during shadow preflight")
+    if monotonic() - started >= deadline_seconds:
+        raise ValueError("shadow job deadline expired during preflight")
     return {"schemaVersion": 1, "matchId": match_id, "generationId": generation_id,
         "requestDigest": identity, "sourceSha256": source_sha,
         "checkpointDigest": checkpoint_sha, "deadlineSeconds": deadline_seconds,
