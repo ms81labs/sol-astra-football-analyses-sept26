@@ -14,6 +14,7 @@ from backend.app.workbench.assistance import (
     TypedQuery,
     execute_typed_query,
     parse_typed_query,
+    validate_query_proposal,
     template_report,
 )
 from backend.app.workbench.contracts import CAPABILITY_IDS, INTERVAL_ENDPOINT, migrate_legacy_zero, unknown_metric
@@ -515,6 +516,28 @@ def test_typed_query_rejects_unsupported_or_invalid_predicates() -> None:
     assert parse_typed_query("recoveries by player 1000001").reason == "invalid_player"
     assert parse_typed_query("recoveries between 0 and 86401 seconds").reason == "invalid_time_range"
     assert parse_typed_query("x" * 513).reason == "query_too_long"
+
+
+def test_model_query_proposal_is_scope_bound_and_uses_existing_python_search() -> None:
+    proposal = {"matchId": "m1", "generationId": "g1", "query": {
+        "eventFamily": "recovery", "team": "my_team", "playerTrackId": 7}}
+    query = validate_query_proposal(proposal, match_id="m1", generation_id="g1")
+    rows = [
+        {"id": "wanted", "type": "recovery", "team": "my_team", "fromTrackId": 7, "timestamp": 1.0},
+        {"id": "other", "type": "recovery", "team": "my_team", "fromTrackId": 8, "timestamp": 2.0},
+    ]
+    assert [hit.eventId for hit in execute_typed_query(rows, query, match_id="m1")] == ["wanted"]
+    for invalid in (
+        {**proposal, "generationId": "g0"},
+        {**proposal, "matchId": "m2"},
+        {**proposal, "sql": "SELECT * FROM events"},
+        {**proposal, "query": {"eventFamily": "recovery", "pitchRegion": "left"}},
+        {**proposal, "query": {"eventFamily": "recovery", "includeUnknown": True}},
+        {**proposal, "query": {"eventFamily": "recovery", "unanswerable": False}},
+        {**proposal, "query": {"eventFamily": "recovery", "period": 99}},
+    ):
+        with pytest.raises(ValueError):
+            validate_query_proposal(invalid, match_id="m1", generation_id="g1")
 
 
 def test_query_result_distinguishes_no_match_from_missing_event_coverage(tmp_path, monkeypatch) -> None:

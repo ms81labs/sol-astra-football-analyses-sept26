@@ -212,6 +212,19 @@ def parse_typed_query(text: str, *, include_unknown: bool = False) -> TypedQuery
     )
 
 
+def validate_query_proposal(raw: dict[str, Any], *, match_id: str, generation_id: str) -> TypedQuery:
+    """Admit a model's filters only for the current scope and the existing executor."""
+    if not isinstance(raw, dict) or set(raw) != {"matchId", "generationId", "query"} \
+            or raw["matchId"] != match_id or raw["generationId"] != generation_id:
+        raise ValueError("query proposal scope does not match")
+    fields = raw["query"]
+    allowed = {"eventFamily", "team", "playerTrackId", "period", "reviewStatus",
+               "timeStartSeconds", "timeEndSeconds", "successor"}
+    if not isinstance(fields, dict) or "eventFamily" not in fields or set(fields) - allowed:
+        raise ValueError("unsupported query proposal predicate")
+    return TypedQuery.model_validate(fields)
+
+
 def execute_typed_query(events: list[dict[str, Any]], query: TypedQuery, *, match_id: str) -> list[SearchHit]:
     if query.unanswerable:
         return []
