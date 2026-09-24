@@ -229,7 +229,7 @@ def validate_query_proposal(raw: dict[str, Any], *, match_id: str, generation_id
                "pitchRegion", "timeStartSeconds", "timeEndSeconds", "successor"}
     if not isinstance(fields, dict) or "eventFamily" not in fields or set(fields) - allowed:
         raise ValueError("unsupported query proposal predicate")
-    return TypedQuery.model_validate(fields)
+    return TypedQuery.model_validate({**fields, "interpreted": fields})
 
 
 def execute_typed_query(events: list[dict[str, Any]], query: TypedQuery, *, match_id: str) -> list[SearchHit]:

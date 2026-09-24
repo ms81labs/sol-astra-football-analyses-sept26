@@ -997,6 +997,20 @@ async def _test_match_queries_use_stored_events_and_ignore_client_rows(tmp_path:
         assert results[0]["matchId"] == match_id
         assert results[0]["label"] == "turnover"
         assert results[0]["evidenceIds"]
+        generation_id = turnovers.json()["generationId"]
+        typed = await client.post(f"/api/matches/{match_id}/queries", json={
+            "generationId": generation_id, "typedQuery": {"eventFamily": "turnover"},
+        })
+        assert typed.status_code == 200
+        assert [row["eventId"] for row in typed.json()["results"]] == [row["eventId"] for row in results]
+        assert typed.json()["query"]["interpreted"]["eventFamily"] == "turnover"
+        for body, status in (
+            ({"generationId": generation_id, "typedQuery": {"eventFamily": "turnover", "sql": "select *"}}, 422),
+            ({"generationId": generation_id, "typedQuery": {"eventFamily": "turnover"}, "query": "shots"}, 422),
+            ({"generationId": "stale", "typedQuery": {"eventFamily": "turnover"}}, 409),
+        ):
+            rejected = await client.post(f"/api/matches/{match_id}/queries", json=body)
+            assert rejected.status_code == status
 
 
 def test_match_queries_and_reports_omit_rejected_events(tmp_path: Path):

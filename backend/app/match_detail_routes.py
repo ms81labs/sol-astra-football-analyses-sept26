@@ -32,6 +32,20 @@ def create_match_detail_router(
     @router.post("/api/matches/{match_id}/queries")
     def post_match_query(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
         body = payload or {}
+        if "typedQuery" in body:
+            from .workbench.assistance import validate_query_proposal
+            generation_id = body.get("generationId")
+            if "query" in body or not isinstance(generation_id, str):
+                raise HTTPException(status_code=422, detail="Typed query requires one explicit generation")
+            if storage.current_generation(match.id).generationId != generation_id:
+                raise HTTPException(status_code=409, detail="Stale query generation")
+            try:
+                query = validate_query_proposal(
+                    {"matchId": match.id, "generationId": generation_id, "query": body["typedQuery"]},
+                    match_id=match.id, generation_id=generation_id)
+            except (ValueError, ValidationError) as exc:
+                raise HTTPException(status_code=422, detail="Unsupported typed query") from exc
+            return snapshot_response(match.id, lambda: storage.query_match_events(match.id, query), generation_id)
         return snapshot_response(match.id, lambda: storage.query_match_events(match.id, str(body.get("query") or "")), body.get("generationId"))
     
     @router.post("/api/matches/{match_id}/reports")

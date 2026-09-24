@@ -15,7 +15,10 @@ from collections.abc import Iterable, Iterator
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
-from typing import BinaryIO, TextIO
+from typing import BinaryIO, TextIO, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .workbench.assistance import TypedQuery
 
 
 from .storage_jobs import (
@@ -876,8 +879,8 @@ class Storage(_IdentityStorageMixin, _CalibrationStorageMixin, _RemoteResultStor
         self.save_events(match_id, restore_event_review(events, previous))
 
     @_generation_reader
-    def query_match_events(self, match_id: str, query_text: str, *, include_unknown: bool = False) -> dict:
-        from .workbench.assistance import events_as_query_rows, execute_typed_query, parse_typed_query
+    def query_match_events(self, match_id: str, query_text: str | TypedQuery, *, include_unknown: bool = False) -> dict:
+        from .workbench.assistance import TypedQuery, events_as_query_rows, execute_typed_query, parse_typed_query
 
         try:
             events = self.load_events(match_id)
@@ -885,7 +888,7 @@ class Storage(_IdentityStorageMixin, _CalibrationStorageMixin, _RemoteResultStor
         except FileNotFoundError:
             events = []
             coverage_state = "insufficient"
-        query = parse_typed_query(query_text, include_unknown=include_unknown)
+        query = query_text if isinstance(query_text, TypedQuery) else parse_typed_query(query_text, include_unknown=include_unknown)
         rows = events_as_query_rows(events, match_id=match_id)
         unknown_location_count = 0
         if query.pitchRegion and not query.unanswerable:
