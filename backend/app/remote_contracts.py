@@ -996,6 +996,40 @@ def _read_progress_snapshot(stream: BinaryIO) -> bytes:
             raise RemoteContractError("progress total size exceeds limit")
 
 
+def validate_shadow_inputs(request: JobRequest, receipt: JobReceipt) -> Mapping[str, object]:
+    shadow = request.config.get("shadowSegmentation")
+    rights = request.config.get("rights")
+    if request.config.get("jobKind") != "segmentation_shadow" or not isinstance(shadow, Mapping) \
+            or not isinstance(rights, Mapping) or rights.get("cloudPermission") is not True \
+            or rights.get("processingScope") not in {"local_plus_burst", "hosted"}:
+        raise RemoteContractError("shadow job identity or permission is missing")
+    shadow = _exact(shadow, frozenset({"schemaVersion", "matchId", "generationId", "requestDigest",
+        "sourceSha256", "checkpointDigest", "jobIdentity", "deadlineSeconds"}), "shadow job")
+    if shadow.get("schemaVersion") != 1 or shadow.get("matchId") != request.match_id:
+        raise RemoteContractError("shadow job identity is invalid")
+    _text(shadow.get("generationId"), "generationId", 32, _GENERATION_ID)
+    for key in ("requestDigest", "sourceSha256", "checkpointDigest", "jobIdentity"):
+        _digest(shadow.get(key), key)
+    deadline = shadow.get("deadlineSeconds")
+    if type(deadline) not in (int, float) or not math.isfinite(deadline) or not 0 < deadline <= 3600:
+        raise RemoteContractError("shadow job deadline is invalid")
+    identity_inputs = {key: shadow[key] for key in
+        ("matchId", "generationId", "requestDigest", "checkpointDigest")}
+    expected = hashlib.sha256(json.dumps(identity_inputs, sort_keys=True,
+        separators=(",", ":"), allow_nan=False).encode()).hexdigest()
+    if shadow["jobIdentity"] != expected:
+        raise RemoteContractError("shadow job identity is invalid")
+    by_role = {item.role: item for item in receipt.files if item.role != "runtime_artifact"}
+    sealed_inputs = {item.relative_path: item for item in receipt.files if item.role == "runtime_artifact"}
+    checkpoint = sealed_inputs.get(PurePosixPath("inputs/checkpoint.bin"))
+    segmentation_request = sealed_inputs.get(PurePosixPath("inputs/segmentation-request.json"))
+    if by_role["input_video"].sha256 != shadow["sourceSha256"] \
+            or checkpoint is None or checkpoint.sha256 != shadow["checkpointDigest"] \
+            or segmentation_request is None or segmentation_request.sha256 != shadow["requestDigest"]:
+        raise RemoteContractError("shadow input artifact identity mismatch")
+    return shadow
+
+
 def validate_result(request: JobRequest, receipt: JobReceipt, result: ResultBundle, *, output_root: Path | str | None = None) -> None:
     if result.job_id != request.job_id or result.match_id != request.match_id or result.source_commit != receipt.source_commit or result.manifest_sha256 != receipt.manifest_sha256:
         raise RemoteContractError("result identity or options mismatch")
@@ -1008,28 +1042,10 @@ def validate_result(request: JobRequest, receipt: JobReceipt, result: ResultBund
     if result.receipt_sha256 != receipt_digest:
         raise RemoteContractError("result receipt identity mismatch")
     if result.schema_version == 3:
-        shadow = request.config.get("shadowSegmentation")
-        if request.config.get("jobKind") != "segmentation_shadow" or not isinstance(shadow, Mapping):
-            raise RemoteContractError("shadow job identity is missing")
-        if shadow.get("matchId") != request.match_id or any(result.result[key] != shadow.get(key) for key in
+        shadow = validate_shadow_inputs(request, receipt)
+        if any(result.result[key] != shadow[key] for key in
             ("generationId", "requestDigest", "sourceSha256", "checkpointDigest", "jobIdentity")):
             raise RemoteContractError("shadow result identity mismatch")
-        identity_inputs = {key: shadow.get(key) for key in
-            ("matchId", "generationId", "requestDigest", "checkpointDigest")}
-        expected_job_identity = hashlib.sha256(json.dumps(identity_inputs, sort_keys=True,
-            separators=(",", ":"), allow_nan=False).encode()).hexdigest()
-        if shadow.get("schemaVersion") != 1 or shadow.get("jobIdentity") != expected_job_identity \
-                or type(shadow.get("deadlineSeconds")) not in (int, float) \
-                or not 0 < shadow["deadlineSeconds"] <= 3600:
-            raise RemoteContractError("shadow job identity is invalid")
-        by_role = {item.role: item for item in receipt.files if item.role != "runtime_artifact"}
-        sealed_inputs = {item.relative_path: item for item in receipt.files if item.role == "runtime_artifact"}
-        checkpoint = sealed_inputs.get(PurePosixPath("inputs/checkpoint.bin"))
-        segmentation_request = sealed_inputs.get(PurePosixPath("inputs/segmentation-request.json"))
-        if by_role["input_video"].sha256 != result.result["sourceSha256"] \
-                or checkpoint is None or checkpoint.sha256 != result.result["checkpointDigest"] \
-                or segmentation_request is None or segmentation_request.sha256 != result.result["requestDigest"]:
-            raise RemoteContractError("shadow input artifact identity mismatch")
     elif request.config.get("jobKind") == "segmentation_shadow":
         raise RemoteContractError("shadow job requires segmentation result schema")
     if output_root is not None:

@@ -27,7 +27,7 @@ from backend.app.remote_contracts import (
     CompletionReceipt, JobReceipt,
     JobRequest, ProgressEvent, ResultBundle, canonical_json_bytes, confined_path,
     load_canonical_json, validate_completion,
-    validate_result,
+    validate_result, validate_shadow_inputs,
 )
 from backend.release.daytona_policy import DaytonaPolicy, load_daytona_policy
 from backend.release.preflight import PreflightResult
@@ -520,7 +520,13 @@ def _preflight(execution: DaytonaExecutionRequest) -> tuple[Path, Path, JobReque
             identity = _preflight_file_identity(local_path)
             if metadata.get(artifact_id) != identity: raise ValueError
             proof_ids.append((relative, *identity))
-        sealed = [(e.relative_path, e.sha256, e.size_bytes) for e in receipt.files if e.role == "runtime_artifact"]
+        shadow_paths: set[PurePosixPath] = set()
+        if request.config.get("jobKind") == "segmentation_shadow":
+            validate_shadow_inputs(request, receipt)
+            shadow_paths = {PurePosixPath("inputs/checkpoint.bin"),
+                            PurePosixPath("inputs/segmentation-request.json")}
+        sealed = [(e.relative_path, e.sha256, e.size_bytes) for e in receipt.files
+                  if e.role == "runtime_artifact" and e.relative_path not in shadow_paths]
         if sorted(proof_ids) != sorted(sealed): raise ValueError
     except Exception:
         raise DaytonaExecutionError("preflight: release artifact binding mismatch") from None

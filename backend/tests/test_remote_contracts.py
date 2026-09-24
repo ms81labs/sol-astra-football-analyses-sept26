@@ -36,6 +36,7 @@ from backend.app.remote_contracts import (
     validate_progress_jsonl,
     validate_receipt_files,
     validate_result,
+    validate_shadow_inputs,
 )
 
 
@@ -114,7 +115,8 @@ def shadow_contracts(mask=b'{"schemaVersion":"segmentation_result_v1"}\n',
         ("matchId", "generationId", "requestDigest", "checkpointDigest")},
         sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     req = JobRequest.from_mapping({**request_mapping(), "config":
-        {"jobKind": "segmentation_shadow", "shadowSegmentation": shadow}})
+        {"jobKind": "segmentation_shadow", "rights": {"cloudPermission": True,
+            "processingScope": "local_plus_burst"}, "shadowSegmentation": shadow}})
     rec = receipt_for(req)
     rec = replace(rec, files=(*rec.files, entry("runtime_artifact", "inputs/checkpoint.bin", b"checkpoint"),
                               entry("runtime_artifact", "inputs/segmentation-request.json", request_bytes)))
@@ -164,6 +166,10 @@ def test_shadow_result_is_sealed_to_job_source_checkpoint_and_generation(tmp_pat
     forged_req, forged_rec, forged_result, _ = shadow_contracts(job_identity="d" * 64)
     with pytest.raises(RemoteContractError):
         validate_result(forged_req, forged_rec, forged_result)
+    injected = req.to_mapping()
+    injected["config"]["shadowSegmentation"]["artifactUrl"] = "https://example.invalid/mask"
+    with pytest.raises(RemoteContractError, match="unknown"):
+        validate_shadow_inputs(JobRequest.from_mapping(injected), rec)
     unsealed = replace(rec, files=tuple(item for item in rec.files
         if item.relative_path != PurePosixPath("inputs/checkpoint.bin")))
     rebound = replace(result, receipt_sha256=hashlib.sha256(canonical_json_bytes(

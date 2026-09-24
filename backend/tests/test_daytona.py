@@ -104,6 +104,59 @@ def _bundle(tmp_path: Path):
     return root, workspace, preflight, request, receipt, result, completion, remote
 
 
+def test_shadow_preflight_allows_only_sealed_request_and_checkpoint_beside_release_artifacts(tmp_path):
+    from backend.app.daytona import DaytonaExecutionError, DaytonaExecutionRequest, _preflight
+
+    root, workspace, proof, request, receipt, *_ = _bundle(tmp_path)
+    checkpoint = b"approved checkpoint fixture"
+    shadow_request = b"sealed segmentation request fixture"
+    shadow = {"schemaVersion": 1, "matchId": request.match_id, "generationId": GENERATION,
+              "requestDigest": hashlib.sha256(shadow_request).hexdigest(),
+              "sourceSha256": hashlib.sha256(b"video").hexdigest(),
+              "checkpointDigest": hashlib.sha256(checkpoint).hexdigest(), "deadlineSeconds": 30}
+    shadow["jobIdentity"] = hashlib.sha256(json.dumps({key: shadow[key] for key in
+        ("matchId", "generationId", "requestDigest", "checkpointDigest")},
+        sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    request = replace(request, config={"jobKind": "segmentation_shadow",
+        "rights": {"cloudPermission": True, "processingScope": "local_plus_burst"},
+        "shadowSegmentation": shadow})
+    request_bytes = canonical_json_bytes(request.to_mapping())
+    (root / "job-request.json").write_bytes(request_bytes)
+    (root / "inputs/checkpoint.bin").write_bytes(checkpoint)
+    (root / "inputs/segmentation-request.json").write_bytes(shadow_request)
+    entries = tuple(_entry(item.role, item.relative_path.as_posix(),
+        request_bytes if item.role == "job_request" else (root / item.relative_path).read_bytes())
+        for item in receipt.files)
+    receipt = replace(receipt, job_request_sha256=hashlib.sha256(request_bytes).hexdigest(),
+        files=(*entries, _entry("runtime_artifact", "inputs/checkpoint.bin", checkpoint),
+               _entry("runtime_artifact", "inputs/segmentation-request.json", shadow_request)))
+    (root / request.receipt_path).write_bytes(canonical_json_bytes(receipt.to_mapping()))
+    execution = DaytonaExecutionRequest("fixture-key", load_daytona_policy(), root, workspace, proof)
+    _root, _workspace, admitted, sealed, uploads, _identities = _preflight(execution)
+    assert admitted == request and sealed == receipt
+    assert PurePosixPath("inputs/checkpoint.bin") in uploads
+    assert PurePosixPath("inputs/segmentation-request.json") in uploads
+    denied = replace(request, config={**request.config, "rights":
+        {"cloudPermission": False, "processingScope": "local_only"}})
+    denied_bytes = canonical_json_bytes(denied.to_mapping())
+    (root / "job-request.json").write_bytes(denied_bytes)
+    denied_receipt = replace(receipt, job_request_sha256=hashlib.sha256(denied_bytes).hexdigest(),
+        files=tuple(_entry(item.role, item.relative_path.as_posix(), denied_bytes)
+            if item.role == "job_request" else item for item in receipt.files))
+    (root / request.receipt_path).write_bytes(canonical_json_bytes(denied_receipt.to_mapping()))
+    with pytest.raises(DaytonaExecutionError, match="preflight"):
+        _preflight(execution)
+    (root / "job-request.json").write_bytes(request_bytes)
+    (root / request.receipt_path).write_bytes(canonical_json_bytes(receipt.to_mapping()))
+    extra = root / "inputs/unlisted.bin"
+    extra.write_bytes(b"unlisted")
+    receipt = replace(receipt, files=(*receipt.files,
+        _entry("runtime_artifact", "inputs/unlisted.bin", b"unlisted")))
+    (root / request.receipt_path).write_bytes(canonical_json_bytes(receipt.to_mapping()))
+    with pytest.raises(DaytonaExecutionError, match="preflight"):
+        _preflight(execution)
+
+
 class _Response:
     def __init__(self, exit_code=0, result="ok"):
         self.exit_code = exit_code
