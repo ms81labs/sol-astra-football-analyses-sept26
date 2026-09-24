@@ -57,6 +57,55 @@ def test_sam3_prompt_mapping_keeps_multiple_points_for_one_object_and_frame():
         "rel_coordinates": True}]
 
 
+@pytest.mark.integration
+@pytest.mark.real_media
+def test_sam3_window_stages_sparse_exact_source_frames_and_cleans_failure(tmp_path, monkeypatch):
+    from PIL import Image
+    from backend.app import segmentation_worker
+    from backend.app.segmentation_worker import stage_sam_source_window
+    from backend.app.workbench.media import FfmpegFrameSource
+    from backend.app.workbench.media import resolve_trusted_executable
+
+    source = tmp_path / "source.mp4"
+    subprocess.run([str(resolve_trusted_executable("ffmpeg")), "-hide_banner", "-loglevel", "error",
+        "-f", "lavfi", "-i", "testsrc2=size=160x90:rate=4:duration=1", "-threads", "1",
+        "-pix_fmt", "yuv420p", str(source)], check=True, timeout=40)
+    request = SegmentationRequest(sourceSha256=hashlib.sha256(source.read_bytes()).hexdigest(),
+        baseTrackingDigest="b" * 64, modelAlias="sam31-video", modelDigest="c" * 64,
+        checkpointDigest="d" * 64, workerDigest="e" * 64,
+        executionMode="sam31_object_multiplex", cropDigest="f" * 64, precision="bf16",
+        width=160, height=90, intervalStart=0, intervalEnd=.75,
+        frames=[FramePoint(frameId=0, ptsSeconds=0), FramePoint(frameId=2, ptsSeconds=.5)],
+        prompts=[Prompt(objectId="a", trackId="t1", frameId=2, point=(10, 10))],
+        maxFrames=2, maxObjects=1)
+    workspace = tmp_path / "windows"
+    workspace.mkdir()
+    root, manifest = stage_sam_source_window(source, request, workspace)
+    assert [(item["sourceFrameId"], item["localIndex"], item["ptsSeconds"])
+        for item in manifest["frames"]] == [(0, 0, 0), (2, 1, .5)]
+    assert sorted(path.name for path in root.iterdir()) == ["0.png", "1.png", "window.json"]
+    decoded = list(FfmpegFrameSource().iter_frames(source))
+    for local_index, source_index in enumerate((0, 2)):
+        with Image.open(root / f"{local_index}.png") as image:
+            assert image.size == (160, 90)
+            expected = Image.frombytes("RGB", image.size, decoded[source_index].payload, "raw", "BGR")
+            assert image.tobytes() == expected.tobytes()
+    with pytest.raises(ValueError, match="source frame PTS"):
+        stage_sam_source_window(source, request.model_copy(update={"frames": [
+            FramePoint(frameId=0, ptsSeconds=0), FramePoint(frameId=2, ptsSeconds=.4)]}), workspace)
+    assert sorted(path.name for path in workspace.iterdir()) == [root.name]
+    clock = iter((0.0, 0.0, 301.0))
+    with monkeypatch.context() as patch:
+        patch.setattr(segmentation_worker, "monotonic", lambda: next(clock))
+        with pytest.raises(ValueError, match="deadline"):
+            stage_sam_source_window(source, request, workspace)
+    assert sorted(path.name for path in workspace.iterdir()) == [root.name]
+    source.write_bytes(b"changed")
+    with pytest.raises(ValueError, match="source identity"):
+        stage_sam_source_window(source, request, workspace)
+    assert sorted(path.name for path in workspace.iterdir()) == [root.name]
+
+
 def test_shadow_preflight_import_does_not_load_sam_or_torch():
     completed = subprocess.run([sys.executable, "-c",
         "import sys; import backend.app.segmentation_worker; "

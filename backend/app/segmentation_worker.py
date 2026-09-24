@@ -7,10 +7,13 @@ import hashlib
 import math
 import os
 import re
+import shutil
 import stat
+import tempfile
 from collections.abc import Callable, Mapping
 from collections import Counter
 from fractions import Fraction
+from io import BytesIO
 from pathlib import Path
 from time import monotonic
 
@@ -40,6 +43,113 @@ def sam3_prompt_requests(request: SegmentationRequest) -> tuple[dict[str, int], 
         by_object_frame[key]["points"].append([x / request.width, y / request.height])
         by_object_frame[key]["point_labels"].append(1)
     return object_ids, list(by_object_frame.values())
+
+
+def stage_sam_source_window(source: Path, request: SegmentationRequest, workspace: Path, *,
+                            timeout_seconds: float = 300) -> tuple[Path, dict]:
+    """Stage only exact requested source frames as SAM's numbered image folder."""
+    from PIL import Image
+    from .remote_contracts import canonical_json_bytes
+    from .workbench.media import (FfmpegProbe, _ShowinfoParser,
+        _assert_safe_ffmpeg_argv, _run_bounded_media_process)
+    from .workbench.media_execution import MediaExecutionPolicy
+
+    if type(timeout_seconds) not in (int, float) or not math.isfinite(timeout_seconds) \
+            or not 0 < timeout_seconds <= 3600:
+        raise ValueError("invalid shadow window deadline")
+    request_digest = request_identity(request)
+    if request_digest is None or request.modelAlias != "sam31-video" \
+            or request.executionMode != "sam31_object_multiplex" or request.precision != "bf16":
+        raise ValueError("shadow runtime identity is invalid")
+    sam3_prompt_requests(request)
+    source, workspace = Path(source), Path(workspace)
+    if workspace.is_symlink() or not workspace.is_dir():
+        raise ValueError("shadow window workspace is unavailable")
+    source_stat = source.stat(follow_symlinks=False)
+    if not stat.S_ISREG(source_stat.st_mode) \
+            or stream_sha256(source).sha256 != request.sourceSha256:
+        raise ValueError("shadow source identity mismatch")
+    started = monotonic()
+    policy = MediaExecutionPolicy(max_duration_seconds=10_800, max_width=4096,
+        max_height=4096, max_frames=500_000, job_timeout_seconds=timeout_seconds,
+        probe_timeout_seconds=min(30, timeout_seconds), captured_output_bytes=8 * 1024**2)
+    probe = FfmpegProbe(policy=policy)
+    identity = probe.probe_identity(source)
+    if identity.sourceSha256 != request.sourceSha256 or (identity.width, identity.height) != \
+            (request.width, request.height) or not identity.timeBaseNum or not identity.timeBaseDen:
+        raise ValueError("shadow source identity mismatch")
+    command = [probe.ffprobe, "-protocol_whitelist", "file,pipe", "-threads", str(policy.threads),
+        "-v", "error", "-select_streams", "v:0", "-show_entries",
+        "frame=best_effort_timestamp", "-of", "csv=p=0", str(source)]
+    _assert_safe_ffmpeg_argv(command)
+    index = _run_bounded_media_process(command, timeout=min(30, timeout_seconds),
+        output_cap=policy.captured_output_bytes, file_cap=policy.max_file_bytes, policy=policy)
+    if index.returncode != 0:
+        raise ValueError("shadow source frame index unavailable")
+    rows = [line.strip().rstrip(",") for line in index.stdout.decode().splitlines() if line.strip()]
+    if len(rows) > policy.max_frames or any(not re.fullmatch(r"-?\d+", row) for row in rows):
+        raise ValueError("shadow source frame index ambiguous")
+    ticks = [int(row) for row in rows]
+    counts = Counter(ticks)
+    time_base = Fraction(identity.timeBaseNum, identity.timeBaseDen)
+    if any(frame.frameId >= len(ticks) or counts[ticks[frame.frameId]] != 1 or not math.isclose(
+        float(ticks[frame.frameId] * time_base), frame.ptsSeconds, rel_tol=0, abs_tol=1e-6)
+        for frame in request.frames):
+        raise ValueError("shadow source frame PTS mismatch")
+    root = Path(tempfile.mkdtemp(prefix="sam-window-", dir=workspace))
+    os.chmod(root, 0o700)
+    try:
+        frames = []
+        total_bytes = 0
+        for local_index, frame in enumerate(request.frames):
+            remaining = timeout_seconds - (monotonic() - started)
+            if remaining <= 0:
+                raise ValueError("shadow window deadline expired")
+            command = [probe.ffmpeg, "-hide_banner", "-nostdin", "-loglevel", "info",
+                "-protocol_whitelist", "file,pipe", "-threads", str(policy.threads),
+                "-noautorotate", "-ss", str(frame.ptsSeconds), "-copyts", "-i", str(source),
+                "-map", "0:v:0", "-an", "-vf", "showinfo", "-frames:v", "1",
+                "-fps_mode", "passthrough", "-f", "image2pipe", "-vcodec", "png", "pipe:1"]
+            _assert_safe_ffmpeg_argv(command)
+            result = _run_bounded_media_process(command, timeout=min(30, remaining),
+                output_cap=64 * 1024**2, file_cap=policy.max_file_bytes, policy=policy)
+            parser = _ShowinfoParser()
+            times = parser.feed(result.stderr) + parser.finish()
+            if result.returncode != 0 or not times or times[0][1] != ticks[frame.frameId]:
+                raise ValueError("shadow decoded frame PTS mismatch")
+            with Image.open(BytesIO(result.stdout)) as image:
+                if image.format != "PNG" or image.size != (request.width, request.height):
+                    raise ValueError("shadow decoded frame geometry mismatch")
+                image.verify()
+            total_bytes += len(result.stdout)
+            if total_bytes > 512 * 1024**2:
+                raise ValueError("shadow window exceeds byte limit")
+            filename = f"{local_index}.png"
+            descriptor = os.open(root / filename, os.O_WRONLY | os.O_CREAT | os.O_EXCL |
+                getattr(os, "O_NOFOLLOW", 0), 0o600)
+            with os.fdopen(descriptor, "wb") as handle:
+                handle.write(result.stdout)
+            frames.append({"localIndex": local_index, "sourceFrameId": frame.frameId,
+                "ptsSeconds": frame.ptsSeconds, "path": filename,
+                "sha256": hashlib.sha256(result.stdout).hexdigest(), "sizeBytes": len(result.stdout)})
+        final_stat = source.stat(follow_symlinks=False)
+        if not stat.S_ISREG(final_stat.st_mode) or (
+            final_stat.st_dev, final_stat.st_ino, final_stat.st_size) != (
+            source_stat.st_dev, source_stat.st_ino, source_stat.st_size
+        ) or stream_sha256(source).sha256 != request.sourceSha256:
+            raise ValueError("shadow source changed during staging")
+        if monotonic() - started >= timeout_seconds:
+            raise ValueError("shadow window deadline expired")
+        manifest = {"schemaVersion": 1, "sourceSha256": request.sourceSha256,
+            "requestDigest": request_digest, "frames": frames}
+        (root / "window.json").write_bytes(canonical_json_bytes(manifest))
+        return root, manifest
+    except Exception:
+        try:
+            shutil.rmtree(root)
+        except Exception:
+            raise RuntimeError("shadow window cleanup could not be confirmed") from None
+        raise
 
 
 def load_sealed_shadow_bundle(root: Path):
