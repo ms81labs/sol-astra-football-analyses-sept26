@@ -1,6 +1,7 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
-import { searchWorkbenchEvents, type SearchHit, type TypedSearchFilter } from '../utils/workbench';
+import { fetchQueryProposalAvailability, requestQueryProposal, searchWorkbenchEvents,
+  type SearchHit, type TypedSearchFilter } from '../utils/workbench';
 
 const EVENT_TYPES = ['pass', 'progressive_pass', 'through_ball', 'cross', 'shot', 'goal', 'turnover',
   'recovery', 'tackle', 'interception', 'carry', 'box_entry', 'final_third_entry'];
@@ -24,10 +25,20 @@ export default function TypedSearchPanel({ matchId, onSeek, onSelectHit, generat
   const [results, setResults] = useState<SearchHit[]>([]);
   const [filterText, setFilterText] = useState<string | null>(null);
   const [resultScope, setResultScope] = useState<string | null>(null);
+  const [modelAvailability, setModelAvailability] = useState<{ scope: string; available: boolean } | null>(null);
+  const modelRequest = useRef<{ scope: string; question: string; id: string } | null>(null);
   const currentScope = JSON.stringify([matchId, generationId]);
   const showResult = resultScope === currentScope;
+  useEffect(() => {
+    if (!matchId || !generationId) return;
+    let current = true;
+    void fetchQueryProposalAvailability(matchId, generationId)
+      .then((available) => { if (current) setModelAvailability({ scope: currentScope, available }); })
+      .catch(() => { if (current) setModelAvailability({ scope: currentScope, available: false }); });
+    return () => { current = false; };
+  }, [matchId, generationId, currentScope]);
 
-  async function runSearch(request: string | TypedSearchFilter) {
+  async function runSearch(request: string | TypedSearchFilter, useModel = false) {
     if (!matchId) return;
     const operation = scopeVersion.current;
     setResultScope(currentScope);
@@ -35,7 +46,18 @@ export default function TypedSearchPanel({ matchId, onSeek, onSelectHit, generat
     setFilterText(null);
     setMessage(null);
     try {
-      const result = await searchWorkbenchEvents(request, matchId, [], generationId);
+      let result;
+      if (useModel && typeof request === 'string' && generationId) {
+        const question = request.trim();
+        if (!modelRequest.current || modelRequest.current.scope !== currentScope || modelRequest.current.question !== question) {
+          modelRequest.current = { scope: currentScope, question,
+            id: crypto.randomUUID?.() ?? Array.from(crypto.getRandomValues(new Uint8Array(16)),
+              (byte) => byte.toString(16).padStart(2, '0')).join('') };
+        }
+        result = await requestQueryProposal(matchId, generationId, question, modelRequest.current.id);
+      } else {
+        result = await searchWorkbenchEvents(request, matchId, [], generationId);
+      }
       if (operation !== scopeVersion.current) return;
       if (result.query.unanswerable) {
         setMessage(result.query.reason === 'unsupported_terms' && result.query.unsupportedTerms?.length
@@ -89,6 +111,12 @@ export default function TypedSearchPanel({ matchId, onSeek, onSelectHit, generat
       >
         Search evidence
       </button>
+      {modelAvailability?.scope === currentScope && modelAvailability.available && <button type="button"
+        disabled={!query.trim() || !generationId || query.trim().length > 512}
+        onClick={() => void runSearch(query, true)}
+        className="ml-2 px-3 py-1.5 rounded bg-slate-700 text-xs font-semibold text-white disabled:opacity-50">
+        Ask model to search
+      </button>}
       <div className="grid grid-cols-2 gap-2 text-xs text-slate-400">
         <label>Event type
           <select value={filterEvent} onChange={(event) => setFilterEvent(event.target.value)} className="block w-full rounded border border-slate-600 bg-slate-900 p-1 text-slate-200">

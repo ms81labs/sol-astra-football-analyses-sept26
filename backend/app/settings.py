@@ -198,7 +198,7 @@ class ProcessingSettings:
                     or input_price < 22 or output_price < 82.5:
                 raise SettingsError("Astra requires cloud opt-in, key, model allowlist and conservative prices")
             cloud_options.update(cloud_provider_api_key=key, cloud_model_id="gpt-6-astra",
-                provider_spend_policy=AstraSpendPolicy(task_types=("tactical_report", "drills", "event_proposal"),
+                provider_spend_policy=AstraSpendPolicy(task_types=("tactical_report", "drills", "event_proposal", "query_proposal"),
                     max_output_tokens=4096, input_price_per_million=str(input_price),
                     output_price_per_million=str(output_price)))
 

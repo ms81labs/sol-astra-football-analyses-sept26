@@ -9,7 +9,7 @@ from decimal import Decimal, ROUND_UP
 from io import BytesIO
 from typing import Any, Callable, Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from .provider_images import MAX_IMAGE_BYTES, MAX_MANIFEST_IMAGES, ProviderImage
 from .workbench.contracts import StrictModel
@@ -41,10 +41,44 @@ class EventProposalDraft(StrictModel):
     description: str = Field(min_length=1, max_length=512)
 
 
+class QuerySuccessorDraft(StrictModel):
+    kind: str
+    team: Literal["same", "opponent", "my_team", "enemy"] | None = None
+    period: int | None = Field(default=None, ge=1, le=4)
+    withinSeconds: float | None = Field(default=None, gt=0, le=600, allow_inf_nan=False)
+
+
+class QueryFilterDraft(StrictModel):
+    eventFamily: str
+    team: Literal["my_team", "enemy"] | None = None
+    period: int | None = Field(default=None, ge=1, le=4)
+    playerTrackId: int | None = Field(default=None, ge=0, le=1_000_000)
+    reviewStatus: Literal["accepted", "unreviewed"] | None = None
+    pitchRegion: Literal["left_third", "middle_third", "right_third"] | None = None
+    successor: QuerySuccessorDraft | None = None
+    timeStartSeconds: float | None = Field(default=None, ge=0, le=86_400, allow_inf_nan=False)
+    timeEndSeconds: float | None = Field(default=None, ge=0, le=86_400, allow_inf_nan=False)
+
+
+class QueryProposalDraft(StrictModel):
+    status: Literal["query", "unsupported"]
+    reason: Literal["none", "unsupported_vocabulary", "ambiguous_scope", "unsupported_operation"]
+    query: QueryFilterDraft | None
+
+    @model_validator(mode="after")
+    def valid_disposition(self) -> "QueryProposalDraft":
+        if (self.status == "query") != (self.query is not None) \
+                or (self.status == "query") != (self.reason == "none"):
+            raise ValueError("Query proposal disposition does not match its filter")
+        return self
+
+
 def _astra_format(task_type: str = "tactical_report"):
     from .report_contracts import ReportDraft
     if task_type == "event_proposal":
         name, model = "event_proposal_v1", EventProposalDraft
+    elif task_type == "query_proposal":
+        name, model = "query_proposal_v1", QueryProposalDraft
     elif task_type in {"tactical_report", "drills"}:
         name, model = "report_draft_v1", ReportDraft
     else:
@@ -190,7 +224,8 @@ def parse_astra_response(response: dict[str, Any], bound: dict[str, Any]) -> tup
             or not 0 <= usage["output_tokens"] <= bound.get("maxOutputTokens", -1) \
             or usage["total_tokens"] != usage["input_tokens"] + usage["output_tokens"]:
         raise ValueError("Astra response usage is missing or exceeds its bound")
-    model = EventProposalDraft if bound.get("taskType") == "event_proposal" else ReportDraft
+    model = (EventProposalDraft if bound.get("taskType") == "event_proposal" else
+             QueryProposalDraft if bound.get("taskType") == "query_proposal" else ReportDraft)
     draft = model.model_validate(json.loads(content[0]["text"], object_pairs_hook=_unique_json_keys))
     return draft.model_dump(mode="json"), {"responseId": response["id"],
         "inputTokens": usage["input_tokens"], "outputTokens": usage["output_tokens"]}

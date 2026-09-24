@@ -153,6 +153,24 @@ export async function searchWorkbenchEvents(query: string | TypedSearchFilter, m
   return payload;
 }
 
+export async function fetchQueryProposalAvailability(matchId: string, generationId: string) {
+  const payload = await parseJson<{ generationId: string; available: boolean }>(
+    await fetch(`/api/matches/${matchId}/query-proposals`));
+  assertGeneration(payload, generationId);
+  return payload.available;
+}
+
+export async function requestQueryProposal(matchId: string, generationId: string,
+  question: string, requestId: string) {
+  const payload = await parseJson<Awaited<ReturnType<typeof searchWorkbenchEvents>>>(
+    await fetch(`/api/matches/${matchId}/query-proposals`, { method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ generationId, question, requestId }),
+    }));
+  assertGeneration(payload, generationId);
+  return payload;
+}
+
 export async function submitMatchCorrection(
   matchId: string,
   body: { kind: string; payload?: Record<string, unknown>; author?: string } & CommandControls,

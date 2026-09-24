@@ -348,6 +348,24 @@ def create_match_detail_router(
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    @router.get("/api/matches/{match_id}/query-proposals")
+    def get_query_proposal_capability(match: MatchRecord = Depends(require_match)) -> dict:
+        return {"generationId": storage.current_generation(match.id).generationId,
+                "available": provider_gateway.proposal_available(match, "query_proposal")}
+
+    @router.post("/api/matches/{match_id}/query-proposals")
+    def post_query_proposal(match: MatchRecord = Depends(require_match), body: dict | None = None) -> dict:
+        try:
+            return provider_gateway.execute_query_proposal(match.id, body=body or {})
+        except DomainError:
+            raise
+        except ProviderDenied as exc:
+            raise HTTPException(status_code=403, detail={"reasonCodes": exc.reason_codes}) from exc
+        except (KeyError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=404, detail="Source events not ready") from exc
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
     @router.post("/api/matches/{match_id}/provider-images")
     def prepare_provider_images(match: MatchRecord = Depends(require_match), body: dict | None = None) -> dict:
         from .provider_images import select_source_image_manifest

@@ -107,6 +107,33 @@ def test_event_proposal_uses_distinct_strict_schema_and_rejects_report_shape():
             {**bound, "taskType": "event_proposal"})
 
 
+def test_query_proposal_has_strict_text_only_schema_and_rejects_code_fields():
+    import json
+    from backend.app.provider_adapters import parse_astra_response
+
+    request = build_astra_request("Find recoveries", [], approved_images=(),
+        max_output_tokens=4096, task_type="query_proposal")
+    assert request["text"]["format"]["name"] == "query_proposal_v1"
+    assert request["input"][0]["content"] == [{"type": "input_text", "text": "Find recoveries"}]
+    bound = bound_astra_request(request, input_price_per_million="22",
+        output_price_per_million="82.5", authorised_limit="5", task_type="query_proposal")
+    draft = {"status": "query", "reason": "none", "query": {"eventFamily": "recovery",
+        "team": None, "period": None, "playerTrackId": None, "reviewStatus": None,
+        "pitchRegion": None, "successor": None, "timeStartSeconds": None, "timeEndSeconds": None}}
+    response = {"id": "resp_query", "model": "gpt-6-astra", "status": "completed",
+        "service_tier": "default", "incomplete_details": None, "error": None,
+        "output": [{"type": "message", "role": "assistant", "status": "completed",
+            "content": [{"type": "output_text", "text": json.dumps(draft)}]}],
+        "usage": {"input_tokens": 100, "output_tokens": 100, "total_tokens": 200}}
+    parsed, _ = parse_astra_response(response, {**bound, "taskType": "query_proposal"})
+    assert parsed == draft
+    with pytest.raises(ValueError):
+        parse_astra_response({**response, "output": [{"type": "message", "role": "assistant",
+            "status": "completed", "content": [{"type": "output_text",
+            "text": json.dumps({**draft, "query": {**draft["query"], "sql": "SELECT *"}})}]}]},
+            {**bound, "taskType": "query_proposal"})
+
+
 def test_astra_response_requires_one_completed_draft_with_bounded_usage():
     from backend.app.provider_adapters import parse_astra_response
     from backend.app.report_contracts import ReportDraft

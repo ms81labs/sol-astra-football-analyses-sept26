@@ -161,9 +161,59 @@ it('submits visible typed filters for the current generation through the same se
   fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
   expect(await screen.findByRole('button', { name: /recovery.*12s/i })).toBeTruthy();
   expect((await screen.findByLabelText('Interpreted filter')).textContent).toContain('right third');
-  expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({
+  const typedCall = fetchMock.mock.calls.find(([url, init]) => String(url).endsWith('/queries') && init?.method === 'POST');
+  expect(JSON.parse(String(typedCall?.[1]?.body))).toEqual({
     generationId: 'g1', typedQuery: {
       eventFamily: 'recovery', team: 'my_team', pitchRegion: 'right_third', reviewStatus: 'accepted',
     },
   });
+});
+
+it('shows the model interpreted filter and source hits only for the current generation', async () => {
+  const fetchMock = vi.fn(async (input: RequestInfo, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith('/query-proposals') && !init?.method) return {
+      ok: true, json: async () => ({ generationId: 'g1', available: true }),
+    } as Response;
+    if (url.endsWith('/query-proposals') && init?.method === 'POST') return {
+      ok: true, json: async () => ({ generationId: 'g1', query: { unanswerable: false,
+        interpreted: { eventFamily: 'recovery', team: 'my_team' } }, coverageState: 'matched',
+        results: [{ eventId: 'r1', matchId: 'match-a', timestamp: 12,
+          label: 'recovery', evidenceIds: ['frame:12'] }] }),
+    } as Response;
+    throw new Error(`Unexpected ${url}`);
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  render(<TypedSearchPanel matchId="match-a" generationId="g1" />);
+  fireEvent.change(screen.getByLabelText(/^query$/i), { target: { value: 'Our recoveries' } });
+  fireEvent.click(await screen.findByRole('button', { name: /ask model to search/i }));
+  expect(await screen.findByRole('button', { name: /recovery.*12s/i })).toBeTruthy();
+  expect(screen.getByLabelText('Interpreted filter').textContent).toContain('recovery · our team');
+  const calls = fetchMock.mock.calls.filter(([url, init]) => String(url).endsWith('/query-proposals') && init?.method === 'POST');
+  expect(calls).toHaveLength(1);
+  expect(JSON.parse(String(calls[0][1]?.body))).toEqual(expect.objectContaining({
+    generationId: 'g1', question: 'Our recoveries',
+  }));
+});
+
+it('ignores a model query response after switching match', async () => {
+  let resolveProposal!: (response: Response) => void;
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo, init?: RequestInit) => {
+    if (String(input).endsWith('/query-proposals') && init?.method === 'POST') {
+      return new Promise<Response>((resolve) => { resolveProposal = resolve; });
+    }
+    return Promise.resolve({ ok: true, json: async () => ({ generationId: 'g1', available: true }) } as Response);
+  }));
+  const view = render(<TypedSearchPanel matchId="match-a" generationId="g1" />);
+  fireEvent.change(screen.getByLabelText(/^query$/i), { target: { value: 'Our recoveries' } });
+  fireEvent.click(await screen.findByRole('button', { name: /ask model to search/i }));
+  await waitFor(() => expect(resolveProposal).toBeDefined());
+  view.rerender(<TypedSearchPanel matchId="match-b" generationId="g2" />);
+  await act(async () => resolveProposal({ ok: true, json: async () => ({
+    generationId: 'g1', query: { unanswerable: false, interpreted: { eventFamily: 'recovery' } },
+    results: [{ eventId: 'old', matchId: 'match-a', timestamp: 12,
+      label: 'recovery', evidenceIds: ['frame:12'] }],
+  }) } as Response));
+  expect(screen.queryByRole('button', { name: /recovery.*12s/i })).toBeNull();
+  expect(screen.queryByLabelText('Interpreted filter')).toBeNull();
 });
