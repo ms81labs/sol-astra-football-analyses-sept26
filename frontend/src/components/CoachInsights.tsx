@@ -68,7 +68,7 @@ function FocusCard({ title, player, accent }: { title: string; player?: FocusPla
       <h4 className="text-[11px] font-semibold text-slate-400 uppercase tracking-wide">{title}</h4>
       <div className="mt-1 flex items-center justify-between gap-2">
         <span className="text-xs font-semibold text-slate-200">
-          #{player.trackId} <span className="text-slate-500">({player.team})</span>
+          Track {player.trackId} <span className="text-slate-500">({player.team} · identity unverified)</span>
         </span>
         {player.label && <span className={`text-[11px] font-semibold ${accent}`}>{player.label}</span>}
       </div>
@@ -95,7 +95,7 @@ function PlayerFocusSection({ playerFocus }: { playerFocus?: TacticalReport['pla
             <div className="space-y-1">
               {playerFocus.otherKeyPlayers.map((player) => (
                 <p key={`${player.team}-${player.trackId}`} className="text-xs text-slate-300">
-                  #{player.trackId} <span className="text-slate-500">({player.team})</span>
+                  Track {player.trackId} <span className="text-slate-500">({player.team} · identity unverified)</span>
                   {player.label ? ` • ${player.label}` : ''}
                   {player.summary ? ` • ${player.summary}` : ''}
                 </p>
@@ -277,8 +277,8 @@ export default function CoachInsights({
             ))}
 
             {tacticalReport.key_player != null && <div className="p-2 bg-slate-900 rounded border border-emerald-700">
-              <span className="text-xs text-slate-400">Key Player: </span>
-              <span className="text-xs font-bold text-blue-400">#{tacticalReport.key_player}</span>
+              <span className="text-xs text-slate-400">Key track: </span>
+              <span className="text-xs font-bold text-blue-400">{tacticalReport.key_player}</span>
             </div>}
 
             <PlayerFocusSection playerFocus={tacticalReport.player_focus} />
@@ -303,7 +303,7 @@ export default function CoachInsights({
                   {tacticalReport.event_summary.topPlayers.slice(0, 3).map((player) => (
                     <div key={`${player.team}-${player.trackId}`} className="flex items-center justify-between text-xs text-slate-300">
                       <span>
-                        #{player.trackId} <span className="text-slate-500">({player.team})</span>
+                        Track {player.trackId} <span className="text-slate-500">({player.team} · identity unverified)</span>
                       </span>
                       <span className="text-emerald-400">{player.involvements} involvements</span>
                     </div>

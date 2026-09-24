@@ -39,6 +39,9 @@ describe('CoachInsights', () => {
 
     expect(screen.getByText('Player Focus')).toBeTruthy();
     expect(screen.getByText('Primary Creator')).toBeTruthy();
+    expect(screen.getByText(/Track 7/i)).toBeTruthy();
+    expect(screen.getByText(/identity unverified/i)).toBeTruthy();
+    expect(screen.getByText(/Key track:/i)).toBeTruthy();
     expect(screen.getByText('2 through balls, 0.54 experimental shot quality created')).toBeTruthy();
     expect(screen.getByText(/reviewed passages do not establish a whole-match frequency/i)).toBeTruthy();
   });
