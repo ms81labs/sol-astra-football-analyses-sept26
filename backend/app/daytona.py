@@ -522,7 +522,9 @@ def _preflight(execution: DaytonaExecutionRequest) -> tuple[Path, Path, JobReque
             proof_ids.append((relative, *identity))
         shadow_paths: set[PurePosixPath] = set()
         if request.config.get("jobKind") == "segmentation_shadow":
-            validate_shadow_inputs(request, receipt)
+            shadow = validate_shadow_inputs(request, receipt)
+            from .segmentation_worker import validate_sealed_shadow_request
+            validate_sealed_shadow_request(confined_path(root, "inputs/segmentation-request.json"), shadow)
             shadow_paths = {PurePosixPath("inputs/checkpoint.bin"),
                             PurePosixPath("inputs/segmentation-request.json")}
         sealed = [(e.relative_path, e.sha256, e.size_bytes) for e in receipt.files

@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import math
+import os
 import re
 import stat
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from collections import Counter
 from fractions import Fraction
 from pathlib import Path
@@ -15,6 +17,55 @@ from time import monotonic
 from .report_contracts import digest
 from .segmentation import SegmentationRequest, request_identity
 from .workbench.hashing import stream_sha256
+
+
+def load_sealed_shadow_bundle(root: Path):
+    """Recheck transferred inputs in the worker before loading a model."""
+    from .daytona import _open_preflight_regular_file, _preflight_file_identity
+    from .remote_contracts import (JobReceipt, JobRequest, confined_path,
+        load_canonical_json, validate_receipt_files, validate_shadow_inputs)
+
+    try:
+        with os.fdopen(_open_preflight_regular_file(confined_path(root, "job-request.json")), "rb") as handle:
+            request = JobRequest.from_mapping(load_canonical_json(handle))
+        with os.fdopen(_open_preflight_regular_file(confined_path(root, request.receipt_path)), "rb") as handle:
+            receipt = JobReceipt.from_mapping(load_canonical_json(handle))
+        for entry in receipt.files:
+            if _preflight_file_identity(confined_path(root, entry.relative_path)) != (entry.sha256, entry.size_bytes):
+                raise ValueError
+        validate_receipt_files(root, request, receipt)
+        shadow = validate_shadow_inputs(request, receipt)
+        segmentation = validate_sealed_shadow_request(
+            confined_path(root, "inputs/segmentation-request.json"), shadow)
+        return request, receipt, segmentation
+    except Exception:
+        raise ValueError("sealed shadow bundle is invalid") from None
+
+
+def validate_sealed_shadow_request(path: Path, shadow: Mapping[str, object]) -> SegmentationRequest:
+    """Parse the fixed sealed request before a shadow sandbox can be allocated."""
+    from .daytona import _open_preflight_regular_file
+    from .remote_contracts import MAX_RESULT_BYTES
+
+    try:
+        descriptor = _open_preflight_regular_file(path)
+        with os.fdopen(descriptor, "rb") as handle:
+            raw = handle.read(MAX_RESULT_BYTES + 1)
+        request = SegmentationRequest.model_validate_json(raw)
+        canonical = json.dumps(request.model_dump(mode="json"), sort_keys=True,
+            separators=(",", ":"), allow_nan=False).encode()
+        if (raw != canonical or len(raw) > MAX_RESULT_BYTES
+                or hashlib.sha256(raw).hexdigest() != shadow["requestDigest"]
+                or request_identity(request) != shadow["requestDigest"]
+                or request.sourceSha256 != shadow["sourceSha256"]
+                or request.checkpointDigest != shadow["checkpointDigest"]
+                or request.modelAlias != "sam31-video"
+                or request.executionMode != "sam31_object_multiplex"
+                or request.precision != "bf16"):
+            raise ValueError
+        return request
+    except Exception:
+        raise ValueError("sealed shadow request is invalid") from None
 
 
 def preflight_shadow_window(storage, match_id: str, generation_id: str, payload: dict, *,
