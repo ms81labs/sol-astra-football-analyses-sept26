@@ -97,7 +97,12 @@ export async function searchWorkbenchEvents(query: string, matchId: string, even
     body: JSON.stringify({ query, ...(generationId ? { generationId } : {}) }),
   });
   const payload = await parseJson<{
-    query: { unanswerable: boolean; reason: string | null; eventFamily: string };
+    query: { unanswerable: boolean; reason: string | null; eventFamily: string;
+      unsupportedTerms?: string[];
+      interpreted?: { eventFamily?: string; team?: string | null; playerTrackId?: number | null;
+        reviewStatus?: string | null; period?: number | null;
+        timeStartSeconds?: number | null; timeEndSeconds?: number | null } };
+    coverageState?: 'matched' | 'no_match' | 'insufficient' | 'unsupported';
     results: SearchHit[];
   } & { generationId?: string | null }>(response);
   assertGeneration(payload, generationId);

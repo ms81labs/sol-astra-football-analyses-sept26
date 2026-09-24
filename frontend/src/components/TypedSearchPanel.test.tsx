@@ -64,6 +64,19 @@ it('does not seek after the search panel unmounts', async () => {
   expect(onSeek).not.toHaveBeenCalled();
 });
 
+it('clears completed search results when the match changes', async () => {
+  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({
+    query: { unanswerable: false, interpreted: { eventFamily: 'pass' } },
+    results: [{ eventId: 'old', matchId: 'match-a', timestamp: 2, label: 'pass', evidenceIds: [] }],
+  }) } as Response)));
+  const view = render(<TypedSearchPanel matchId="match-a" />);
+  fireEvent.click(screen.getByRole('button', { name: /search evidence/i }));
+  expect(await screen.findByRole('button', { name: /pass.*2s/i })).toBeTruthy();
+  view.rerender(<TypedSearchPanel matchId="match-b" />);
+  expect(screen.queryByRole('button', { name: /pass.*2s/i })).toBeNull();
+  expect(screen.queryByLabelText('Interpreted filter')).toBeNull();
+});
+
 it('lets the analyst choose a source interval with its evidence and review status', async () => {
   const selected = vi.fn();
   vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => ({
@@ -81,4 +94,30 @@ it('lets the analyst choose a source interval with its evidence and review statu
     eventId: 'second', matchId: 'match-a', intervalStart: 4.8, intervalEnd: 5.4,
     evidenceIds: ['e2'], reviewStatus: 'accepted',
   }));
+});
+
+it('shows the interpreted filter and explains unsupported search terms', async () => {
+  const responses = [
+    { query: { unanswerable: false, interpreted: { eventFamily: 'recovery', team: 'my_team',
+      playerTrackId: 7, reviewStatus: 'accepted', timeStartSeconds: 10, timeEndSeconds: 20 } },
+      results: [{ eventId: 'r1', matchId: 'match-a', timestamp: 12, label: 'recovery', evidenceIds: ['e1'] }] },
+    { query: { unanswerable: true, reason: 'unsupported_terms', unsupportedTerms: ['left', 'flank'] },
+      results: [] },
+    { query: { unanswerable: false, interpreted: { eventFamily: 'recovery' } },
+      coverageState: 'insufficient', results: [] },
+  ];
+  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => responses.shift() } as Response)));
+  render(<TypedSearchPanel matchId="match-a" />);
+  fireEvent.change(screen.getByLabelText(/^query$/i), { target: { value: 'our accepted recoveries by player 7 between 10 and 20 seconds' } });
+  fireEvent.click(screen.getByRole('button', { name: /search evidence/i }));
+  expect((await screen.findByLabelText('Interpreted filter')).textContent).toContain(
+    'recovery · our team · player 7 · accepted · 10–20s');
+  fireEvent.change(screen.getByLabelText(/^query$/i), { target: { value: 'recoveries left flank' } });
+  fireEvent.click(screen.getByRole('button', { name: /search evidence/i }));
+  expect(await screen.findByText(/unsupported terms: left, flank/i)).toBeTruthy();
+  expect(screen.queryByLabelText('Interpreted filter')).toBeNull();
+  expect(screen.queryByText(/r1/i)).toBeNull();
+  fireEvent.change(screen.getByLabelText(/^query$/i), { target: { value: 'recoveries' } });
+  fireEvent.click(screen.getByRole('button', { name: /search evidence/i }));
+  expect(await screen.findByText(/event coverage unavailable/i)).toBeTruthy();
 });

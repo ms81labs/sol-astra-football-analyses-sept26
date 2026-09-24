@@ -11,6 +11,7 @@ from backend.app.schemas import MatchConfig
 from backend.app.workbench.assistance import (
     AssistancePolicy,
     AssistanceRouter,
+    TypedQuery,
     execute_typed_query,
     parse_typed_query,
     template_report,
@@ -461,6 +462,70 @@ def test_typed_search_answers_known_and_unanswerable_queries_without_sql() -> No
         events[2],
     ]
     assert [hit.eventId for hit in execute_typed_query(rejected_successor, query, match_id="m1")] == []
+
+
+def test_search_does_not_execute_a_broader_fragment_when_terms_are_unsupported() -> None:
+    rows = [{"id": "r1", "type": "recovery", "team": "my_team", "timestamp": 3.0}]
+    query = parse_typed_query("show our recoveries near the left flank")
+    assert query.unanswerable is True
+    assert query.reason == "unsupported_terms"
+    assert query.unsupportedTerms == ["near", "the", "left", "flank"]
+    assert execute_typed_query(rows, query, match_id="m1") == []
+
+
+def test_natural_and_typed_recovery_filters_return_the_same_evidence() -> None:
+    rows = [
+        {"id": "wanted", "type": "recovery", "team": "my_team", "timestamp": 12.0,
+         "fromTrackId": 7, "reviewStatus": "accepted"},
+        {"id": "wrong-player", "type": "recovery", "team": "my_team", "timestamp": 12.0,
+         "fromTrackId": 9, "reviewStatus": "accepted"},
+        {"id": "unreviewed", "type": "recovery", "team": "my_team", "timestamp": 12.0,
+         "fromTrackId": 7, "reviewStatus": "unreviewed"},
+        {"id": "outside", "type": "recovery", "team": "my_team", "timestamp": 22.0,
+         "fromTrackId": 7, "reviewStatus": "accepted"},
+    ]
+    direct = TypedQuery(eventFamily="recovery", team="my_team", playerTrackId=7,
+        reviewStatus="accepted", timeStartSeconds=10, timeEndSeconds=20)
+    natural = parse_typed_query("show our accepted recoveries by player 7 between 10 and 20 seconds")
+    assert natural.unanswerable is False
+    assert [hit.eventId for hit in execute_typed_query(rows, direct, match_id="m1")] == ["wanted"]
+    assert [hit.eventId for hit in execute_typed_query(rows, natural, match_id="m1")] == ["wanted"]
+
+
+def test_typed_query_rejects_unsupported_or_invalid_predicates() -> None:
+    from pydantic import ValidationError
+    from backend.app.workbench.assistance import SuccessorConstraint
+    for fields in (
+        {"eventFamily": "foul"}, {"eventFamily": "recovery", "period": -1},
+        {"eventFamily": "recovery", "playerTrackId": -1},
+        {"eventFamily": "recovery", "timeStartSeconds": 20, "timeEndSeconds": 10},
+        {"eventFamily": "recovery", "timeStartSeconds": float("nan")},
+        {"eventFamily": "recovery", "successor": SuccessorConstraint(kind="sql")},
+        {"eventFamily": "recovery", "pitchRegion": "left_flank"},
+        {"eventFamily": "recovery", "period": 99},
+        {"eventFamily": "recovery", "playerTrackId": 1_000_001},
+        {"eventFamily": "recovery", "timeEndSeconds": 86_401},
+    ):
+        with pytest.raises(ValidationError):
+            TypedQuery(**fields)
+    invalid_time = parse_typed_query("recoveries between 20 and 10 seconds")
+    assert invalid_time.unanswerable is True
+    assert invalid_time.reason == "invalid_time_range"
+    assert parse_typed_query("period 99 recoveries").reason == "invalid_period"
+    assert parse_typed_query("recoveries by player 1000001").reason == "invalid_player"
+    assert parse_typed_query("recoveries between 0 and 86401 seconds").reason == "invalid_time_range"
+    assert parse_typed_query("x" * 513).reason == "query_too_long"
+
+
+def test_query_result_distinguishes_no_match_from_missing_event_coverage(tmp_path, monkeypatch) -> None:
+    from backend.app.storage import Storage
+    storage = Storage(tmp_path / "store")
+    monkeypatch.setattr(storage, "load_events", lambda *_: [])
+    assert storage.query_match_events("m1", "recoveries")["coverageState"] == "no_match"
+    def missing(*_):
+        raise FileNotFoundError
+    monkeypatch.setattr(storage, "load_events", missing)
+    assert storage.query_match_events("m1", "recoveries")["coverageState"] == "insufficient"
 
 
 def test_assistance_rejects_fabricated_evidence_and_falls_back_without_provider() -> None:

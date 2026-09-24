@@ -876,8 +876,10 @@ class Storage(_IdentityStorageMixin, _CalibrationStorageMixin, _RemoteResultStor
 
         try:
             events = self.load_events(match_id)
+            coverage_state = "available"
         except FileNotFoundError:
             events = []
+            coverage_state = "insufficient"
         query = parse_typed_query(query_text, include_unknown=include_unknown)
         hits = execute_typed_query(events_as_query_rows(events, match_id=match_id), query, match_id=match_id)
         return {
@@ -885,6 +887,8 @@ class Storage(_IdentityStorageMixin, _CalibrationStorageMixin, _RemoteResultStor
             "interpreted": query.interpreted,
             "unsupportedTerms": query.unsupportedTerms,
             "results": [hit.model_dump(mode="json") for hit in hits],
+            "coverageState": ("unsupported" if query.unanswerable else "matched" if hits else
+                              "insufficient" if coverage_state == "insufficient" else "no_match"),
         }
 
     @_generation_reader

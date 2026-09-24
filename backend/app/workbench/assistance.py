@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any, Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from backend.app.ai_policy import ground_output
 from backend.app.provider_gateway import ApprovedEvidencePackage, validate_output
@@ -35,22 +35,33 @@ ALLOWED_TEAMS = frozenset({"my_team", "enemy"})
 class SuccessorConstraint(StrictModel):
     kind: str
     team: Literal["same", "opponent", "my_team", "enemy"] | None = None
-    period: int | None = None
-    withinSeconds: float | None = None
+    period: int | None = Field(default=None, ge=1, le=4)
+    withinSeconds: float | None = Field(default=None, gt=0, le=600, allow_inf_nan=False)
 
 
 class TypedQuery(StrictModel):
     team: Literal["my_team", "enemy"] | None = None
-    period: int | None = None
+    period: int | None = Field(default=None, ge=1, le=4)
     eventFamily: str
+    playerTrackId: int | None = Field(default=None, ge=0, le=1_000_000)
+    reviewStatus: Literal["accepted", "unreviewed"] | None = None
     successor: SuccessorConstraint | None = None
-    timeStartSeconds: float | None = None
-    timeEndSeconds: float | None = None
+    timeStartSeconds: float | None = Field(default=None, ge=0, le=86_400, allow_inf_nan=False)
+    timeEndSeconds: float | None = Field(default=None, ge=0, le=86_400, allow_inf_nan=False)
     includeUnknown: bool = False
     interpreted: dict[str, Any] = Field(default_factory=dict)
     unsupportedTerms: list[str] = Field(default_factory=list)
     unanswerable: bool = False
     reason: str | None = None
+
+    @model_validator(mode="after")
+    def supported_predicates(self) -> "TypedQuery":
+        if self.eventFamily not in ALLOWED_EVENT_FAMILIES \
+                or (self.successor and self.successor.kind not in ALLOWED_EVENT_FAMILIES) \
+                or (self.timeStartSeconds is not None and self.timeEndSeconds is not None
+                    and self.timeStartSeconds > self.timeEndSeconds):
+            raise ValueError("unsupported or invalid typed query predicate")
+        return self
 
     @property
     def successorEvent(self) -> str | None:
@@ -95,6 +106,7 @@ class AssistanceDisposition(StrictModel):
 _QUERY_RE = re.compile(
     r"(?:(?P<team>our|my team|enemy|opponent) )?"
     r"(?:(?P<period>first-half|second-half|period\s+(?P<period_n>\d+)) )?"
+    r"(?:(?P<review>accepted|unreviewed) )?"
     r"(?P<event>turnovers|turnover|shots|shot|passes|pass|recoveries|recovery)"
     r"(?: followed by (?:a )?(?:(?P<successor_team>our|my team|enemy|opponent|same) )?"
     r"(?P<successor>shots|shot|passes|pass|turnovers|turnover)(?: within (?P<gap>\d+|ten) seconds)?)?",
@@ -104,6 +116,8 @@ _QUERY_RE = re.compile(
 
 def parse_typed_query(text: str, *, include_unknown: bool = False) -> TypedQuery:
     stripped = text.strip()
+    if len(stripped) > 512:
+        return TypedQuery(eventFamily="pass", unanswerable=True, reason="query_too_long")
     if not stripped:
         return TypedQuery(eventFamily="pass", unanswerable=True, reason="empty_query")
     lowered = stripped.lower()
@@ -126,8 +140,12 @@ def parse_typed_query(text: str, *, include_unknown: bool = False) -> TypedQuery
         period = int(match.group("period_n"))
     elif match.group("period"):
         period = 1 if "first" in match.group("period").lower() else 2
+    if period is not None and not 1 <= period <= 4:
+        return TypedQuery(eventFamily=event, unanswerable=True, reason="invalid_period")
     gap_token = match.group("gap")
     gap = 10.0 if gap_token == "ten" else (float(gap_token) if gap_token else None)
+    if gap is not None and not 0 < gap <= 600:
+        return TypedQuery(eventFamily=event, unanswerable=True, reason="invalid_time_range")
     if event not in ALLOWED_EVENT_FAMILIES:
         return TypedQuery(eventFamily=event, unanswerable=True, reason="unknown_event_family")
     if successor and successor not in ALLOWED_EVENT_FAMILIES:
@@ -146,6 +164,21 @@ def parse_typed_query(text: str, *, include_unknown: bool = False) -> TypedQuery
         else None
     )
     outside = f"{stripped[:match.start()]} {stripped[match.end():]}"
+    player_match = re.search(r"\bby player (?P<id>\d+)\b", outside, re.IGNORECASE)
+    player_id = int(player_match.group("id")) if player_match else None
+    if player_id is not None and player_id > 1_000_000:
+        return TypedQuery(eventFamily=event, unanswerable=True, reason="invalid_player")
+    if player_match:
+        outside = outside.replace(player_match.group(), " ", 1)
+    time_match = re.search(r"\bbetween (?P<start>\d+(?:\.\d+)?) and (?P<end>\d+(?:\.\d+)?) seconds\b",
+        outside, re.IGNORECASE)
+    start = float(time_match.group("start")) if time_match else None
+    end = float(time_match.group("end")) if time_match else None
+    if time_match:
+        outside = outside.replace(time_match.group(), " ", 1)
+    if start is not None and end is not None and (start > end or end > 86_400):
+        return TypedQuery(eventFamily=event, unanswerable=True, reason="invalid_time_range",
+            interpreted={"eventFamily": event, "timeStartSeconds": start, "timeEndSeconds": end})
     unsupported = [
         token.lower()
         for token in re.findall(r"[A-Za-z0-9_'-]+", outside)
@@ -155,6 +188,10 @@ def parse_typed_query(text: str, *, include_unknown: bool = False) -> TypedQuery
         "team": team,
         "period": period,
         "eventFamily": event,
+        "playerTrackId": player_id,
+        "reviewStatus": match.group("review").lower() if match.group("review") else None,
+        "timeStartSeconds": start,
+        "timeEndSeconds": end,
         "successor": successor_constraint.model_dump(mode="json") if successor_constraint else None,
         "includeUnknown": include_unknown,
     }
@@ -162,10 +199,16 @@ def parse_typed_query(text: str, *, include_unknown: bool = False) -> TypedQuery
         team=team,
         period=period,
         eventFamily=event,
+        playerTrackId=player_id,
+        reviewStatus=match.group("review").lower() if match.group("review") else None,
+        timeStartSeconds=start,
+        timeEndSeconds=end,
         successor=successor_constraint,
         includeUnknown=include_unknown,
         interpreted=interpreted,
         unsupportedTerms=unsupported,
+        unanswerable=bool(unsupported),
+        reason="unsupported_terms" if unsupported else None,
     )
 
 
@@ -182,6 +225,10 @@ def execute_typed_query(events: list[dict[str, Any]], query: TypedQuery, *, matc
         if query.team and not _matches_explicit(event.get("team"), query.team, query.includeUnknown, unknown=(None, "", "unknown")):
             continue
         if query.period is not None and not _matches_explicit(event.get("period"), query.period, query.includeUnknown, unknown=(None, 0, "unknown")):
+            continue
+        if query.playerTrackId is not None and query.playerTrackId not in (event.get("fromTrackId"), event.get("toTrackId")):
+            continue
+        if query.reviewStatus is not None and event.get("reviewStatus") != query.reviewStatus:
             continue
         timestamp = event.get("timestamp")
         if query.timeStartSeconds is not None and not _at_or_after(timestamp, query.timeStartSeconds, query.includeUnknown):
