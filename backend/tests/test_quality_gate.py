@@ -2,11 +2,19 @@
 from __future__ import annotations
 
 import json
+import runpy
 import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 
-from scripts.check_python_quality import compare_baseline, normalise_diagnostics, run_tool
+# Developer tooling is deliberately outside the installed backend package.
+# Load this exact source file without relying on pytest's entry-point sys.path.
+_quality = runpy.run_path(str(Path(__file__).resolve().parents[2] / "scripts" / "check_python_quality.py"))
+compare_baseline = _quality["compare_baseline"]
+normalise_diagnostics = _quality["normalise_diagnostics"]
+run_tool = _quality["run_tool"]
 
 
 def test_new_diagnostic_does_not_hide_behind_existing_debt():
@@ -54,3 +62,15 @@ def test_valid_clean_run_passes(tmp_path, monkeypatch):
 def test_unrecognised_mypy_severity_fails_closed(tmp_path):
     with pytest.raises(ValueError):
         normalise_diagnostics("mypy", json.dumps({"severity": "fatal"}), tmp_path)
+
+
+def test_quality_tests_load_without_repository_on_import_path(tmp_path):
+    result = subprocess.run(
+        [sys.executable, "-I", "-c", "import runpy, sys; runpy.run_path(sys.argv[1])", str(Path(__file__).resolve())],
+        cwd=tmp_path,
+        text=True,
+        capture_output=True,
+        timeout=30,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
