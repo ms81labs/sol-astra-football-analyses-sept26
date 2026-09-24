@@ -117,7 +117,7 @@ jobs:
         run: ruff check backend --select F821,F822,F823
       - run: ruff check backend/app backend/scripts --select F401
       - name: Clean production correctness and cleanup gate
-        run: ruff check backend/app backend/scripts --select F,S110,B904
+        run: ruff check backend --select F,S110,B904
       - name: Script hygiene gate
         run: python backend/tests/test_script_hygiene.py
       - name: Wider Ruff diagnostic ratchet
