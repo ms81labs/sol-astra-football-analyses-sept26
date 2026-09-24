@@ -24,7 +24,7 @@ def sam3_prompt_requests(request: SegmentationRequest) -> tuple[dict[str, int], 
     frame_indices = {frame.frameId: index for index, frame in enumerate(request.frames)}
     object_ids = {name: index + 1 for index, name in enumerate(sorted({
         prompt.objectId for prompt in request.prompts}))}
-    commands = []
+    by_object_frame: dict[tuple[str, int], dict] = {}
     for prompt in request.prompts:
         if prompt.box is not None:
             # Box prompts take SAM3's semantic path, which resets state and ignores obj_id.
@@ -32,10 +32,14 @@ def sam3_prompt_requests(request: SegmentationRequest) -> tuple[dict[str, int], 
         x, y = prompt.point
         if not (0 <= x < request.width and 0 <= y < request.height):
             raise ValueError("shadow prompt exceeds source frame geometry")
-        commands.append({"type": "add_prompt", "frame_index": frame_indices[prompt.frameId],
-            "obj_id": object_ids[prompt.objectId], "points": [[x / request.width, y / request.height]],
-            "point_labels": [1], "rel_coordinates": True})
-    return object_ids, commands
+        key = (prompt.objectId, prompt.frameId)
+        if key not in by_object_frame:
+            by_object_frame[key] = {"type": "add_prompt", "frame_index": frame_indices[prompt.frameId],
+                "obj_id": object_ids[prompt.objectId], "points": [],
+                "point_labels": [], "rel_coordinates": True}
+        by_object_frame[key]["points"].append([x / request.width, y / request.height])
+        by_object_frame[key]["point_labels"].append(1)
+    return object_ids, list(by_object_frame.values())
 
 
 def load_sealed_shadow_bundle(root: Path):

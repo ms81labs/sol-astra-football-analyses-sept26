@@ -40,6 +40,23 @@ def test_sam3_prompt_mapping_uses_local_frame_indices_and_normalised_points():
             Prompt(objectId="b", trackId="t2", frameId=15, box=(20, 10, 120, 60))]}))
 
 
+def test_sam3_prompt_mapping_keeps_multiple_points_for_one_object_and_frame():
+    from backend.app.segmentation_worker import sam3_prompt_requests
+
+    request = SegmentationRequest(sourceSha256="a" * 64, baseTrackingDigest="b" * 64,
+        modelAlias="sam31-video", modelDigest="c" * 64, checkpointDigest="d" * 64,
+        workerDigest="e" * 64, executionMode="sam31_object_multiplex", cropDigest="f" * 64,
+        precision="bf16", width=200, height=100, intervalStart=1, intervalEnd=2,
+        frames=[FramePoint(frameId=10, ptsSeconds=1)],
+        prompts=[Prompt(objectId="a", trackId="t1", frameId=10, point=(20, 10)),
+                 Prompt(objectId="a", trackId="t1", frameId=10, point=(50, 25))],
+        maxFrames=1, maxObjects=1)
+    _, commands = sam3_prompt_requests(request)
+    assert commands == [{"type": "add_prompt", "frame_index": 0, "obj_id": 1,
+        "points": [[.1, .1], [.25, .25]], "point_labels": [1, 1],
+        "rel_coordinates": True}]
+
+
 def test_shadow_preflight_import_does_not_load_sam_or_torch():
     completed = subprocess.run([sys.executable, "-c",
         "import sys; import backend.app.segmentation_worker; "
