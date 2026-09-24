@@ -234,6 +234,25 @@ it('C03 displays scoped zero, experimental and unavailable facts without inventi
   expect(screen.queryByText(/out of 10/i)).toBeNull();
 });
 
+it('opens current claim evidence and leaves historical, metric and prose references noninteractive', () => {
+  const onSelectEvidence = vi.fn();
+  render(<CoachInsights activeTab="report" llmThinking={false} matchId="m" generationId="N" currentFrame={0}
+    events={[]} tacticalReport={{ matchId: 'm', generationId: 'N',
+      observations: [{ text: 'Turnover led to a shot', grounding: 'referenced', evidence: [
+        { matchId: 'm', generationId: 'N', kind: 'event', localId: '12:turnover:2.4' },
+        { matchId: 'm', generationId: 'old', kind: 'frame', localId: '12' },
+        { matchId: 'm', generationId: 'N', kind: 'metric', localId: '0:shots' },
+        'legacy reference',
+      ] }],
+    }} drillResponse={null} onSelectEvidence={onSelectEvidence}
+    onGenerateReport={vi.fn()} onGenerateDrills={vi.fn()} />);
+  fireEvent.click(screen.getByRole('button', { name: /event:12:turnover:2.4/i }));
+  expect(onSelectEvidence).toHaveBeenCalledWith({ matchId: 'm', generationId: 'N', kind: 'event', localId: '12:turnover:2.4' });
+  expect(screen.queryByRole('button', { name: /frame:12/i })).toBeNull();
+  expect(screen.queryByRole('button', { name: /metric:0:shots/i })).toBeNull();
+  expect(screen.queryByRole('button', { name: /legacy reference/i })).toBeNull();
+});
+
 it('C03 refuses silent loading of a playlist from another generation', async () => {
   const dispatchEvent = vi.fn();
   const result = await loadPlaylistItemsForMatch([{ annotationId: 'a', matchId: 'm', generationId: 'old',

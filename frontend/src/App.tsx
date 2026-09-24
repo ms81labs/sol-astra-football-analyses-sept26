@@ -592,6 +592,43 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
     coach.clearResponse();
   }, [coach, totalFrameCount]);
 
+  const selectSearchHit = (hit: SearchHit) => {
+    if (hit.matchId !== activeMatch?.id) return;
+    setSelectedSearch({ generationId: activeMatch.detail.generationId ?? null, hit });
+    setIsPlaying(false);
+    const start = hit.intervalStart ?? hit.timestamp;
+    const end = hit.intervalEnd ?? hit.timestamp;
+    const startIndex = matchData.findIndex((frame) => frame.Timestamp >= start);
+    const afterEnd = matchData.findIndex((frame) => frame.Timestamp >= end);
+    const anchor = startIndex >= 0 ? startIndex : findNearestFrameIndex(frameTimestamps, hit.timestamp);
+    const anchorLoaded = hit.frameId == null || matchData.some((frame) => frame.Frame_ID === hit.frameId);
+    if (anchorLoaded && anchor >= 0 && matchData[anchor]) {
+      review.setReviewRange({ startFrame: matchData[anchor].Frame_ID,
+        endFrame: matchData[Math.max(anchor, afterEnd < 0 ? matchData.length - 1 : afterEnd - 1)].Frame_ID });
+    }
+    if (hit.frameId != null) handleSeek(hit.frameId);
+    else if (anchorLoaded && anchor >= 0 && matchData[anchor]) handleSeek(matchData[anchor].Frame_ID);
+  };
+
+  const selectReportEvidence = (reference: import('./types').ReportEvidenceRef) => {
+    if (!activeMatch || reference.matchId !== activeMatch.id
+      || reference.generationId !== activeMatch.detail.generationId) return;
+    if (reference.kind === 'event') {
+      const event = activeMatch.backendEvents.find((item) =>
+        reference.localId === `${item.frameId}:${item.type}:${item.timestamp}` && item.reviewStatus !== 'rejected');
+      if (!event) return;
+      selectSearchHit({ matchId: activeMatch.id, eventId: event.eventId ?? reference.localId,
+        frameId: event.frameId, timestamp: event.timestamp, intervalStart: event.intervalStart,
+        intervalEnd: event.intervalEnd, label: event.description,
+        reviewStatus: event.reviewStatus, evidenceIds: [`event:${reference.localId}`] });
+    } else if (reference.kind === 'frame') {
+      const frame = matchData.find((item) => String(item.Frame_ID) === reference.localId);
+      if (!frame) return;
+      selectSearchHit({ matchId: activeMatch.id, eventId: reference.localId, frameId: frame.Frame_ID,
+        timestamp: frame.Timestamp, label: `Frame ${frame.Frame_ID}`, evidenceIds: [`frame:${reference.localId}`] });
+    }
+  };
+
   const loadWorkspaceIntoState = useCallback(
     async (
       matchId: string,
@@ -1554,23 +1591,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
             <TypedSearchPanel key={`${activeMatch?.id}:${activeMatch?.detail.generationId}`}
               generationId={activeMatch?.detail.generationId ?? undefined}
               matchId={activeMatch?.id}
-              onSelectHit={(hit) => {
-                if (hit.matchId !== activeMatch?.id) return;
-                setSelectedSearch({ generationId: activeMatch.detail.generationId ?? null, hit });
-                setIsPlaying(false);
-                const start = hit.intervalStart ?? hit.timestamp;
-                const end = hit.intervalEnd ?? hit.timestamp;
-                const startIndex = matchData.findIndex((frame) => frame.Timestamp >= start);
-                const afterEnd = matchData.findIndex((frame) => frame.Timestamp >= end);
-                const anchor = startIndex >= 0 ? startIndex : findNearestFrameIndex(frameTimestamps, hit.timestamp);
-                const anchorLoaded = hit.frameId == null || matchData.some((frame) => frame.Frame_ID === hit.frameId);
-                if (anchorLoaded && anchor >= 0 && matchData[anchor]) {
-                  review.setReviewRange({ startFrame: matchData[anchor].Frame_ID,
-                    endFrame: matchData[Math.max(anchor, afterEnd < 0 ? matchData.length - 1 : afterEnd - 1)].Frame_ID });
-                }
-                if (hit.frameId != null) handleSeek(hit.frameId);
-                else if (anchorLoaded && anchor >= 0 && matchData[anchor]) handleSeek(matchData[anchor].Frame_ID);
-              }}
+              onSelectHit={selectSearchHit}
             />
           </div>
           <div className="mb-3 flex-1 overflow-y-auto">
@@ -1679,6 +1700,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
                   onSwitchMatch={loadWorkspaceIntoState}
                   onGenerateReport={() => coach.runScenario({ matchId: activeMatch?.id ?? null, currentFrame, scenario: 'tactical_report' })}
                   onGenerateDrills={() => coach.runScenario({ matchId: activeMatch?.id ?? null, currentFrame, scenario: 'drills' })}
+                  onSelectEvidence={selectReportEvidence}
                 />
               )}
                 {isTacticalInterpretationPaused && coach.activeTab !== 'analysis' && (

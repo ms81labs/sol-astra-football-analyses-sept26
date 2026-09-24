@@ -19,21 +19,38 @@ interface CoachInsightsProps {
   ballSignalStatus?: string | null;
   onGenerateReport: () => void;
   onGenerateDrills: () => void;
+  onSelectEvidence?: (reference: ReportEvidenceRef) => void;
 }
 
 function referenceText(item: string | ReportEvidenceRef): string {
   return typeof item === 'string' ? item : `${item.kind}:${item.localId} · ${item.matchId}/${item.generationId}`;
 }
 
-function ScopedReportDetails({ report }: { report: ScopedCoachReport }) {
+function EvidenceLinks({ items, matchId, generationId, onSelectEvidence }: {
+  items: Array<string | ReportEvidenceRef>; matchId: string | null; generationId?: string | null;
+  onSelectEvidence?: (reference: ReportEvidenceRef) => void;
+}) {
+  return <span className="inline-flex flex-wrap gap-1">{items.map((item, index) =>
+    typeof item !== 'string' && item.kind !== 'metric' && item.matchId === matchId
+      && item.generationId === generationId && onSelectEvidence
+      ? <button key={index} type="button" className="underline text-emerald-300" onClick={() => onSelectEvidence(item)}>{referenceText(item)}</button>
+      : <span key={index}>{referenceText(item)}</span>)}</span>;
+}
+
+function ScopedReportDetails({ report, matchId, generationId, onSelectEvidence }: {
+  report: ScopedCoachReport; matchId: string | null; generationId?: string | null;
+  onSelectEvidence?: (reference: ReportEvidenceRef) => void;
+}) {
   return <div className="space-y-2 text-xs text-slate-300">
     <p role="status">{report.status ?? 'historical/unverified'} · {report.grounding ?? 'unverified'} · Generation: {report.generationId ?? 'unknown'}</p>
     <p>Only validated structured measurements are grounded. Observations are referenced, not semantically certified; advice is interpretive.</p>
     {report.validationDisposition === 'validation_failed' && <p className="text-amber-200">Provider response failed validation. Deterministic stored facts remain available; no automatic provider retry was sent.</p>}
     {([...(report.metricClaims ?? []), ...(report.metrics ?? [])]).map((claim, index) => <p key={`${claim.metric}-${index}`}>
       {claim.metric}: {claim.value == null ? 'unavailable' : claim.value} {claim.unit} · {claim.teamScope ?? 'match'} · {claim.availability}
+      {claim.intervalStart != null && claim.intervalEnd != null && <> · {claim.intervalStart}s to {claim.intervalEnd}s</>}
+      {claim.evidence?.length ? <> · <EvidenceLinks items={claim.evidence} matchId={matchId} generationId={generationId} onSelectEvidence={onSelectEvidence} /></> : null}
     </p>)}
-    {report.observations?.map((claim, index) => <p key={index}>Referenced observation: {claim.text}</p>)}
+    {report.observations?.map((claim, index) => <p key={index}>Referenced observation: {claim.text} · <EvidenceLinks items={claim.evidence} matchId={matchId} generationId={generationId} onSelectEvidence={onSelectEvidence} /></p>)}
     {report.interpretation && <p>Interpretation: {report.interpretation}</p>}
     {report.recommendations?.map((text, index) => <p key={index}>Recommendation: {text}</p>)}
   </div>;
@@ -166,6 +183,7 @@ export default function CoachInsights({
   ballSignalStatus,
   onGenerateReport,
   onGenerateDrills,
+  onSelectEvidence,
 }: CoachInsightsProps) {
   const [showBundleList, setShowBundleList] = useState(false);
   const exportHref = matchId ? buildMatchReportExportUrl(matchId, generationId) : null;
@@ -235,7 +253,7 @@ export default function CoachInsights({
         {tacticalReport ? (
           <div className="space-y-3">
             <p className="text-[11px] text-amber-200">Reviewed passages do not establish a whole-match frequency.</p>
-            <ScopedReportDetails report={tacticalReport} />
+            <ScopedReportDetails report={tacticalReport} matchId={matchId} generationId={generationId} onSelectEvidence={onSelectEvidence} />
             {tacticalReport.rating != null && <div className="flex items-center justify-between">
               <span className="text-xs text-slate-400">Overall Rating (interpretation)</span>
               <span className="text-xl font-bold text-emerald-400">{tacticalReport.rating}/10</span>
@@ -295,8 +313,8 @@ export default function CoachInsights({
                 <h4 className="text-xs font-semibold text-emerald-500 mb-2">Evidence</h4>
                 <div className="space-y-1">
                   {tacticalReport.evidence.map((item, index) => (
-                    <p key={`${item}-${index}`} className="text-xs text-slate-300 leading-relaxed">
-                      {referenceText(item)}
+                    <p key={`${referenceText(item)}-${index}`} className="text-xs text-slate-300 leading-relaxed">
+                      <EvidenceLinks items={[item]} matchId={matchId} generationId={generationId} onSelectEvidence={onSelectEvidence} />
                     </p>
                   ))}
                 </div>
@@ -359,7 +377,7 @@ export default function CoachInsights({
             <span className="text-xs font-semibold text-emerald-400">{drillResponse.focus_area}</span>
           </div>
 
-          <ScopedReportDetails report={drillResponse} />
+          <ScopedReportDetails report={drillResponse} matchId={matchId} generationId={generationId} onSelectEvidence={onSelectEvidence} />
           <PlayerFocusSection playerFocus={drillResponse.player_focus} />
 
           {(drillResponse.drills ?? []).map((drill, index) => (
@@ -379,8 +397,8 @@ export default function CoachInsights({
               <h4 className="text-xs font-semibold text-emerald-500 mb-2">Why These Drills</h4>
               <div className="space-y-1">
                 {drillResponse.evidence.map((item, index) => (
-                  <p key={`${item}-${index}`} className="text-xs text-slate-300 leading-relaxed">
-                    {referenceText(item)}
+                  <p key={`${referenceText(item)}-${index}`} className="text-xs text-slate-300 leading-relaxed">
+                    <EvidenceLinks items={[item]} matchId={matchId} generationId={generationId} onSelectEvidence={onSelectEvidence} />
                   </p>
                 ))}
               </div>

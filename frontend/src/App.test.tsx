@@ -2828,6 +2828,27 @@ describe('App review drawing', () => {
 });
 
 describe('App analysis provider capabilities', () => {
+  it('seeks an exact current report event through the shared evidence selection', async () => {
+    mockReadyReviewMatch();
+    stubPitchCanvas();
+    const snapshot = reviewWorkspace();
+    snapshot.frames = [snapshot.frames[0], { ...snapshot.frames[0], Frame_ID: 1, Timestamp: 4.2 }];
+    snapshot.frameCount = 2;
+    snapshot.events = [{ eventId: 'ev-1', type: 'turnover', frameId: 1, timestamp: 4.2,
+      intervalStart: 4.2, intervalEnd: 4.4, description: 'Turnover' }];
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(snapshot);
+    vi.mocked(api.runMatchAnalysis).mockResolvedValue({ matchId: 'match-review', generationId: 'g-match-review',
+      status: 'current', grounding: 'referenced', observations: [{ text: 'Turnover', grounding: 'referenced',
+        evidence: [{ matchId: 'match-review', generationId: 'g-match-review', kind: 'event', localId: '1:turnover:4.2' }] }] });
+    render(<App runtimeCapabilities={localOnlyCapabilities} />);
+    await screen.findByText('Review Match');
+    fireEvent.click(screen.getByRole('button', { name: 'Report' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Full Report' }));
+    fireEvent.click(await screen.findByRole('button', { name: /event:1:turnover:4.2/i }));
+    expect(screen.getByText(/Selected source interval: 4.2s to 4.4s/)).toBeTruthy();
+    expect(screen.getByText(/Selected evidence: event:1:turnover:4.2/)).toBeTruthy();
+  });
+
   it('keeps cloud unavailable and runs locally when only local analysis is supported', async () => {
     mockReadyReviewMatch();
     stubPitchCanvas();
