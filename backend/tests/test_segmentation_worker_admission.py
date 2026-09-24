@@ -62,7 +62,7 @@ def test_sam3_prompt_mapping_keeps_multiple_points_for_one_object_and_frame():
 def test_sam3_window_stages_sparse_exact_source_frames_and_cleans_failure(tmp_path, monkeypatch):
     from PIL import Image
     from backend.app import segmentation_worker
-    from backend.app.segmentation_worker import stage_sam_source_window
+    from backend.app.segmentation_worker import stage_sam_source_window, validate_sam_source_window
     from backend.app.workbench.media import FfmpegFrameSource
     from backend.app.workbench.media import resolve_trusted_executable
 
@@ -81,6 +81,7 @@ def test_sam3_window_stages_sparse_exact_source_frames_and_cleans_failure(tmp_pa
     workspace = tmp_path / "windows"
     workspace.mkdir()
     root, manifest = stage_sam_source_window(source, request, workspace)
+    assert validate_sam_source_window(root, request) == manifest
     assert [(item["sourceFrameId"], item["localIndex"], item["ptsSeconds"])
         for item in manifest["frames"]] == [(0, 0, 0), (2, 1, .5)]
     assert sorted(path.name for path in root.iterdir()) == ["0.png", "1.png", "window.json"]
@@ -90,6 +91,31 @@ def test_sam3_window_stages_sparse_exact_source_frames_and_cleans_failure(tmp_pa
             assert image.size == (160, 90)
             expected = Image.frombytes("RGB", image.size, decoded[source_index].payload, "raw", "BGR")
             assert image.tobytes() == expected.tobytes()
+    first = root / "0.png"
+    original = first.read_bytes()
+    first.write_bytes(b"changed")
+    with pytest.raises(ValueError, match="window"):
+        validate_sam_source_window(root, request)
+    first.write_bytes(original)
+    first.unlink()
+    first.symlink_to(source)
+    with pytest.raises(ValueError, match="window"):
+        validate_sam_source_window(root, request)
+    first.unlink()
+    first.write_bytes(original)
+    manifest_path = root / "window.json"
+    original_manifest = manifest_path.read_bytes()
+    malformed = {**manifest, "frames": [{**manifest["frames"][0], "sourceFrameId": 2},
+        manifest["frames"][1]]}
+    from backend.app.remote_contracts import canonical_json_bytes
+    manifest_path.write_bytes(canonical_json_bytes(malformed))
+    with pytest.raises(ValueError, match="window"):
+        validate_sam_source_window(root, request)
+    manifest_path.write_bytes(original_manifest)
+    (root / "extra.png").write_bytes(original)
+    with pytest.raises(ValueError, match="window"):
+        validate_sam_source_window(root, request)
+    (root / "extra.png").unlink()
     with pytest.raises(ValueError, match="source frame PTS"):
         stage_sam_source_window(source, request.model_copy(update={"frames": [
             FramePoint(frameId=0, ptsSeconds=0), FramePoint(frameId=2, ptsSeconds=.4)]}), workspace)

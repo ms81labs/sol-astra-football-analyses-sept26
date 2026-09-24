@@ -143,6 +143,7 @@ def stage_sam_source_window(source: Path, request: SegmentationRequest, workspac
         manifest = {"schemaVersion": 1, "sourceSha256": request.sourceSha256,
             "requestDigest": request_digest, "frames": frames}
         (root / "window.json").write_bytes(canonical_json_bytes(manifest))
+        validate_sam_source_window(root, request)
         return root, manifest
     except Exception:
         try:
@@ -150,6 +151,58 @@ def stage_sam_source_window(source: Path, request: SegmentationRequest, workspac
         except Exception:
             raise RuntimeError("shadow window cleanup could not be confirmed") from None
         raise
+
+
+def validate_sam_source_window(root: Path, request: SegmentationRequest) -> dict:
+    """Recheck a numbered source window before a worker loads any model."""
+    from PIL import Image
+    from .daytona import _open_preflight_regular_file
+    from .remote_contracts import load_canonical_json
+
+    try:
+        root = Path(root)
+        if not root.is_absolute() or root.is_symlink() or not root.is_dir():
+            raise ValueError
+        identity = request_identity(request)
+        if identity is None:
+            raise ValueError
+        with os.fdopen(_open_preflight_regular_file(root / "window.json"), "rb") as handle:
+            manifest = load_canonical_json(handle)
+        if not isinstance(manifest, dict) or set(manifest) != {
+            "schemaVersion", "sourceSha256", "requestDigest", "frames"
+        } or type(manifest["schemaVersion"]) is not int or manifest["schemaVersion"] != 1 \
+                or manifest["sourceSha256"] != request.sourceSha256 \
+                or manifest["requestDigest"] != identity \
+                or not isinstance(manifest["frames"], list) \
+                or len(manifest["frames"]) != len(request.frames):
+            raise ValueError
+        expected_files = {"window.json"} | {f"{index}.png" for index in range(len(request.frames))}
+        if {path.name for path in root.iterdir()} != expected_files:
+            raise ValueError
+        total = 0
+        for index, (item, frame) in enumerate(zip(manifest["frames"], request.frames)):
+            filename = f"{index}.png"
+            if not isinstance(item, dict) or set(item) != {
+                "localIndex", "sourceFrameId", "ptsSeconds", "path", "sha256", "sizeBytes"
+            } or type(item["localIndex"]) is not int or item["localIndex"] != index \
+                    or type(item["sourceFrameId"]) is not int or item["sourceFrameId"] != frame.frameId \
+                    or type(item["ptsSeconds"]) not in (int, float) \
+                    or item["ptsSeconds"] != frame.ptsSeconds or item["path"] != filename \
+                    or type(item["sizeBytes"]) is not int or not 0 < item["sizeBytes"] <= 64 * 1024**2:
+                raise ValueError
+            with os.fdopen(_open_preflight_regular_file(root / filename), "rb") as handle:
+                payload = handle.read(64 * 1024**2 + 1)
+            total += len(payload)
+            if len(payload) != item["sizeBytes"] or total > 512 * 1024**2 \
+                    or hashlib.sha256(payload).hexdigest() != item["sha256"]:
+                raise ValueError
+            with Image.open(BytesIO(payload)) as image:
+                if image.format != "PNG" or image.size != (request.width, request.height):
+                    raise ValueError
+                image.verify()
+        return manifest
+    except Exception:
+        raise ValueError("sealed shadow window is invalid") from None
 
 
 def load_sealed_shadow_bundle(root: Path):
