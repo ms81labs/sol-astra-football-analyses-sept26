@@ -752,17 +752,150 @@ def test_code_only_exclusion_manifest_is_shared_by_verifier_and_ci() -> None:
     assert "code_only_exclusions.txt" in CI_WORKFLOW.read_text(encoding="utf-8")
 
 
-def test_each_logged_ci_pipeline_propagates_producer_failure():
-    jobs = yaml.safe_load(CI_WORKFLOW.read_text())["jobs"]
+def _ci_shell_args(workflow, job, step) -> list[str]:
+    # Match GitHub's documented step > job > workflow precedence. Explicit
+    # "bash" enables pipefail; the unspecified non-container shell does not.
+    default_shell = "sh" if job.get("container") else None
+    workflow_shell = workflow.get("defaults", {}).get("run", {}).get("shell", default_shell)
+    job_shell = job.get("defaults", {}).get("run", {}).get("shell", workflow_shell)
+    shell = step.get("shell", job_shell)
+    aliases = {
+        None: ["bash", "-e"],
+        "bash": ["bash", "--noprofile", "--norc", "-eo", "pipefail"],
+        "sh": ["sh", "-e"],
+    }
+    if shell in aliases:
+        return aliases[shell]
+    words = shlex.split(shell)
+    assert len(words) >= 2 and words[0] in {"bash", "sh"} and words[-1] == "{0}", shell
+    allowed = {"--noprofile", "--norc", "-e", "-u", "-eu", "-o", "-eo", "-euo", "pipefail"}
+    assert all(word in allowed for word in words[1:-1]), shell
+    return words[:-1]
+
+
+def _ci_pipeline_probe_count(body: str, shell_args: list[str], label) -> int:
+    # Only reproduce shell options and an inert producer. Never execute the
+    # workflow's installers, tests, providers, redirects or artifact paths.
+    guards = []
+    count = 0
+    for raw_line in body.replace("\\\n", " ").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("set "):
+            words = shlex.split(line, comments=True)
+            assert all(re.fullmatch(r"[-+][efuox]+|pipefail|errexit|nounset", word) for word in words[1:]), label
+            guards.append(shlex.join(words))
+            continue
+        assert not re.match(r"(?:if|for|while|until|case|exit|return|exec)\b", line), label
+        if not re.search(r"\|\s*tee\b", line):
+            continue
+        lexer = shlex.shlex(line, posix=True, punctuation_chars=True)
+        lexer.whitespace_split = True
+        words = list(lexer)
+        assert not {"||", "&&", ";", "&", "--exit-zero"}.intersection(words), label
+        # A successful command after the pipeline must not hide its failure.
+        probe = "\n".join(guards) + "\n(exit 23) | tee /dev/null\n:\n"
+        result = subprocess.run(
+            [*shell_args, "-c", probe], capture_output=True, text=True,
+            check=False, timeout=5, env={"PATH": os.defpath},
+        )
+        assert result.returncode == 23, (label, shell_args, guards, result.stderr)
+        count += 1
+    return count
+
+
+def test_each_logged_ci_pipeline_propagates_producer_failure() -> None:
+    workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
+    required = {
+        ("python-quality", "Wider Ruff diagnostic ratchet"),
+        ("python-quality", "Mypy Pydantic contract ratchet"),
+        ("complete-backend", "Run complete CPU backend"),
+        ("excluded-backend", "Run tests excluded from code-only verifier"),
+        ("integration", "Run integration tests"),
+        ("real-media", "Run generated-media tests"),
+        ("gpu-acceptance", "Run GPU and football evaluation acceptance"),
+    }
     checked = set()
-    for job_name, job in jobs.items():
+    for job_name, job in workflow["jobs"].items():
         for step in job.get("steps", []):
             body = step.get("run", "")
-            if "| tee " not in body or "--exit-zero" in body:
+            label = (job_name, step.get("name"))
+            if not re.search(r"\|\s*tee\b", body):
                 continue
-            prefix = body.split("| tee ", 1)[0]
-            guards = "\n".join(line.strip() for line in prefix.splitlines() if line.strip().startswith("set "))
-            result = subprocess.run(["bash", "-e", "-c", guards + "\n(exit 23) | tee /dev/null"], capture_output=True, check=False)
-            assert result.returncode == 23, (job_name, step.get("name"), guards)
-            checked.add(job_name)
-    assert {"python-quality", "complete-backend", "excluded-backend", "integration", "real-media", "gpu-acceptance"} <= checked
+            if label == ("python-quality", "Report Ruff legacy debt"):
+                continue  # Diagnostic-only report, never a substitute for a gate.
+            assert job.get("continue-on-error", False) is False, label
+            assert step.get("continue-on-error", False) is False, label
+            assert _ci_pipeline_probe_count(body, _ci_shell_args(workflow, job, step), label), label
+            checked.add(label)
+    assert required <= checked, required - checked
+
+
+
+def _check_ci_workflow_fixture(workflow, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    fixture = tmp_path / "ci.yml"
+    fixture.write_text(yaml.safe_dump(workflow), encoding="utf-8")
+    monkeypatch.setattr(sys.modules[__name__], "CI_WORKFLOW", fixture)
+    test_each_logged_ci_pipeline_propagates_producer_failure()
+
+
+@pytest.mark.parametrize("mutation", [
+    "remove-mypy", "step-continues", "job-continues", "exit-zero-comment",
+    "later-pipeline", "step-shell", "job-shell", "workflow-shell", "masked-pipeline",
+])
+def test_ci_pipeline_contract_rejects_masked_gate_failures(
+    mutation: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
+    job = workflow["jobs"]["python-quality"]
+    step = next(item for item in job["steps"] if item.get("name") == "Mypy Pydantic contract ratchet")
+    if mutation == "remove-mypy":
+        job["steps"].remove(step)
+    elif mutation == "step-continues":
+        step["continue-on-error"] = True
+    elif mutation == "job-continues":
+        job["continue-on-error"] = True
+    elif mutation == "exit-zero-comment":
+        step["run"] = step["run"].replace("set -o pipefail", "# no pipeline guard") + "\n# --exit-zero is not an exemption\n"
+    elif mutation == "later-pipeline":
+        step["run"] += "\nset +o pipefail\npython scripts/check_python_quality.py mypy | tee second.log\n"
+    elif mutation.endswith("-shell"):
+        target = {"step-shell": step, "job-shell": job, "workflow-shell": workflow}[mutation]
+        if mutation == "step-shell":
+            target["shell"] = "bash {0}"
+        else:
+            target["defaults"] = {"run": {"shell": "bash {0}"}}
+        step["run"] += "\nprintf 'must not mask a failed pipeline'\n"
+    else:
+        step["run"] = step["run"].rstrip() + " || true\n"
+    with pytest.raises(AssertionError):
+        _check_ci_workflow_fixture(workflow, tmp_path, monkeypatch)
+
+
+@pytest.mark.parametrize("guard", ["set -o pipefail", "set -euo pipefail"])
+def test_ci_pipeline_contract_accepts_additional_protected_step(
+    guard: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
+    workflow["jobs"]["python-quality"]["steps"].append({
+        "name": "Additional independently protected check",
+        "run": guard + "\nprintf 'extra' | tee /dev/null\n",
+    })
+    _check_ci_workflow_fixture(workflow, tmp_path, monkeypatch)
+
+
+@pytest.mark.parametrize("scope", ["step", "job", "workflow"])
+def test_ci_pipeline_contract_accepts_effective_bash_defaults(
+    scope: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
+    job = workflow["jobs"]["python-quality"]
+    step = next(item for item in job["steps"] if item.get("name") == "Mypy Pydantic contract ratchet")
+    step["run"] = step["run"].replace("set -o pipefail\n", "")
+    if scope == "step":
+        step["shell"] = "bash"
+    else:
+        target = job if scope == "job" else workflow
+        target["defaults"] = {"run": {"shell": "bash"}}
+    _check_ci_workflow_fixture(workflow, tmp_path, monkeypatch)
