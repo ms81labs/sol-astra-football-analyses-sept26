@@ -138,7 +138,7 @@ def rectangle_rle(width: int, height: int, xyxy: tuple[float, float, float, floa
     return {"size": [height, width], "counts": counts}
 
 
-def decode_rle(rle: dict) -> list[list[int]]:
+def _validate_rle(rle: dict) -> tuple[int, int, list[int]]:
     size, counts = rle.get("size"), rle.get("counts")
     if not isinstance(size, list) or len(size) != 2 or any(type(value) is not int or value <= 0 for value in size):
         raise ValueError("invalid RLE size")
@@ -147,8 +147,14 @@ def decode_rle(rle: dict) -> list[list[int]]:
     height, width = size
     if height * width > MAX_MASK_PIXELS:
         raise ValueError("RLE image exceeds fixed limit")
-    if sum(counts) != width * height:
+    if len(counts) > width * height + 1 or any(count == 0 for count in counts[1:]) \
+            or sum(counts) != width * height:
         raise ValueError("RLE counts do not cover the image")
+    return height, width, counts
+
+
+def decode_rle(rle: dict) -> list[list[int]]:
+    height, width, counts = _validate_rle(rle)
     pixels = [value for index, count in enumerate(counts) for value in [index % 2] * count]
     return [[pixels[x * height + y] for x in range(width)] for y in range(height)]
 
@@ -168,7 +174,7 @@ class FrameMask(StrictModel):
     def valid_mask(self) -> "FrameMask":
         if not math.isfinite(self.ptsSeconds):
             raise ValueError("nonfinite mask PTS")
-        decode_rle(self.rle)
+        _validate_rle(self.rle)
         return self
 
 
@@ -186,15 +192,15 @@ class MaskResult(StrictModel):
     height: int = Field(gt=0)
     intervalStart: float = Field(ge=0)
     intervalEnd: float
-    frames: list[FramePoint]
-    prompts: list[Prompt]
+    frames: list[FramePoint] = Field(max_length=MAX_FRAMES)
+    prompts: list[Prompt] = Field(max_length=MAX_FRAMES * MAX_OBJECTS)
     codec: Literal["rle_uncompressed_column_major_v1"] = "rle_uncompressed_column_major_v1"
     executionClass: Literal["stub", "real_model"]
     status: Literal["stub_complete", "complete", "failed"]
     reasonCodes: list[str]
     usage: dict[str, int | float | None]
-    objects: list[MaskObject]
-    masks: list[FrameMask]
+    objects: list[MaskObject] = Field(max_length=MAX_OBJECTS)
+    masks: list[FrameMask] = Field(max_length=MAX_FRAMES * MAX_OBJECTS)
     outputDigest: str
 
     @model_validator(mode="after")

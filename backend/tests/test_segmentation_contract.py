@@ -1,5 +1,6 @@
 """CPU-only, model-neutral segmentation artifact contract."""
 
+import hashlib
 import json
 import subprocess
 import sys
@@ -9,7 +10,7 @@ import pytest
 from pydantic import ValidationError
 
 from backend.app.segmentation import (
-    FramePoint, MaskObject, MaskResult, Prompt, SegmentationRequest,
+    FrameMask, FramePoint, MaskObject, MaskResult, Prompt, SegmentationRequest,
     decode_rle, rectangle_rle, request_identity, run_rectangle_stub,
     load_result, save_result, require_real_model,
 )
@@ -114,3 +115,29 @@ def test_point_prompt_is_decodable_and_api_import_does_not_load_torch() -> None:
         "import sys; import backend.app.segmentation; assert 'torch' not in sys.modules"],
         capture_output=True, text=True, timeout=10)
     assert completed.returncode == 0, completed.stderr
+
+
+def test_remote_mask_result_shape_is_bounded_without_expanding_pixels(monkeypatch) -> None:
+    import backend.app.segmentation as segmentation
+
+    sample = run_rectangle_stub(request()).model_dump(mode="json")
+    payload = {key: value for key, value in sample.items() if key != "outputDigest"}
+
+    def reseal(changes):
+        changed = {**payload, **changes}
+        encoded = json.dumps(changed, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+        return {**changed, "outputDigest": hashlib.sha256(encoded).hexdigest()}
+
+    with pytest.raises(ValidationError, match="objects"):
+        MaskResult.model_validate_json(json.dumps(reseal({"objects": [
+            {"objectId": f"o{i}", "trackId": f"t{i}"} for i in range(33)]})))
+    with pytest.raises(ValidationError, match="frames"):
+        MaskResult.model_validate_json(json.dumps(reseal({"frames": [
+            {"frameId": i, "ptsSeconds": float(i)} for i in range(121)],
+            "intervalEnd": 122.0})))
+
+    monkeypatch.setattr(segmentation, "decode_rle", lambda _rle: (_ for _ in ()).throw(
+        AssertionError("remote result validation must not expand pixels")))
+    assert FrameMask.model_validate(sample["masks"][0]).rle == sample["masks"][0]["rle"]
+    with pytest.raises(ValidationError, match="RLE"):
+        FrameMask.model_validate({**sample["masks"][0], "rle": {"size": [2, 3], "counts": [2, 3]}})
