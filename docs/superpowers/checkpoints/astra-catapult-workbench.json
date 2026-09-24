@@ -3,7 +3,7 @@
   "date": "2026-09-24",
   "repository": "ms81labs/sol-astra-football-analyses-sept26",
   "baseHead": "20c6a2b5443390414d32d368f3d183abdf15af2a",
-  "implementationHead": "cbded9e16361acdd6155286621c06749d97b1d44",
+  "implementationHead": "e58263878afb9f2117a7df7c3c7a7cc482b771af",
   "resumeHeadCommand": "git rev-parse HEAD (the checkpoint commit follows the implementation head)",
   "integrationLine": "integration/catapult-workbench",
   "historicalCheckpoint": "/root/WorkSpace/fotball-analyst/catapult-checkpoint/astra-catapult-w00-checkpoint-2026-09-23/CHECKPOINT.json",
@@ -25,7 +25,8 @@
     "W06 rejects a visual evidence request under the existing text/output-only synthetic spend policy before reservation or dispatch; real-media regression reproduced the unsafe admission before the shared gateway fix.",
     "W06 parses one completed Astra Responses JSON draft offline, rejects tool/refusal/incomplete output, malformed or duplicate JSON, missing usage and token counts beyond the request envelope.",
     "W06 binds the exact approved source PNG data URL and canonical request SHA-256 through the existing gateway reservation to a mocked Astra adapter; replay preserves one adapter call. An injected offline spend policy is required, and production settings do not configure it.",
-    "W06 adds a transport-injected execution boundary that rechecks the canonical request digest before submission and parses only a bounded response. Its fixed HTTPS Responses transport sends canonical JSON, refuses redirects, caps streamed bytes and elapsed time, and was tested only with a mocked HTTP client; production dispatch remains unwired."
+    "W06 adds a transport-injected execution boundary that rechecks the canonical request digest before submission and parses only a bounded response. Its fixed HTTPS Responses transport sends canonical JSON, refuses redirects, caps streamed bytes and elapsed time, and was tested only with a mocked HTTP client; production dispatch remains unwired.",
+    "W03 adds CPU-only preflight for a future sealed SAM shadow window. It checks current match/generation, explicit remote rights, server-owned source and checkpoint hashes, approved model/worker/crop identities, exact base frame PTS and tracking digest, deadline/cancellation, and match-scoped reusable job identity. It allocates no worker and loads no SAM/Torch."
   ],
   "verified": [
     {
@@ -145,14 +146,17 @@
     {"command": "/dev/shm/catapult-venv/bin/python -m pytest backend/tests/test_astra_request_contract.py::test_astra_transport_checks_reserved_body_before_submission_and_caps_reply -q", "outcome": "Expected red before implementation: execute_astra_bound missing; exit 1."},
     {"command": "/dev/shm/catapult-venv/bin/python -m pytest backend/tests/test_astra_request_contract.py::test_astra_http_transport_sends_canonical_json_and_caps_stream -q", "outcome": "Expected red before implementation: astra_http_transport missing; redirect and elapsed-deadline regressions then failed before fixes. Mock HTTP only."},
     {"command": "/dev/shm/catapult-venv/bin/python -m pytest backend/tests/test_astra_request_contract.py backend/tests/test_provider_image_artifacts.py backend/tests/test_audit_v3_c04_providers.py backend/tests/test_audit_v2_h01_provider.py -q", "outcome": "47 passed, exit 0; no network or paid calls."},
-    {"command": "PATH=/dev/shm/catapult-venv/bin:$PATH TMPDIR=/dev/shm/catapult-tmp GUERILLA_STORAGE_ROOT=/dev/shm/catapult-verify-store VERIFY_DAYTONA=0 ALLOW_DAYTONA_MUTATION=0 scripts/verify.sh", "outcome": "Exit 0 at cbded9e: backend 4530 passed/18 skipped, sidecar 100 passed, frontend 450 passed, lint/typechecks/build/startup/manifest/runtime/preflight/audit passed; production audit found 0 vulnerabilities.", "evidence": ".verification/receipt.json SHA-256 1048e136404a2f8ecfc47bd2b2c909f5793a689e6a11668ce6177bf9b4b22a92 and .verification/logs/"}
+    {"command": "PATH=/dev/shm/catapult-venv/bin:$PATH TMPDIR=/dev/shm/catapult-tmp GUERILLA_STORAGE_ROOT=/dev/shm/catapult-verify-store VERIFY_DAYTONA=0 ALLOW_DAYTONA_MUTATION=0 scripts/verify.sh", "outcome": "Exit 0 at cbded9e: backend 4530 passed/18 skipped, sidecar 100 passed, frontend 450 passed, lint/typechecks/build/startup/manifest/runtime/preflight/audit passed; production audit found 0 vulnerabilities.", "evidence": ".verification/receipt.json SHA-256 1048e136404a2f8ecfc47bd2b2c909f5793a689e6a11668ce6177bf9b4b22a92 and .verification/logs/"},
+    {"command": "/dev/shm/catapult-venv/bin/python -m pytest backend/tests/test_segmentation_worker_admission.py -q", "outcome": "Expected red before implementation: segmentation_worker module missing; exit 1. First implementation failed on a wrong assumption that the retained source must be under storage_root; the recorded source path is server-owned but may be external. Fixed at the source identity seam."},
+    {"command": "/dev/shm/catapult-venv/bin/python -m pytest backend/tests/test_segmentation_worker_admission.py backend/tests/test_segmentation_contract.py -q", "outcome": "7 passed, exit 0; generated-media and CPU contract only."},
+    {"command": "PATH=/dev/shm/catapult-venv/bin:$PATH TMPDIR=/dev/shm/catapult-tmp GUERILLA_STORAGE_ROOT=/dev/shm/catapult-verify-store VERIFY_DAYTONA=0 ALLOW_DAYTONA_MUTATION=0 scripts/verify.sh", "outcome": "Exit 0 at e582638: backend 4532 passed/18 skipped, sidecar 100 passed, frontend 450 passed, lint/typechecks/build/startup/manifest/runtime/preflight/audit passed; production audit found 0 vulnerabilities.", "evidence": ".verification/receipt.json SHA-256 0b5165a39855a0b9e647f8e585e4c4c0951f5f48929a77f6749694458b299961 and .verification/logs/"}
   ],
   "currentFullVerifier": {
     "command": "PATH=/dev/shm/catapult-venv/bin:$PATH TMPDIR=/dev/shm/catapult-tmp GUERILLA_STORAGE_ROOT=/dev/shm/catapult-verify-store VERIFY_DAYTONA=0 ALLOW_DAYTONA_MUTATION=0 scripts/verify.sh",
-    "sourceHead": "cbded9e16361acdd6155286621c06749d97b1d44",
+    "sourceHead": "e58263878afb9f2117a7df7c3c7a7cc482b771af",
     "status": "passed",
-    "backendProgress": "4530 passed, 18 skipped; sidecar 100 passed; frontend 450 passed; all remaining gates passed",
-    "evidence": ".verification/receipt.json and .verification/logs/; receipt SHA-256 1048e136404a2f8ecfc47bd2b2c909f5793a689e6a11668ce6177bf9b4b22a92",
+    "backendProgress": "4532 passed, 18 skipped; sidecar 100 passed; frontend 450 passed; all remaining gates passed",
+    "evidence": ".verification/receipt.json and .verification/logs/; receipt SHA-256 0b5165a39855a0b9e647f8e585e4c4c0951f5f48929a77f6749694458b299961",
     "priorCompleteAttempt": {
       "sourceHead": "b42b2befecd631c142d582d9992f767de2c554d3",
       "status": "failed_backend_gate",
@@ -183,10 +187,10 @@
     "finding": "Astra supports image input and strict structured output; detail high caps resized image patches at 2500 with a 1.2x billable multiplier, and max_output_tokens includes reasoning. Standard pricing varies by long-context and regional processing. An offline request/bound uses supplied conservative rates and 3001 image tokens per image; no live billing or SDK contract was qualified."
   },
   "units": {
-    "W00": { "status": "blocked_on_evidence", "implemented": true, "verified": true, "accepted": false, "limitation": "Software baseline verifier passed at cbded9e. Frozen pilot manifest declares 18 tasks, 6 validation/12 held-out, 9297 labels, with zero declared labels or media files present; independent label lock, rights-approved source and camera baseline remain unavailable. No held-out inference." },
+    "W00": { "status": "blocked_on_evidence", "implemented": true, "verified": true, "accepted": false, "limitation": "Software baseline verifier passed at e582638. Frozen pilot manifest declares 18 tasks, 6 validation/12 held-out, 9297 labels, with zero declared labels or media files present; independent label lock, rights-approved source and camera baseline remain unavailable. No held-out inference." },
     "W01": { "status": "accepted", "implemented": true, "verified": true, "accepted": true, "limitation": "Milestone A software workflow passed focused, browser, and full verifier checks. Editable reopen requires retained source/store and matching generation; prior browser-generated media were temporary." },
     "W02": { "status": "accepted", "implemented": true, "verified": true, "accepted": true, "limitation": "CPU contract and artifact tests plus normal verifier pass. This is contract acceptance only; no real SAM inference or model qualification." },
-    "W03": { "status": "not_started", "implemented": false, "verified": false, "accepted": false, "limitation": "CPU worker admission/rejection tests remain eligible. Real SAM 3.1 qualification awaits approved checkpoint digest/revision, rights-approved source window and paid GPU authorization; W02 CPU contract remains usable." },
+    "W03": { "status": "in_progress", "implemented": false, "verified": false, "accepted": false, "limitation": "CPU preflight is implemented and passed focused/generated-media and full verifier checks at e582638. This is only admission validation, not a sealed job, checkpoint pin, SAM runtime, model receipt or actual result. A trusted checkpoint/revision, rights-approved source window and paid GPU authorization are unavailable. Source/checkpoint files require a worker-side sealed-transfer recheck; crop dimensions and actual video frames have not been bound for dispatch." },
     "W04": { "status": "blocked_on_evidence", "implemented": false, "verified": false, "accepted": false, "limitation": "Locked independent labels and real W03 mask artifacts are unavailable; no held-out inference or accuracy claim." },
     "W05": { "status": "blocked_on_evidence", "implemented": false, "verified": false, "accepted": false, "limitation": "Automatic identity promotion depends on W04 paired independent evidence; baseline identity remains unchanged." },
     "W06": { "status": "in_progress", "implemented": false, "verified": false, "accepted": false, "limitation": "Pre-dispatch, retained-source image selection, strict offline Astra request/response bounds, mock gateway reservation/replay and a fixed streaming HTTP transport pass the full software verifier at cbded9e. The transport was tested with mocked HTTP only and is not wired to production run_analysis or settings. Its token prices and mock receipt do not establish real billed cost. Generated media only; no long-match latency. A concurrent policy write between preflight and transport remains a race. Live SDK/API behavior, current price qualification, rights-cleared paid smoke, billing reconciliation and analyst review remain; no images were sent to an API." },
@@ -198,7 +202,8 @@
   "paidModelApiCalls": 0,
   "liveStoreAccessed": false,
   "remoteMutations": 0,
-  "nextSmallestAction": "Start W03 CPU-only sealed worker admission tests at the existing job/lease and artifact-transfer seam: reject unsafe paths/URLs, wrong source/checkpoint digests, excessive frames/objects, missing rights, cancellation/deadline, duplicate output and cross-match reuse. Reuse W02 contract; do not load SAM or incur GPU charges. W06 remains in progress pending rights-cleared paid API/billing qualification under explicit authorization; W07 follows a selected-evidence request. W04/W05/W09 remain evidence-gated.",
+  "nextSmallestAction": "Start W07 with a failing regression that a query containing unsupported region/player/status vocabulary cannot silently execute its recognized event fragment. Reuse the existing TypedQuery and Python event search, then add only supported predicates backed by current event rows and keep calibrated pitch regions explicitly unsupported until location evidence exists. W03 sealed transfer/worker qualification remains pending trusted checkpoint/runtime and paid GPU authorization; W06 live billing is separately gated. W04/W05/W09 remain evidence-gated.",
+  "externalSamDetailsChecked": {"date": "2026-09-24", "sources": ["https://github.com/facebookresearch/sam3/blob/main/README.md", "https://github.com/facebookresearch/sam3/blob/main/RELEASE_SAM3p1.md", "https://github.com/facebookresearch/sam3/blob/main/LICENSE"], "finding": "Meta documents Python 3.12+, PyTorch 2.7+, CUDA 12.6+ and the SAM 3.1 Object Multiplex video example/checkpoints under the SAM License. No source revision, checkpoint, runtime image or license clearance was pinned or installed in this CPU-only slice."},
   "externalMediaDetailsChecked": {
     "date": "2026-09-23",
     "sources": [
