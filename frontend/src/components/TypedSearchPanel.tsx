@@ -1,6 +1,9 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 
-import { searchWorkbenchEvents, type SearchHit } from '../utils/workbench';
+import { searchWorkbenchEvents, type SearchHit, type TypedSearchFilter } from '../utils/workbench';
+
+const EVENT_TYPES = ['pass', 'progressive_pass', 'through_ball', 'cross', 'shot', 'goal', 'turnover',
+  'recovery', 'tackle', 'interception', 'carry', 'box_entry', 'final_third_entry'];
 
 interface TypedSearchPanelProps {
   matchId?: string;
@@ -13,6 +16,10 @@ export default function TypedSearchPanel({ matchId, onSeek, onSelectHit, generat
   const scopeVersion = useRef(0);
   useLayoutEffect(() => { scopeVersion.current += 1; return () => { scopeVersion.current += 1; }; }, [matchId, generationId]);
   const [query, setQuery] = useState('');
+  const [filterEvent, setFilterEvent] = useState('pass');
+  const [filterTeam, setFilterTeam] = useState('');
+  const [filterRegion, setFilterRegion] = useState('');
+  const [filterReview, setFilterReview] = useState('');
   const [message, setMessage] = useState<string | null>(null);
   const [results, setResults] = useState<SearchHit[]>([]);
   const [filterText, setFilterText] = useState<string | null>(null);
@@ -20,7 +27,7 @@ export default function TypedSearchPanel({ matchId, onSeek, onSelectHit, generat
   const currentScope = JSON.stringify([matchId, generationId]);
   const showResult = resultScope === currentScope;
 
-  async function runSearch() {
+  async function runSearch(request: string | TypedSearchFilter) {
     if (!matchId) return;
     const operation = scopeVersion.current;
     setResultScope(currentScope);
@@ -28,7 +35,7 @@ export default function TypedSearchPanel({ matchId, onSeek, onSelectHit, generat
     setFilterText(null);
     setMessage(null);
     try {
-      const result = await searchWorkbenchEvents(query, matchId, [], generationId);
+      const result = await searchWorkbenchEvents(request, matchId, [], generationId);
       if (operation !== scopeVersion.current) return;
       if (result.query.unanswerable) {
         setMessage(result.query.reason === 'unsupported_terms' && result.query.unsupportedTerms?.length
@@ -76,11 +83,41 @@ export default function TypedSearchPanel({ matchId, onSeek, onSelectHit, generat
       </label>
       <button
         type="button"
-        onClick={() => void runSearch()}
+        onClick={() => void runSearch(query)}
         disabled={!matchId}
         className="px-3 py-1.5 rounded bg-emerald-700 text-xs font-semibold text-white disabled:opacity-50"
       >
         Search evidence
+      </button>
+      <div className="grid grid-cols-2 gap-2 text-xs text-slate-400">
+        <label>Event type
+          <select value={filterEvent} onChange={(event) => setFilterEvent(event.target.value)} className="block w-full rounded border border-slate-600 bg-slate-900 p-1 text-slate-200">
+            {EVENT_TYPES.map((type) => <option key={type} value={type}>{type.replaceAll('_', ' ')}</option>)}
+          </select>
+        </label>
+        <label>Team filter
+          <select value={filterTeam} onChange={(event) => setFilterTeam(event.target.value)} className="block w-full rounded border border-slate-600 bg-slate-900 p-1 text-slate-200">
+            <option value="">Any team</option><option value="my_team">Our team</option><option value="enemy">Opponent</option>
+          </select>
+        </label>
+        <label>Pitch third
+          <select value={filterRegion} onChange={(event) => setFilterRegion(event.target.value)} className="block w-full rounded border border-slate-600 bg-slate-900 p-1 text-slate-200">
+            <option value="">Any</option><option value="left_third">Left</option><option value="middle_third">Middle</option><option value="right_third">Right</option>
+          </select>
+        </label>
+        <label>Review status
+          <select value={filterReview} onChange={(event) => setFilterReview(event.target.value)} className="block w-full rounded border border-slate-600 bg-slate-900 p-1 text-slate-200">
+            <option value="">Any</option><option value="accepted">Accepted</option><option value="unreviewed">Unreviewed</option>
+          </select>
+        </label>
+      </div>
+      <button type="button" disabled={!matchId || !generationId}
+        onClick={() => void runSearch({ eventFamily: filterEvent,
+          ...(filterTeam ? { team: filterTeam } : {}),
+          ...(filterRegion ? { pitchRegion: filterRegion } : {}),
+          ...(filterReview ? { reviewStatus: filterReview } : {}) })}
+        className="px-3 py-1.5 rounded bg-slate-700 text-xs font-semibold text-white disabled:opacity-50">
+        Apply filters
       </button>
       {showResult && message && <p className="text-xs text-slate-300">{message}</p>}
       {showResult && filterText && <p aria-label="Interpreted filter" className="text-xs text-slate-400">{filterText}</p>}

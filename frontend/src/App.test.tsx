@@ -2392,7 +2392,7 @@ describe('App match workspace loading', () => {
 
     render(<App />);
     await screen.findByText('Match A', { selector: 'header span' });
-    const activeSelector = screen.getAllByRole('combobox')[0];
+    const activeSelector = screen.getByRole('combobox', { name: 'Active match' });
 
     fireEvent.change(activeSelector, { target: { value: 'match-b' } });
     await screen.findByText('Match B', { selector: 'header span' });
@@ -2438,7 +2438,7 @@ describe('App match workspace loading', () => {
     fireEvent.click(screen.getByRole('img'), { clientX: 25, clientY: 40 });
     expect(screen.getByText('Track 7')).toBeTruthy();
 
-    fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: 'match-b' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Active match' }), { target: { value: 'match-b' } });
     await screen.findByText('Match B', { selector: 'header span' });
 
     expect(screen.queryByText('Track 7')).toBeNull();
@@ -2461,7 +2461,7 @@ describe('App match workspace loading', () => {
 
     render(<App />);
     await screen.findByText('Match A', { selector: 'header span' });
-    const activeSelector = screen.getAllByRole('combobox')[0] as HTMLSelectElement;
+    const activeSelector = screen.getByRole('combobox', { name: 'Active match' }) as HTMLSelectElement;
 
     fireEvent.change(activeSelector, { target: { value: 'match-b' } });
     expect((await screen.findByRole('alert')).textContent).toContain('Match B unavailable');
@@ -2491,7 +2491,7 @@ describe('App match workspace loading', () => {
 
     render(<App />);
     await screen.findByText('Match A', { selector: 'header span' });
-    const activeSelector = screen.getAllByRole('combobox')[0];
+    const activeSelector = screen.getByRole('combobox', { name: 'Active match' });
     fireEvent.change(activeSelector, { target: { value: 'match-b' } });
     fireEvent.change(activeSelector, { target: { value: 'match-c' } });
 
@@ -2528,7 +2528,7 @@ describe('App match workspace loading', () => {
 
     render(<App />);
     await screen.findByText('Match A', { selector: 'header span' });
-    const comparisonSelector = screen.getAllByRole('combobox')[1];
+    const comparisonSelector = screen.getByRole('combobox', { name: 'Comparison match' });
 
     fireEvent.change(comparisonSelector, { target: { value: 'match-b' } });
     await screen.findByText('Match B', { selector: 'span.font-mono' });
@@ -2559,8 +2559,7 @@ describe('App match workspace loading', () => {
     ));
 
     const { container } = render(<App />);
-    await waitFor(() => expect(screen.getAllByRole('combobox')).toHaveLength(4));
-    const activeSelector = screen.getAllByRole('combobox')[0] as HTMLSelectElement;
+    const activeSelector = await screen.findByRole('combobox', { name: 'Active match' }) as HTMLSelectElement;
     const uploadInput = container.querySelector('input[type="file"]') as HTMLInputElement;
     fireEvent.change(activeSelector, { target: { value: 'match-b' } });
 
@@ -2588,7 +2587,7 @@ describe('App match workspace loading', () => {
 
     const { container } = render(<App />);
     await screen.findByText('Match A', { selector: 'header span' });
-    const activeSelector = screen.getAllByRole('combobox')[0];
+    const activeSelector = screen.getByRole('combobox', { name: 'Active match' });
     const uploadInput = container.querySelector('input[type="file"]') as HTMLInputElement;
     fireEvent.change(uploadInput, { target: { files: [new File(['[]'], 'upload.json', { type: 'application/json' })] } });
     await waitFor(() => expect(api.fetchMatchWorkspace).toHaveBeenCalledWith('match-upload', expect.any(AbortSignal)));
@@ -2622,7 +2621,7 @@ describe('App match workspace loading', () => {
     const uploadInput = container.querySelector('input[type="file"]') as HTMLInputElement;
     fireEvent.change(uploadInput, { target: { files: [new File(['[]'], 'upload.json', { type: 'application/json' })] } });
     await waitFor(() => expect(api.waitForJobCompletion).toHaveBeenCalledTimes(1));
-    fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: 'match-b' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Active match' }), { target: { value: 'match-b' } });
     await screen.findByText('Match B', { selector: 'header span' });
 
     await act(async () => completedJob.resolve({ id: 'job-upload', matchId: 'match-upload', status: 'completed', progress: 1 }));
@@ -2655,7 +2654,7 @@ describe('App match workspace loading', () => {
     await screen.findByText('Match A', { selector: 'header span' });
     fireEvent.click(screen.getByRole('button', { name: 'Use cluster 1' }));
     await waitFor(() => expect(api.updateMatchConfig).toHaveBeenCalledWith('match-a', expect.objectContaining({ myTeamCluster: 1, baseGeneration: 'g-match-a', commandId: expect.any(String) })));
-    fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: 'match-b' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Active match' }), { target: { value: 'match-b' } });
 
     await act(async () => configUpdate.resolve(readyMatch('match-a', 'Match A')));
     expect(vi.mocked(api.fetchMatchWorkspace).mock.calls.map(([matchId]) => matchId)).toEqual(['match-a', 'match-b']);

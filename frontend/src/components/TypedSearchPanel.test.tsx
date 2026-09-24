@@ -25,6 +25,7 @@ it('posts a typed query to the loaded match and refuses client event rows', asyn
   vi.stubGlobal('fetch', fetchMock);
 
   render(<TypedSearchPanel matchId="match-a" />);
+  expect(screen.getByRole('button', { name: 'Apply filters' }).hasAttribute('disabled')).toBe(true);
   fireEvent.change(screen.getByLabelText(/^query$/i), { target: { value: 'SELECT * FROM events' } });
   fireEvent.click(screen.getByRole('button', { name: /search evidence/i }));
   await waitFor(() => {
@@ -140,4 +141,29 @@ it('shows calibrated pitch-region filters with partial location coverage', async
   }) } as Response)));
   fireEvent.click(screen.getByRole('button', { name: /search evidence/i }));
   expect(await screen.findByText(/2 matching events have no verified location/i)).toBeTruthy();
+});
+
+it('submits visible typed filters for the current generation through the same search workflow', async () => {
+  const fetchMock = vi.fn(async (input: RequestInfo, init?: RequestInit) => {
+    if (!String(input).endsWith('/queries') || init?.method !== 'POST') throw new Error('Unexpected search request');
+    return { ok: true, json: async () => ({
+      generationId: 'g1', query: { unanswerable: false, interpreted: {
+        eventFamily: 'recovery', team: 'my_team', pitchRegion: 'right_third', reviewStatus: 'accepted',
+      } }, results: [{ eventId: 'r1', matchId: 'match-a', timestamp: 12, label: 'recovery', evidenceIds: ['e1'] }],
+    }) } as Response;
+  });
+  vi.stubGlobal('fetch', fetchMock);
+  render(<TypedSearchPanel matchId="match-a" generationId="g1" />);
+  fireEvent.change(screen.getByLabelText('Event type'), { target: { value: 'recovery' } });
+  fireEvent.change(screen.getByLabelText('Team filter'), { target: { value: 'my_team' } });
+  fireEvent.change(screen.getByLabelText('Pitch third'), { target: { value: 'right_third' } });
+  fireEvent.change(screen.getByLabelText('Review status'), { target: { value: 'accepted' } });
+  fireEvent.click(screen.getByRole('button', { name: 'Apply filters' }));
+  expect(await screen.findByRole('button', { name: /recovery.*12s/i })).toBeTruthy();
+  expect((await screen.findByLabelText('Interpreted filter')).textContent).toContain('right third');
+  expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toEqual({
+    generationId: 'g1', typedQuery: {
+      eventFamily: 'recovery', team: 'my_team', pitchRegion: 'right_third', reviewStatus: 'accepted',
+    },
+  });
 });

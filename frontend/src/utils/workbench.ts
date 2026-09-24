@@ -89,12 +89,21 @@ export interface SearchHit {
   evidenceIds: string[];
 }
 
-export async function searchWorkbenchEvents(query: string, matchId: string, events: Array<Record<string, unknown>> = [], generationId?: string) {
+export interface TypedSearchFilter {
+  eventFamily: string;
+  team?: string;
+  pitchRegion?: string;
+  reviewStatus?: string;
+}
+
+export async function searchWorkbenchEvents(query: string | TypedSearchFilter, matchId: string, events: Array<Record<string, unknown>> = [], generationId?: string) {
   void events;
+  if (typeof query !== 'string' && !generationId) throw new Error('Typed filters require a current generation');
   const response = await fetch(`/api/matches/${matchId}/queries`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query, ...(generationId ? { generationId } : {}) }),
+    body: JSON.stringify({ ...(typeof query === 'string' ? { query } : { typedQuery: query }),
+      ...(generationId ? { generationId } : {}) }),
   });
   const payload = await parseJson<{
     query: { unanswerable: boolean; reason: string | null; eventFamily: string;
