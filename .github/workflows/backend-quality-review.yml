@@ -1,0 +1,89 @@
+name: Backend quality review
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/backend-quality-review.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  source-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      VERIFY_DAYTONA: '0'
+      ALLOW_DAYTONA_MUTATION: '0'
+      PYTHON_DOTENV_DISABLED: '1'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Capture tracked source and AST inventory
+        run: |
+          mkdir -p .quality-review
+          python - <<'PY'
+          import ast
+          import collections
+          import hashlib
+          import json
+          import pathlib
+          import subprocess
+          import zipfile
+
+          root = pathlib.Path.cwd()
+          paths = [pathlib.Path(p) for p in subprocess.check_output(['git', 'ls-files', '-z']).decode().split('\0') if p]
+          suffixes = {'.py', '.toml', '.ini', '.cfg', '.yml', '.yaml', '.sh', '.lock', '.in', '.md', '.json', '.txt', '.csv'}
+          manifest = {'head': subprocess.check_output(['git', 'rev-parse', 'HEAD']).decode().strip(), 'files': {}}
+          counts = collections.defaultdict(lambda: {'files': 0, 'lines': 0})
+          models, handlers, local_imports = [], [], []
+          with zipfile.ZipFile('.quality-review/source.zip', 'w', zipfile.ZIP_DEFLATED) as archive:
+              for path in paths:
+                  if path.is_file() and path.suffix in suffixes and path.stat().st_size <= 5000000:
+                      data = path.read_bytes()
+                      archive.writestr(path.as_posix(), data)
+                      manifest['files'][path.as_posix()] = hashlib.sha256(data).hexdigest()
+                  if not path.as_posix().startswith('backend/') or path.suffix != '.py':
+                      continue
+                  text = path.read_text()
+                  group = path.parts[1] if len(path.parts) > 2 else path.name
+                  counts[group]['files'] += 1
+                  counts[group]['lines'] += len(text.splitlines())
+                  tree = ast.parse(text)
+                  for node in ast.walk(tree):
+                      if isinstance(node, ast.ClassDef) and any(isinstance(base, ast.Name) and base.id == 'BaseModel' for base in node.bases):
+                          models.append({'path': str(path), 'line': node.lineno, 'name': node.name, 'explicit_forbid': any(isinstance(n, ast.keyword) and n.arg == 'extra' and isinstance(n.value, ast.Constant) and n.value.value == 'forbid' for n in ast.walk(node))})
+                      if isinstance(node, ast.ExceptHandler):
+                          handlers.append({'path': str(path), 'line': node.lineno, 'type': ast.unparse(node.type) if node.type else 'bare', 'pass_only': len(node.body) == 1 and isinstance(node.body[0], ast.Pass)})
+                      if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                          for child in ast.walk(node):
+                              if isinstance(child, (ast.Import, ast.ImportFrom)):
+                                  local_imports.append({'path': str(path), 'line': child.lineno, 'import': ast.unparse(child)})
+              archive.writestr('QUALITY_SOURCE_MANIFEST.json', json.dumps(manifest, sort_keys=True, indent=2))
+          local_imports = list({(i['path'], i['line']): i for i in local_imports}.values())
+          report = {'head': manifest['head'], 'python': dict(counts), 'models': models, 'handlers': handlers, 'local_imports': local_imports}
+          pathlib.Path('.quality-review/inventory.json').write_text(json.dumps(report, indent=2, sort_keys=True) + '\n')
+          print(json.dumps({'head': report['head'], 'python': report['python'], 'source_files': len(manifest['files'])}, indent=2))
+          PY
+      - name: Install locked Ruff
+        run: pip install --require-hashes -r backend/requirements/quality-linux.lock
+      - name: Capture broader diagnostics without changing source
+        run: |
+          set -euo pipefail
+          ruff --version | tee .quality-review/ruff-version.txt
+          set +e
+          ruff check backend --select F,B,BLE,S110,B904,C901,UP045 --output-format=json > .quality-review/ruff.json
+          status=$?
+          set -e
+          test "$status" -le 1
+      - name: Retain source-bound review evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-quality-review
+          path: .quality-review/
+          include-hidden-files: true
+          retention-days: 7
+          if-no-files-found: error
