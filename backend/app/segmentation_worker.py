@@ -18,7 +18,7 @@ from pathlib import Path, PurePosixPath
 from time import monotonic
 
 from .report_contracts import digest
-from .segmentation import SegmentationRequest, request_identity
+from .segmentation import FrameMask, SegmentationRequest, request_identity
 from .workbench.hashing import stream_sha256
 
 
@@ -203,6 +203,106 @@ def validate_sam_source_window(root: Path, request: SegmentationRequest) -> dict
         return manifest
     except Exception:
         raise ValueError("sealed shadow window is invalid") from None
+
+
+def run_sam3_multiplex_window(window_root: Path, checkpoint_path: Path,
+                             request: SegmentationRequest, *, predictor_factory: Callable,
+                             deadline_seconds: float = 300,
+                             cancelled: bool | Callable[[], bool] = False) -> list[FrameMask]:
+    """Run the official session protocol; only a qualified worker may supply its factory."""
+    import numpy as np
+    from .daytona import _preflight_file_identity
+
+    if type(deadline_seconds) not in (int, float) or not math.isfinite(deadline_seconds) \
+            or not 0 < deadline_seconds <= 3600 or not callable(predictor_factory) \
+            or (type(cancelled) is not bool and not callable(cancelled)):
+        raise ValueError("invalid SAM runner controls")
+    started = monotonic()
+    def check_live() -> None:
+        cancellation_requested = cancelled() if callable(cancelled) else cancelled
+        if cancellation_requested:
+            raise ValueError("SAM job cancelled")
+        if monotonic() - started >= deadline_seconds:
+            raise ValueError("SAM job deadline expired")
+
+    check_live()
+    validate_sam_source_window(window_root, request)
+    if request.modelAlias != "sam31-video" or request.executionMode != "sam31_object_multiplex" \
+            or request.precision != "bf16":
+        raise ValueError("SAM runtime identity is invalid")
+    checkpoint_path = Path(checkpoint_path)
+    if _preflight_file_identity(checkpoint_path)[0] != request.checkpointDigest:
+        raise ValueError("SAM checkpoint identity mismatch")
+    object_ids, prompts = sam3_prompt_requests(request)
+    if request.width * request.height * len(request.frames) * len(object_ids) > 512 * 1024**2:
+        raise ValueError("SAM mask window exceeds byte limit")
+    check_live()
+    predictor = predictor_factory(checkpoint_path, request.maxObjects)
+    response = predictor.handle_request({"type": "start_session", "resource_path": str(window_root)})
+    session_id = response.get("session_id") if isinstance(response, dict) else None
+    if not isinstance(session_id, str) or not session_id:
+        raise ValueError("SAM session identity is invalid")
+    try:
+        for prompt in prompts:
+            check_live()
+            predictor.handle_request({**prompt, "session_id": session_id})
+        by_id = {value: key for key, value in object_ids.items()}
+        seen_frames: set[int] = set()
+        masks: list[FrameMask] = []
+        total_runs = 0
+        stream = predictor.handle_stream_request({"type": "propagate_in_video",
+            "session_id": session_id, "max_frame_num_to_track": len(request.frames)})
+        try:
+            for item in stream:
+                check_live()
+                if not isinstance(item, dict) or type(item.get("frame_index")) is not int:
+                    raise ValueError("SAM output frame identity is invalid")
+                index = item["frame_index"]
+                if index in seen_frames or not 0 <= index < len(request.frames):
+                    raise ValueError("SAM output frame identity is invalid")
+                seen_frames.add(index)
+                outputs = item.get("outputs")
+                if not isinstance(outputs, dict):
+                    raise ValueError("SAM output masks are invalid")
+                ids = np.asarray(outputs.get("out_obj_ids"))
+                pixels = np.asarray(outputs.get("out_binary_masks"))
+                if ids.ndim != 1 or pixels.shape != (len(ids), request.height, request.width) \
+                        or pixels.dtype != np.bool_:
+                    raise ValueError("SAM output masks are invalid")
+                seen_objects: set[int] = set()
+                for object_id, mask in zip(ids, pixels, strict=True):
+                    if not isinstance(object_id, (int, np.integer)) or int(object_id) not in by_id \
+                            or int(object_id) in seen_objects:
+                        raise ValueError("SAM output object identity is invalid")
+                    seen_objects.add(int(object_id))
+                    counts = [0]
+                    foreground = False
+                    for pixel in mask.T.flat:
+                        value = bool(pixel)
+                        if value != foreground:
+                            counts.append(0)
+                            foreground = value
+                            total_runs += 1
+                            if total_runs > 4_000_000:
+                                raise ValueError("SAM mask output exceeds byte limit")
+                        counts[-1] += 1
+                    frame = request.frames[index]
+                    masks.append(FrameMask(objectId=by_id[int(object_id)], sourceFrameId=frame.frameId,
+                        ptsSeconds=frame.ptsSeconds,
+                        rle={"size": [request.height, request.width], "counts": counts}))
+        finally:
+            close = getattr(stream, "close", None)
+            if callable(close):
+                close()
+        if len(seen_frames) != len(request.frames):
+            raise ValueError("SAM output window is incomplete")
+        validate_sam_source_window(window_root, request)
+        if _preflight_file_identity(checkpoint_path)[0] != request.checkpointDigest:
+            raise ValueError("SAM checkpoint changed during inference")
+        check_live()
+        return masks
+    finally:
+        predictor.handle_request({"type": "close_session", "session_id": session_id})
 
 
 def load_sealed_shadow_bundle(root: Path):

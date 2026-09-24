@@ -61,8 +61,10 @@ def test_sam3_prompt_mapping_keeps_multiple_points_for_one_object_and_frame():
 @pytest.mark.real_media
 def test_sam3_window_stages_sparse_exact_source_frames_and_cleans_failure(tmp_path, monkeypatch):
     from PIL import Image
+    import numpy as np
     from backend.app import segmentation_worker
-    from backend.app.segmentation_worker import stage_sam_source_window, validate_sam_source_window
+    from backend.app.segmentation_worker import run_sam3_multiplex_window, stage_sam_source_window, validate_sam_source_window
+    from backend.app.segmentation import decode_rle
     from backend.app.workbench.media import FfmpegFrameSource
     from backend.app.workbench.media import resolve_trusted_executable
 
@@ -70,9 +72,11 @@ def test_sam3_window_stages_sparse_exact_source_frames_and_cleans_failure(tmp_pa
     subprocess.run([str(resolve_trusted_executable("ffmpeg")), "-hide_banner", "-loglevel", "error",
         "-f", "lavfi", "-i", "testsrc2=size=160x90:rate=4:duration=1", "-threads", "1",
         "-pix_fmt", "yuv420p", str(source)], check=True, timeout=40)
+    checkpoint = tmp_path / "approved-checkpoint.bin"
+    checkpoint.write_bytes(b"predictor interface fixture, not SAM weights")
     request = SegmentationRequest(sourceSha256=hashlib.sha256(source.read_bytes()).hexdigest(),
         baseTrackingDigest="b" * 64, modelAlias="sam31-video", modelDigest="c" * 64,
-        checkpointDigest="d" * 64, workerDigest="e" * 64,
+        checkpointDigest=hashlib.sha256(checkpoint.read_bytes()).hexdigest(), workerDigest="e" * 64,
         executionMode="sam31_object_multiplex", cropDigest="f" * 64, precision="bf16",
         width=160, height=90, intervalStart=0, intervalEnd=.75,
         frames=[FramePoint(frameId=0, ptsSeconds=0), FramePoint(frameId=2, ptsSeconds=.5)],
@@ -85,6 +89,79 @@ def test_sam3_window_stages_sparse_exact_source_frames_and_cleans_failure(tmp_pa
     assert [(item["sourceFrameId"], item["localIndex"], item["ptsSeconds"])
         for item in manifest["frames"]] == [(0, 0, 0), (2, 1, .5)]
     assert sorted(path.name for path in root.iterdir()) == ["0.png", "1.png", "window.json"]
+    calls = []
+    class Predictor:
+        def handle_request(self, command):
+            calls.append(command)
+            return {"session_id": "session-1"} if command["type"] == "start_session" else {}
+
+        def handle_stream_request(self, command):
+            calls.append(command)
+            for index in (0, 1):
+                pixels = np.zeros((1, 90, 160), dtype=bool)
+                pixels[0, 0, index] = True
+                yield {"frame_index": index, "outputs": {
+                    "out_obj_ids": np.array([1], dtype=np.int64), "out_binary_masks": pixels}}
+
+    masks = run_sam3_multiplex_window(root, checkpoint, request,
+        predictor_factory=lambda path, limit: Predictor())
+    assert [(mask.objectId, mask.sourceFrameId, mask.ptsSeconds) for mask in masks] == [
+        ("a", 0, 0), ("a", 2, .5)]
+    assert decode_rle(masks[0].rle)[0][0] == 1
+    assert decode_rle(masks[1].rle)[0][1] == 1
+    assert [call["type"] for call in calls] == [
+        "start_session", "add_prompt", "propagate_in_video", "close_session"]
+    assert calls[0]["resource_path"] == str(root)
+    assert calls[1]["frame_index"] == 1 and calls[1]["obj_id"] == 1
+    for mode, message in (("duplicate", "frame identity"),
+                          ("unknown", "object identity"),
+                          ("missing", "incomplete")):
+        closed = []
+        class BadPredictor(Predictor):
+            def handle_request(self, command):
+                if command["type"] == "close_session":
+                    closed.append(True)
+                return super().handle_request(command)
+
+            def handle_stream_request(self, command):
+                pixels = np.zeros((1, 90, 160), dtype=bool)
+                yield {"frame_index": 0, "outputs": {
+                    "out_obj_ids": np.array([2 if mode == "unknown" else 1]),
+                    "out_binary_masks": pixels}}
+                if mode == "duplicate":
+                    yield {"frame_index": 0, "outputs": {
+                        "out_obj_ids": np.array([1]), "out_binary_masks": pixels}}
+        with pytest.raises(ValueError, match=message):
+            run_sam3_multiplex_window(root, checkpoint, request,
+                predictor_factory=lambda *_: BadPredictor())
+        assert closed == [True]
+    cancellation = {"requested": False, "closed": False, "streamClosed": False}
+    class CancelPredictor(Predictor):
+        def handle_request(self, command):
+            if command["type"] == "close_session":
+                cancellation["closed"] = True
+            return super().handle_request(command)
+
+        def handle_stream_request(self, command):
+            try:
+                cancellation["requested"] = True
+                yield {"frame_index": 0, "outputs": {}}
+            finally:
+                cancellation["streamClosed"] = True
+    with pytest.raises(ValueError, match="cancelled"):
+        run_sam3_multiplex_window(root, checkpoint, request,
+            predictor_factory=lambda *_: CancelPredictor(),
+            cancelled=lambda: cancellation["requested"])
+    assert cancellation["closed"] and cancellation["streamClosed"]
+    original_checkpoint = checkpoint.read_bytes()
+    class TamperPredictor(Predictor):
+        def handle_stream_request(self, command):
+            yield from super().handle_stream_request(command)
+            checkpoint.write_bytes(b"changed during inference")
+    with pytest.raises(ValueError, match="checkpoint changed"):
+        run_sam3_multiplex_window(root, checkpoint, request,
+            predictor_factory=lambda *_: TamperPredictor())
+    checkpoint.write_bytes(original_checkpoint)
     decoded = list(FfmpegFrameSource().iter_frames(source))
     for local_index, source_index in enumerate((0, 2)):
         with Image.open(root / f"{local_index}.png") as image:
@@ -96,7 +173,15 @@ def test_sam3_window_stages_sparse_exact_source_frames_and_cleans_failure(tmp_pa
     first.write_bytes(b"changed")
     with pytest.raises(ValueError, match="window"):
         validate_sam_source_window(root, request)
+    with pytest.raises(ValueError, match="window"):
+        run_sam3_multiplex_window(root, checkpoint, request,
+            predictor_factory=lambda *_: pytest.fail("model loaded for changed window"))
     first.write_bytes(original)
+    checkpoint.write_bytes(b"changed checkpoint")
+    with pytest.raises(ValueError, match="checkpoint"):
+        run_sam3_multiplex_window(root, checkpoint, request,
+            predictor_factory=lambda *_: pytest.fail("model loaded for changed checkpoint"))
+    checkpoint.write_bytes(original_checkpoint)
     first.unlink()
     first.symlink_to(source)
     with pytest.raises(ValueError, match="window"):
