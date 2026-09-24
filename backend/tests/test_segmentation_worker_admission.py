@@ -274,3 +274,73 @@ def test_shadow_preflight_binds_current_source_rights_and_approved_runtime(tmp_p
         with pytest.raises(ValueError, match="generation"):
             preflight_shadow_window(storage, match_id, generation_id,
                 request.model_dump(mode="json"), **kwargs)
+
+
+@pytest.mark.integration
+@pytest.mark.real_media
+def test_shadow_input_staging_seals_current_window_and_cleans_revoked_rights(tmp_path, monkeypatch):
+    from backend.app import segmentation_worker
+    from backend.app.segmentation_worker import stage_shadow_inputs, validate_sam_source_window
+    from backend.app.remote_contracts import load_canonical_json
+
+    storage = Storage(tmp_path / "store")
+    match_id = _install_video(storage, tmp_path)
+    config = storage.get_match(match_id).config.model_copy(deep=True)
+    config.rights.cloudPermission = True
+    config.rights.processingScope = "local_plus_burst"
+    storage.update_match_config(match_id, config)
+    generation_id = storage.current_generation(match_id).generationId
+    frames = storage.load_frames(match_id, generation_id=generation_id)
+    checkpoint = tmp_path / "approved-checkpoint.bin"
+    checkpoint.write_bytes(b"CPU staging fixture, not SAM weights")
+    model_sha, worker_sha, crop_sha = (letter * 64 for letter in "abc")
+    request = SegmentationRequest(sourceSha256=storage.source_sha256(match_id),
+        baseTrackingDigest=digest([frame.model_dump(mode="json") for frame in frames]),
+        modelAlias="sam31-video", modelDigest=model_sha,
+        checkpointDigest=hashlib.sha256(checkpoint.read_bytes()).hexdigest(),
+        workerDigest=worker_sha, executionMode="sam31_object_multiplex", cropDigest=crop_sha,
+        precision="bf16", width=1000, height=600, intervalStart=0, intervalEnd=.5,
+        frames=[FramePoint(frameId=0, ptsSeconds=frames[0].timestamp)],
+        prompts=[Prompt(objectId="o1", trackId="7", frameId=0, point=(1, 1))],
+        maxFrames=1, maxObjects=1)
+    workspace = tmp_path / "shadow-inputs"
+    workspace.mkdir()
+    kwargs = dict(checkpoint_path=checkpoint, approved_model_digest=model_sha,
+        approved_worker_digest=worker_sha, approved_crop_digest=crop_sha,
+        deadline_seconds=300, workspace=workspace)
+    root, shadow = stage_shadow_inputs(storage, match_id, generation_id,
+        request.model_dump(mode="json"), **kwargs)
+    assert shadow["schemaVersion"] == 2
+    assert shadow["requestDigest"] == request_identity(request)
+    assert shadow["windowDigest"] == hashlib.sha256(
+        (root / "inputs/window/window.json").read_bytes()).hexdigest()
+    assert validate_sam_source_window(root / "inputs/window", request)["requestDigest"] == shadow["requestDigest"]
+    assert load_canonical_json(root / "inputs/segmentation-request.json") == request.model_dump(mode="json")
+    assert (root / "inputs/checkpoint.bin").read_bytes() == checkpoint.read_bytes()
+    assert sorted(path.name for path in workspace.iterdir()) == [root.name]
+
+    original_stage = segmentation_worker.stage_sam_source_window
+    def revoke_after_staging(*args, **kw):
+        result = original_stage(*args, **kw)
+        revoked = storage.get_match(match_id).config.model_copy(deep=True)
+        revoked.rights.cloudPermission = False
+        storage.update_match_config(match_id, revoked)
+        return result
+    with monkeypatch.context() as patch:
+        patch.setattr(segmentation_worker, "stage_sam_source_window", revoke_after_staging)
+        with pytest.raises(ValueError, match="rights"):
+            stage_shadow_inputs(storage, match_id, generation_id,
+                request.model_dump(mode="json"), **kwargs)
+    assert sorted(path.name for path in workspace.iterdir()) == [root.name]
+    storage.update_match_config(match_id, config)
+
+    def change_checkpoint_after_staging(*args, **kw):
+        result = original_stage(*args, **kw)
+        checkpoint.write_bytes(b"changed after admission")
+        return result
+    with monkeypatch.context() as patch:
+        patch.setattr(segmentation_worker, "stage_sam_source_window", change_checkpoint_after_staging)
+        with pytest.raises(ValueError, match="checkpoint"):
+            stage_shadow_inputs(storage, match_id, generation_id,
+                request.model_dump(mode="json"), **kwargs)
+    assert sorted(path.name for path in workspace.iterdir()) == [root.name]

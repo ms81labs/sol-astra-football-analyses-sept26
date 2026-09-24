@@ -363,3 +363,66 @@ def preflight_shadow_window(storage, match_id: str, generation_id: str, payload:
         "checkpointDigest": checkpoint_sha, "deadlineSeconds": deadline_seconds,
         "jobIdentity": digest({"matchId": match_id, "generationId": generation_id,
             "requestDigest": identity, "checkpointDigest": checkpoint_sha})}
+
+
+def stage_shadow_inputs(storage, match_id: str, generation_id: str, payload: dict, *,
+                        checkpoint_path: Path, approved_model_digest: str,
+                        approved_worker_digest: str, approved_crop_digest: str,
+                        deadline_seconds: float, workspace: Path,
+                        cancelled: bool | Callable[[], bool] = False) -> tuple[Path, dict]:
+    """Stage current, sealed SAM inputs; a separate SAM release proof is needed for dispatch."""
+    from .remote_contracts import canonical_json_bytes
+    from .remote_worker import _copy_regular_file
+
+    started = monotonic()
+    admitted = preflight_shadow_window(storage, match_id, generation_id, payload,
+        checkpoint_path=checkpoint_path, approved_model_digest=approved_model_digest,
+        approved_worker_digest=approved_worker_digest, approved_crop_digest=approved_crop_digest,
+        deadline_seconds=deadline_seconds, cancelled=cancelled)
+    request = SegmentationRequest.model_validate_json(json.dumps(payload))
+    workspace = Path(workspace)
+    if not workspace.is_absolute() or workspace.is_symlink() or not workspace.is_dir():
+        raise ValueError("shadow input workspace is unavailable")
+    root = Path(tempfile.mkdtemp(prefix="sam-inputs-", dir=workspace))
+    os.chmod(root, 0o700)
+    try:
+        inputs = root / "inputs"
+        inputs.mkdir(mode=0o700)
+        remaining = deadline_seconds - (monotonic() - started)
+        if remaining <= 0:
+            raise ValueError("shadow job deadline expired during staging")
+        window, _ = stage_sam_source_window(storage.get_match_input_path(match_id), request,
+            inputs, timeout_seconds=remaining)
+        os.replace(window, inputs / "window")
+        checkpoint_identity = _copy_regular_file(Path(checkpoint_path),
+            inputs / "checkpoint.bin", maximum_bytes=16 * 1024**3)
+        if checkpoint_identity.sha256 != admitted["checkpointDigest"]:
+            raise ValueError("shadow checkpoint changed during staging")
+        (inputs / "segmentation-request.json").write_bytes(
+            canonical_json_bytes(request.model_dump(mode="json")))
+        if (cancelled() if callable(cancelled) else cancelled):
+            raise ValueError("shadow job cancelled during staging")
+        if monotonic() - started >= deadline_seconds:
+            raise ValueError("shadow job deadline expired during staging")
+        if storage.current_generation(match_id).generationId != generation_id:
+            raise ValueError("stale shadow generation after staging")
+        match = storage.get_match(match_id)
+        if match.inputMode != "video" or not match.config.rights.cloudPermission \
+                or match.config.rights.processingScope == "local_only":
+            raise ValueError("source rights changed during shadow staging")
+        if storage.source_sha256(match_id) != admitted["sourceSha256"]:
+            raise ValueError("shadow source changed during staging")
+        validate_sam_source_window(inputs / "window", request)
+        shadow = {key: admitted[key] for key in ("matchId", "generationId", "requestDigest",
+            "sourceSha256", "checkpointDigest", "deadlineSeconds")}
+        shadow.update(schemaVersion=2,
+            windowDigest=stream_sha256(inputs / "window/window.json").sha256)
+        shadow["jobIdentity"] = digest({key: shadow[key] for key in (
+            "matchId", "generationId", "requestDigest", "checkpointDigest", "windowDigest")})
+        return root, shadow
+    except Exception:
+        try:
+            shutil.rmtree(root)
+        except Exception:
+            raise RuntimeError("shadow input cleanup could not be confirmed") from None
+        raise
