@@ -7,6 +7,8 @@ Output paths must also be confined beneath the same root.
 
 from __future__ import annotations
 
+import logging
+
 import argparse
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
@@ -50,6 +52,9 @@ from .remote_contracts import (
     validate_result,
 )
 from .runtime_options import ProofRuntimeOptions, validate_primary_acquisition_mode
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 class WorkerError(RuntimeError):
@@ -1332,7 +1337,7 @@ def _progress_collector(job_id: str, *, output: TextIO | None = None):
             try:
                 _emit_live_progress(event, output)
             except Exception:
-                pass
+                LOGGER.warning("live progress output failed")
         except Exception:
             state["error"] = True
 

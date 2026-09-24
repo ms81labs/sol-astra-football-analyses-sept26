@@ -96,5 +96,21 @@ markers = [
 target-version = "py311"
 
 [tool.ruff.lint]
-# Roll out correctness first. Broader legacy debt is reported separately in CI.
-select = ["F821", "F822", "F823"]
+# Broad check-only ratchet: scripts/check_python_quality.py; clean app/scripts rules also gate directly.
+select = ["F", "B", "BLE", "S110", "B904", "C901"]
+
+[tool.mypy]
+python_version = "3.11"
+plugins = ["pydantic.mypy"]
+files = ["backend/app/workbench", "backend/app/schemas.py", "backend/app/settings.py", "backend/app/run_benchmarks.py"]
+follow_imports = "silent"
+ignore_missing_imports = true
+check_untyped_defs = true
+warn_unused_ignores = true
+show_error_codes = true
+
+[tool.pydantic-mypy]
+# Catch undeclared constructor keys without forbidding compatible runtime payloads globally.
+init_forbid_extra = true
+init_typed = false
+warn_required_dynamic_aliases = true

@@ -94,7 +94,7 @@ class _ClosingConnection:
                 try:
                     self._connection.rollback()
                 except Exception:
-                    pass
+                    LOGGER.warning("storage transaction rollback failed")
         finally:
             self.close()
         return False
@@ -227,7 +227,7 @@ class Storage(_IdentityStorageMixin, _CalibrationStorageMixin, _RemoteResultStor
             finally:
                 connection.close()
         except Exception:
-            pass
+            LOGGER.warning("storage checkpoint cleanup failed")
         ledger = getattr(self, "job_ledger", None)
         if ledger is not None and hasattr(ledger, "close"):
             ledger.close()
@@ -907,7 +907,7 @@ class Storage(_IdentityStorageMixin, _CalibrationStorageMixin, _RemoteResultStor
             if claimed_evidence_ids is not None:
                 try:
                     references = validate_declared_references({"evidence": claimed_evidence_ids}, package)
-                except (ValueError, TypeError) as exc:
+                except (ValueError, TypeError):
                     reasons.append("FABRICATED_EVIDENCE")
             validated = validate_output(narrative, package) if narrative is not None else None
             if validated is not None and validated.grounding not in {"grounded", "referenced", "interpretive"}:
@@ -1253,7 +1253,7 @@ class Storage(_IdentityStorageMixin, _CalibrationStorageMixin, _RemoteResultStor
         from .workbench.cache import RecomputeReceipt, RecomputeRefusal
 
         match = self.get_match(match_id)
-        plan = self.plan_recompute(match_id, change)
+        self.plan_recompute(match_id, change)
         if change not in IMAGE_SPACE_SAFE_CHANGES:
             return RecomputeRefusal(reasonCodes=["VISION_REQUIRES_SEALED_WORKER"])
 
@@ -1590,7 +1590,7 @@ class Storage(_IdentityStorageMixin, _CalibrationStorageMixin, _RemoteResultStor
         from .workbench.geometry import derived_distance
         from .workbench.media import detect_camera_cuts
 
-        match = self.get_match(match_id)
+        self.get_match(match_id)
         try:
             frames = self.load_frames(match_id)
             times = [float(frame.timestamp) for frame in frames]

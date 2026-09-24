@@ -89,13 +89,13 @@ class ReviewStorage:
                     refs[mid, gid] = pins.enter_context(
                         self._owner.generation_snapshot(mid, generation_id=gid)
                     ).generationId
-                except (KeyError, FileNotFoundError):
+                except (KeyError, FileNotFoundError) as exc:
                     if gid is not None:
                         from .generations import GenerationRecoveryRequired
 
                         raise GenerationRecoveryRequired(
                             "Playlist source generation is unavailable"
-                        )
+                        ) from exc
                     refs[mid, gid] = None
             yield [
                 item.model_copy(

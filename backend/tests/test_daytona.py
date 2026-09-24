@@ -2660,6 +2660,7 @@ def test_sdk_create_absent_allocation_preserves_original_failure(monkeypatch):
         adapter.create(spec, 600)
 
     assert raised.value is create_error
+    assert raised.value.__suppress_context__ is True
     assert raw.gets == [(f"fa-{'ab' * 16}", 600)]
     assert raw.deletes == []
 

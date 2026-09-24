@@ -656,12 +656,12 @@ class GenerationStore:
             root = self.root(match_id)
             try:
                 pointer = self._pointer(match_id)
-            except FileNotFoundError:
+            except FileNotFoundError as exc:
                 legacy = [root / name for name in ("frames.json", "events.json", "analytics.json")]
                 if migrate and all(path.is_file() for path in legacy):
                     return self.migrate_legacy(match_id)
                 if any(path.exists() for path in legacy):
-                    raise GenerationRecoveryRequired("Incomplete legacy snapshot")
+                    raise GenerationRecoveryRequired("Incomplete legacy snapshot") from exc
                 return {"status": "not_ready", "matchId": match_id}
             manifest, digest = self.verify(match_id, pointer["generationId"], expected_digest=pointer.get("manifestSha256"))
             if not pointer.get("manifestSha256"):

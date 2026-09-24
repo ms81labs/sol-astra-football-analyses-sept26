@@ -6,7 +6,7 @@ import subprocess
 import sys
 
 import pytest
-from backend.tests.test_audit_v3_c05_evaluation import fixture, policy, scorer_root
+from backend.tests.test_audit_v3_c05_evaluation import fixture, policy, scorer_root as scorer_root
 
 pytestmark = pytest.mark.integration
 

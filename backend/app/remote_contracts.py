@@ -7,6 +7,8 @@ from filesystem races performed by another privileged process.
 
 from __future__ import annotations
 
+import logging
+
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -21,6 +23,9 @@ import re
 import tempfile
 from types import MappingProxyType
 from typing import Any, BinaryIO
+
+
+LOGGER = logging.getLogger(__name__)
 
 
 READ_CHUNK_BYTES = 64 * 1024
@@ -828,7 +833,7 @@ def _rollback_published_json(destination: Path) -> bool:
     try:
         destination.unlink()
     except Exception:
-        pass
+        LOGGER.warning("published JSON rollback unlink failed")
     try:
         os.lstat(destination)
     except FileNotFoundError:
@@ -840,7 +845,7 @@ def _rollback_published_json(destination: Path) -> bool:
     try:
         _fsync_directory(destination.parent)
     except Exception:
-        pass
+        LOGGER.warning("published JSON rollback directory sync failed")
     return absent
 
 
@@ -893,7 +898,7 @@ def atomic_write_json(root: Path | str, relative: PurePosixPath | str, value: ob
     finally:
         if owns_fd:
             try: os.close(fd)
-            except Exception: pass
+            except Exception: LOGGER.warning("atomic JSON descriptor close failed")
         try: temp_path.unlink(missing_ok=True)
         except OSError: pass
 

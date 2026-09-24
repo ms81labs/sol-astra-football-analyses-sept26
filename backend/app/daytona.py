@@ -5,6 +5,8 @@ preflight has succeeded.
 """
 from __future__ import annotations
 
+import logging
+
 from collections.abc import Callable, Iterator
 from contextlib import ExitStack, nullcontext
 import ctypes
@@ -31,6 +33,9 @@ from backend.app.remote_contracts import (
 )
 from backend.release.daytona_policy import DaytonaPolicy, load_daytona_policy
 from backend.release.preflight import PreflightResult
+
+
+LOGGER = logging.getLogger(__name__)
 
 INPUT_ROOT = "/home/daytona/job"
 OUTPUT_ROOT = INPUT_ROOT
@@ -267,7 +272,7 @@ class _SdkClient:
                 try:
                     candidate = self.get(sandbox_name, timeout=timeout)
                 except DaytonaConfirmedAbsent:
-                    raise create_failure
+                    raise create_failure from None
                 except BaseException:
                     raise DaytonaExecutionError(
                         "create: sandbox cleanup was not confirmed"
@@ -297,13 +302,13 @@ class _SdkClient:
             except DaytonaConfirmedAbsent:
                 return True
             except BaseException:
-                pass
+                LOGGER.warning("unreturned sandbox cleanup delete failed")
             try:
                 self.get(sandbox.id, timeout=timeout)
             except DaytonaConfirmedAbsent:
                 return True
             except BaseException:
-                pass
+                LOGGER.warning("unreturned sandbox cleanup confirmation failed")
         return False
 
     def delete(self, sandbox: _Sandbox, timeout: int, wait: bool) -> None:
@@ -592,7 +597,7 @@ def _download(fs: _Filesystem, remote: str, local: Path, *, timeout: int,
                 if callable(close):
                     close()
             except Exception:
-                pass
+                LOGGER.warning("download stream close failed")
         if descriptor >= 0: os.close(descriptor)
     if expected_size is not None and size != expected_size:
         raise DaytonaExecutionError("download: stream size mismatch")
@@ -1175,7 +1180,7 @@ def _cleanup(client: _Client, sandbox: _Sandbox, policy: DaytonaPolicy,
                 try:
                     retry_wait()
                 except Exception:
-                    pass
+                    LOGGER.warning("cleanup retry wait failed")
     return False
 
 
@@ -1236,7 +1241,7 @@ def _forward_progress_snapshot(
         try:
             progress_callback(event)
         except Exception:
-            pass
+            LOGGER.warning("progress callback failed")
     return last_sequence, last_progress
 
 

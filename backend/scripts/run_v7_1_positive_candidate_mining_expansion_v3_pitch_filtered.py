@@ -122,7 +122,7 @@ def run_v7_1_positive_candidate_mining_expansion_v3_pitch_filtered(
     v2_root = candidate_root / V2_DIR_NAME
     resolution_root = candidate_root / RESOLUTION_DIR_NAME
 
-    v2_overlay = _load_json(v2_root / "corrected_label_overlay.json", required=True)
+    _load_json(v2_root / "corrected_label_overlay.json", required=True)
     v2_summary = _load_json(v2_root / "v7_1_positive_candidate_mining_expansion_summary.json", required=True)
     resolution = _load_json(resolution_root / "v7_1_positive_diversity_manual_review_resolution_summary.json", required=True)
     reviewed_positive_rows = _load_v2_reviewed_positive_rows(candidate_root, RESOLUTION_DIR_NAME)

@@ -16,7 +16,7 @@ class _CalibrationStorageMixin:
         from .workbench.cache import REBUILD_FOR
         from .workbench.geometry import preview_landmark_fit
 
-        match = self.get_match(match_id)
+        self.get_match(match_id)
         revision = self.calibration_revision(match_id)
         if revision is not None and revision.accepted:
             evaluation = dict(revision.evaluation)
@@ -46,7 +46,7 @@ class _CalibrationStorageMixin:
         from .workbench.geometry import CalibrationProfile, commit_calibration
         from .workbench.review import correction_api_payload
 
-        match = self.get_match(match_id)
+        self.get_match(match_id)
         controls = {key: payload[key] for key in ("expectedVersion", "baseGeneration", "commandId", "idempotencyKey") if key in payload}
         profile = CalibrationProfile.model_validate({key: value for key, value in payload.items() if key not in controls})
         result = commit_calibration(profile)

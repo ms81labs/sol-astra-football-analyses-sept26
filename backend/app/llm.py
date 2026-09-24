@@ -454,7 +454,7 @@ def build_prompt(
             '{"attacking": string, "defensive": string, "pressing": string, "key_player": number, '
             '"weaknesses": string, "rating": number, "summary": string, "evidence": string[], '
             '"event_summary": {"eventCounts": object, "topPlayers": array}, "player_focus": object}. '
-            f"Context: {json.dumps(context)}"
+            f"{direction_context}Context: {json.dumps(context)}"
         )
     if analysis_type == "drills":
         context = _build_match_context(frames, summary, events, formation_timeline, shots)
@@ -463,7 +463,7 @@ def build_prompt(
             "You are a professional football coaching assistant. Suggest 3 training drills from this derived match context and "
             'return JSON {"drills": [{"name": string, "objective": string, "setup": string, "duration": string}], '
             '"focus_area": string, "evidence": string[], "player_focus": object}. '
-            f"Context: {json.dumps(context)}"
+            f"{direction_context}Context: {json.dumps(context)}"
         )
     raise ValueError(f"Unsupported analysis type: {analysis_type}")
 

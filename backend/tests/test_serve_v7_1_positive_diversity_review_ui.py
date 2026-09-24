@@ -194,7 +194,7 @@ def test_update_review_item_records_non_positive_reasons(tmp_path: Path) -> None
 
 
 def test_run_resolution_gate_invokes_v2_resolver(tmp_path: Path) -> None:
-    candidate_root = _write_review_root(tmp_path, [_item(index) for index in range(3)])
+    _write_review_root(tmp_path, [_item(index) for index in range(3)])
 
     result = review_ui.run_resolution_gate(storage_root=tmp_path)
 

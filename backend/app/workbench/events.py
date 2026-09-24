@@ -149,7 +149,7 @@ def with_stable_event_id(event: Any):
     identity = "|".join(
         (event.type, str(event.team or ""), f"{round(event.timestamp, 1):.1f}", str(primary_track or ""))
     )
-    return event.model_copy(update={"eventId": f"ev_{hashlib.sha1(identity.encode()).hexdigest()[:16]}"})
+    return event.model_copy(update={"eventId": f"ev_{hashlib.sha1(identity.encode(), usedforsecurity=False).hexdigest()[:16]}"})
 
 
 def event_matches_review_payload(event: Any, payload: dict[str, Any], *, match_id: str, index: int) -> bool:

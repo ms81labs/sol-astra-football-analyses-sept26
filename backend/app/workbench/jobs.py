@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import hashlib
 import json
 import sqlite3
@@ -31,6 +33,9 @@ from .errors import (
 
 from .cache import REBUILD_FOR, cache_identity
 from .contracts import JobPhase, StrictModel
+
+
+LOGGER = logging.getLogger(__name__)
 
 _RUNNING_STATUSES = {
     "validating",
@@ -182,7 +187,7 @@ class DurableJobLedger:
             try:
                 connection.rollback()
             except Exception:
-                pass
+                LOGGER.warning("job ledger transaction rollback failed")
             raise
         finally:
             connection.close()

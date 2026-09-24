@@ -987,9 +987,9 @@ def _persist_prepared_video_outputs(
         match_id, reason="processing", team_clusters=team_clusters, match_state_evidence=match_state_evidence,
         prepared_frames=frames,
     )
-    enriched_frames, summary, events, assignments, formation_timeline, shots, accepted_match_state = (
-        output["frames"], output["summary"], output["events"], output["assignments"],
-        output["formationTimeline"], output["shots"], output["acceptedMatchState"])
+    enriched_frames = output["frames"]
+    events = output["events"]
+    assignments = output["assignments"]
     requires_team_selection = output["requiresTeamSelection"]
     tracked_possession_frames = sum(
         1 for assignment in assignments if assignment.team in {"my_team", "enemy", "unassigned"} and assignment.trackId is not None
@@ -1218,8 +1218,7 @@ def process_match(storage: Storage, job_id: str) -> None:
 
     storage.update_job(job_id, status="processing", progress=0.55, message="Computing possession and metrics")
     from .review_service import ReviewService
-    _, output = ReviewService(storage).materialize_and_publish(match.id, reason="processing")
-    accepted_match_state = output["acceptedMatchState"]
+    ReviewService(storage).materialize_and_publish(match.id, reason="processing")
     storage.update_match_status(
         match.id,
         status="ready",

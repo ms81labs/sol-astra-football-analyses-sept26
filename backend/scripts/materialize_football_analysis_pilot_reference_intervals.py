@@ -220,7 +220,7 @@ def main() -> None:
     manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
     try:
         intervals = manifest["labelingProtocol"]["selectedIntervalsBySource"][args.source_id]
-    except (KeyError, TypeError) as exc:
+    except (KeyError, TypeError):
         parser.error(f"source {args.source_id!r} has no frozen intervals")
     candidates = [candidate for candidate in manifest["candidates"]
                   if candidate.get("sourceId") == args.source_id]

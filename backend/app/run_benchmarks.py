@@ -6,7 +6,7 @@ from math import hypot
 from pathlib import Path
 from statistics import median
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from .proof_summary import save_canonical_proof_summary
 from .proof_runtime import (
@@ -87,6 +87,8 @@ NEED_VIABLE_BALL_TRACK_REASON = "Need viable ball track: meaningful motion and e
 
 
 class MatchBenchmarkSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     matchId: str
     jobId: str | None = None
     detectorModelPath: str | None = None
@@ -256,6 +258,8 @@ class MatchBenchmarkSummary(BaseModel):
 
 
 class SelectedClusterBenchmarkSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     clusterId: int
     detectorModelPath: str | None = None
     detectorModelName: str | None = None
@@ -266,6 +270,16 @@ class SelectedClusterBenchmarkSummary(BaseModel):
     requiresTeamSelection: bool
     withBallFrames: int = 0
     withBallRatio: float = 0.0
+    acceptedMatchStateFrames: int = 0
+    acceptedMatchStateCoverageRatio: float = 0.0
+    visibleStateFrames: int = 0
+    inferredStateFrames: int = 0
+    hiddenStateFrames: int = 0
+    controlledStateFrames: int = 0
+    hiddenControlledStateFrames: int = 0
+    restartOrOutStateFrames: int = 0
+    stateContinuityAppliedFrames: int = 0
+    matchStateModeCounts: dict[str, int] = Field(default_factory=dict)
     trackedPossessionFrames: int = 0
     trackedPossessionRatio: float = 0.0
     controlledPossessionFrames: int = 0

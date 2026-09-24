@@ -157,10 +157,8 @@ def render_match_report_html(
     }
     whole_match_frequency = "true" if publication.get("wholeMatchFrequency") else "false"
     has_tactical_report = bool(tactical_report)
-    has_drills = bool(drills)
     if summary.get("possession") is None and report_context.get("status") == "unverified":
         has_tactical_report = False
-        has_drills = False
         tactical_report = None
         drills = None
     tactical_report = tactical_report or {}

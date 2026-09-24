@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+
 import base64
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -13,6 +15,9 @@ from pathlib import Path, PurePosixPath
 import re
 import tempfile
 from typing import TYPE_CHECKING, Any, BinaryIO, Callable, Mapping
+
+
+LOGGER = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from .release_manifest import ReleaseManifest
@@ -136,7 +141,7 @@ def normalize_object_store_origin(value: object, label: str = "objectStore.endpo
     except ValueError:
         address = None
         if _DNS_HOSTNAME.fullmatch(hostname) is None:
-            raise RuntimeOptionsError(f"{label} must contain a valid hostname")
+            raise RuntimeOptionsError(f"{label} must contain a valid hostname") from None
     if address is not None and not address.is_global:
         raise RuntimeOptionsError(f"{label} must not target a non-public IP address")
     rendered_host = f"[{hostname}]" if ":" in hostname else hostname
@@ -629,7 +634,7 @@ def _atomic_materialize(
             try:
                 stream_close()
             except Exception:
-                pass
+                LOGGER.warning("artifact stream close failed")
         if temporary_path is not None:
             temporary_path.unlink(missing_ok=True)
 

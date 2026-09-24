@@ -263,11 +263,11 @@ class _JobStorageMixin:
             try:
                 connection.rollback()
             except Exception:
-                pass
+                LOGGER.warning("job admission rollback failed")
             try:
                 connection.close()
             except Exception:
-                pass
+                LOGGER.warning("job admission connection close failed")
             try:
                 admitted = self.get_admission_by_token(admission_token)
             except Exception:
@@ -285,7 +285,7 @@ class _JobStorageMixin:
             try:
                 connection.close()
             except Exception:
-                pass
+                LOGGER.warning("committed job admission connection close failed")
         try:
             return self.get_match(match_id), self.get_job(job_id), True
         except Exception as error:
