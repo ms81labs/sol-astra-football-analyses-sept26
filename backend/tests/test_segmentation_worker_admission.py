@@ -111,6 +111,17 @@ def test_shadow_preflight_binds_current_source_rights_and_approved_runtime(tmp_p
     with pytest.raises(ValueError, match="cancel"):
         preflight_shadow_window(storage, match_id, generation_id,
             request.model_dump(mode="json"), cancelled=True, **kwargs)
+    cancellation = {"requested": False}
+    def cancel_during_probe(probe, path):
+        identity = original_probe(probe, path)
+        cancellation["requested"] = True
+        return identity
+    with monkeypatch.context() as patch:
+        patch.setattr(FfmpegProbe, "probe_identity", cancel_during_probe)
+        with pytest.raises(ValueError, match="cancel"):
+            preflight_shadow_window(storage, match_id, generation_id,
+                request.model_dump(mode="json"), cancelled=lambda: cancellation["requested"], **kwargs)
+    assert cancellation["requested"], "cancellation must be observed after the probe starts"
     with pytest.raises(ValueError, match="deadline"):
         preflight_shadow_window(storage, match_id, generation_id,
             request.model_dump(mode="json"), **{**kwargs, "deadline_seconds": 0})

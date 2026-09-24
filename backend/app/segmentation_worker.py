@@ -6,6 +6,7 @@ import json
 import math
 import re
 import stat
+from collections.abc import Callable
 from collections import Counter
 from fractions import Fraction
 from pathlib import Path
@@ -19,8 +20,12 @@ from .workbench.hashing import stream_sha256
 def preflight_shadow_window(storage, match_id: str, generation_id: str, payload: dict, *,
                             checkpoint_path: Path, approved_model_digest: str,
                             approved_worker_digest: str, approved_crop_digest: str,
-                            deadline_seconds: float, cancelled: bool = False) -> dict:
-    if cancelled:
+                            deadline_seconds: float, cancelled: bool | Callable[[], bool] = False) -> dict:
+    if type(cancelled) is not bool and not callable(cancelled):
+        raise ValueError("invalid shadow cancellation signal")
+    def cancellation_requested() -> bool:
+        return cancelled() if callable(cancelled) else cancelled
+    if cancellation_requested():
         raise ValueError("shadow job cancelled before admission")
     if type(deadline_seconds) not in (int, float) or not math.isfinite(deadline_seconds) \
             or not 0 < deadline_seconds <= 3600:
@@ -66,6 +71,8 @@ def preflight_shadow_window(storage, match_id: str, generation_id: str, payload:
         cpu_soft_seconds=31, cpu_hard_seconds=32, captured_output_bytes=8 * 1024**2)
     probe = FfmpegProbe(policy=policy)
     media_identity = probe.probe_identity(source)
+    if cancellation_requested():
+        raise ValueError("shadow job cancelled during preflight")
     # ponytail: only full-frame source geometry is admitted until a sealed crop manifest binds cropped pixels.
     if (media_identity.sourceSha256 != source_sha or (request.width, request.height) != (media_identity.width, media_identity.height)
             or not media_identity.timeBaseNum or not media_identity.timeBaseDen):
@@ -76,6 +83,8 @@ def preflight_shadow_window(storage, match_id: str, generation_id: str, payload:
     _assert_safe_ffmpeg_argv(command)
     result = _run_bounded_media_process(command, timeout=timeout,
         output_cap=policy.captured_output_bytes, file_cap=policy.max_file_bytes, policy=policy)
+    if cancellation_requested():
+        raise ValueError("shadow job cancelled during preflight")
     if result.returncode != 0:
         raise ValueError("shadow source frame index unavailable")
     rows = [line.strip().rstrip(",") for line in result.stdout.decode().splitlines() if line.strip()]
@@ -99,6 +108,8 @@ def preflight_shadow_window(storage, match_id: str, generation_id: str, payload:
     if live_match.inputMode != "video" or not live_match.config.rights.cloudPermission \
             or live_match.config.rights.processingScope == "local_only":
         raise ValueError("source rights changed during shadow preflight")
+    if cancellation_requested():
+        raise ValueError("shadow job cancelled during preflight")
     if monotonic() - started >= deadline_seconds:
         raise ValueError("shadow job deadline expired during preflight")
     return {"schemaVersion": 1, "matchId": match_id, "generationId": generation_id,
