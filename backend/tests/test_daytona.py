@@ -105,7 +105,7 @@ def _bundle(tmp_path: Path):
 
 
 def test_shadow_preflight_allows_only_sealed_request_and_checkpoint_beside_release_artifacts(tmp_path):
-    from backend.app.daytona import DaytonaExecutionError, DaytonaExecutionRequest, _preflight
+    from backend.app.daytona import DaytonaExecutionError, DaytonaExecutionRequest, _preflight, execute_daytona_job
     from backend.app.segmentation import SegmentationRequest, FramePoint, Prompt, request_identity
 
     root, workspace, proof, request, receipt, *_ = _bundle(tmp_path)
@@ -149,6 +149,10 @@ def test_shadow_preflight_allows_only_sealed_request_and_checkpoint_beside_relea
     assert admitted == request and sealed == receipt
     assert PurePosixPath("inputs/checkpoint.bin") in uploads
     assert PurePosixPath("inputs/segmentation-request.json") in uploads
+    def forbidden_client(*_args):
+        raise AssertionError("processor runtime must not launch for a shadow bundle")
+    with pytest.raises(DaytonaExecutionError, match="shadow runtime is unavailable"):
+        execute_daytona_job(execution, client_factory=forbidden_client)
     from backend.app.segmentation_worker import load_sealed_shadow_bundle
     assert load_sealed_shadow_bundle(root) == (request, receipt, segmentation)
     (root / "inputs/checkpoint.bin").write_bytes(b"changed after transport preflight")

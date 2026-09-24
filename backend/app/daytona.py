@@ -1432,6 +1432,8 @@ def execute_daytona_job(execution: DaytonaExecutionRequest, *,
         raise
     except Exception:
         raise DaytonaExecutionError("preflight: local validation failed") from None
+    if request.config.get("jobKind") == "segmentation_shadow":
+        raise DaytonaExecutionError("preflight: shadow runtime is unavailable")
     with ExitStack() as upload_cleanup:
         upload_owner = _UploadOwner()
         upload_cleanup.callback(upload_owner.close)
