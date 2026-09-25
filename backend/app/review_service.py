@@ -212,6 +212,17 @@ class ReviewService:
                                           selected=match.config.myTeamCluster,
                                           tracking_role=self._tracking_role(match_id, active_commands(history)),
                                           input_mode=match.inputMode)
+        if kind == "playlist_item" and "replaces" in payload:
+            if set(payload) != {"replaces", "title", "notes"} or not all(
+                isinstance(payload[key], str) for key in ("replaces", "title", "notes")
+            ) or len(payload["title"]) > 160 or len(payload["notes"]) > 4000:
+                raise SemanticCommandError("INVALID_PLAYLIST_EDIT", "Edit only a saved clip's title and notes")
+            target = next((item for item in self.storage._active_playlist_items(match_id)
+                           if item["correctionId"] == payload["replaces"]), None)
+            if target is None:
+                raise SemanticCommandError("PLAYLIST_ITEM_NOT_ACTIVE", "Refresh the saved clip before editing", status_code=409)
+            return {**target["payload"], "replaces": target["correctionId"],
+                    "title": payload["title"], "notes": payload["notes"]}
         if kind == "calibration" and set(payload) == {"profile"}:
             from .workbench.geometry import CalibrationProfile, commit_calibration
             profile = CalibrationProfile.model_validate(payload["profile"])

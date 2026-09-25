@@ -96,6 +96,11 @@ def validate_undo(original: Correction, history: list[Correction]) -> None:
     active = active_commands(history)
     if original.applyState != 'applied' or original.correctionId not in {c.correctionId for c in active}:
         raise SemanticCommandError('COMMAND_NOT_ACTIVE', 'Only an active applied command can be undone', status_code=409)
+    if original.kind == 'playlist_item' and any(
+        later.kind == 'playlist_item' and later.payload.get('replaces') == original.correctionId
+        for later in active
+    ):
+        raise SemanticCommandError('COMMAND_DEPENDENCY_CONFLICT', 'Undo the later clip edit first', status_code=409)
     if original.kind in {'track_split', 'track_join'}:
         touched = command_track_ids(original)
         for later in active:

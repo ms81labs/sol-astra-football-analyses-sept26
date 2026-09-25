@@ -1424,6 +1424,13 @@ describe('App match workspace loading', () => {
           json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a', items: [] }),
         } as Response);
       }
+      if (url.includes('/api/matches/match-a/corrections') && init?.method === 'POST') {
+        return Promise.resolve({ ok: true, json: async () => ({
+          correctionId: 'clip-2', kind: 'playlist_item', saveState: 'saved', applyState: 'applied',
+          baseGeneration: 'g-match-a', appliedGeneration: 'g-match-a-next',
+          payload: JSON.parse(String(init.body)).payload,
+        }) } as Response);
+      }
       if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
@@ -1439,6 +1446,7 @@ describe('App match workspace loading', () => {
                   timestampStart: 0,
                   timestampEnd: 0.2,
                   sourceEndFrameExclusive: 1,
+                  title: 'Old title',
                   notes: 'turnover then shot',
                 },
               },
@@ -1476,8 +1484,17 @@ describe('App match workspace loading', () => {
     expect(screen.queryByText(/12s to 14s/)).toBeNull();
     expect(screen.queryByText(/frame 70 exclusive/i)).toBeNull();
     expect(screen.getByRole('button', { name: 'Undo clip-1' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /edit clip old title/i }));
+    fireEvent.change(screen.getByLabelText(/^title$/i), { target: { value: 'New title' } });
+    fireEvent.change(screen.getByLabelText(/notes/i), { target: { value: 'New note' } });
+    fireEvent.click(screen.getByRole('button', { name: /save clip changes/i }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) =>
+      String(url).includes('/api/matches/match-a/corrections') && init?.method === 'POST'
+      && String(init.body).includes('"replaces":"clip-1"')
+      && String(init.body).includes('"title":"New title"')
+      && String(init.body).includes('"notes":"New note"'))).toBe(true));
     expect(screen.getByText(/do not establish a whole-match frequency/i)).toBeTruthy();
-    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(2);
   });
 
   it('opens a stored playlist clip on the review source interval', async () => {

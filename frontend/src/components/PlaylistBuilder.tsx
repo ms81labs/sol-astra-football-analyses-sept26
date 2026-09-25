@@ -14,6 +14,7 @@ interface PlaylistBuilderProps {
   videoAvailable?: boolean;
   storedClips?: PlaylistClip[];
   onClipSaved?: (clip: PlaylistClip) => void | Promise<void>;
+  onClipUpdated?: (correctionId: string, title: string, notes: string) => void | Promise<void>;
   onOpenInterval?: (sourceStartSeconds: number) => void;
 }
 
@@ -44,6 +45,7 @@ export default function PlaylistBuilder({
   videoAvailable = false,
   storedClips = [],
   onClipSaved,
+  onClipUpdated,
   onOpenInterval,
 }: PlaylistBuilderProps) {
   const scopeVersion = useRef(0);
@@ -51,8 +53,10 @@ export default function PlaylistBuilder({
   const rangeKey = sourceInterval ? `${sourceInterval.start}:${sourceInterval.end}` : reviewRange ? `${reviewRange.startFrame}:${reviewRange.endFrame}:${sampleFps}` : '';
   const marked = sourceInterval ?? (reviewRange ? markedIntervalSeconds(reviewRange, frames, sourceFps, sampleFps) : null);
   const [draft, setDraft] = useState({ key: '', start: '12', end: '14' });
-  const start = marked && draft.key !== rangeKey ? String(marked.start) : draft.start;
-  const end = marked && draft.key !== rangeKey ? String(marked.end) : draft.end;
+  const [editing, setEditing] = useState<{ matchId?: string; generationId?: string; clip: PlaylistClip } | null>(null);
+  const editingClip = editing && editing.matchId === matchId && editing.generationId === generationId ? editing.clip : null;
+  const start = editingClip ? String(editingClip.start) : marked && draft.key !== rangeKey ? String(marked.start) : draft.start;
+  const end = editingClip ? String(editingClip.end) : marked && draft.key !== rangeKey ? String(marked.end) : draft.end;
   const [title, setTitle] = useState('');
   const [notes, setNotes] = useState('');
   const [clips, setClips] = useState<PlaylistClip[]>([]);
@@ -84,6 +88,18 @@ export default function PlaylistBuilder({
 
   async function addClip() {
     const operation = scopeVersion.current;
+    if (editingClip) {
+      if (!editingClip.correctionId || !onClipUpdated) return;
+      try {
+        await onClipUpdated(editingClip.correctionId, title.trim(), notes);
+        if (operation !== scopeVersion.current) return;
+        setExportError(null);
+        setEditing(null);
+      } catch (error) {
+        if (operation === scopeVersion.current) setExportError(error instanceof Error ? error.message : 'Failed to edit clip');
+      }
+      return;
+    }
     const from = Number(start);
     const to = Number(end);
     if (!Number.isFinite(from) || !Number.isFinite(to) || to < from) return;
@@ -155,6 +171,7 @@ export default function PlaylistBuilder({
         Clip start
         <input
           value={start}
+          disabled={Boolean(editingClip)}
           onChange={(event) => setDraft({ key: rangeKey, start: event.target.value, end })}
           className="mt-1 w-full rounded border border-slate-600 bg-slate-900 px-2 py-1 text-slate-200"
         />
@@ -163,6 +180,7 @@ export default function PlaylistBuilder({
         Clip end
         <input
           value={end}
+          disabled={Boolean(editingClip)}
           onChange={(event) => setDraft({ key: rangeKey, start, end: event.target.value })}
           className="mt-1 w-full rounded border border-slate-600 bg-slate-900 px-2 py-1 text-slate-200"
         />
@@ -176,8 +194,9 @@ export default function PlaylistBuilder({
         <input value={notes} onChange={(event) => setNotes(event.target.value)} className="mt-1 w-full rounded border border-slate-600 bg-slate-900 px-2 py-1 text-slate-200" />
       </label>
       <button type="button" onClick={() => void addClip()} className="px-3 py-1.5 rounded bg-slate-700 text-xs font-semibold text-white">
-        Add clip
+        {editingClip ? 'Save clip changes' : 'Add clip'}
       </button>
+      {editingClip && <button type="button" onClick={() => setEditing(null)} className="ml-2 text-xs text-slate-300">Cancel edit</button>}
       {matchId ? (
         <button type="button" onClick={() => void assembleReport()} className="ml-2 px-3 py-1.5 rounded bg-slate-700 text-xs font-semibold text-white">
           Assemble report
@@ -195,6 +214,11 @@ export default function PlaylistBuilder({
         >
           {clip.title ? `${clip.title} · ` : ''}{clip.start}s to {clip.end}s (frame {clip.sourceEndFrameExclusive} exclusive){clip.notes ? ` · ${clip.notes}` : ''}
         </button>
+        {clip.correctionId && onClipUpdated && generationId === clip.generationId && (
+          <button type="button" aria-label={`Edit clip ${clip.title || `${clip.start}s to ${clip.end}s`}`}
+            onClick={() => { setEditing({ matchId, generationId, clip }); setTitle(clip.title ?? ''); setNotes(clip.notes); }}
+            className="mr-2 text-xs text-sky-300 underline">Edit title and notes</button>
+        )}
         {videoAvailable && matchId && generationId && clip.generationId === generationId && (
           <a className="text-xs text-emerald-300 underline" download
             href={`/api/matches/${encodeURIComponent(matchId)}/edits/clip?${new URLSearchParams({ generationId, start: String(clip.start), end: String(clip.end) })}`}>

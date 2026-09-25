@@ -931,6 +931,61 @@ def test_match_playlist_item_undo_omits_clip_from_package_and_edit_list(tmp_path
     _run(_test_match_playlist_item_undo_omits_clip_from_package_and_edit_list, tmp_path)
 
 
+def test_playlist_metadata_edit_replaces_one_clip_and_undo_restores_it(tmp_path: Path):
+    _run(_test_playlist_metadata_edit_replaces_one_clip_and_undo_restores_it, tmp_path)
+
+
+async def _test_playlist_metadata_edit_replaces_one_clip_and_undo_restores_it(tmp_path: Path):
+    async with api_client(tmp_path) as (_, client):
+        response = await _upload_tracking_match(client)
+        match_id = response.json()["matchId"]
+        original = await client.post(f"/api/matches/{match_id}/corrections", json={
+            "kind": "playlist_item", "payload": {
+                "timestampStart": 0.0, "timestampEnd": 0.4,
+                "title": "Original", "notes": "First read", "evidenceIds": ["frame:0"],
+            },
+        })
+        assert original.status_code == 200
+        original_id = original.json()["correctionId"]
+        generation = (await client.get(f"/api/matches/{match_id}")).json()["generationId"]
+        edited = await client.post(f"/api/matches/{match_id}/corrections", json={
+            "kind": "playlist_item", "baseGeneration": generation,
+            "payload": {"replaces": original_id, "title": "Revised", "notes": "Second read"},
+        })
+        assert edited.status_code == 200, edited.text
+        edited_id = edited.json()["correctionId"]
+        package = (await client.get(f"/api/matches/{match_id}/package")).json()
+        assert [(item["title"], item["notes"], item["timestampStart"], item["timestampEnd"], item["evidenceIds"])
+                for item in package["analyst"]["playlist"]] == [
+                    ("Revised", "Second read", 0.0, 0.4, ["frame:0"]),
+                ]
+        edits = (await client.get(f"/api/matches/{match_id}/edits")).json()
+        assert edits["intervals"] == [[0.0, 0.4]]
+        stale = await client.post(f"/api/matches/{match_id}/corrections", json={
+            "kind": "playlist_item", "payload": {"replaces": original_id, "title": "Stale", "notes": "No"},
+        })
+        assert stale.status_code == 409
+        changed_interval = await client.post(f"/api/matches/{match_id}/corrections", json={
+            "kind": "playlist_item", "payload": {
+                "replaces": edited_id, "title": "Invalid", "notes": "No", "timestampStart": 0.2,
+            },
+        })
+        assert changed_interval.status_code == 422
+        denied = await client.post(f"/api/matches/{match_id}/corrections/{original_id}/undo")
+        assert denied.status_code == 409
+        second = await client.post(f"/api/matches/{match_id}/corrections", json={
+            "kind": "playlist_item", "payload": {"replaces": edited_id, "title": "Third read", "notes": "Third"},
+        })
+        assert second.status_code == 200
+        assert (await client.post(f"/api/matches/{match_id}/corrections/{edited_id}/undo")).status_code == 409
+        assert (await client.post(f"/api/matches/{match_id}/corrections/{second.json()['correctionId']}/undo")).status_code == 200
+        assert (await client.get(f"/api/matches/{match_id}/package")).json()["analyst"]["playlist"][0]["title"] == "Revised"
+        assert (await client.post(f"/api/matches/{match_id}/corrections/{edited_id}/undo")).status_code == 200
+        restored = (await client.get(f"/api/matches/{match_id}/package")).json()
+        assert len(restored["analyst"]["playlist"]) == 1
+        assert restored["analyst"]["playlist"][0]["title"] == "Original"
+
+
 async def _test_match_playlist_item_undo_omits_clip_from_package_and_edit_list(tmp_path: Path):
     async with api_client(tmp_path) as (_, client):
         response = await _upload_tracking_match(client)

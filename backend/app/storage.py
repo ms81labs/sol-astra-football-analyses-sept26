@@ -794,7 +794,7 @@ class Storage(_IdentityStorageMixin, _CalibrationStorageMixin, _RemoteResultStor
     def list_corrections(self, match_id: str, *, state: str | None = None) -> list[dict]:
         return self._correction_storage.list_corrections(match_id, state=state)
 
-    def _active_playlist_payloads(self, match_id: str) -> list[dict]:
+    def _active_playlist_items(self, match_id: str) -> list[dict]:
         ref = self.current_generation(match_id)
         manifest, _ = self.generations.manifest(match_id, ref.generationId)
         included = set(manifest.includedCommandIds)
@@ -802,9 +802,14 @@ class Storage(_IdentityStorageMixin, _CalibrationStorageMixin, _RemoteResultStor
                        if item.get("commandId", item.get("correctionId")) in included
                        and item.get("applyState") == "applied"]
         undone = {item.get("undoOf") for item in corrections if item.get("undoOf")}
-        return [item["payload"] for item in corrections
-                if item.get("kind") == "playlist_item" and not item.get("undoOf")
-                and item.get("correctionId") not in undone and isinstance(item.get("payload"), dict)]
+        active = [item for item in corrections
+                  if item.get("kind") == "playlist_item" and not item.get("undoOf")
+                  and item.get("correctionId") not in undone and isinstance(item.get("payload"), dict)]
+        replaced = {item["payload"].get("replaces") for item in active}
+        return [item for item in active if item.get("correctionId") not in replaced]
+
+    def _active_playlist_payloads(self, match_id: str) -> list[dict]:
+        return [item["payload"] for item in self._active_playlist_items(match_id)]
 
     def _event_review_snapshot(self, match_id: str, payload: dict) -> list[dict]:
         from .workbench.events import event_matches_review_payload

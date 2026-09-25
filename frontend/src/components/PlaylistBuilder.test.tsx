@@ -56,6 +56,21 @@ it('offers exact saved video intervals as source-bound playable downloads', () =
   expect(link.getAttribute('href')).toBe('/api/matches/match-a/edits/clip?generationId=g1&start=1.1&end=2.1');
 });
 
+it('edits only a saved clip title and notes while keeping its source interval', async () => {
+  const update = vi.fn(async () => {});
+  render(<PlaylistBuilder matchId="match-a" generationId="g1" storedClips={[
+    { correctionId: 'clip-1', generationId: 'g1', start: 1.1, end: 2.1,
+      title: 'Old title', notes: 'Old note', sourceEndFrameExclusive: 53 },
+  ]} onClipUpdated={update} />);
+  fireEvent.click(screen.getByRole('button', { name: /edit clip old title/i }));
+  expect((screen.getByLabelText(/clip start/i) as HTMLInputElement).value).toBe('1.1');
+  expect((screen.getByLabelText(/clip start/i) as HTMLInputElement).disabled).toBe(true);
+  fireEvent.change(screen.getByLabelText(/^title$/i), { target: { value: 'New title' } });
+  fireEvent.change(screen.getByLabelText(/notes/i), { target: { value: 'New note' } });
+  fireEvent.click(screen.getByRole('button', { name: /save clip changes/i }));
+  await waitFor(() => expect(update).toHaveBeenCalledWith('clip-1', 'New title', 'New note'));
+});
+
 it('assembles a deterministic match report that does not claim whole-match frequency', async () => {
   const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
     void init;

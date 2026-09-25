@@ -1,6 +1,7 @@
 import { commandState, type CommandReceipt } from './commandLifecycle';
 
 export interface PlaylistClip {
+  correctionId?: string;
   generationId?: string;
   start: number;
   end: number;
@@ -10,7 +11,7 @@ export interface PlaylistClip {
 }
 
 export function clipKey(clip: PlaylistClip): string {
-  return `${clip.start}-${clip.end}-${clip.sourceEndFrameExclusive}-${clip.title ?? ''}-${clip.notes}`;
+  return clip.correctionId ?? `${clip.start}-${clip.end}-${clip.sourceEndFrameExclusive}-${clip.title ?? ''}-${clip.notes}`;
 }
 
 export function playlistClipsFromCorrections(
@@ -28,9 +29,14 @@ export function playlistClipsFromCorrections(
       .map((item) => item.undoOf)
       .filter((undoOf): undoOf is string => typeof undoOf === 'string' && undoOf.length > 0),
   );
+  const replaced = new Set(items
+    .filter((item) => item.kind === 'playlist_item' && commandState(item) === 'applied' && !undone.has(item.correctionId))
+    .map((item) => item.payload?.replaces)
+    .filter((id): id is string => typeof id === 'string'));
   const clips: PlaylistClip[] = [];
   for (const item of items) {
-    if (item.kind !== 'playlist_item' || commandState(item) !== 'applied' || item.undoOf || undone.has(item.correctionId)) {
+    if (item.kind !== 'playlist_item' || commandState(item) !== 'applied' || item.undoOf
+      || undone.has(item.correctionId) || replaced.has(item.correctionId)) {
       continue;
     }
     const payload = item.payload ?? {};
@@ -39,6 +45,7 @@ export function playlistClipsFromCorrections(
     if (!Number.isFinite(start) || !Number.isFinite(end) || end < start) continue;
     const exclusive = Number(payload.sourceEndFrameExclusive);
     clips.push({
+      correctionId: item.correctionId,
       ...(generationId ? { generationId } : {}),
       start,
       end,

@@ -1076,6 +1076,14 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
     if (!receipt || commandState(receipt) !== 'applied') throw new Error('Clip application is not confirmed. See the correction status.');
   }, [activeMatch, executeCommand]);
 
+  const handleClipUpdated = useCallback(async (correctionId: string, title: string, notes: string) => {
+    if (!activeMatch) return;
+    const receipt = await executeCommand((controls) => submitMatchCorrection(activeMatch.id, {
+      kind: 'playlist_item', ...controls, payload: { replaces: correctionId, title, notes },
+    }));
+    if (!receipt || commandState(receipt) !== 'applied') throw new Error('Clip edit application is not confirmed. See the correction status.');
+  }, [activeMatch, executeCommand]);
+
   const handleRequestEventProposal = useCallback(async () => {
     if (!activeMatch || !selectedHit || selectedHit.frameId == null || !eventProposalAvailable
       || activeMatch.detail.inputMode !== 'video' || !activeMatch.detail.generationId) return;
@@ -1671,6 +1679,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
               videoAvailable={isVideoMatch}
               storedClips={playlistClipsFromCorrections(correctionHistory, activeMatch?.detail.includedCommandIds ?? [], activeMatch?.detail.generationId ?? undefined)}
               onClipSaved={handleClipSaved}
+              onClipUpdated={handleClipUpdated}
               onOpenInterval={(timestamp) => {
                 setIsPlaying(false);
                 const index = findNearestFrameIndex(matchData.map((frame) => frame.Timestamp), timestamp);
