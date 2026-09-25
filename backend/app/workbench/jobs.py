@@ -1341,7 +1341,18 @@ def egress_policy(*, destination: str, authorised_hosts: frozenset[str]) -> dict
     }
 
 
-def cancellation_does_not_erase_charges(*, cancelled: bool, incurred: float) -> dict[str, object]:
+class CancellationChargeView(TypedDict):
+    """Compatibility view; unknown incurred amounts stay unknown."""
+
+    cancelled: bool
+    incurred: float | None
+    chargesErased: Literal[False]
+    reasonCodes: list[str]
+
+
+def cancellation_does_not_erase_charges(
+    *, cancelled: bool, incurred: float | None,
+) -> CancellationChargeView:
     return {
         "cancelled": cancelled,
         "incurred": incurred,

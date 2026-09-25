@@ -1,3 +1,23 @@
+# BQ01 numeric typing / BQ03 required upload — 25 September 2026
+
+Accepted parent: `df85fb95ac2e276e4cc32dbb07f13747f081cb3b` (tree `0459dd443f80ffd97d5914b0eb37a86ee1a24869`). Parent CI `36076462690` completed with 4,857 full-backend passes / 18 skips and 4,263 canonical backend passes / 18 skips. Do not reapply the 85 match-bound or eight artifact dependency migrations, or the SQLite WAL repair.
+
+This bounded continuation applies the retained five-file numeric/cancellation typing patch without changing its source bytes. The exact builtin-number predicate still excludes bool and subclasses; each reader keeps its own availability/finiteness policy. `CancellationChargeView` preserves unknown incurred amounts as `None`, not zero. The same explicit five-route-module mypy command must move from four diagnostics to zero; the established scoped gate remains zero.
+
+The required multipart upload is handled separately: name the `File(...)` marker **inside each router factory**, then use the same marker as the function default. This preserves parameter order, positional and keyword direct calls, the Python File default, HTTP requiredness, and independent marker ownership across applications. Converting it into a keyword-only or reordered required argument, or introducing a shared module-level mutable marker, would change compatibility; neither is done. The handler body is unchanged. Twelve characterization cases exercise signature/defaults, independent markers, required multipart schema, rejected missing/non-file inputs with no admission, exact persisted bytes/idempotent replay, and positional/keyword direct calls.
+
+Exactly the final B008 identity is retired. The wider Ruff baseline now has 410 entries (235 C901, 175 BLE001), no B008 and no added diagnostic identities or configuration/lock changes. Zero B008 is enforced by the existing broader exact-baseline gate, without a blanket suppression. The 57 numeric/cancellation cases and 12 upload cases must pass against original and modified source. Supplemental local tests do not replace pinned acceptance.
+
+## Acceptance and resume
+
+Pinned preflight must install the unchanged dev and isolated quality locks under Python 3.11, reproduce the four type diagnostics plus one upload B008, compare full original/modified OpenAPI documents, pass the broader numeric/admission selection and both pytest entry points, and check exact Ruff/mypy metadata. Final acceptance additionally requires all normal CI lanes plus C05/C06 on the actually published commit, not the parent or this document.
+
+Review is author self-review, not independent approval. CPU stubs and skipped GPU acceptance are not model-quality verification. No new remote branch, force push, live data mutation, deployment, paid provider call or GPU execution is part of this work. Any temporary preflight workflow is removed in the final tree.
+
+Exact next action: inspect the published head's completed CI and retain source-bound evidence. After acceptance, continue BQ03 by extracting route-factory responsibilities behind the existing contract/isolation tests, or resolve the recorded typing/exception debt in bounded batches. BQ03 structural extraction, broader typing, Pydantic compatibility, storage/pipeline refactors and research/operational-command separation remain open. Do not redo completed declaration-only migrations.
+
+---
+
 # BQ03 remaining match dependencies — 25 September 2026
 
 ## Current bounded scope

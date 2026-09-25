@@ -6,6 +6,8 @@ from collections.abc import Callable
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from .numeric_types import is_builtin_number
+
 from .schemas import (
     CreateAnnotationRequest,
     CreateBundleRequest,
@@ -41,7 +43,7 @@ def _trust_crop_geometry(manifest, frames) -> tuple[float | None, float | None, 
         if len(dimensions) != 1:
             return None, None, ["CALIBRATION_UNAVAILABLE"]
         length, width = dimensions.pop()
-    if type(length) not in (int, float) or type(width) not in (int, float):
+    if not is_builtin_number(length) or not is_builtin_number(width):
         return None, None, ["CALIBRATION_UNAVAILABLE"]
     return float(length), float(width), []
 

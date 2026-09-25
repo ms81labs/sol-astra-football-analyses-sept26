@@ -7,6 +7,8 @@ from collections.abc import Callable
 
 from fastapi import APIRouter, Depends, HTTPException
 
+from .numeric_types import is_builtin_number
+
 from .schemas import (
     DashboardComparison,
     DashboardResponse,
@@ -31,7 +33,7 @@ def _dashboard_metric_value(summary: dict, *, field: str, metric: str) -> float 
     if record is not None and record.get("availability") not in {"available", "experimental"}:
         return None
     value = summary.get(field) if record is None else record.get("value")
-    if type(value) not in (int, float) or not math.isfinite(value):
+    if not is_builtin_number(value) or not math.isfinite(value):
         return None
     return float(value)
 

@@ -102,7 +102,6 @@
     "[\"backend/app/main.py\", \"create_app\", \"C901\", \"def create_app(\", \"`create_app` is too complex (21 > 10)\"]",
     "[\"backend/app/match_detail_routes.py\", \"create_match_detail_router\", \"C901\", \"def create_match_detail_router(\", \"`create_match_detail_router` is too complex (68 > 10)\"]",
     "[\"backend/app/match_ingest_routes.py\", \"create_match_ingest_router\", \"C901\", \"def create_match_ingest_router(\", \"`create_match_ingest_router` is too complex (22 > 10)\"]",
-    "[\"backend/app/match_ingest_routes.py\", \"create_match_ingest_router.create_match\", \"B008\", \"file: UploadFile = File(...),\", \"Do not perform function call `File` in argument defaults; instead, perform the call within the function, or read the default from a module-level singleton variable\"]",
     "[\"backend/app/match_ingest_routes.py\", \"create_match_ingest_router.create_match\", \"BLE001\", \"except Exception as exc:\", \"Do not catch blind exception: `Exception`\"]",
     "[\"backend/app/match_ingest_routes.py\", \"create_match_ingest_router.create_match\", \"BLE001\", \"except Exception as exc:\", \"Do not catch blind exception: `Exception`\"]",
     "[\"backend/app/match_ingest_routes.py\", \"create_match_ingest_router.create_match\", \"BLE001\", \"except Exception as exc:\", \"Do not catch blind exception: `Exception`\"]",

@@ -28,6 +28,8 @@ def create_match_ingest_router(
     settings: ProcessingSettings,
 ) -> APIRouter:
     router = APIRouter()
+    # Keep the required File marker local to each router and preserve positional defaults.
+    required_upload = File(...)
 
     @router.post("/api/matches", status_code=202)
     async def create_match(
@@ -36,7 +38,7 @@ def create_match_ingest_router(
         inputMode: str = Form(...),
         config: str = Form("{}"),
         budget: float = Form(0.0),
-        file: UploadFile = File(...),
+        file: UploadFile = required_upload,
         idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
     ) -> dict:
         if not math.isfinite(budget) or budget < 0:

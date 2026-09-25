@@ -25,3 +25,5 @@ python scripts/check_python_quality.py mypy --write-baseline
 **Review every baseline diff.** CI never runs these write commands. Refreshing a baseline is not evidence that newly accepted debt was repaired. These diagnostic identities are a practical ratchet, not proof of semantic equivalence or complete static coverage. Configured ignores and dynamic `Any` payloads still require code review and runtime regression tests.
 
 Tool pins, platform-specific wheel hashes, configuration hashes and initial diagnostic details are retained beside the source. Runtime dependency locks are unchanged.
+
+The broader exact Ruff baseline now contains no `B008` entries, so new calls in argument defaults fail the ratchet. The required upload retains a named, per-router `File(...)` marker to preserve HTTP requiredness and direct-call positional compatibility without sharing marker state across applications.
