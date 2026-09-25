@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 2,
+  "repository": "ms81labs/sol-astra-football-analyses-sept26",
+  "integrationBranch": "main",
+  "delivery": "repository-native; no chat attachment required",
+  "acceptedApplicationHead": "efcc3e1193428c554449bf3d5c5f671635f1b235",
+  "acceptedApplicationTree": "416f8762c2e9845f8fdbbf03178d6a60723f587e",
+  "handoffChange": "Documentation only; not a new application acceptance claim",
+  "acceptanceRecord": "ACCEPTANCE.json",
+  "publishedDebtAtAcceptedHead": {
+    "ruff": 405,
+    "C901": 230,
+    "BLE001": 175,
+    "B008": 0,
+    "scopedMypyErrors": 0,
+    "scopedMypyFiles": 81
+  },
+  "supplementalTyping": {
+    "profile": "local Python 3.13, not pinned CI",
+    "fullApplicationErrors": 292,
+    "runtimeDefectCount": false,
+    "reproduceBeforeUsingAsCurrent": true
+  },
+  "nextTask": {
+    "id": "REPORT_STORE_STRUCTURE",
+    "status": "SAVED_DRAFT_NOT_APPLIED_NOT_ACCEPTED",
+    "base": "efcc3e1193428c554449bf3d5c5f671635f1b235",
+    "patch": "unpublished/report-store-extraction.patch",
+    "manifest": "unpublished/MANIFEST.json",
+    "patchSha256": "8ba72cfb2dde0ff31f5747e1e1688bf0fed1e134f52137c34dea7962ca31d651",
+    "originalTwoFileCandidateTree": "eaffc7f8ff8a53b5f61cd3b0283a6030c17c24cd",
+    "candidateTreeCaveat": "Only base plus draft. Later documentation changes legitimately change the full tree; retain them and verify the two file blobs instead.",
+    "files": ["backend/app/report_store.py", "backend/quality/ruff-baseline.json"],
+    "expectedRuffAfter": 402,
+    "expectedRemovedC901": 3,
+    "expectedAddedDiagnostics": 0,
+    "requires": ["review", "fresh characterization and quality checks", "permitted publication", "completed existing CI on new application SHA"]
+  },
+  "checkpoint": "docs/superpowers/audits/2026-09-24-backend-quality-closeout-checkpoint.md",
+  "authority": "Current user instructions and safety/tool permissions first; current GitHub source and SHA-bound CI outrank historical documents.",
+  "constraints": [
+    "code quality, not football-product or model-policy redesign",
+    "one existing main integration line; no extra remote branch or force push",
+    "no deployments, live-store mutation, paid-provider or GPU execution",
+    "do not retry, recreate or bypass blocked temporary workflow writes",
+    "preserve locks, scorer pins, public and persisted contracts, app and generation isolation",
+    "do not weaken gates, conceal failures or treat scoped typing as full-app closure"
+  ]
+}

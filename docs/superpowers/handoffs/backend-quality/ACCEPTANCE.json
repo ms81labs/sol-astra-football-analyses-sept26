@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "provenance": "Condensed from the previously verified efcc3e1 evidence index retained in backend-quality-handoff-efcc3e1.zip; not a new product test run during handoff publication.",
+  "commit": "efcc3e1193428c554449bf3d5c5f671635f1b235",
+  "tree": "416f8762c2e9845f8fdbbf03178d6a60723f587e",
+  "scope": "report-store typing batch and accumulated source, not overall audit closure",
+  "pendingJobsAtRecordedAcceptance": [],
+  "normalRun": {
+    "id": 36193238101,
+    "completedApplicableJobs": {
+      "verify": 108263069042,
+      "complete-backend": 108263069367,
+      "python-quality": 108263069432,
+      "integration": 108263069403,
+      "real-media": 108263069308,
+      "excluded-backend": 108263069523,
+      "api-profile": 108263069419,
+      "macos-profile": 108263069436
+    },
+    "conclusionForEachApplicableJob": "success",
+    "gpuJob": {"id": 108263070495, "conclusion": "skipped"}
+  },
+  "dedicated": {
+    "C05": {"run": 36193237997, "job": 108263069946, "conclusion": "success"},
+    "C06": {"run": 36193237979, "job": 108263068749, "conclusion": "success"}
+  },
+  "tests": {
+    "completeBackend": {"passed": 5453, "skipped": 18, "failed": 0, "errors": 0},
+    "canonicalBackend": {"passed": 4859, "skipped": 18, "failed": 0},
+    "sidecarPassed": 100,
+    "frontendPassed": 441,
+    "canonicalGatesPassed": 9,
+    "integration": {"passed": 364, "skipped": 15},
+    "generatedMedia": {"passed": 23, "skipped": 4},
+    "excludedBackendPassed": 594,
+    "countsOverlap": true
+  },
+  "artifactRecovery": [
+    {"name": "complete-backend-evidence", "id": 10890062320, "run": 36193238101, "sha256": "b7b503d3c2cb31eb949120fec1fde3fed08d4e66b7fb88c6660de98c086b916c"},
+    {"name": "verify-evidence", "id": 10890571021, "run": 36193238101, "sha256": "d54c00e7483b0334126a731b10e46ceff4aa70921efa081d83201500173fa2e4"},
+    {"name": "c05-source-and-scorer", "id": 10888244199, "run": 36193237997, "sha256": "783024375d431104f0a8036469fbf829cdd6a2cabea9213610a56637a6763e9d"},
+    {"name": "c06-media-source-evidence", "id": 10889251910, "run": 36193237979, "sha256": "39bd36eb0712f0cc98b00c4197d0b810f11c257c4f169609e8f9f5f753242780"}
+  ],
+  "qualifications": [
+    "Historical artifacts can expire; IDs and hashes are not a promise of perpetual availability.",
+    "ultralytics CPU stub active; no GPU or model-quality acceptance.",
+    "macOS lane is a dependency-profile dry run.",
+    "Normal source receipts are dirty with matching start/end diffs; C05 has differing dirty diffs.",
+    "Author self-review, not independent approval.",
+    "No standalone pinned preflight claimed for this typing batch; existing pinned CI accepted it after ordinary publication.",
+    "This acceptance does not belong to a later documentation or application SHA."
+  ]
+}

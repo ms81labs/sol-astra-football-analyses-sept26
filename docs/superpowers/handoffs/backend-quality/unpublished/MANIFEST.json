@@ -1,0 +1,15 @@
+{
+  "base": "efcc3e1193428c554449bf3d5c5f671635f1b235",
+  "status": "SAVED DRAFT: patch attached to documentation, NOT applied to application source or accepted",
+  "originalTwoFileCandidateTree": "eaffc7f8ff8a53b5f61cd3b0283a6030c17c24cd",
+  "candidateTreeCaveat": "Base plus exactly these two files; later handoff documentation is not in this tree and must be preserved.",
+  "patchSha256": "8ba72cfb2dde0ff31f5747e1e1688bf0fed1e134f52137c34dea7962ca31d651",
+  "patchGitBlob": "3b9574ff094b13c87607044259bcf792b0be9ded",
+  "candidateFileBlobs": {
+    "backend/app/report_store.py": "7a0daca35bb0b13363421b334b7e618914160c74",
+    "backend/quality/ruff-baseline.json": "66e913bab84aa11aee66d853448b86dab3193d82"
+  },
+  "expectedRuffDelta": {"before": 405, "after": 402, "removedC901": 3, "added": 0},
+  "workflowChanges": false,
+  "requiresFreshBehavioralAndPublishedSourceAcceptance": true
+}

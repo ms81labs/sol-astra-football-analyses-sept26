@@ -1,26 +1,25 @@
-# Backend-quality active checkpoint — report-store typing
+# Backend-quality active checkpoint
 
-## Accepted starting point
+## Repository-native continuation
 
-Source: `aa97f25285cfc2d343cf7e7d76359a18862ca6ab`, tree `c577eb122514f3834c80cf3ee8d9f35521e39027`.
-Normal CI `36186982461` completed: 5,394 complete-backend passes / 18 skips; 4,800 canonical backend passes / 18 skips; all nine canonical gates passed. Downloaded full-backend JUnit and all nine canonical log hashes were checked. The earlier event/classifier/LLM and analytics-summary repairs are already published; do not repeat them.
+Start at [the handoff](../handoffs/backend-quality/START_HERE.md). A new session needs that repository path and GitHub access, not the previous chat or its ZIP. State, runbook, completed/open work, acceptance references and the exact saved draft are all linked there.
 
-## Current bounded publication
+## Accepted application source
 
-Resolve the two existing report_store.py typing errors without changing its validation logic: explicitly type the mixed MetricClaim/ObservationClaim collection and the notice dictionary shapes. Keep alias rejection, cross-match/generation rejection, legacy output compatibility, failure ordering, report selection, notice ordering and all publication/lock spans unchanged. No payload schema or Pydantic extra-field policy changes.
+`efcc3e1193428c554449bf3d5c5f671635f1b235`, tree `416f8762c2e9845f8fdbbf03178d6a60723f587e`.
 
-The new 59-case contract suite passed against original and modified source. The scope regression failed on the old configuration; report_store.py is now explicitly required by the zero-error mypy scope. The empty mypy baseline retains its existing tool metadata with only the configuration hash updated. Scoped mypy checks 81 source files; full-app typing decreases from 294 to 292 diagnostics, exactly the two report-store errors removed and none added. Ruff stays at 405 entries: 230 C901 and 175 BLE001, with zero B008. The three report-store complexity findings remain open; a broader local extraction is not part of this commit.
+Normal CI `36193238101` completed: 5,453 full-backend passes / 18 skips; 4,859 canonical backend passes / 18 skips; all nine canonical gates passed. Other applicable normal jobs and C05 `36193237997` / C06 `36193237979` completed successfully. No acceptance jobs remain pending for this application SHA. The former instruction to finish efcc3e1 CI is superseded by those completed results.
 
-A supplemental 3,016-case validator comparison found identical results and exception messages without input mutation; nine dedicated reference tests detected deliberate removal of scope validation. Local selections and logs are supporting evidence, not pinned acceptance.
+Report-store typing repairs, the 59-case contracts and expanded 81-file clean scoped mypy are accepted. Ruff remains 405 (230 C901, 175 BLE001; zero B008). Supplemental Python 3.13 full-app typing remains 292, not a pinned CI or runtime-defect count.
 
-## Acceptance and continuation
+## Exact next action
 
-The temporary preflight-workflow write was blocked; no workflow change was made or retried. This publication uses only the existing pinned Python 3.11 CI. Do not claim a standalone pinned preflight. Finish by reading completed normal full-backend, canonical, quality, integration, media/profile and C05/C06 jobs on the actual published SHA and retaining their source-bound receipts. A running job is not acceptance.
+Review and verify `docs/superpowers/handoffs/backend-quality/unpublished/report-store-extraction.patch` against live source. It is stored as a documentation attachment, not applied. It proposes exactly three report-store complexity retirements (405 to 402); that reduction is not accepted yet. Preserve validation order, legacy/reference refusal, generation isolation, lock spans and publication operations. Follow NEXT_TASK.md and VERIFICATION_RUNBOOK.md before running or publishing changes.
 
-Review is author self-review, not independent approval. CPU stubs do not establish GPU/model-quality acceptance; the macOS lane is a dependency dry run. No paid provider/GPU execution, live-store mutation, deployment, extra remote branch or force push is part of this continuation. Workflows and runtime locks remain unchanged.
+The commit installing this handoff changes documentation only. Do not reset newer main to the saved application base or require the historical candidate tree to include later documents. Inspect intervening source changes and retain all newer work.
 
-After acceptance, the next bounded structural target is report-store validation/view decomposition, using the new contracts. Broader route/storage/pipeline refactors, exception-boundary review, remaining full-app typing and research/operational-command organization remain open. Do not equate an empty scoped mypy baseline with a clean full application.
+## Boundaries and history
 
-## Durable history
+Use existing CI. Do not retry/recreate/bypass the blocked temporary preflight workflow. No extra remote branch, force push, runtime-lock changes, deployment, live-store mutation or paid-provider/GPU execution. Observe current permissions and required approvals. Author self-review and CPU stubs are not independent/model-quality acceptance; dirty receipt qualifications remain recorded.
 
-Previous checkpoints remain in Git at `aa97f25285cfc2d343cf7e7d76359a18862ca6ab:docs/superpowers/audits/2026-09-24-backend-quality-closeout-checkpoint.md`. Keep this active checkpoint small instead of copying the historical transcript on each resume.
+Broader route/storage/pipeline extraction, exception review, full-app typing, contract compatibility and research/operational-command organization remain open. Do not repeat already-published event/classifier/LLM/summary, upload, dependency, numeric or SQLite work. Earlier checkpoints remain in Git; keep this active note small and update it as new work actually completes.
