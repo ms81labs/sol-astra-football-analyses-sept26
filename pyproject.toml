@@ -116,6 +116,7 @@ files = [
     "backend/app/coordinates.py",
     "backend/app/observation_inputs.py",
     "backend/app/report_contracts.py",
+    "backend/app/llm.py",
 ]
 follow_imports = "silent"
 ignore_missing_imports = true

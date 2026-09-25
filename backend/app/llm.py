@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import Counter, defaultdict
 import json
-from typing import Literal
+from typing import Literal, NotRequired, TypedDict
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -72,11 +72,26 @@ class _Drills(_ProviderPayload):
     player_focus: _PlayerFocus = Field(default_factory=_PlayerFocus)
 
 
+class _MatchContext(TypedDict):
+    """The existing heterogeneous context passed to legacy report prompts."""
+
+    sampledFrames: list[dict]
+    summary: NotRequired[dict]
+    eventSummary: NotRequired[dict]
+    recentEvents: NotRequired[list[dict]]
+    formationTimeline: NotRequired[list[dict]]
+    shots: NotRequired[list[dict]]
+    playerFocus: NotRequired[dict]
+    matchSignals: NotRequired[dict]
+    attackDirection: NotRequired[Literal["left_to_right", "right_to_left"]]
+
+
 def _validate_provider_output(analysis_type: str, payload: object) -> dict:
     if isinstance(payload, dict) and payload.get("schemaVersion") == "report_draft_v1":
         from .report_contracts import ReportDraft
         return ReportDraft.model_validate(payload).model_dump(mode="json", exclude_unset=True)
-    schema = {"tactical_report": _TacticalReport, "drills": _Drills}[analysis_type]
+    schemas: dict[str, type[_ProviderPayload]] = {"tactical_report": _TacticalReport, "drills": _Drills}
+    schema = schemas[analysis_type]
     return schema.model_validate(payload).model_dump(mode="json", exclude_unset=True)
 
 
@@ -393,8 +408,8 @@ def _build_match_context(
     events: list[DetectedEvent] | None,
     formation_timeline: list[FormationSegment] | None,
     shots: list[ShotAnalytics] | None,
-) -> dict:
-    context = {
+) -> _MatchContext:
+    context: _MatchContext = {
         "sampledFrames": _sample_frames(frames, sample_size=6),
     }
     if summary is not None:
