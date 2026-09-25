@@ -9,12 +9,19 @@ from __future__ import annotations
 from datetime import datetime
 import re
 from pathlib import Path
+from typing import NotRequired, TypedDict
 import uuid
 
 from .generations import GenerationRecoveryRequired, StaleGeneration, _identifier, _sync_directory
 from .report_contracts import digest, EvidenceRef, ReportDraft, MetricClaim, ObservationClaim
 
 TASKS = {"tactical_report", "drills"}
+
+
+class _ReportNotice(TypedDict):
+    code: str
+    taskType: NotRequired[str]
+    tasks: NotRequired[list[str]]
 
 
 class StaleEvidenceGeneration(StaleGeneration):
@@ -135,8 +142,9 @@ def _validate_narrative_payload(payload, match_id, generation_id, task, schema, 
     if payload.get("grounding") != expected or disposition != expected:
         raise ValueError("Stored report disposition mismatch")
     refs = [*parsed.evidence]
-    for item in [*parsed.metricClaims, *parsed.observations]:
-        refs.extend(item.evidence)
+    claims: list[MetricClaim | ObservationClaim] = [*parsed.metricClaims, *parsed.observations]
+    for claim in claims:
+        refs.extend(claim.evidence)
     for item in refs:
         # Parsed union still allows request aliases; persisted records do not.
         if not isinstance(item, EvidenceRef) or (item.matchId, item.generationId) != (match_id, generation_id):
@@ -201,7 +209,7 @@ class ReportStore:
             selected = ref.generationId
             historical = selected != current
             reports = {}
-            notices = []
+            notices: list[_ReportNotice] = []
             for task in sorted(TASKS):
                 directory = self._directory(match_id, selected, task)
                 candidates = []

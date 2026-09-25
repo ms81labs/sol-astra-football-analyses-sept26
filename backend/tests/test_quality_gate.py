@@ -88,7 +88,7 @@ def test_mypy_scope_keeps_clean_numeric_and_route_contracts():
         "backend/app/numeric_types.py", "backend/app/analytics.py",
         "backend/app/coordinates.py", "backend/app/observation_inputs.py",
         "backend/app/report_contracts.py",
-        "backend/app/llm.py",
+        "backend/app/llm.py", "backend/app/report_store.py",
     }
     assert required <= set(config["tool"]["mypy"]["files"])
     baseline = json.loads((root / "backend/quality/mypy-baseline.json").read_text())
