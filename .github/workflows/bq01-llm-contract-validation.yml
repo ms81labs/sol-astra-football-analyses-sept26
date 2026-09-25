@@ -1,0 +1,86 @@
+name: BQ01 LLM contract validation
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/bq01-llm-contract-validation.yml']
+
+permissions:
+  contents: read
+
+env:
+  VERIFY_DAYTONA: '0'
+  ALLOW_DAYTONA_MUTATION: '0'
+  PYTHON_DOTENV_DISABLED: '1'
+
+jobs:
+  candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Restore exact reviewed candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$(git rev-parse HEAD^)" = 04891a5a6b033712e29da33fafd1ed09c771b15b
+          mkdir -p .bq01-llm
+          python - <<'PY'
+          import base64, hashlib, json, lzma, os, pathlib, subprocess, urllib.request
+          url = 'https://api.github.com/repos/ms81labs/sol-astra-football-analyses-sept26/git/blobs/adafface5e3d7da2a8796b94bbe7ead4694576fb'
+          request = urllib.request.Request(url, headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json'})
+          with urllib.request.urlopen(request, timeout=60) as response:
+              packed = base64.b64decode(json.load(response)['content'])
+          assert hashlib.sha256(packed).hexdigest() == 'b608ee3c808a9a1a5ec8bc859741cfa231efec2f5a8630eb81a3acd939788045'
+          payload = json.loads(lzma.decompress(packed))
+          folder = pathlib.Path('.bq01-llm')
+          assert set(payload) == {'candidate.patch', 'runner.py', 'compare_sources.py', 'differential.py', 'manifest.json'}
+          for name, content in payload.items():
+              (folder / name).write_text(content)
+          manifest = json.loads((folder / 'manifest.json').read_text())
+          assert hashlib.sha256((folder / 'candidate.patch').read_bytes()).hexdigest() == manifest['patchSha256']
+          source = pathlib.Path('backend/app/llm.py').read_bytes()
+          assert hashlib.sha256(source).hexdigest() == manifest['originalLlmSha256']
+          (folder / 'llm-before.py').write_bytes(source)
+          for name, original in [('pyproject-before.toml', 'pyproject.toml'), ('mypy-baseline-before.json', 'backend/quality/mypy-baseline.json'), ('ruff-baseline-before.json', 'backend/quality/ruff-baseline.json')]:
+              (folder / name).write_bytes(pathlib.Path(original).read_bytes())
+          subprocess.run(['git', 'apply', '--check', str(folder / 'candidate.patch')], check=True)
+          subprocess.run(['git', 'apply', '--include=backend/tests/test_llm_context_contract.py', '--include=backend/tests/test_quality_gate.py', str(folder / 'candidate.patch')], check=True)
+          PY
+      - name: Install required media executables
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install unchanged locked runtime and isolated quality profiles
+        run: |
+          python -m pip install --require-hashes -r backend/requirements/dev.lock
+          python -m pip install -e . --no-deps
+          python -m venv .quality-tools
+          .quality-tools/bin/python -m pip install --require-hashes -r backend/requirements/quality-linux.lock -r backend/requirements/typing-linux.lock
+      - name: Characterize original behavior and reproduce five typing errors
+        run: python .bq01-llm/runner.py before
+      - name: Apply candidate and verify precise source and scope changes
+        run: python .bq01-llm/runner.py apply
+      - name: Verify provider contracts and exact prompt and OpenAPI equality
+        run: python .bq01-llm/runner.py after
+      - name: Verify expanded zero-error scope and unchanged Ruff baseline
+        run: python .bq01-llm/runner.py quality
+      - name: Retain verified Git objects without moving a branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python .bq01-llm/runner.py retain
+      - name: Retain source-bound validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bq01-llm-contract-validation
+          path: .bq01-llm/
+          include-hidden-files: true
+          retention-days: 30
+          if-no-files-found: error
