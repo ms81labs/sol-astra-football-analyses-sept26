@@ -1,0 +1,93 @@
+name: BQ05 initial state validation
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/bq05-initial-state-validation.yml']
+
+permissions:
+  contents: read
+
+env:
+  VERIFY_DAYTONA: '0'
+  ALLOW_DAYTONA_MUTATION: '0'
+  PYTHON_DOTENV_DISABLED: '1'
+
+jobs:
+  candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Restore exact reviewed patch and comparison scripts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$(git rev-parse HEAD^)" = 76238c40eb6630b15c2dae364b2a861b626fc651
+          python - <<'PY'
+          import base64, hashlib, json, lzma, os, pathlib, subprocess, urllib.request
+          request = urllib.request.Request('https://api.github.com/repos/ms81labs/sol-astra-football-analyses-sept26/git/blobs/f2800e5db9b72d2cb9a84952878d5c86127dde8d', headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json'})
+          with urllib.request.urlopen(request, timeout=60) as response:
+              packed = base64.b64decode(json.load(response)['content'])
+          assert hashlib.sha256(packed).hexdigest() == '6ec2a827b8d17c24900f3c50c14612f4f02703e2602fe09ad72c59411906bb4a'
+          payload = json.loads(lzma.decompress(packed))
+          assert set(payload) == {'candidate.patch', 'manifest.json', 'runner.py', 'compare_sources.py', 'differential.py', 'mutation_check.py'}
+          folder = pathlib.Path('.bq05-states')
+          folder.mkdir()
+          for name, text in payload.items():
+              (folder / name).write_text(text)
+          manifest = json.loads(payload['manifest.json'])
+          assert hashlib.sha256((folder / 'candidate.patch').read_bytes()).hexdigest() == manifest['patchSha256']
+          original = pathlib.Path('backend/app/analytics.py').read_bytes()
+          assert hashlib.sha256(original).hexdigest() == '30cc1921643a9b2f790389ff6258310b61f6885cefefe81e76c98342725fe582'
+          (folder / 'analytics-before.py').write_bytes(original)
+          (folder / 'ruff-baseline-before.json').write_bytes(pathlib.Path('backend/quality/ruff-baseline.json').read_bytes())
+          subprocess.run(['git', 'apply', '--check', str(folder / 'candidate.patch')], check=True)
+          subprocess.run(['git', 'apply', '--include=backend/tests/test_match_state_classification_contract.py', '--include=backend/quality/ruff-baseline.json', str(folder / 'candidate.patch')], check=True)
+          PY
+      - name: Install required media executables
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install unchanged locked runtime and isolated quality profiles
+        run: |
+          python -m pip install --require-hashes -r backend/requirements/dev.lock
+          python -m pip install -e . --no-deps
+          python -m venv .quality-tools
+          .quality-tools/bin/python -m pip install --require-hashes -r backend/requirements/quality-linux.lock -r backend/requirements/typing-linux.lock
+          python - <<'PY'
+          import json, sys
+          from pathlib import Path
+          from importlib.metadata import version
+          assert sys.version_info[:2] == (3, 11)
+          versions = {name: version(name) for name in ('fastapi', 'pydantic', 'anyio')}
+          assert versions == {'fastapi': '0.121.0', 'pydantic': '2.13.5', 'anyio': '4.15.1'}, versions
+          Path('.bq05-states/runtime.json').write_text(json.dumps({'python': sys.version, 'packages': versions}, indent=2) + '\n')
+          PY
+      - name: Characterize original behavior and reproduce structural gate failure
+        run: python .bq05-states/runner.py before
+      - name: Apply candidate and prove original control flow and exact diagnostic retirement
+        run: python .bq05-states/runner.py apply
+      - name: Verify differential cases, mutation sensitivity, memory-limit test and complete OpenAPI equality
+        run: python .bq05-states/runner.py after
+      - name: Verify unchanged quality configuration and clean typing
+        run: python .bq05-states/runner.py quality
+      - name: Retain verified Git objects without moving any branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python .bq05-states/runner.py retain
+      - name: Retain source-bound validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bq05-initial-state-validation
+          path: .bq05-states/
+          include-hidden-files: true
+          retention-days: 30
+          if-no-files-found: error
