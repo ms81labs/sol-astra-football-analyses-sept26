@@ -1,0 +1,174 @@
+name: BQ01 ingestion typing validation
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/bq01-ingestion-typing-validation.yml']
+
+permissions:
+  contents: read
+
+env:
+  VERIFY_DAYTONA: '0'
+  ALLOW_DAYTONA_MUTATION: '0'
+  PYTHON_DOTENV_DISABLED: '1'
+
+jobs:
+  candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Restore exact reviewed candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$(git rev-parse HEAD^)" = 8d11249ebe74d6508b4948090c6dd6640a860710
+          mkdir -p .bq01-ingestion
+          python - <<'PY'
+          import base64, hashlib, json, lzma, os, pathlib, subprocess, urllib.request
+          request = urllib.request.Request('https://api.github.com/repos/ms81labs/sol-astra-football-analyses-sept26/git/blobs/18ebb011e112d682ead1b3f02d04bc176a1311fb', headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json'})
+          with urllib.request.urlopen(request, timeout=60) as response:
+              packed = base64.b64decode(json.load(response)['content'])
+          assert hashlib.sha256(packed).hexdigest() == 'f2d9ac2ced5b9c2b4868a1a310af7900a2e2a20d245b9207bb9259a4bce4bd2a'
+          payload = json.loads(lzma.decompress(packed))
+          assert payload['base'] == '8d11249ebe74d6508b4948090c6dd6640a860710'
+          assert len(payload['files']) == 9
+          folder = pathlib.Path('.bq01-ingestion')
+          (folder / 'payload.json').write_text(json.dumps(payload))
+          (folder / 'candidate.patch').write_text(payload['patch'])
+          (folder / 'compare_sources.py').write_text(payload['source_check'])
+          for name in ('coordinates', 'observation_inputs', 'report_contracts'):
+              (folder / (name + '-before.py')).write_bytes(pathlib.Path('backend/app', name + '.py').read_bytes())
+          for name, target in [('pyproject.toml', 'pyproject-before.toml'), ('backend/quality/mypy-baseline.json', 'mypy-baseline-before.json'), ('backend/quality/ruff-baseline.json', 'ruff-baseline-before.json')]:
+              (folder / target).write_bytes(pathlib.Path(name).read_bytes())
+          assert hashlib.sha256((folder / 'candidate.patch').read_bytes()).hexdigest() == '3b01b603853919378c41ecac3129901525af02bf0083732e297575652c7d5b61'
+          subprocess.run(['git', 'apply', '--check', str(folder / 'candidate.patch')], check=True)
+          subprocess.run(['git', 'apply', '--include=backend/tests/test_ingestion_type_contracts.py', '--include=backend/tests/test_quality_gate.py', str(folder / 'candidate.patch')], check=True)
+          PY
+      - name: Install required media executables
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install unchanged locked runtime and isolated quality profiles
+        run: |
+          python -m pip install --require-hashes -r backend/requirements/dev.lock
+          python -m pip install -e . --no-deps
+          python -m venv .quality-tools
+          .quality-tools/bin/python -m pip install --require-hashes -r backend/requirements/quality-linux.lock -r backend/requirements/typing-linux.lock
+          python - <<'PY'
+          import json, sys
+          from pathlib import Path
+          from importlib.metadata import version
+          assert sys.version_info[:2] == (3, 11)
+          actual = {name: version(name) for name in ('fastapi', 'pydantic', 'anyio')}
+          assert actual == {'fastapi': '0.121.0', 'pydantic': '2.13.5', 'anyio': '4.15.1'}, actual
+          Path('.bq01-ingestion/runtime.json').write_text(json.dumps({'python': sys.version, 'packages': actual}, indent=2) + '\n')
+          PY
+      - name: Characterize original behavior and reproduce six type errors
+        run: |
+          python - <<'PY'
+          import pathlib, subprocess, sys, xml.etree.ElementTree as ET
+          folder = pathlib.Path('.bq01-ingestion')
+          result = subprocess.run([sys.executable, '-m', 'pytest', '-q', 'backend/tests/test_ingestion_type_contracts.py', 'backend/tests/test_quality_gate.py', '--junitxml=' + str(folder / 'before.xml')], capture_output=True, text=True)
+          (folder / 'before.log').write_text(result.stdout + result.stderr)
+          assert result.returncode == 1, result.stdout[-4000:]
+          root = ET.parse(folder / 'before.xml').getroot()
+          totals = {key: sum(int(suite.get(key, 0)) for suite in root.iter('testsuite')) for key in ('tests', 'failures', 'errors', 'skipped')}
+          assert totals == {'tests': 50, 'failures': 1, 'errors': 0, 'skipped': 0}, totals
+          failures = [case.get('name') for case in root.iter('testcase') if case.find('failure') is not None]
+          assert failures == ['test_mypy_scope_keeps_clean_numeric_and_route_contracts'], failures
+          print(totals)
+          PY
+          .quality-tools/bin/python - <<'PY'
+          import json, pathlib, subprocess, sys
+          result = subprocess.run([sys.executable, '-m', 'mypy', '--config-file', 'pyproject.toml', '--output=json', '--no-incremental', 'backend/app/coordinates.py', 'backend/app/observation_inputs.py', 'backend/app/report_contracts.py'], capture_output=True, text=True)
+          pathlib.Path('.bq01-ingestion/mypy-before.jsonl').write_text(result.stdout)
+          rows = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
+          assert result.returncode == 1 and len(rows) == 6 and not result.stderr, (rows, result.stderr)
+          assert sorted(row['code'] for row in rows) == ['arg-type'] * 2 + ['var-annotated'] * 4
+          PY
+          python - <<'PY'
+          import json, pathlib, runpy
+          runpy.run_path('backend/tests/conftest.py')
+          from backend.app.main import app
+          schema = app.openapi()
+          pathlib.Path('.bq01-ingestion/openapi-before.json').write_text(json.dumps(schema, sort_keys=True))
+          print('Original OpenAPI:', len(schema['paths']), 'paths')
+          PY
+      - name: Apply candidate and prove bounded source changes
+        run: |
+          git add backend/tests/test_ingestion_type_contracts.py backend/tests/test_quality_gate.py
+          git apply --index --exclude=backend/tests/test_ingestion_type_contracts.py --exclude=backend/tests/test_quality_gate.py .bq01-ingestion/candidate.patch
+          git rm -- .github/workflows/bq01-ingestion-typing-validation.yml
+          git diff --cached --check
+          test "$(git write-tree)" = 8a8e496ec3a8353289b76962903e4d81eb250146
+          python .bq01-ingestion/compare_sources.py .bq01-ingestion
+      - name: Verify ingestion, bounded-memory hashing, recovery and references
+        run: |
+          set -o pipefail
+          python -m pytest -q backend/tests/test_ingestion_type_contracts.py backend/tests/test_quality_gate.py backend/tests/test_audit_v3_c02_projection.py backend/tests/test_audit_v3_c02_journey.py backend/tests/test_audit_v2_h05_recompute.py backend/tests/test_audit_v3_c03_reports.py backend/tests/test_audit_v3_c03_report_envelopes.py --junitxml=.bq01-ingestion/focused.xml 2>&1 | tee .bq01-ingestion/focused.log
+          pytest -q backend/tests/test_ingestion_type_contracts.py --junitxml=.bq01-ingestion/console.xml 2>&1 | tee .bq01-ingestion/console.log
+          python - <<'PY'
+          import json, pathlib, runpy
+          runpy.run_path('backend/tests/conftest.py')
+          from backend.app.main import app
+          folder = pathlib.Path('.bq01-ingestion')
+          schema = app.openapi()
+          (folder / 'openapi-after.json').write_text(json.dumps(schema, sort_keys=True))
+          assert (folder / 'openapi-before.json').read_bytes() == (folder / 'openapi-after.json').read_bytes()
+          print('Complete OpenAPI unchanged:', len(schema['paths']), 'paths')
+          PY
+      - name: Verify expanded zero-error scope and unchanged Ruff ratchet
+        run: |
+          export PATH="$PWD/.quality-tools/bin:$PATH"
+          set -o pipefail
+          ruff check backend --select F,S110,B904,B008 | tee .bq01-ingestion/ruff-clean.log
+          python scripts/check_python_quality.py ruff | tee .bq01-ingestion/ruff-ratchet.log
+          python scripts/check_python_quality.py mypy | tee .bq01-ingestion/mypy-ratchet.log
+          python -m mypy --config-file pyproject.toml --no-incremental backend/app/coordinates.py backend/app/observation_inputs.py backend/app/report_contracts.py | tee .bq01-ingestion/mypy-after.log
+      - name: Retain verified Git objects without moving a branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import hashlib, json, os, pathlib, subprocess, urllib.request
+          folder = pathlib.Path('.bq01-ingestion')
+          payload = json.loads((folder / 'payload.json').read_text())
+          assert subprocess.check_output(['git', 'write-tree']).decode().strip() == payload['tree']
+          names = subprocess.check_output(['git', 'diff', '--cached', '--name-only', '--diff-filter=AM', '-z']).decode().rstrip('\0').split('\0')
+          assert set(names) == set(payload['files']) and len(names) == 9
+          def api(endpoint, data):
+              request = urllib.request.Request('https://api.github.com/repos/ms81labs/sol-astra-football-analyses-sept26/' + endpoint, data=json.dumps(data).encode(), method='POST', headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json'})
+              with urllib.request.urlopen(request, timeout=60) as response:
+                  return json.load(response)
+          entries = []
+          for name in names:
+              data = pathlib.Path(name).read_bytes()
+              expected = payload['files'][name]
+              assert hashlib.sha256(data).hexdigest() == expected['sha256'], name
+              blob = api('git/blobs', {'content': data.decode(), 'encoding': 'utf-8'})
+              assert blob['sha'] == expected['blob'], name
+              entries.append({'path': name, 'mode': '100644', 'type': 'blob', 'sha': blob['sha']})
+          tree = api('git/trees', {'base_tree': payload['base_tree'], 'tree': entries})
+          assert tree['sha'] == payload['tree']
+          receipt = {key: payload[key] for key in ('base', 'base_tree', 'tree', 'files')}
+          receipt.update(parent=os.environ['GITHUB_SHA'], workflowRun=os.environ['GITHUB_RUN_ID'], publication='No commit or ref created; publish this verified tree through the authorized connector and inspect normal CI.')
+          (folder / 'candidate.json').write_text(json.dumps(receipt, indent=2) + '\n')
+          print(json.dumps({key: value for key, value in receipt.items() if key != 'files'}, indent=2))
+          PY
+      - name: Retain source-bound validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bq01-ingestion-typing-validation
+          path: .bq01-ingestion/
+          include-hidden-files: true
+          retention-days: 30
+          if-no-files-found: error
