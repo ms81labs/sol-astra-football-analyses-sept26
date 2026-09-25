@@ -323,13 +323,15 @@ def load_sealed_shadow_bundle(root: Path):
         shadow = validate_shadow_inputs(request, receipt)
         segmentation = validate_sealed_shadow_request(
             confined_path(root, "inputs/segmentation-request.json"), shadow)
+        expected_inputs = {PurePosixPath("inputs/checkpoint.bin"),
+            PurePosixPath("inputs/segmentation-request.json")}
         if shadow["schemaVersion"] == 2:
             validate_sam_source_window(confined_path(root, "inputs/window"), segmentation)
-            expected = {PurePosixPath(f"inputs/window/{index}.png")
-                for index in range(len(segmentation.frames))}
-            if {entry.relative_path for entry in receipt.files if entry.role == "runtime_artifact"
-                and entry.relative_path.parts[:2] == ("inputs", "window")} != expected:
-                raise ValueError
+            expected_inputs.update(PurePosixPath(f"inputs/window/{index}.png")
+                for index in range(len(segmentation.frames)))
+        if {entry.relative_path for entry in receipt.files if entry.role == "runtime_artifact"
+            and entry.relative_path.parts[0] == "inputs"} != expected_inputs:
+            raise ValueError
         if "samRelease" in request.config:
             _validate_sam_release(root, request, receipt, segmentation)
         return request, receipt, segmentation

@@ -27,7 +27,7 @@ from backend.app.remote_contracts import (
     CompletionReceipt, JobReceipt,
     JobRequest, ProgressEvent, ResultBundle, canonical_json_bytes, confined_path,
     load_canonical_json, validate_completion,
-    validate_result, validate_shadow_inputs,
+    validate_result,
 )
 from backend.release.daytona_policy import DaytonaPolicy, load_daytona_policy
 from backend.release.preflight import PreflightResult
@@ -440,6 +440,8 @@ def _preflight(execution: DaytonaExecutionRequest) -> tuple[Path, Path, JobReque
     workspace = _safe_root(execution.workspace, "workspace")
     request_path = confined_path(root, "job-request.json")
     request, request_identity = _read_preflight_contract(request_path, JobRequest)
+    if request.config.get("jobKind") == "segmentation_shadow":
+        raise DaytonaExecutionError("preflight: SAM release preflight is unavailable")
     receipt_path = confined_path(root, request.receipt_path)
     receipt, receipt_identity = _read_preflight_contract(receipt_path, JobReceipt)
     try:
@@ -520,25 +522,8 @@ def _preflight(execution: DaytonaExecutionRequest) -> tuple[Path, Path, JobReque
             identity = _preflight_file_identity(local_path)
             if metadata.get(artifact_id) != identity: raise ValueError
             proof_ids.append((relative, *identity))
-        shadow_paths: set[PurePosixPath] = set()
-        if request.config.get("jobKind") == "segmentation_shadow":
-            shadow = validate_shadow_inputs(request, receipt)
-            from .segmentation_worker import validate_sealed_shadow_request
-            segmentation = validate_sealed_shadow_request(
-                confined_path(root, "inputs/segmentation-request.json"), shadow)
-            shadow_paths = {PurePosixPath("inputs/checkpoint.bin"),
-                            PurePosixPath("inputs/segmentation-request.json")}
-            if shadow["schemaVersion"] == 2:
-                from .segmentation_worker import validate_sam_source_window
-                validate_sam_source_window(confined_path(root, "inputs/window"), segmentation)
-                window_paths = {PurePosixPath(f"inputs/window/{index}.png")
-                    for index in range(len(segmentation.frames))}
-                if {e.relative_path for e in receipt.files if e.role == "runtime_artifact"
-                    and e.relative_path.parts[:2] == ("inputs", "window")} != window_paths:
-                    raise ValueError
-                shadow_paths.update(window_paths)
         sealed = [(e.relative_path, e.sha256, e.size_bytes) for e in receipt.files
-                  if e.role == "runtime_artifact" and e.relative_path not in shadow_paths]
+                  if e.role == "runtime_artifact"]
         if sorted(proof_ids) != sorted(sealed): raise ValueError
     except Exception:
         raise DaytonaExecutionError("preflight: release artifact binding mismatch") from None
@@ -1442,8 +1427,6 @@ def execute_daytona_job(execution: DaytonaExecutionRequest, *,
         raise
     except Exception:
         raise DaytonaExecutionError("preflight: local validation failed") from None
-    if request.config.get("jobKind") == "segmentation_shadow":
-        raise DaytonaExecutionError("preflight: shadow runtime is unavailable")
     with ExitStack() as upload_cleanup:
         upload_owner = _UploadOwner()
         upload_cleanup.callback(upload_owner.close)

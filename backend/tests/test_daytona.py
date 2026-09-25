@@ -104,7 +104,7 @@ def _bundle(tmp_path: Path):
     return root, workspace, preflight, request, receipt, result, completion, remote
 
 
-def test_shadow_preflight_allows_only_sealed_request_and_checkpoint_beside_release_artifacts(tmp_path):
+def test_processor_preflight_rejects_shadow_while_worker_checks_sealed_request(tmp_path):
     from backend.app.daytona import DaytonaExecutionError, DaytonaExecutionRequest, _preflight, execute_daytona_job
     from backend.app.segmentation import SegmentationRequest, FramePoint, Prompt, request_identity
 
@@ -145,13 +145,11 @@ def test_shadow_preflight_allows_only_sealed_request_and_checkpoint_beside_relea
                _entry("runtime_artifact", "inputs/segmentation-request.json", shadow_request)))
     (root / request.receipt_path).write_bytes(canonical_json_bytes(receipt.to_mapping()))
     execution = DaytonaExecutionRequest("fixture-key", load_daytona_policy(), root, workspace, proof)
-    _root, _workspace, admitted, sealed, uploads, _identities = _preflight(execution)
-    assert admitted == request and sealed == receipt
-    assert PurePosixPath("inputs/checkpoint.bin") in uploads
-    assert PurePosixPath("inputs/segmentation-request.json") in uploads
+    with pytest.raises(DaytonaExecutionError, match="SAM release preflight"):
+        _preflight(execution)
     def forbidden_client(*_args):
         raise AssertionError("processor runtime must not launch for a shadow bundle")
-    with pytest.raises(DaytonaExecutionError, match="shadow runtime is unavailable"):
+    with pytest.raises(DaytonaExecutionError, match="SAM release preflight"):
         execute_daytona_job(execution, client_factory=forbidden_client)
     from backend.app.segmentation_worker import load_sealed_shadow_bundle
     from backend.app.segmentation_worker import validate_sealed_shadow_request
@@ -188,8 +186,8 @@ def test_shadow_preflight_allows_only_sealed_request_and_checkpoint_beside_relea
         (root / request.receipt_path).write_bytes(canonical_json_bytes(bad_receipt.to_mapping()))
         with pytest.raises(ValueError, match="sealed shadow request"):
             validate_sealed_shadow_request(root / "inputs/segmentation-request.json", corrupt)
-        with pytest.raises(DaytonaExecutionError, match="preflight"):
-            _preflight(execution)
+        with pytest.raises(ValueError, match="sealed shadow bundle"):
+            load_sealed_shadow_bundle(root)
     (root / "job-request.json").write_bytes(request_bytes)
     (root / "inputs/segmentation-request.json").write_bytes(shadow_request)
     (root / request.receipt_path).write_bytes(canonical_json_bytes(receipt.to_mapping()))
@@ -201,8 +199,8 @@ def test_shadow_preflight_allows_only_sealed_request_and_checkpoint_beside_relea
         files=tuple(_entry(item.role, item.relative_path.as_posix(), denied_bytes)
             if item.role == "job_request" else item for item in receipt.files))
     (root / request.receipt_path).write_bytes(canonical_json_bytes(denied_receipt.to_mapping()))
-    with pytest.raises(DaytonaExecutionError, match="preflight"):
-        _preflight(execution)
+    with pytest.raises(ValueError, match="sealed shadow bundle"):
+        load_sealed_shadow_bundle(root)
     (root / "job-request.json").write_bytes(request_bytes)
     (root / request.receipt_path).write_bytes(canonical_json_bytes(receipt.to_mapping()))
     extra = root / "inputs/unlisted.bin"
@@ -210,11 +208,11 @@ def test_shadow_preflight_allows_only_sealed_request_and_checkpoint_beside_relea
     receipt = replace(receipt, files=(*receipt.files,
         _entry("runtime_artifact", "inputs/unlisted.bin", b"unlisted")))
     (root / request.receipt_path).write_bytes(canonical_json_bytes(receipt.to_mapping()))
-    with pytest.raises(DaytonaExecutionError, match="preflight"):
-        _preflight(execution)
+    with pytest.raises(ValueError, match="sealed shadow bundle"):
+        load_sealed_shadow_bundle(root)
 
 
-def test_shadow_window_contract_uploads_only_sealed_frames_and_rechecks_worker_pixels(tmp_path):
+def test_shadow_window_contract_rechecks_only_sealed_frames_and_worker_pixels(tmp_path):
     from io import BytesIO
     from PIL import Image
     from backend.app.daytona import DaytonaExecutionError, DaytonaExecutionRequest, _preflight
@@ -270,11 +268,8 @@ def test_shadow_window_contract_uploads_only_sealed_frames_and_rechecks_worker_p
             _entry("runtime_artifact", "inputs/window/0.png", png)))
     (root / request.receipt_path).write_bytes(canonical_json_bytes(receipt.to_mapping()))
     execution = DaytonaExecutionRequest("fixture-key", load_daytona_policy(), root, workspace, proof)
-    _, _, admitted, sealed, uploads, _ = _preflight(execution)
-    assert admitted == request and sealed == receipt
-    assert PurePosixPath("inputs/window/window.json") in uploads
-    assert PurePosixPath("inputs/window/0.png") in uploads
-    assert PurePosixPath("inputs/match.mp4") not in uploads
+    with pytest.raises(DaytonaExecutionError, match="SAM release preflight"):
+        _preflight(execution)
     assert load_sealed_shadow_bundle(root) == (request, receipt, segmentation)
     with pytest.raises(RemoteContractError):
         validate_shadow_inputs(replace(request, match_id="another-match"), receipt)
@@ -289,16 +284,12 @@ def test_shadow_window_contract_uploads_only_sealed_frames_and_rechecks_worker_p
         if item.relative_path == PurePosixPath("inputs/window/0.png") else item
         for item in receipt.files))
     (root / request.receipt_path).write_bytes(canonical_json_bytes(receipt.to_mapping()))
-    with pytest.raises(DaytonaExecutionError, match="preflight"):
-        _preflight(execution)
     with pytest.raises(ValueError, match="sealed shadow bundle"):
         load_sealed_shadow_bundle(root)
     (root / "inputs/window/0.png").write_bytes(png)
     missing = replace(original_receipt, files=tuple(item for item in original_receipt.files
         if item.relative_path != PurePosixPath("inputs/window/0.png")))
     (root / request.receipt_path).write_bytes(canonical_json_bytes(missing.to_mapping()))
-    with pytest.raises(DaytonaExecutionError, match="preflight"):
-        _preflight(execution)
     with pytest.raises(ValueError, match="sealed shadow bundle"):
         load_sealed_shadow_bundle(root)
     (root / request.receipt_path).write_bytes(canonical_json_bytes(original_receipt.to_mapping()))
@@ -306,8 +297,6 @@ def test_shadow_window_contract_uploads_only_sealed_frames_and_rechecks_worker_p
     extra = replace(original_receipt, files=(*original_receipt.files,
         _entry("runtime_artifact", "inputs/window/1.png", png)))
     (root / request.receipt_path).write_bytes(canonical_json_bytes(extra.to_mapping()))
-    with pytest.raises(DaytonaExecutionError, match="preflight"):
-        _preflight(execution)
     with pytest.raises(ValueError, match="sealed shadow bundle"):
         load_sealed_shadow_bundle(root)
 
