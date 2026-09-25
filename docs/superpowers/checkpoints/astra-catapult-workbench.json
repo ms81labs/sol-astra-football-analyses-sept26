@@ -389,6 +389,17 @@
       "python3 -m pip cache purge and PIP_CACHE_DIR=/root/.cache/pip-tools python3 -m pip cache purge: 2559 cached files removed; root available space rose from 0 to 6.2 GB",
       "Provider-disabled scripts/verify.sh on dirty checkpoint worktree: backend 4586 passed/18 skipped, sidecar 100, frontend 469, lint/typecheck/build/startup/manifest/runtime/preflight/audit passed; final evidence writer exited 2 because tracked worktree was not clean. This interrupted acceptance attempt is not a successful full verifier receipt."
     ],
+    "verifierContinuation": {
+      "sourceHead": "fcece756f598c0fda750f729ad4882cbc4b5d9fd",
+      "command": "PATH=/dev/shm/catapult-venv/bin:$PATH TMPDIR=/dev/shm/catapult-tmp GUERILLA_STORAGE_ROOT=/dev/shm/catapult-verify-store VERIFY_DAYTONA=0 ALLOW_DAYTONA_MUTATION=0 scripts/verify.sh",
+      "failedAttempts": [
+        "Exit 2 after all functional gates passed: concurrent Playwright snapshots made the worktree untracked; moved those snapshots into ignored .verification/browser evidence without deletion.",
+        "Stopped after a backend failure at test ordinal approximately 306; focused multiprocessing test and its 17-test module passed. The interrupted run is not a receipt and the precise assertion was not captured."
+      ],
+      "successfulCleanHeadRun": "Exit 0 at fcece75: backend 4586 passed/18 skipped; sidecar 100; frontend 469; all 12 required gates passed. No Daytona or model API call.",
+      "receipt": ".verification/receipt.json",
+      "receiptSha256": "de776784668375d2ad64a2ca274e94e18dfea49cf272a38df148479aab8b9bb8"
+    },
     "evidenceLocations": [
       "backend/benchmark_suites/football_analysis_pilot_annotation_tasks.json",
       "/root/WorkSpace/fotball-analyst/backend/storage/trained_detector_candidates/touchline_detector_candidate_v7/football_analysis_pilot_corpus_v1/annotation_clips/annotation_clips_manifest_v1.json",
@@ -401,7 +412,20 @@
     "paidModelApiCalls": 0,
     "nextSmallestAction": "Inspect the existing independent-label conversion and lock path for the frozen 117093 validation tasks; do not inspect held-out reference labels or run held-out inference."
   },
-  "nextSmallestAction": "Use the hash-matched 117093 panoramic validation source in place and inspect its existing independent-label conversion and lock path. Keep held-out labels and inference sealed. W03 still needs licensed SAM 3.1 checkpoint/runtime proof and separate GPU authorization; W04/W05 need locked independent labels and real masks; W06/W07 need real provider/billing/analyst evidence; W08/W09 need real-source analyst acceptance.",
+  "w08RealValidationBrowserEvidence": {
+    "sourceHead": "fcece756f598c0fda750f729ad4882cbc4b5d9fd",
+    "status": "partial_real_source_navigation_only",
+    "matchId": "dd7c1e792cae4d46bf452e079ca461d5",
+    "source": "Hash-matched SoccerTrack 117093 validation annotation clip, read in place through an isolated copy of the 11 MB historical match store",
+    "verified": "Current API returned match 200, video range 206 and 412 generation-scoped pass results; Chromium selected pass at 0.2s, timeline showed source frame 5/499 and inspector displayed event:5:pass:0.2 at the same interval.",
+    "editResult": "First Add clip attempt failed 500 because the isolated Python 3.11 test environment lacked ultralytics. With the installed Python 3.12 runtime, the server returned 409 OBSERVATION_PROVENANCE_UNVERIFIED for the historical match, correctly requiring current-source reprocessing. No real-source correction or editable export was accepted.",
+    "evidence": ".verification/browser/w08-real-validation-20260925/summary.json; snapshot SHA-256 0ffd7f27e0374cddebdb2a1d978bc4d4d99f9302e0378f94e0964c84578db845; screenshot SHA-256 84cf5f06fe602395f151997c1bfceb2d8cc12cac03d9ee1331f0a627f667e1d8",
+    "limitations": "No independent labels, current processing receipt, SAM inference, paid provider call or analyst acceptance. Optional diagnostic endpoints returned 404. Old store and live store were not written.",
+    "paidGpuCalls": 0,
+    "paidModelApiCalls": 0
+  },
+  "latestVerifiedWork": "W00 local media reconciliation and W08 real-source navigation at fcece75; W00 blocked_on_evidence and W08 in_progress, neither newly accepted",
+  "nextSmallestAction": "Run a bounded local CPU reprocess of a 117093 panoramic validation excerpt into an isolated current store, then repeat source-linked correction/playlist/export/reopen without relying on unverified legacy observations. Keep held-out labels and inference sealed. W03 still needs licensed SAM 3.1 checkpoint/runtime proof and separate GPU authorization; W04/W05 need locked independent labels and real masks; W06/W07 need real provider/billing/analyst evidence; W08/W09 need analyst acceptance.",
   "w03PropagationDirectionInvestigation": {"date": "2026-09-25", "sourceRevision": "2345a4ad109ac29c569da749c91d84f10dc08c40", "source": "https://github.com/facebookresearch/sam3/blob/2345a4ad109ac29c569da749c91d84f10dc08c40/sam3/model/sam3_multiplex_tracking.py", "finding": "Object Multiplex default bidirectional processing uses forward frames from the prompt and reverse frames only before the prompt. The two passes are disjoint; forward-only would omit earlier source frames. Suspected duplicate-output bug was not reproduced against the official implementation; temporary fake regression and change were reverted without a source commit.", "paidGpuCalls": 0, "paidModelApiCalls": 0},
   "externalSamDetailsChecked": {"date": "2026-09-25", "sources": ["https://github.com/facebookresearch/sam3/blob/main/README.md", "https://github.com/facebookresearch/sam3/blob/main/RELEASE_SAM3p1.md", "https://github.com/facebookresearch/sam3/blob/main/LICENSE", "https://github.com/facebookresearch/sam3/blob/main/sam3/model_builder.py", "https://github.com/facebookresearch/sam3/blob/main/sam3/model/sam3_base_predictor.py", "https://github.com/facebookresearch/sam3/blob/main/sam3/model/sam3_multiplex_tracking.py", "https://github.com/facebookresearch/sam3/blob/main/sam3/model/io_utils.py", "https://github.com/facebookresearch/sam3/blob/main/examples/sam3.1_video_predictor_example.ipynb"], "finding": "Meta's current README requires Python 3.12+, PyTorch 2.7+ and CUDA 12.6+; its SAM 3.1 release points to the Object Multiplex video example and access-controlled checkpoints. Read-only upstream checkout at 2345a4ad109ac29c569da749c91d84f10dc08c40 shows build_sam3_multiplex_video_predictor and stateful handle_request start_session/add_prompt/close_session calls, with propagation through handle_stream_request. The point-prompt path binds obj_id, while the observed box-prompt path resets tracking and does not bind that ID. The image-folder loader accepts numbered PNGs and orders them by numeric filename, matching the tested local window. The observed revision is not a qualified runtime pin. Read-only Docker manifest inspection found candidate amd64 PyTorch base digest sha256:b85566342b86d13a67712e9315d40cdc2dad7f8d86df1aff3831f80835edbcca for pytorch/pytorch:2.10.0-cuda12.8-cudnn9-runtime; no image was pulled or qualified. Existing Daytona processor image is a separate Python 3.11 image. No checkpoint, SAM runtime image or license clearance was obtained or installed in this CPU-only slice. Rechecked Meta README and SAM 3.1 release on 2026-09-25: Python 3.12+, PyTorch 2.7+, CUDA 12.6+ and access-approved checkpoints remain stated; no local qualified image or approved checkpoint was obtained. Processor Daytona preflight is a separate Python 3.11 release and now rejects shadow jobs."},
   "externalMediaDetailsChecked": {
