@@ -217,6 +217,8 @@ describe('fetchMatchWorkspace', () => {
           ],
           nextCursor: '240',
           frameCount: 27000,
+          lastFrameId: 134995,
+          sourceFps: 25,
           intervalEndpoint: 'half_open',
         }),
       })
@@ -344,6 +346,8 @@ describe('fetchMatchWorkspace', () => {
     expect(workspace.detail.id).toBe('match-1');
     expect(workspace.frames[0].possession?.team).toBe('my_team');
     expect(workspace.frameCount).toBe(27000);
+    expect(workspace.lastFrameId).toBe(134995);
+    expect(workspace.sourceFps).toBe(25);
     expect(workspace.nextCursor).toBe('240');
     expect(workspace.analytics.summary.possession).toBe(67);
     expect(workspace.analytics.summary.myTeamXg).toBe(0.42);

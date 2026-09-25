@@ -69,6 +69,8 @@ interface MatchEntry {
   detail: MatchRecord;
   data: FrameData[];
   frameCount: number;
+  lastFrameId: number | null;
+  sourceFps: number | null;
   stats: MatchStats;
   benchmark: MatchBenchmarkSummary | null;
   formationTimeline: FormationSegment[];
@@ -118,6 +120,8 @@ function workspaceToEntry(workspace: Awaited<ReturnType<typeof fetchMatchWorkspa
     detail: workspace.detail,
     data: workspace.frames,
     frameCount: workspace.frameCount ?? workspace.frames.length,
+    lastFrameId: workspace.lastFrameId ?? workspace.frames.at(-1)?.Frame_ID ?? null,
+    sourceFps: workspace.sourceFps ?? null,
     stats: workspace.analytics.summary,
     benchmark: workspace.benchmark,
     formationTimeline: workspace.analytics.formationTimeline,
@@ -416,8 +420,8 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
   const matchData = useMemo(() => activeMatch?.data || [], [activeMatch]);
   const totalFrameCount = activeMatch?.frameCount ?? matchData.length;
   const timelineWindow = useMemo(
-    () => windowedTimelineProps(matchData, currentFrame, totalFrameCount),
-    [matchData, currentFrame, totalFrameCount],
+    () => windowedTimelineProps(matchData, currentFrame, totalFrameCount, activeMatch?.lastFrameId),
+    [matchData, currentFrame, totalFrameCount, activeMatch?.lastFrameId],
   );
   const [correctionSaveState, setCorrectionSaveState] = useState<CommandState | null>(null);
   const [commandMessage, setCommandMessage] = useState<string | null>(null);
@@ -533,7 +537,8 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
       if (cancelled) return;
       setActiveMatch((previous) => (
         previous && previous.id === matchId && previous.detail.generationId === generationId
-          ? { ...previous, data: page.frames, frameCount: page.frameCount || previous.frameCount }
+          ? { ...previous, data: page.frames, frameCount: page.frameCount || previous.frameCount,
+            lastFrameId: page.lastFrameId ?? previous.lastFrameId }
           : previous
       ));
     }).catch(() => undefined);
@@ -614,11 +619,11 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
   const togglePlay = useCallback(() => setIsPlaying((playing) => !playing), []);
 
   const handleSeek = useCallback((frame: number) => {
-    const last = Math.max(totalFrameCount, 1) - 1;
+    const last = timelineWindow.frameCount - 1;
     setCurrentFrame(Math.max(0, Math.min(last, Math.trunc(frame))));
     setSeekVersion(version => version + 1);
     coach.clearResponse();
-  }, [coach, totalFrameCount]);
+  }, [coach, timelineWindow.frameCount]);
 
   const selectSearchHit = (hit: SearchHit) => {
     if (hit.matchId !== activeMatch?.id) return;
@@ -728,7 +733,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
         setComparisonMatch(null);
         setComparisonLoadError(null);
         const sameMatch = activeMatchIdRef.current === matchId;
-        setCurrentFrame((previous) => sameMatch ? Math.min(previous, Math.max(0, entry.frameCount - 1))
+        setCurrentFrame((previous) => sameMatch ? Math.min(previous, Math.max(entry.frameCount - 1, entry.lastFrameId ?? 0))
           : entry.data[0]?.Frame_ID ?? 0);
         setIsPlaying(false);
         setSelectedPlayer(null);
@@ -813,7 +818,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
 
   const handleReviewShortcut = useCallback((action: ReviewAction) => {
     const next = applyReviewShortcut(action, { isPlaying, currentFrame,
-      frameCount: Math.max(totalFrameCount, 1), events, reviewRange: review.reviewRange });
+      frameCount: Math.max(timelineWindow.frameCount, 1), events, reviewRange: review.reviewRange });
     if (next.isPlaying !== isPlaying) setIsPlaying(next.isPlaying);
     if (next.currentFrame !== currentFrame) handleSeek(next.currentFrame);
     if (next.reviewRange?.startFrame !== review.reviewRange?.startFrame || next.reviewRange?.endFrame !== review.reviewRange?.endFrame) review.setReviewRange(next.reviewRange);
@@ -830,7 +835,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
         (item.kind === 'event_accept' || item.kind === 'event_reject') && canUndo(item, history));
       if (target) handleUndoCommand(target.correctionId);
     } else if (action !== 'accept' && action !== 'reject' && action !== 'undo') setEvents(next.events as EventTag[]);
-  }, [activeMatch, currentFrame, events, executeCommand, handleSeek, handleUndoCommand, isPlaying, totalFrameCount, review]);
+  }, [activeMatch, currentFrame, events, executeCommand, handleSeek, handleUndoCommand, isPlaying, timelineWindow.frameCount, review]);
 
   const handleDrawingAnnotation = useCallback(
     (x: number, y: number, x2?: number, y2?: number) => {
@@ -1307,6 +1312,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
                   generationId={activeMatch?.detail.generationId}
                   sourceFrameId={currentFrameRecord?.Frame_ID}
                   sourceFramePts={currentFrameRecord?.Timestamp}
+                  sourcePresentationFps={activeMatch?.sourceFps ?? 25}
                   onPlayingChange={setIsPlaying}
                   onVideoTimeChange={handleVideoTimeChange}
                 />
@@ -1660,7 +1666,8 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
               reviewRange={review.reviewRange}
               sourceInterval={selectedHit ? { start: selectedHit.intervalStart ?? selectedHit.timestamp, end: selectedHit.intervalEnd ?? selectedHit.timestamp } : null}
               frames={matchData}
-              sourceFps={fps}
+              sourceFps={isVideoMatch ? activeMatch?.sourceFps ?? 25 : fps}
+              sampleFps={fps}
               videoAvailable={isVideoMatch}
               storedClips={playlistClipsFromCorrections(correctionHistory, activeMatch?.detail.includedCommandIds ?? [], activeMatch?.detail.generationId ?? undefined)}
               onClipSaved={handleClipSaved}

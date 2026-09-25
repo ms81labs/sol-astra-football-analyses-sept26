@@ -10,6 +10,7 @@ interface PlaylistBuilderProps {
   sourceInterval?: { start: number; end: number } | null;
   frames?: Array<{ Frame_ID: number; Timestamp: number }>;
   sourceFps?: number;
+  sampleFps?: number;
   videoAvailable?: boolean;
   storedClips?: PlaylistClip[];
   onClipSaved?: (clip: PlaylistClip) => void | Promise<void>;
@@ -20,14 +21,15 @@ function markedIntervalSeconds(
   range: { startFrame: number; endFrame: number },
   frames: Array<{ Frame_ID: number; Timestamp: number }>,
   sourceFps: number,
+  sampleFps: number,
 ): { start: number; end: number } | null {
-  if (frames.length === 0 || !(sourceFps > 0)) return null;
+  if (frames.length === 0 || !(sourceFps > 0) || !(sampleFps > 0)) return null;
   const byId = new Map(frames.map((frame) => [frame.Frame_ID, frame.Timestamp]));
   const start = byId.get(range.startFrame);
   const endInclusive = byId.get(range.endFrame);
   if (start == null || endInclusive == null) return null;
   const next = frames.find((frame) => frame.Frame_ID > range.endFrame);
-  const end = next != null ? next.Timestamp : endInclusive + 1 / sourceFps;
+  const end = next != null ? next.Timestamp : endInclusive + 1 / sampleFps;
   if (!(end >= start)) return null;
   return { start, end };
 }
@@ -38,6 +40,7 @@ export default function PlaylistBuilder({
   sourceInterval = null,
   frames = [],
   sourceFps = 25,
+  sampleFps = sourceFps,
   videoAvailable = false,
   storedClips = [],
   onClipSaved,
@@ -45,8 +48,8 @@ export default function PlaylistBuilder({
 }: PlaylistBuilderProps) {
   const scopeVersion = useRef(0);
   useLayoutEffect(() => { scopeVersion.current += 1; return () => { scopeVersion.current += 1; }; }, [matchId, generationId]);
-  const rangeKey = sourceInterval ? `${sourceInterval.start}:${sourceInterval.end}` : reviewRange ? `${reviewRange.startFrame}:${reviewRange.endFrame}:${sourceFps}` : '';
-  const marked = sourceInterval ?? (reviewRange ? markedIntervalSeconds(reviewRange, frames, sourceFps) : null);
+  const rangeKey = sourceInterval ? `${sourceInterval.start}:${sourceInterval.end}` : reviewRange ? `${reviewRange.startFrame}:${reviewRange.endFrame}:${sampleFps}` : '';
+  const marked = sourceInterval ?? (reviewRange ? markedIntervalSeconds(reviewRange, frames, sourceFps, sampleFps) : null);
   const [draft, setDraft] = useState({ key: '', start: '12', end: '14' });
   const start = marked && draft.key !== rangeKey ? String(marked.start) : draft.start;
   const end = marked && draft.key !== rangeKey ? String(marked.end) : draft.end;

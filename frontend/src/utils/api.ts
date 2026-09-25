@@ -63,6 +63,8 @@ export interface MatchWorkspace {
   events: BackendEvent[];
   benchmark: MatchBenchmarkSummary | null;
   frameCount: number;
+  lastFrameId?: number | null;
+  sourceFps?: number | null;
   nextCursor: string | null;
   evidence: EvidencePage | null;
 }
@@ -72,7 +74,7 @@ export const WORKSPACE_FRAME_LIMIT = 240;
 export async function fetchMatchFrames(
   matchId: string,
   options: { afterFrame?: number; cursor?: string; limit?: number; signal?: AbortSignal; generationId?: string } = {},
-): Promise<{ frames: FrameData[]; frameCount: number; nextCursor: string | null; generationId?: string | null }> {
+): Promise<{ frames: FrameData[]; frameCount: number; lastFrameId?: number | null; sourceFps?: number | null; nextCursor: string | null; generationId?: string | null }> {
   const params = new URLSearchParams();
   if (options.afterFrame != null) params.set('afterFrame', String(options.afterFrame));
   if (options.cursor) params.set('cursor', options.cursor);
@@ -84,6 +86,8 @@ export async function fetchMatchFrames(
     frames: Array<Record<string, unknown>>;
     nextCursor?: string | null;
     frameCount?: number;
+    lastFrameId?: number | null;
+    sourceFps?: number | null;
     generationId?: string | null;
   }>(response);
   assertGeneration(payload, options.generationId);
@@ -92,6 +96,8 @@ export async function fetchMatchFrames(
     frames,
     generationId: payload.generationId,
     frameCount: payload.frameCount ?? frames.length,
+    lastFrameId: payload.lastFrameId ?? frames.at(-1)?.Frame_ID ?? null,
+    sourceFps: payload.sourceFps ?? null,
     nextCursor: payload.nextCursor ?? null,
   };
 }
@@ -251,7 +257,9 @@ export async function fetchMatchWorkspace(matchId: string, signal?: AbortSignal,
   ]);
   return {
     detail, generationId,
-    frames: framesPayload.frames, frameCount: framesPayload.frameCount, nextCursor: framesPayload.nextCursor,
+    frames: framesPayload.frames, frameCount: framesPayload.frameCount,
+    lastFrameId: framesPayload.lastFrameId, nextCursor: framesPayload.nextCursor,
+    sourceFps: framesPayload.sourceFps,
     analytics: { summary: analyticsPayload.summary, ballAssignments: analyticsPayload.ballAssignments,
       formationTimeline: analyticsPayload.formationTimeline ?? [], shots: analyticsPayload.shots ?? [] },
     events: eventsPayload.events, benchmark, evidence,

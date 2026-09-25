@@ -26,7 +26,7 @@ it('exports time-bounded clips with notes and refuses whole-match frequency clai
   });
   vi.stubGlobal('fetch', fetchMock);
 
-  render(<PlaylistBuilder />);
+  render(<PlaylistBuilder sourceFps={25} />);
   fireEvent.change(screen.getByLabelText(/clip start/i), { target: { value: '12' } });
   fireEvent.change(screen.getByLabelText(/clip end/i), { target: { value: '14' } });
   fireEvent.change(screen.getByLabelText(/notes/i), { target: { value: 'second-half turnover then shot' } });
@@ -38,6 +38,7 @@ it('exports time-bounded clips with notes and refuses whole-match frequency clai
   expect(exportCall?.[1]?.method).toBe('POST');
   expect(exportCall?.[1]?.body).toContain('"timestampStart":12');
   expect(exportCall?.[1]?.body).toContain('"timestampEnd":14');
+  expect(exportCall?.[1]?.body).toContain('"sourceFps":25');
   expect(await screen.findByText(/12s to 14s/)).toBeTruthy();
   expect(screen.getByText(/frame 350 exclusive/i)).toBeTruthy();
   expect(screen.getByText(/second-half turnover then shot/)).toBeTruthy();

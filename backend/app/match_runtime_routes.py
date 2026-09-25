@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+import math
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
@@ -81,9 +82,16 @@ def create_match_runtime_router(
         try:
             with storage.generation_snapshot(match.id, generation_id=generationId) as ref:
                 page = storage.load_frames_page(match.id, after_frame=afterFrame, cursor=cursor, limit=limit)
+                try:
+                    source_clock = storage.load_analysis_artifact(match.id, "source_clock")
+                except FileNotFoundError:
+                    source_clock = None
+                source_fps = source_clock.get("nominalFps") if isinstance(source_clock, dict) else None
                 response = MatchFramesResponse(
                     matchId=match.id, frames=page["frames"], nextCursor=page["nextCursor"],
                     frameCount=page["frameCount"], intervalEndpoint=page["intervalEndpoint"],
+                    lastFrameId=page["lastFrameId"],
+                    sourceFps=source_fps if isinstance(source_fps, (int, float)) and math.isfinite(source_fps) and source_fps > 0 else None,
                 ).model_dump(mode="json")
                 return {**response, "generationId": ref.generationId}
         except FileNotFoundError as exc:

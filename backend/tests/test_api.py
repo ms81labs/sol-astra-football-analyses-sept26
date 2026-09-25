@@ -775,16 +775,19 @@ def test_frames_endpoint_pages_with_cursor_and_preserves_count(tmp_path: Path):
 
 
 async def _test_frames_endpoint_pages_with_cursor_and_preserves_count(tmp_path: Path):
-    async with api_client(tmp_path) as (_, client):
+    async with api_client(tmp_path) as (app, client):
         response = await _upload_tracking_match(client)
         assert response.status_code == 202
         match_id = response.json()["matchId"]
+        app.state.storage.save_analysis_artifact(match_id, "source_clock", {"nominalFps": 25.0})
 
         first = await client.get(f"/api/matches/{match_id}/frames?limit=2")
         assert first.status_code == 200
         payload = first.json()
         assert len(payload["frames"]) == 2
         assert payload["frameCount"] == 3
+        assert payload["lastFrameId"] == 2
+        assert payload["sourceFps"] == 25.0
         assert payload["nextCursor"] == "2"
         assert payload["intervalEndpoint"] == "half_open"
         assert [frame["frameId"] for frame in payload["frames"]] == [0, 1]

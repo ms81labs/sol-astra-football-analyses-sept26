@@ -2392,6 +2392,16 @@ def test_repository_page_frames_bounds_payload_and_preserves_count() -> None:
     assert capped["nextCursor"] == str(DEFAULT_FRAME_PAGE_LIMIT)
 
 
+def test_repository_page_frames_reports_source_frame_bound_for_sparse_samples() -> None:
+    from backend.app.schemas import FrameData
+    from backend.app.workbench.repository import RepositoryAdapter
+
+    frames = [FrameData(frameId=index, timestamp=index / 25) for index in (0, 5, 10, 15)]
+    page = RepositoryAdapter().page_frames(frames, limit=2)
+    assert page["frameCount"] == 4
+    assert page["lastFrameId"] == 15
+
+
 def test_llm_execution_is_delegated_to_provider_adapters() -> None:
     from backend.app import llm
     from backend.app import provider_adapters

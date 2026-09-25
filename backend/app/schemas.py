@@ -268,6 +268,8 @@ class MatchFramesResponse(BaseModel):
     frames: list[FrameData]
     nextCursor: str | None = None
     frameCount: int | None = None
+    lastFrameId: int | None = None
+    sourceFps: float | None = None
     intervalEndpoint: str = "half_open"
 
 

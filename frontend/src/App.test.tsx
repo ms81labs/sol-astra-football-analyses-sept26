@@ -1116,10 +1116,14 @@ describe('App match workspace loading', () => {
     expect(await screen.findByText('unreviewed')).toBeTruthy();
   });
 
-  it('exports the marked review range as a half-open source interval without claiming whole-match frequency', async () => {
+  it.each([
+    ['tracking_json', 5, 1],
+    ['video', 25, 5],
+  ] as const)('exports a %s review range using its source fps', async (inputMode, sourceFps, endFrame) => {
     stubPitchCanvas();
-    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
-    stubSnapshotWorkspace(loadedWorkspace('match-a', 'Match A'));
+    const detail = { ...readyMatch('match-a', 'Match A'), inputMode };
+    vi.mocked(api.fetchMatches).mockResolvedValue([detail]);
+    stubSnapshotWorkspace({ ...loadedWorkspace('match-a', 'Match A'), detail, sourceFps });
     const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
       const url = String(input);
       if (url.includes('/api/matches/match-a/heatmap')) {
@@ -1140,7 +1144,7 @@ describe('App match workspace loading', () => {
           json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             sourceStartSeconds: 0,
             sourceEndSeconds: 0.2,
-            sourceEndFrameExclusive: 1,
+            sourceEndFrameExclusive: endFrame,
           }),
         } as Response);
       }
@@ -1170,10 +1174,9 @@ describe('App match workspace loading', () => {
     expect(exportCall?.[1]?.method).toBe('POST');
     expect(exportCall?.[1]?.body).toContain('"timestampStart":0');
     expect(exportCall?.[1]?.body).toContain('"timestampEnd":0.2');
-    expect(exportCall?.[1]?.body).toContain('"sourceFps":5');
-    expect(exportCall?.[1]?.body).not.toContain('"sourceFps":25');
+    expect(exportCall?.[1]?.body).toContain(`"sourceFps":${sourceFps}`);
     expect(await screen.findByText(/0s to 0.2s/)).toBeTruthy();
-    expect(screen.getByText(/frame 1 exclusive/i)).toBeTruthy();
+    expect(screen.getByText(new RegExp(`frame ${endFrame} exclusive`, 'i'))).toBeTruthy();
     expect(screen.getByText(/do not establish a whole-match frequency/i)).toBeTruthy();
     await waitFor(() => {
       expect(fetchMock.mock.calls.some(([url, init]) => (
@@ -3112,12 +3115,14 @@ it('normalizes event and imported playlist timestamps before timeline navigation
   vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('m', 'Sparse Match')]);
   vi.mocked(api.fetchMatchWorkspace).mockResolvedValue({ ...loadedWorkspace('m', 'Sparse Match'),
     frames: [100, 200].map((Frame_ID, index) => ({ Frame_ID, Timestamp: index * 2, Ball: null, My_Team: [], Enemies: [] })),
-    frameCount: 201,
+    frameCount: 2,
+    lastFrameId: 200,
     events: [{ frameId: 200, timestamp: 2, type: 'shot', description: 'Sparse shot' }],
   });
   render(<App />);
   fireEvent.click(await screen.findByTitle(/Sparse shot @ 2s/));
   expect((screen.getByLabelText('Timeline scrubber') as HTMLInputElement).value).toBe('200');
+  expect((screen.getByLabelText('Timeline scrubber') as HTMLInputElement).max).toBe('200');
   act(() => { window.dispatchEvent(new CustomEvent('add-event', { detail: { frame: 100, timestamp: 0, label: 'Imported playlist', type: 'custom' } })); });
   fireEvent.click(screen.getByTitle(/Imported playlist @ 0s/));
   expect((screen.getByLabelText('Timeline scrubber') as HTMLInputElement).value).toBe('100');
