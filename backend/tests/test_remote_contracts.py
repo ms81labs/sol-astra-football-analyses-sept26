@@ -102,11 +102,12 @@ def result_for(req=None, receipt=None, artifact=b"output", progress=b"", progres
 
 
 def shadow_contracts(mask=b'{"schemaVersion":"segmentation_result_v1"}\n',
-                     namespace="outputs/result.json.generations", job_identity=None):
+                     namespace="outputs/result.json.generations", job_identity=None,
+                     source_generation=GENERATION):
     mask_path = f"{namespace}/{GENERATION}/result.segmentation-result.json"
     progress_path = f"{namespace}/{GENERATION}/result.progress.jsonl"
     request_bytes = b"sealed segmentation request"
-    shadow = {"schemaVersion": 1, "matchId": "match-1", "generationId": GENERATION,
+    shadow = {"schemaVersion": 1, "matchId": "match-1", "generationId": source_generation,
               "requestDigest": hashlib.sha256(request_bytes).hexdigest(),
               "sourceSha256": hashlib.sha256(b"video").hexdigest(),
               "checkpointDigest": hashlib.sha256(b"checkpoint").hexdigest(),
@@ -132,6 +133,11 @@ def shadow_contracts(mask=b'{"schemaVersion":"segmentation_result_v1"}\n',
                       entry("result_artifact", progress_path, b"").to_mapping()],
     })
     return req, rec, result, mask
+
+
+def test_shadow_result_accepts_live_source_generation():
+    req, rec, result, _ = shadow_contracts(source_generation="gen_" + GENERATION)
+    validate_result(req, rec, result)
 
 
 def test_shadow_result_is_sealed_to_job_source_checkpoint_and_generation(tmp_path):

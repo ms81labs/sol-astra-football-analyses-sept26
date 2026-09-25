@@ -731,7 +731,7 @@ class ResultBundle:
         if self.schema_version == 3:
             result.update({key: _digest(result_value[key], key) for key in
                 ("requestDigest", "sourceSha256", "checkpointDigest", "jobIdentity")})
-            result["generationId"] = _text(result_value["generationId"], "generationId", 32, _GENERATION_ID)
+            result["generationId"] = _text(result_value["generationId"], "generationId", 36, _SHADOW_GENERATION_ID)
         if processor_row_count is not None:
             result["processorResultFormat"] = PROCESSOR_RESULT_FORMAT
             result["processorRowCount"] = processor_row_count
