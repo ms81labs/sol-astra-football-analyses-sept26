@@ -337,6 +337,65 @@ def load_sealed_shadow_bundle(root: Path):
         raise ValueError("sealed shadow bundle is invalid") from None
 
 
+def retain_shadow_mask_result(storage, bundle_root: Path, output) -> dict:
+    """Retain a validated shadow result for review; CPU release proof never accepts quality."""
+    from .daytona import DaytonaExecutionResult
+    from .remote_contracts import MAX_SEGMENTATION_RESULT_BYTES, canonical_json_bytes, validate_completion
+    from .remote_worker import _read_result_artifact
+    from .segmentation import MaskResult, load_result, save_result
+    from .workbench.artifacts import ArtifactStore
+
+    job, receipt, request = load_sealed_shadow_bundle(bundle_root)
+    try:
+        if type(output) is not DaytonaExecutionResult or output.result.schema_version != 3 \
+                or "samRelease" not in job.config:
+            raise ValueError
+        validate_completion(output.staging_root, job, receipt, output.result, output.completion)
+        raw = _read_result_artifact(output, output.processor_path,
+            job_id=job.job_id, match_id=job.match_id,
+            maximum_bytes=MAX_SEGMENTATION_RESULT_BYTES, declared_path_key="maskResultPath")
+        mask = MaskResult.model_validate_json(raw)
+        actual = mask.model_dump(mode="json")
+        expected = request.model_dump(mode="json")
+        bound = ("sourceSha256", "baseTrackingDigest", "modelAlias", "modelDigest",
+            "checkpointDigest", "workerDigest", "executionMode", "width", "height",
+            "intervalStart", "intervalEnd", "frames", "prompts")
+        objects = {prompt.objectId: prompt.trackId for prompt in request.prompts}
+        if mask.requestDigest != request_identity(request) \
+                or any(actual[key] != expected[key] for key in bound) \
+                or {item.objectId: item.trackId for item in mask.objects} != objects:
+            raise ValueError
+    except Exception:
+        raise ValueError("shadow mask result is invalid") from None
+
+    shadow = job.config["shadowSegmentation"]
+    match_id = job.match_id
+    with storage._generation_lock(match_id):
+        if storage.current_generation(match_id).generationId != shadow["generationId"]:
+            raise ValueError("shadow generation changed before mask retention")
+        match = storage.get_match(match_id)
+        if match.inputMode != "video" or not match.config.rights.cloudPermission \
+                or match.config.rights.processingScope == "local_only":
+            raise ValueError("shadow rights changed before mask retention")
+        if storage.source_sha256(match_id) != shadow["sourceSha256"]:
+            raise ValueError("shadow source changed before mask retention")
+        store = ArtifactStore(storage.storage_root / "artifacts")
+        mask_digest = save_result(store, mask)
+        if load_result(store, mask_digest) != mask \
+                or storage.source_sha256(match_id) != shadow["sourceSha256"]:
+            raise ValueError("shadow source or retained mask changed")
+        pointer = {"schemaVersion": "sam_shadow_mask_receipt_v1", "matchId": match_id,
+            "generationId": shadow["generationId"], "sourceSha256": shadow["sourceSha256"],
+            "requestDigest": shadow["requestDigest"], "jobId": job.job_id,
+            "jobReceiptDigest": hashlib.sha256(canonical_json_bytes(receipt.to_mapping())).hexdigest(),
+            "resultDigest": output.completion.result_sha256,
+            "maskArtifactDigest": mask_digest, "maskOutputDigest": mask.outputDigest,
+            "executionClass": mask.executionClass, "status": mask.status,
+            "releaseQualification": "cpu_contract_only", "qualityAccepted": False}
+        storage.save_analysis_artifact(match_id, "sam_shadow_mask", pointer)
+        return pointer
+
+
 def _validate_sam_release(root: Path, job, receipt, segmentation: SegmentationRequest) -> dict:
     """Bind a distinct SAM release declaration to sealed files and request identity."""
     from .remote_contracts import confined_path, load_canonical_json

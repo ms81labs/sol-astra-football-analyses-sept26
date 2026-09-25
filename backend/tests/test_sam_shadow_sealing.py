@@ -82,6 +82,76 @@ def test_staged_sam_window_seals_distinct_release_and_reopens_exact_inputs(tmp_p
     assert job.config["samRelease"]["imageDigest"] == "e" * 64
     assert receipt.manifest_sha256 == hashlib.sha256(manifest.read_bytes()).hexdigest()
     assert not any(entry.relative_path.as_posix().endswith(".mp4") for entry in receipt.files)
+    from backend.app.daytona import DaytonaDiagnostics, DaytonaExecutionResult
+    from backend.app.remote_contracts import CompletionReceipt, ResultBundle
+    from backend.app.segmentation import load_result, run_rectangle_stub
+    from backend.app.segmentation_worker import retain_shadow_mask_result
+    from backend.app.workbench.artifacts import ArtifactStore
+
+    def downloaded(mask):
+        output = tmp_path / "download"
+        namespace = "result-bundle.json.generations/" + "1" * 32
+        mask_path = f"{namespace}/result.segmentation-result.json"
+        progress_path = f"{namespace}/result.progress.jsonl"
+        mask_bytes = json.dumps(mask.model_dump(mode="json"), sort_keys=True,
+            separators=(",", ":")).encode()
+        paths = ((mask_path, mask_bytes), (progress_path, b""))
+        for relative, content in paths:
+            path = output / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(content)
+        result = ResultBundle.from_mapping({"schemaVersion": 3, "jobId": job.job_id,
+            "matchId": match_id, "sourceCommit": receipt.source_commit,
+            "manifestSha256": receipt.manifest_sha256,
+            "receiptSha256": hashlib.sha256(canonical_json_bytes(receipt.to_mapping())).hexdigest(),
+            "requestedRuntimeOptions": receipt.requested_runtime_options,
+            "result": {"maskResultPath": mask_path, "progressPath": progress_path,
+                "progressEventCount": 0, **{key: shadow[key] for key in
+                    ("generationId", "requestDigest", "sourceSha256", "checkpointDigest", "jobIdentity")}},
+            "artifacts": [FileEntry("result_artifact", PurePosixPath(relative),
+                len(content), hashlib.sha256(content).hexdigest()).to_mapping()
+                for relative, content in paths]})
+        result_bytes = canonical_json_bytes(result.to_mapping())
+        result_path = f"{namespace}/result.json"
+        (output / result_path).write_bytes(result_bytes)
+        completion = CompletionReceipt.from_mapping({"schemaVersion": 1,
+            "jobId": job.job_id, "matchId": match_id, "resultPath": result_path,
+            "resultSizeBytes": len(result_bytes), "resultSha256": hashlib.sha256(result_bytes).hexdigest(),
+            "sourceCommit": receipt.source_commit, "manifestSha256": receipt.manifest_sha256,
+            "completedAt": "2026-09-25T00:00:00Z"})
+        return DaytonaExecutionResult("sandbox-1", completion, result, output,
+            output / mask_path, output / progress_path, DaytonaDiagnostics("[REDACTED]"))
+
+    mask = run_rectangle_stub(request)
+    imported = retain_shadow_mask_result(storage, root, downloaded(mask))
+    assert imported["qualityAccepted"] is False
+    assert imported["generationId"] == generation_id
+    assert load_result(ArtifactStore(storage.storage_root / "artifacts"),
+                       imported["maskArtifactDigest"]) == mask
+    assert storage.load_analysis_artifact(match_id, "sam_shadow_mask") == imported
+    altered = mask.model_dump(mode="json")
+    altered["baseTrackingDigest"] = "f" * 64
+    altered["outputDigest"] = hashlib.sha256(json.dumps({key: value for key, value in altered.items()
+        if key != "outputDigest"}, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    from backend.app.segmentation import MaskResult
+    with pytest.raises(ValueError, match="mask result"):
+        retain_shadow_mask_result(storage, root,
+            downloaded(MaskResult.model_validate_json(json.dumps(altered))))
+    assert storage.load_analysis_artifact(match_id, "sam_shadow_mask") == imported
+    revoked = storage.get_match(match_id).config.model_copy(deep=True)
+    revoked.rights.cloudPermission = False
+    storage.update_match_config(match_id, revoked)
+    with pytest.raises(ValueError, match="rights"):
+        retain_shadow_mask_result(storage, root, downloaded(mask))
+    assert storage.load_analysis_artifact(match_id, "sam_shadow_mask") == imported
+    storage.update_match_config(match_id, config)
+    source_path = storage.get_match_input_path(match_id)
+    source_bytes = source_path.read_bytes()
+    source_path.write_bytes(source_bytes + b"changed")
+    with pytest.raises(ValueError, match="source"):
+        retain_shadow_mask_result(storage, root, downloaded(mask))
+    source_path.write_bytes(source_bytes)
+    assert storage.load_analysis_artifact(match_id, "sam_shadow_mask") == imported
     extra = root / "inputs/undeclared.bin"
     extra.write_bytes(b"extra")
     forged = replace(receipt, files=(*receipt.files, FileEntry("runtime_artifact",
@@ -91,7 +161,9 @@ def test_staged_sam_window_seals_distinct_release_and_reopens_exact_inputs(tmp_p
         load_sealed_shadow_bundle(root)
     extra.unlink()
     (root / job.receipt_path).write_bytes(canonical_json_bytes(receipt.to_mapping()))
-    (root / "inputs/window/0.png").write_bytes(b"tampered")
+    frame_path = root / "inputs/window/0.png"
+    frame_bytes = frame_path.read_bytes()
+    frame_path.write_bytes(b"tampered")
     with pytest.raises(Exception):
         load_sealed_shadow_bundle(root)
     second, second_shadow = stage_shadow_inputs(storage, match_id, generation_id,
@@ -104,3 +176,10 @@ def test_staged_sam_window_seals_distinct_release_and_reopens_exact_inputs(tmp_p
     with pytest.raises(ValueError, match="rights"):
         seal_shadow_job(storage, second, second_shadow, release_root=release)
     assert sorted(path.name for path in second.iterdir()) == ["inputs"]
+    storage.update_match_config(match_id, config)
+    frame_path.write_bytes(frame_bytes)
+    storage.save_frames(match_id, frames)
+    assert storage.current_generation(match_id).generationId != generation_id
+    with pytest.raises(ValueError, match="generation"):
+        retain_shadow_mask_result(storage, root, downloaded(mask))
+    assert storage.load_analysis_artifact(match_id, "sam_shadow_mask") == imported
