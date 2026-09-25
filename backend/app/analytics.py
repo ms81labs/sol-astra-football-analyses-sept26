@@ -789,6 +789,84 @@ def _match_state_reason_codes(values: object) -> list[str]:
     return [str(code) for code in iterable if isinstance(code, str) and code.strip()]
 
 
+def _classify_initial_match_state(
+    frame: FrameData,
+    assignment: BallOwnership,
+    observed_rows_by_frame: dict[int, dict[str, float]],
+    inferred_rows_by_frame: dict[int, dict[str, float]],
+    accepted_rows_by_frame: dict[int, dict[str, float]],
+    evidence_by_frame: dict[int, dict[str, object]],
+) -> MatchStateFrame:
+    """Classify one frame; temporal continuity is applied in a separate pass."""
+    evidence_payload = evidence_by_frame.get(frame.frameId, {})
+    accepted_source = evidence_payload.get('acceptedSource')
+    if accepted_source not in {'observed', 'inferred'}:
+        if frame.frameId in observed_rows_by_frame:
+            accepted_source = 'observed'
+        elif frame.frameId in inferred_rows_by_frame:
+            accepted_source = 'inferred'
+        elif frame.ball is not None:
+            accepted_source = 'observed'
+        else:
+            accepted_source = 'none'
+    accepted_point = accepted_rows_by_frame.get(frame.frameId)
+    if accepted_point is None and frame.ball is not None:
+        accepted_point = {'x': float(frame.ball.x), 'y': float(frame.ball.y), 'confidence': float(frame.ball.confidence)}
+    reason_codes = _match_state_reason_codes(evidence_payload.get('reasonCodes', []))
+    has_accepted_ball = accepted_source in {'observed', 'inferred'} and accepted_point is not None
+    if assignment.team in CONTROLLED_TEAMS and assignment.trackId is not None:
+        return MatchStateFrame(
+            frameId=frame.frameId,
+            timestamp=frame.timestamp,
+            mode='controlled_possession',
+            controllingTeam=assignment.team,
+            controllingTrackId=assignment.trackId,
+            ballVisibility='visible' if accepted_source == 'observed' else 'inferred',
+            ballEstimate=_state_ball_estimate(accepted_point),
+            source='observed_ball' if accepted_source == 'observed' else 'inferred_ball',
+            confidence=0.9 if accepted_source == 'observed' else 0.75,
+            reasonCodes=reason_codes,
+        )
+    if assignment.team == 'dead_ball':
+        return MatchStateFrame(
+            frameId=frame.frameId,
+            timestamp=frame.timestamp,
+            mode='restart_or_out',
+            controllingTeam='none',
+            controllingTrackId=None,
+            ballVisibility='hidden',
+            ballEstimate=None,
+            source='restart_rule',
+            confidence=0.7,
+            reasonCodes=reason_codes,
+        )
+    if has_accepted_ball:
+        return MatchStateFrame(
+            frameId=frame.frameId,
+            timestamp=frame.timestamp,
+            mode='loose_ball',
+            controllingTeam='contested' if assignment.team == 'contested' else 'unassigned',
+            controllingTrackId=None,
+            ballVisibility='visible' if accepted_source == 'observed' else 'inferred',
+            ballEstimate=_state_ball_estimate(accepted_point),
+            source='observed_ball' if accepted_source == 'observed' else 'inferred_ball',
+            confidence=0.6,
+            reasonCodes=reason_codes,
+        )
+    return MatchStateFrame(
+        frameId=frame.frameId,
+        timestamp=frame.timestamp,
+        mode='unknown',
+        controllingTeam='none',
+        controllingTrackId=None,
+        ballVisibility='hidden',
+        ballEstimate=None,
+        source='unknown',
+        confidence=0.4,
+        reasonCodes=reason_codes,
+    )
+
+
 def build_accepted_match_state(
     frames: list[dict | FrameData],
     assignments: list[BallOwnership],
@@ -808,91 +886,10 @@ def build_accepted_match_state(
 
     states: list[MatchStateFrame] = []
     for frame, assignment in zip(canonical_frames, canonical_assignments, strict=False):
-        evidence_payload = evidence_by_frame.get(frame.frameId, {})
-        accepted_source = evidence_payload.get("acceptedSource")
-        if accepted_source not in {"observed", "inferred"}:
-            if frame.frameId in observed_rows_by_frame:
-                accepted_source = "observed"
-            elif frame.frameId in inferred_rows_by_frame:
-                accepted_source = "inferred"
-            elif frame.ball is not None:
-                accepted_source = "observed"
-            else:
-                accepted_source = "none"
-
-        accepted_point = accepted_rows_by_frame.get(frame.frameId)
-        if accepted_point is None and frame.ball is not None:
-            accepted_point = {
-                "x": float(frame.ball.x),
-                "y": float(frame.ball.y),
-                "confidence": float(frame.ball.confidence),
-            }
-        reason_codes = _match_state_reason_codes(evidence_payload.get("reasonCodes", []))
-        has_accepted_ball = accepted_source in {"observed", "inferred"} and accepted_point is not None
-
-        if assignment.team in CONTROLLED_TEAMS and assignment.trackId is not None:
-            states.append(
-                MatchStateFrame(
-                    frameId=frame.frameId,
-                    timestamp=frame.timestamp,
-                    mode="controlled_possession",
-                    controllingTeam=assignment.team,
-                    controllingTrackId=assignment.trackId,
-                    ballVisibility="visible" if accepted_source == "observed" else "inferred",
-                    ballEstimate=_state_ball_estimate(accepted_point),
-                    source="observed_ball" if accepted_source == "observed" else "inferred_ball",
-                    confidence=0.90 if accepted_source == "observed" else 0.75,
-                    reasonCodes=reason_codes,
-                )
-            )
-            continue
-
-        if assignment.team == "dead_ball":
-            states.append(
-                MatchStateFrame(
-                    frameId=frame.frameId,
-                    timestamp=frame.timestamp,
-                    mode="restart_or_out",
-                    controllingTeam="none",
-                    controllingTrackId=None,
-                    ballVisibility="hidden",
-                    ballEstimate=None,
-                    source="restart_rule",
-                    confidence=0.70,
-                    reasonCodes=reason_codes,
-                )
-            )
-            continue
-
-        if has_accepted_ball:
-            states.append(
-                MatchStateFrame(
-                    frameId=frame.frameId,
-                    timestamp=frame.timestamp,
-                    mode="loose_ball",
-                    controllingTeam="contested" if assignment.team == "contested" else "unassigned",
-                    controllingTrackId=None,
-                    ballVisibility="visible" if accepted_source == "observed" else "inferred",
-                    ballEstimate=_state_ball_estimate(accepted_point),
-                    source="observed_ball" if accepted_source == "observed" else "inferred_ball",
-                    confidence=0.60,
-                    reasonCodes=reason_codes,
-                )
-            )
-            continue
-
         states.append(
-            MatchStateFrame(
-                frameId=frame.frameId,
-                timestamp=frame.timestamp,
-                mode="unknown",
-                controllingTeam="none",
-                controllingTrackId=None,
-                ballVisibility="hidden",
-                ballEstimate=None,
-                source="unknown",
-                confidence=0.40,
-                reasonCodes=reason_codes,
+            _classify_initial_match_state(
+                frame, assignment, observed_rows_by_frame, inferred_rows_by_frame,
+                accepted_rows_by_frame, evidence_by_frame,
             )
         )
 

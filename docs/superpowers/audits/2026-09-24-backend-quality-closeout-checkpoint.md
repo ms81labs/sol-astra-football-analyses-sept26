@@ -1,3 +1,19 @@
+# BQ05 initial match-state classification — 25 September 2026
+
+Production base: `76238c40eb6630b15c2dae364b2a861b626fc651`, tree `c94a61427cf68d0ae5354809416a7857a947fd45`. The event-detector extraction is already published. Its pinned preflight `36152635003` passed 325 selected tests including the original 128 MiB hashing test, 31 console tests, 6,000 differential cases and three deliberate mutations; normal acceptance is `36153194875`. Inspect completed source-bound CI rather than assuming this checkpoint establishes acceptance.
+
+This bounded continuation extracts the initial per-frame match-state classifier from `build_accepted_match_state`. Source precedence, accepted-point fallback, team/track handling (including track id zero), state confidence and visibility, reason-code ordering/duplicates and error behavior are unchanged. The second continuity pass is untouched. Frame and assignment normalization remain eager and in their original order; pairing remains positional and truncated by the original zip. No football policy is changed: the pre-existing continuity override, including its behavior across an intermediate restart/opponent assignment, remains explicit in characterization tests.
+
+The 125-case contract suite passes against original and candidate code. A supplemental 5,000-case comparison covers all initial modes and resulting sources, mixed dict/model input, duplicate frame ids, unequal lengths, malformed evidence and input ownership. Three mutation probes must detect rejecting track zero, changing observed/inferred precedence and losing the accepted-point continuity guard. Re-inlining the helper (with verified arguments and return/continue mapping) reproduces the complete original module AST. Those checks support behavior preservation; they are not a GPU or model-quality assessment.
+
+Only the `build_accepted_match_state` C901 identity is retired: wider Ruff goes from 408 to 407 (232 C901, 175 BLE001), with no B008. The existing 79-file mypy gate, configuration metadata, dependency locks, scorer pins and runtime/API contracts are unchanged. Candidate acceptance requires pinned Python 3.11 preflight, including the original bounded-memory hashing test, followed by completed normal complete-backend/canonical verification and all applicable checks including C05/C06 on the published SHA. Temporary preflight machinery must be absent from the final tree.
+
+Review is author self-review, not independent approval. No new remote branch, force push, deployment, paid provider/GPU execution or live-store mutation is part of this work. Local Python 3.13 tests are supplemental, not pinned acceptance. One local selected-suite invocation was interrupted; only the completed 320-case run is counted, and the interrupted log is retained.
+
+Exact resume action: inspect and retain this published revision's completed normal CI. Then characterize the remaining analytics complexity sites (`_summarize_defensive_context` and `summarize_match`) before their extraction, or resume the recorded boundary/typing work without changing policy. Broader route/storage/pipeline decomposition, full-app typing, exception review, contract compatibility and research-command separation remain open. Do not redo the accepted declarations, SQLite, evidence typing, pressing or event-detector repairs.
+
+---
+
 # BQ05 event-detector decomposition — 25 September 2026
 
 Production base: `ce16ac4cbe9fd98f41d679515c30819b647c5693`, tree `8a8e496ec3a8353289b76962903e4d81eb250146`. This applies the retained three-file event-detector patch without altering its source bytes; this checkpoint is the only additional file. Previous numeric/upload, pressing-summary, missing-frame, analytics-evidence and ingestion typing repairs are already published and must not be reapplied.
