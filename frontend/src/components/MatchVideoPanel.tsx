@@ -44,16 +44,21 @@ export default function MatchVideoPanel({
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isReady, setIsReady] = useState(false);
+  const [videoSize, setVideoSize] = useState<[number, number] | null>(null);
   const appliedSeekRef = useRef<number | undefined>(undefined);
   const [hasError, setHasError] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
   const [showMasks, setShowMasks] = useState(false);
-  const [overlay, setOverlay] = useState<ReviewMaskOverlay | null>(null);
-  const [maskMessage, setMaskMessage] = useState('');
+  const [maskResult, setMaskResult] = useState<{
+    key: string; overlay: ReviewMaskOverlay | null; message: string;
+  } | null>(null);
+  const maskKey = `${matchId}:${generationId}:${sourceFrameId}:${sourceFramePts}`;
+  const overlay = maskResult?.key === maskKey ? maskResult.overlay : null;
+  const maskMessage = maskResult?.key === maskKey ? maskResult.message : '';
+  const dimensionsMatch = overlay && isReady
+    && videoSize?.[0] === overlay.width && videoSize?.[1] === overlay.height;
 
   useEffect(() => {
-    setOverlay(null);
-    setMaskMessage('');
     if (!showMasks || isPlaying || !matchId || !generationId || sourceFrameId === undefined) return;
     const controller = new AbortController();
     let current = true;
@@ -63,29 +68,25 @@ export default function MatchVideoPanel({
         if (!current) return;
         if (result.sourceFrameId !== sourceFrameId || result.ptsSeconds !== sourceFramePts
             || result.qualification !== 'review_only') {
-          setMaskMessage('Review mask does not match this source frame.');
+          setMaskResult({ key: maskKey, overlay: null, message: 'Review mask does not match this source frame.' });
           return;
         }
-        setOverlay(result);
-        setMaskMessage(result.masks.length ? '' : 'No review mask for this frame.');
+        setMaskResult({ key: maskKey, overlay: result,
+          message: result.masks.length ? '' : 'No review mask for this frame.' });
       })
       .catch((error: unknown) => {
         if (!current) return;
-        setMaskMessage(error instanceof ApiError && error.status === 404
-          ? 'No review mask for this frame.' : 'Review mask unavailable.');
+        setMaskResult({ key: maskKey, overlay: null,
+          message: error instanceof ApiError && error.status === 404
+            ? 'No review mask for this frame.' : 'Review mask unavailable.' });
       });
     return () => { current = false; controller.abort(); };
-  }, [showMasks, isPlaying, matchId, generationId, sourceFrameId, sourceFramePts]);
+  }, [showMasks, isPlaying, matchId, generationId, sourceFrameId, sourceFramePts, maskKey]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     const video = videoRef.current;
-    if (!canvas || !video || !overlay || !isReady || isPlaying) return;
-    if (video.videoWidth !== overlay.width || video.videoHeight !== overlay.height) {
-      setMaskMessage('Review mask dimensions do not match the video.');
-      setOverlay(null);
-      return;
-    }
+    if (!canvas || !video || !overlay || !dimensionsMatch || isPlaying) return;
     const context = canvas.getContext('2d');
     if (!context) return;
     canvas.width = overlay.width;
@@ -110,7 +111,7 @@ export default function MatchVideoPanel({
         }
       });
     }
-  }, [overlay, isReady, isPlaying]);
+  }, [overlay, dimensionsMatch, isPlaying]);
 
   const stepSourceFrame = (direction: -1 | 1) => {
     const video = videoRef.current;
@@ -177,26 +178,30 @@ export default function MatchVideoPanel({
         playsInline
         preload="metadata"
         className="h-full w-full bg-slate-950 object-contain"
-        onLoadedMetadata={() => setIsReady(true)}
-        onPlay={() => onPlayingChange?.(true)}
+        onLoadedMetadata={(event) => {
+          setVideoSize([event.currentTarget.videoWidth, event.currentTarget.videoHeight]);
+          setIsReady(true);
+        }}
+        onPlay={() => { setMaskResult(null); onPlayingChange?.(true); }}
         onPause={() => onPlayingChange?.(false)}
         onEnded={() => onPlayingChange?.(false)}
         onTimeUpdate={(event) => onVideoTimeChange(event.currentTarget.currentTime)}
         onError={() => {
           setIsReady(false);
+          setVideoSize(null);
           onPlayingChange?.(false);
           setHasError(true);
         }}
       />
-      {showMasks && overlay && !isPlaying && (
+      {showMasks && dimensionsMatch && !isPlaying && (
         <canvas ref={canvasRef} data-testid="review-mask-overlay" aria-label="Review mask overlay"
           className="pointer-events-none absolute inset-0 h-full w-full object-contain" />
       )}
       {showMasks && !isPlaying && (overlay?.masks.length || maskMessage) && (
         <div className="pointer-events-none absolute left-2 top-2 rounded bg-slate-950/85 px-2 py-1 text-[11px] text-white">
-          {overlay?.masks.length
+          {overlay?.masks.length && dimensionsMatch
             ? `Track ${overlay.masks.map((mask) => mask.trackId).join(', ')} · ${overlay.executionClass} · review only`
-            : maskMessage}
+            : overlay && !dimensionsMatch ? 'Review mask dimensions do not match the video.' : maskMessage}
         </div>
       )}
       <div className="absolute bottom-2 left-2 flex items-center gap-2 rounded bg-slate-900/80 px-2 py-1 text-[11px] text-slate-300">
@@ -208,7 +213,7 @@ export default function MatchVideoPanel({
           Previous frame
         </button>
         {matchId && generationId && sourceFrameId !== undefined && (
-          <button type="button" onClick={() => setShowMasks((value) => !value)}
+          <button type="button" onClick={() => { setMaskResult(null); setShowMasks((value) => !value); }}
             aria-pressed={showMasks}
             className="rounded border border-slate-600 px-1.5 py-0.5 hover:bg-slate-800">
             {showMasks ? 'Hide review masks' : 'Show review masks'}
