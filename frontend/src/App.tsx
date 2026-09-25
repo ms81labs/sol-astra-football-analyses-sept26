@@ -1517,7 +1517,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           )}
         </div>
 
-        <div className="bg-slate-800 rounded-xl shadow-lg border border-slate-700 p-4 flex flex-col" style={{ maxHeight: '85vh' }}>
+        <div className="bg-slate-800 rounded-xl shadow-lg border border-slate-700 p-4 flex flex-col overflow-y-auto" style={{ maxHeight: '85vh' }}>
           <h2 className="text-lg font-semibold mb-3 text-emerald-400 border-b border-slate-700 pb-2">Tactical Brain</h2>
 
           {isTacticalInterpretationPaused && (
@@ -1718,7 +1718,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
               <p>Waiting for processed match data...</p>
             </div>
           ) : (
-            <div className="flex flex-col flex-1 overflow-hidden">
+            <div className="flex flex-col shrink-0">
               <div className="flex bg-slate-900 rounded p-0.5 border border-slate-700 mb-3 shrink-0">
                 <button
                   onClick={() => coach.selectLlmProvider('local')}
