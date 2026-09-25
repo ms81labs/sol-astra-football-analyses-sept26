@@ -9,15 +9,16 @@ from __future__ import annotations
 
 from dataclasses import replace
 import math
-from typing import Any
+from typing import Any, Literal, NoReturn, NotRequired, TypedDict
 
 from .coordinate_contracts import CoordinateConvention
 from .schemas import FrameData, BallData
 from .semantic_commands import SemanticCommandError
+from .workbench.contracts import CalibrationRevision
 from .workbench.geometry import CalibrationProfile, project_point, validate_homography
 
 
-def refused(code: str, message: str):
+def refused(code: str, message: str) -> NoReturn:
     raise SemanticCommandError(code, message, status_code=409)
 
 
@@ -55,7 +56,24 @@ def _covered(profile, revision, timestamp: float) -> bool:
     return timestamp >= start and (not ends or timestamp < min(ends))
 
 
-def _provenance(convention, *, revision=None, migration=None):
+class _CoordinateProvenance(TypedDict):
+    schemaVersion: Literal[1]
+    inputConvention: dict[str, object]
+    outputConvention: Literal["pitch_normalized_0_100"]
+    calibrationRevision: str | None
+    migration: str | None
+    reasonCodes: list[str]
+    sourceClock: NotRequired[dict[str, int]]
+    sourceDimensions: NotRequired[dict[str, int]]
+    geometryAvailable: NotRequired[bool]
+
+
+def _provenance(
+    convention: CoordinateConvention,
+    *,
+    revision: CalibrationRevision | None = None,
+    migration: str | None = None,
+) -> _CoordinateProvenance:
     return {"schemaVersion": 1, "inputConvention": convention.model_dump(mode="json"),
             "outputConvention": "pitch_normalized_0_100",
             "calibrationRevision": revision.revisionId if revision else None,
@@ -148,8 +166,8 @@ def project_video_rows(rows, revision, *, convention=None):
         refused("SOURCE_OBSERVATIONS_REQUIRED", "Video recalibration requires source-pixel observations")
     profile = _profile(revision, convention)
     converted = []
-    frame_info = {}
-    times = {}
+    frame_info: dict[int, _CoordinateProvenance] = {}
+    times: dict[int, float] = {}
     dimensions = None
     keys = ("Source_X1", "Source_Y1", "Source_X2", "Source_Y2")
     for row in rows:

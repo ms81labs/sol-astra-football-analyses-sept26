@@ -108,7 +108,7 @@ _REFERENCE_FIELDS = {"evidence", "evidenceIds", "references", "claimedEvidenceId
 
 def validate_declared_references(value: Any, package) -> list[dict]:
     """Visit declared reference fields, NOT arbitrary prose/string prefixes."""
-    refs = []
+    refs: list[dict[str, object]] = []
     if isinstance(value, dict):
         for name, child in value.items():
             if name in _REFERENCE_FIELDS:

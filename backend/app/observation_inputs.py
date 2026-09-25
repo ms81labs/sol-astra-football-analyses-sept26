@@ -11,11 +11,12 @@ import hashlib
 import json
 import os
 from pathlib import Path
+from typing import NoReturn
 
 from .semantic_commands import SemanticCommandError
 
 
-def refused(code):
+def refused(code: str) -> NoReturn:
     raise SemanticCommandError(code, "Stored observations cannot be reused; recover or explicitly reprocess the source", status_code=409)
 
 
@@ -23,21 +24,21 @@ def _signature(stat):
     return (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
 
 
-def _read(path: Path, *, parse=False):
+def _read(path: Path, *, parse: bool = False):
     from .storage_remote import open_regular_file
     try:
         fd = open_regular_file(path)
         with os.fdopen(fd, "rb") as handle:
             before = os.fstat(handle.fileno())
             digest = hashlib.sha256()
-            chunks = [] if parse else None
+            chunks: list[bytes] | None = [] if parse else None
             for chunk in iter(lambda: handle.read(1024 * 1024), b""):
                 digest.update(chunk)
                 if chunks is not None:
                     chunks.append(chunk)
             if _signature(before) != _signature(os.fstat(handle.fileno())) or _signature(before) != _signature(path.lstat()):
                 refused("OBSERVATIONS_CHANGED_DURING_READ")
-        payload = json.loads(b"".join(chunks), parse_constant=lambda _: refused("INVALID_OBSERVATIONS")) if parse else None
+        payload = json.loads(b"".join(chunks), parse_constant=lambda _: refused("INVALID_OBSERVATIONS")) if chunks is not None else None
         return payload, {"sha256": digest.hexdigest(), "byteSize": before.st_size}, _signature(before)
     except FileNotFoundError:
         refused("CACHE_MISS")

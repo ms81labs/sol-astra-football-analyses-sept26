@@ -1,3 +1,54 @@
+# BQ01 ingestion and reference typing — 25 September 2026
+
+Production base: `8d11249ebe74d6508b4948090c6dd6640a860710`, tree
+`8c1c1ba2d2871609d02caf31e5d1bed8cf196e9a`. The analytics evidence parser and its
+explicit zero-error scope are already published. Its pinned validation is
+`36136639161`, normal acceptance `36136966735`; obtain completed source-bound
+results rather than reapplying that patch or assuming a pending lane is green.
+
+This bounded continuation resolves six explicit typing diagnostics in three
+modules. Coordinates receives a precise provenance TypedDict and timestamp map;
+its fatal refusal is annotated NoReturn so invalid input cannot be treated as an
+accepted rows collection. Report-reference accumulation is annotated without
+altering traversal, order, duplicates, scope checking or copy semantics.
+Observation reads keep their nullable byte buffer and annotate the boolean parse
+flag: the final decode checks whether the buffer exists, exactly the state chosen
+by that flag and never reassigned. It still hashes media without accumulating its
+bytes, rejects read-time changes, and closes descriptors on errors. No additional
+runtime validation or fallback is added.
+
+Thirty-seven new compatibility cases cover JSON values/errors, exact byte binding,
+isolated bounded-memory media hashing, regular-file and mutation boundaries,
+invalid import envelopes, per-frame provenance/intervals, independent containers,
+and nested report references. On original code the combined new/gate selection
+has 49 passes and the expected one scope-assertion failure; explicit mypy reports
+six errors. Candidate selection has 50 passes. Broader projection, generation,
+recompute and report tests must remain green. Tests measure hashing allocations
+in a child process so other suites' worker threads cannot contaminate the result.
+
+Three modules are added to the explicit empty mypy scope. Only the mypy
+configuration digest is updated; no diagnostic allowance, ignored file, runtime
+lock, tool version or threshold changes. The exact wider Ruff baseline stays
+409 (234 C901, 175 BLE001); B008 remains zero. Local explicit full-app diagnostics
+move from 305 to 299 with exactly these six removed and none added. That is a
+Python 3.13 supplemental comparison, not a full-app CI gate.
+
+Pinned Python 3.11 preflight must repeat the original failure/type-error evidence,
+all compatibility and composed tests, console pytest, exact quality baselines,
+annotation-erased source comparisons and full OpenAPI equality. Final acceptance
+requires completed normal full-backend/canonical/other applicable checks and
+C05/C06 on the published SHA. Remove the temporary preflight workflow from the
+final tree. No extra remote branch, force push, paid provider/GPU execution,
+deployment or live-store mutation is part of this work. Review is author
+self-review, not independent approval. CPU stubs are not model-quality evidence.
+
+Exact next action: inspect completed final-head CI, retain its evidence and update
+closure status. Then continue remaining typed boundaries, exception reviews and
+structural extraction; do not replay the completed analytics, route declarations,
+upload, pressing-summary or SQLite repairs. The broader plan remains open.
+
+---
+
 # Analytics evidence parsing and explicit clean typing — 25 September 2026
 
 Production base: `1b6fa61404f12620515b24efe56747f2ae9b6347`, tree `3ce426efbe432c9c810c854cc8dbdbbff2952226`. Its normal CI `36117803940` has completed all applicable jobs successfully; C05 `36117803764` succeeded. Numeric/upload, pressing decomposition and missing-frame fixes already landed and must not be reapplied.

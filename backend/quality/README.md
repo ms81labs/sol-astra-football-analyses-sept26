@@ -9,7 +9,13 @@ python scripts/check_python_quality.py ruff
 python scripts/check_python_quality.py mypy
 ```
 
-The backend-wide correctness/cleanup command permits **zero** diagnostics. The scoped mypy baseline is now empty; its existing scope and configuration are unchanged. The broader Ruff check covers `F,B,BLE,S110,B904,C901` across `backend/` and the gate itself. Mypy checks `workbench/`, `schemas.py`, `settings.py`, and `run_benchmarks.py` with the Pydantic plugin. Imported modules are analysed silently; missing third-party stubs remain `Any`. This is a bounded initial type gate, not full strict typing or a substitute for runtime tests.
+The backend-wide correctness/cleanup command permits **zero** diagnostics. The
+configured mypy baseline is also empty; the explicit source list is in
+`pyproject.toml`. The broader Ruff check covers `F,B,BLE,S110,B904,C901` across
+`backend/` and the gate itself, retaining an exact legacy baseline. Mypy uses the
+Pydantic plugin. Imported modules are analysed silently; missing third-party stubs
+and unannotated boundaries still permit `Any`. A clean configured scope is not
+full-application strict typing or a substitute for runtime tests.
 
 `init_forbid_extra = true` makes undeclared Pydantic constructor keywords visible to mypy. `init_typed = false` deliberately retains Pydantic's supported coercion behavior. Only the two verified benchmark summary contracts change to runtime `extra="forbid"`.
 
@@ -37,3 +43,15 @@ workbench match routes were already covered by the directory scope. Only the
 mypy configuration digest changed; no diagnostic or ignore was added. Analytics is now explicitly included as well: the five parsing/evidence
 diagnostics are resolved behind conversion/iteration compatibility tests. The
 empty baseline remains empty; only its configuration digest changes.
+
+
+### Observation, projection and report-reference containers
+
+The explicit zero-error scope additionally includes `coordinates.py`,
+`observation_inputs.py` and `report_contracts.py`. Typed provenance records retain
+optional clock/dimension fields and independent mutable containers. Fatal refusals
+are annotated `NoReturn`. Observation hashing keeps a nullable byte buffer: only
+JSON parsing retains chunks, while video hashing remains bounded-memory. The final
+decode branch tests the same buffer state instead of repeating the boolean flag.
+Reference traversal retains its existing ordering, duplicates and scope checks.
+These are typing/compatibility repairs, not new runtime validation policies.

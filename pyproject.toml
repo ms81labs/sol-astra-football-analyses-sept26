@@ -113,6 +113,9 @@ files = [
     "backend/app/review_routes.py",
     "backend/app/numeric_types.py",
     "backend/app/analytics.py",
+    "backend/app/coordinates.py",
+    "backend/app/observation_inputs.py",
+    "backend/app/report_contracts.py",
 ]
 follow_imports = "silent"
 ignore_missing_imports = true
