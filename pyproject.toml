@@ -112,6 +112,7 @@ files = [
     "backend/app/match_runtime_routes.py",
     "backend/app/review_routes.py",
     "backend/app/numeric_types.py",
+    "backend/app/analytics.py",
 ]
 follow_imports = "silent"
 ignore_missing_imports = true

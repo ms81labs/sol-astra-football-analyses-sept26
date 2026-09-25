@@ -34,6 +34,6 @@ The zero-diagnostic mypy scope now explicitly includes `insight_routes.py`,
 `job_routes.py`, `match_runtime_routes.py`, `review_routes.py` and `numeric_types.py`,
 in addition to the original workbench/contracts/settings/benchmark scope. The
 workbench match routes were already covered by the directory scope. Only the
-mypy configuration digest changed; no diagnostic or ignore was added. Analytics
-is not falsely marked clean: its remaining five explicit parsing/evidence
-diagnostics still require compatibility review outside this initial gate.
+mypy configuration digest changed; no diagnostic or ignore was added. Analytics is now explicitly included as well: the five parsing/evidence
+diagnostics are resolved behind conversion/iteration compatibility tests. The
+empty baseline remains empty; only its configuration digest changes.

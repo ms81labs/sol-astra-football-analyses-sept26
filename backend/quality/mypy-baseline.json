@@ -11,7 +11,7 @@
       "--output=json",
       "--no-incremental"
     ],
-    "configSha256": "6027aa82f2461ba846df922e79b599dba3caae974edeb92d86a0728eda211e16"
+    "configSha256": "84a13d4379bfea08a80a972b9f8971235346dea5e4e48a4d718c78e8079c25e1"
   },
   "diagnostics": []
 }

@@ -5,6 +5,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, replace
 from itertools import chain
 from math import atan2, degrees, pi, sqrt
+from typing import Protocol, runtime_checkable
 
 from .schemas import BallData, BallEstimate, BallOwnership, DetectedEvent, FormationSegment, FrameData, MatchStateFrame, MatchSummary, MetricAvailabilityRecord, PlayerData, ShotAnalytics
 from .workbench.metric_definitions import (
@@ -699,9 +700,18 @@ def _ball_rows_by_frame(ball_truth_layers: dict[str, object] | None, layer_name:
         if not isinstance(row, dict):
             continue
         try:
-            frame_id = int(row.get("Frame_ID"))
-            x = float(row.get("X"))
-            y = float(row.get("Y"))
+            raw_frame_id = row.get("Frame_ID")
+            if raw_frame_id is None:
+                continue
+            frame_id = int(raw_frame_id)
+            raw_x = row.get("X")
+            if raw_x is None:
+                continue
+            x = float(raw_x)
+            raw_y = row.get("Y")
+            if raw_y is None:
+                continue
+            y = float(raw_y)
             confidence = float(row.get("Conf", 0.0))
         except (TypeError, ValueError):
             continue
@@ -721,7 +731,10 @@ def _normalize_match_state_evidence(match_state_evidence: dict[str, object] | No
         if not isinstance(item, dict):
             continue
         try:
-            frame_id = int(item.get("frameId"))
+            raw_frame_id = item.get("frameId")
+            if raw_frame_id is None:
+                continue
+            frame_id = int(raw_frame_id)
         except (TypeError, ValueError):
             continue
         normalized[frame_id] = dict(item)
@@ -754,6 +767,26 @@ def _nearest_controlled_assignment(
         if candidate.team in CONTROLLED_TEAMS and candidate.trackId is not None:
             return candidate
     return None
+
+
+@runtime_checkable
+class _IndexableReasonCodes(Protocol):
+    """Retain Python's legacy sequence iteration, not just __iter__ objects."""
+
+    def __getitem__(self, index: int, /) -> object: ...
+
+
+def _match_state_reason_codes(values: object) -> list[str]:
+    # Do not coerce invalid containers to []: malformed evidence remains an error.
+    # Strings/dict keys and index-based sequences retain their existing semantics.
+    iterable: Iterable[object]
+    if isinstance(values, Iterable):
+        iterable = values
+    elif isinstance(values, _IndexableReasonCodes):
+        iterable = iter(values)
+    else:
+        raise TypeError(f"'{type(values).__name__}' object is not iterable")
+    return [str(code) for code in iterable if isinstance(code, str) and code.strip()]
 
 
 def build_accepted_match_state(
@@ -794,11 +827,7 @@ def build_accepted_match_state(
                 "y": float(frame.ball.y),
                 "confidence": float(frame.ball.confidence),
             }
-        reason_codes = [
-            str(code)
-            for code in evidence_payload.get("reasonCodes", [])
-            if isinstance(code, str) and code.strip()
-        ]
+        reason_codes = _match_state_reason_codes(evidence_payload.get("reasonCodes", []))
         has_accepted_ball = accepted_source in {"observed", "inferred"} and accepted_point is not None
 
         if assignment.team in CONTROLLED_TEAMS and assignment.trackId is not None:

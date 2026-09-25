@@ -1,3 +1,19 @@
+# Analytics evidence parsing and explicit clean typing — 25 September 2026
+
+Production base: `1b6fa61404f12620515b24efe56747f2ae9b6347`, tree `3ce426efbe432c9c810c854cc8dbdbbff2952226`. Its normal CI `36117803940` has completed all applicable jobs successfully; C05 `36117803764` succeeded. Numeric/upload, pressing decomposition and missing-frame fixes already landed and must not be reapplied.
+
+This bounded continuation resolves the five remaining explicit analytics mypy diagnostics. Nullable Frame_ID/X/Y/frameId values are rejected at the same sequential read/conversion points where TypeError previously caused the row to be skipped. Other numeric coercions, missing-confidence default, duplicate overwrites, shallow copies and TypeError/ValueError-only catch boundaries remain intact; no range or finiteness policy is added.
+
+Reason-code iteration is isolated behind a typed helper that retains native iterable and legacy index-based sequence protocols, string/dictionary iteration, order, duplicates and whitespace. Noniterable inputs remain TypeError rather than silently becoming empty evidence; iterator/converter exceptions are not swallowed. Native list-comprehension iteration is retained, rather than assuming __iter__ call counts across interpreter versions. The public state-building logic and state selection are unchanged.
+
+The 72-case evidence suite characterizes these policies against original and modified production. The mypy scope regression must fail before analytics is explicitly added, then pass. Explicit analytics mypy must move five -> zero, and the expanded configured scope must remain zero. All 409 Ruff identities and metadata remain unchanged; only the mypy configSha256 changes, with no new allowances or tool/runtime-lock changes.
+
+Pinned validation must run original characterization and type errors, candidate characterization plus the broader analytics selection, console pytest, exact quality gates and a source-bound before/after differential comparison. Final acceptance requires complete-backend/canonical verification plus the other applicable normal lanes and C05/C06 on the actual published source. Author self-review is not independent review; CPU stubs do not establish GPU/model acceptance. No extra branch, force push, paid execution or live-store mutation is included, and temporary validation machinery is removed from the final tree.
+
+Exact next action: inspect and retain completed normal CI on the revision containing this change. Then continue the remaining full-application typing and the 234 C901 / 175 BLE001 findings in bounded batches. Do not repeat the completed declaration-only migrations, numeric/upload repairs, pressing extraction, missing-frame fix or this parser typing cleanup. No overall BQ03/BQ04/BQ05/contract/research-separation closure is claimed.
+
+---
+
 # Analytics missing-frame safety and clean-scope expansion — 25 September 2026
 
 Production base: `eb39f3974986da1acf0bc8f73f85afa78d58cf70`, tree `bfc208eb7f96086e49edd463b167affeb23bac55`. The pressing extraction is already published; inspect its normal CI `36116338451` rather than reapplying it.
