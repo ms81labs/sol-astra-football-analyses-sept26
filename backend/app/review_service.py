@@ -223,6 +223,23 @@ class ReviewService:
                 raise SemanticCommandError("PLAYLIST_ITEM_NOT_ACTIVE", "Refresh the saved clip before editing", status_code=409)
             return {**target["payload"], "replaces": target["correctionId"],
                     "title": payload["title"], "notes": payload["notes"]}
+        if kind == "playlist_item" and "evidenceIds" in payload:
+            from math import isfinite
+            from .workbench.evidence import records_from_match
+
+            ids = payload["evidenceIds"]
+            start, end = payload.get("timestampStart"), payload.get("timestampEnd")
+            if (type(ids) is not list or not 0 < len(ids) <= 16
+                    or any(type(item) is not str or not 0 < len(item) <= 160 for item in ids)
+                    or len(set(ids)) != len(ids)
+                    or type(start) not in (int, float) or type(end) not in (int, float)
+                    or not isfinite(start) or not isfinite(end) or end <= start):
+                raise SemanticCommandError("INVALID_PLAYLIST_EVIDENCE", "Playlist evidence and interval are invalid")
+            known = {item.evidenceId for item in records_from_match(
+                self.storage.load_frames(match_id), self.storage.load_events(match_id),
+                interval_start=start, interval_end=end)}
+            if not set(ids) <= known:
+                raise SemanticCommandError("INVALID_PLAYLIST_EVIDENCE", "Playlist evidence is not in this source interval")
         if kind == "calibration" and set(payload) == {"profile"}:
             from .workbench.geometry import CalibrationProfile, commit_calibration
             profile = CalibrationProfile.model_validate(payload["profile"])

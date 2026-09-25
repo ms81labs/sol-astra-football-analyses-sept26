@@ -935,6 +935,33 @@ def test_playlist_metadata_edit_replaces_one_clip_and_undo_restores_it(tmp_path:
     _run(_test_playlist_metadata_edit_replaces_one_clip_and_undo_restores_it, tmp_path)
 
 
+def test_playlist_evidence_must_exist_in_the_saved_source_interval(tmp_path: Path):
+    _run(_test_playlist_evidence_must_exist_in_the_saved_source_interval, tmp_path)
+
+
+async def _test_playlist_evidence_must_exist_in_the_saved_source_interval(tmp_path: Path):
+    async with api_client(tmp_path) as (_, client):
+        match_id = (await _upload_tracking_match(client)).json()["matchId"]
+        for interval, evidence_id in [((0.0, 0.2), "event:forged"), ((0.2, 0.4), "frame:0")]:
+            rejected = await client.post(f"/api/matches/{match_id}/corrections", json={
+                "kind": "playlist_item", "payload": {
+                    "timestampStart": interval[0], "timestampEnd": interval[1],
+                    "evidenceIds": [evidence_id],
+                },
+            })
+            assert rejected.status_code == 422
+        history = await client.get(f"/api/matches/{match_id}/corrections")
+        assert history.json()["items"] == []
+        saved = await client.post(f"/api/matches/{match_id}/corrections", json={
+            "kind": "playlist_item", "payload": {
+                "timestampStart": 0.0, "timestampEnd": 0.2,
+                "evidenceIds": ["frame:0"],
+            },
+        })
+        assert saved.status_code == 200
+        assert saved.json()["payload"]["evidenceIds"] == ["frame:0"]
+
+
 async def _test_playlist_metadata_edit_replaces_one_clip_and_undo_restores_it(tmp_path: Path):
     async with api_client(tmp_path) as (_, client):
         response = await _upload_tracking_match(client)
