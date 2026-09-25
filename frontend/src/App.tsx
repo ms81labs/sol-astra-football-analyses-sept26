@@ -1067,11 +1067,11 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
     } finally { setTeamSelectionSaving(false); }
   }, [activeMatch, executeCommand]);
 
-  const handleClipSaved = useCallback(async (clip: { start: number; end: number; title?: string; notes: string; sourceEndFrameExclusive: number }) => {
+  const handleClipSaved = useCallback(async (clip: { start: number; end: number; title?: string; notes: string; evidenceIds?: string[]; sourceEndFrameExclusive: number }) => {
     if (!activeMatch) return;
     const receipt = await executeCommand((controls) => submitMatchCorrection(activeMatch.id, {
       kind: 'playlist_item', ...controls,
-      payload: { timestampStart: clip.start, timestampEnd: clip.end, sourceEndFrameExclusive: clip.sourceEndFrameExclusive, title: clip.title ?? '', notes: clip.notes },
+      payload: { timestampStart: clip.start, timestampEnd: clip.end, sourceEndFrameExclusive: clip.sourceEndFrameExclusive, title: clip.title ?? '', notes: clip.notes, ...(clip.evidenceIds?.length ? { evidenceIds: clip.evidenceIds } : {}) },
     }));
     if (!receipt || commandState(receipt) !== 'applied') throw new Error('Clip application is not confirmed. See the correction status.');
   }, [activeMatch, executeCommand]);
@@ -1672,7 +1672,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
               matchId={activeMatch?.id}
               generationId={activeMatch?.detail.generationId ?? undefined}
               reviewRange={review.reviewRange}
-              sourceInterval={selectedHit ? { start: selectedHit.intervalStart ?? selectedHit.timestamp, end: selectedHit.intervalEnd ?? selectedHit.timestamp } : null}
+              sourceInterval={selectedHit ? { start: selectedHit.intervalStart ?? selectedHit.timestamp, end: selectedHit.intervalEnd ?? selectedHit.timestamp, evidenceIds: selectedHit.evidenceIds } : null}
               frames={matchData}
               sourceFps={isVideoMatch ? activeMatch?.sourceFps ?? 25 : fps}
               sampleFps={fps}

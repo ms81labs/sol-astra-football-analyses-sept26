@@ -49,6 +49,11 @@ describe('C02 application contracts', () => {
     expect(playlistClipsFromCorrections([applied, revised, undo], ['command-one', 'command-two', 'command-three']))
       .toMatchObject([{ correctionId: 'one', notes: 'Approved', start: 0, end: 1 }]);
   });
+  it('restores playlist evidence references from an applied correction', () => {
+    const grounded = { ...applied, payload: { ...applied.payload, evidenceIds: ['event:1860'] } };
+    expect(playlistClipsFromCorrections([grounded], ['command-one']))
+      .toMatchObject([{ evidenceIds: ['event:1860'] }]);
+  });
   it.each([0, 0.2, 1, -1, 100000])('uses the smallest representable half-open endpoint after %s', (time) => {
     const end = nextTimestamp(time);
     expect(end).toBeGreaterThan(time);

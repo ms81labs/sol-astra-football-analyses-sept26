@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, expect, it, vi } from 'vitest';
 
 import PlaylistBuilder from './PlaylistBuilder';
+import type { PlaylistClip } from '../utils/playlist';
 
 afterEach(() => {
   cleanup();
@@ -45,6 +46,29 @@ it('exports time-bounded clips with notes and refuses whole-match frequency clai
   expect(screen.getByText(/Second-half recovery/)).toBeTruthy();
   expect(screen.getByText(/second-half turnover then shot/)).toBeTruthy();
   expect(screen.getByText(/do not establish a whole-match frequency/i)).toBeTruthy();
+});
+
+it('keeps selected evidence only when the saved clip contains its source interval', async () => {
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo, init?: RequestInit) => {
+    if (!String(input).includes('/api/playlists/export-interval')) throw new Error(`unexpected ${String(input)}`);
+    const body = JSON.parse(String(init?.body));
+    return Promise.resolve({ ok: true, json: async () => ({
+      sourceStartSeconds: body.timestampStart, sourceEndSeconds: body.timestampEnd,
+      sourceEndFrameExclusive: Math.round(body.timestampEnd * 25),
+    }) } as Response);
+  }));
+  const save = vi.fn(async (clip: PlaylistClip) => { expect(clip.end).toBeGreaterThan(clip.start); });
+  render(<PlaylistBuilder sourceFps={25}
+    sourceInterval={{ start: 74.4, end: 74.4, evidenceIds: ['event:1860'] }} onClipSaved={save} />);
+  fireEvent.change(screen.getByLabelText(/clip start/i), { target: { value: '74' } });
+  fireEvent.change(screen.getByLabelText(/clip end/i), { target: { value: '75' } });
+  fireEvent.click(screen.getByRole('button', { name: /add clip/i }));
+  await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ evidenceIds: ['event:1860'] })));
+  fireEvent.change(screen.getByLabelText(/clip start/i), { target: { value: '80' } });
+  fireEvent.change(screen.getByLabelText(/clip end/i), { target: { value: '81' } });
+  fireEvent.click(screen.getByRole('button', { name: /add clip/i }));
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
+  expect(save.mock.calls[1][0].evidenceIds).toBeUndefined();
 });
 
 it('offers exact saved video intervals as source-bound playable downloads', () => {

@@ -7,7 +7,7 @@ interface PlaylistBuilderProps {
   matchId?: string;
   generationId?: string;
   reviewRange?: { startFrame: number; endFrame: number } | null;
-  sourceInterval?: { start: number; end: number } | null;
+  sourceInterval?: { start: number; end: number; evidenceIds?: string[] } | null;
   frames?: Array<{ Frame_ID: number; Timestamp: number }>;
   sourceFps?: number;
   sampleFps?: number;
@@ -113,6 +113,9 @@ export default function PlaylistBuilder({
         end: interval.sourceEndSeconds,
         title: title.trim(),
         notes,
+        ...(sourceInterval?.evidenceIds?.length && interval.sourceStartSeconds <= sourceInterval.start
+          && sourceInterval.start < interval.sourceEndSeconds && sourceInterval.end <= interval.sourceEndSeconds
+          ? { evidenceIds: sourceInterval.evidenceIds } : {}),
         sourceEndFrameExclusive: interval.sourceEndFrameExclusive,
       };
       if (onClipSaved) {
@@ -214,6 +217,7 @@ export default function PlaylistBuilder({
         >
           {clip.title ? `${clip.title} · ` : ''}{clip.start}s to {clip.end}s (frame {clip.sourceEndFrameExclusive} exclusive){clip.notes ? ` · ${clip.notes}` : ''}
         </button>
+        {clip.evidenceIds?.length ? <p className="text-xs text-slate-400">Evidence: {clip.evidenceIds.join(', ')}</p> : null}
         {clip.correctionId && onClipUpdated && generationId === clip.generationId && (
           <button type="button" aria-label={`Edit clip ${clip.title || `${clip.start}s to ${clip.end}s`}`}
             onClick={() => { setEditing({ matchId, generationId, clip }); setTitle(clip.title ?? ''); setNotes(clip.notes); }}

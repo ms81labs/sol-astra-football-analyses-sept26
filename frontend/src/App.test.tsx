@@ -537,7 +537,7 @@ describe('App match workspace loading', () => {
       })),
       frameCount: 4,
     });
-    vi.stubGlobal('fetch', vi.fn((input: RequestInfo, init?: RequestInit) => {
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
       if (String(input).includes('/api/matches/match-a/queries') && init?.method === 'POST') {
         return Promise.resolve({ ok: true, json: async () => ({
           generationId: 'g-match-a', query: { unanswerable: false },
@@ -546,8 +546,21 @@ describe('App match workspace loading', () => {
             label: 'turnover', reviewStatus: 'accepted' }],
         }) } as Response);
       }
+      if (String(input).includes('/api/playlists/export-interval') && init?.method === 'POST') {
+        return Promise.resolve({ ok: true, json: async () => ({
+          sourceStartSeconds: 1.1, sourceEndSeconds: 2.1, sourceEndFrameExclusive: 53,
+        }) } as Response);
+      }
+      if (String(input).includes('/api/matches/match-a/corrections') && init?.method === 'POST') {
+        return Promise.resolve({ ok: true, json: async () => ({
+          correctionId: 'linked-clip', kind: 'playlist_item', saveState: 'saved',
+          applyState: 'applied', appliedGeneration: 'g-match-a-next',
+          payload: JSON.parse(String(init.body)).payload,
+        }) } as Response);
+      }
       return Promise.reject(new Error(`unexpected ${String(input)}`));
-    }));
+    });
+    vi.stubGlobal('fetch', fetchMock);
     render(<App />);
     await screen.findByText('Match A', { selector: 'header span' });
     fireEvent.click(screen.getByRole('button', { name: /search evidence/i }));
@@ -558,6 +571,12 @@ describe('App match workspace loading', () => {
     });
     expect(screen.getByText(/selected evidence: e-1/i)).toBeTruthy();
     expect(within(screen.getByRole('region', { name: 'Evidence inspector' })).getAllByText('1.2s').length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole('button', { name: /add clip/i }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) =>
+      String(url).includes('/api/matches/match-a/corrections') && init?.method === 'POST')).toBe(true));
+    const clipCall = fetchMock.mock.calls.find(([url, init]) =>
+      String(url).includes('/api/matches/match-a/corrections') && init?.method === 'POST');
+    expect(JSON.parse(String(clipCall?.[1]?.body)).payload.evidenceIds).toEqual(['e-1']);
   });
 
   it('opens a source-linked visual event proposal in review without auto-accepting it', async () => {

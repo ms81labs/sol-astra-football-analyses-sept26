@@ -7,6 +7,7 @@ export interface PlaylistClip {
   end: number;
   title?: string;
   notes: string;
+  evidenceIds?: string[];
   sourceEndFrameExclusive: number;
 }
 
@@ -51,6 +52,7 @@ export function playlistClipsFromCorrections(
       end,
       title: typeof payload.title === 'string' ? payload.title : '',
       notes: typeof payload.notes === 'string' ? payload.notes : '',
+      evidenceIds: Array.isArray(payload.evidenceIds) ? payload.evidenceIds.filter((id): id is string => typeof id === 'string') : undefined,
       sourceEndFrameExclusive: Number.isFinite(exclusive) ? exclusive : 0,
     });
   }
