@@ -252,7 +252,9 @@ def create_match_detail_router(
         match: MatchRecord = Depends(require_match), generationId: str = "", start: float = 0.0, end: float = 0.0,
     ) -> FileResponse:
         from .workbench.media import FfmpegProbe
-        from .workbench.media_execution import MediaExecutionPolicy
+        from .workbench.media_execution import (
+            DecoderFailed, MediaExecutionPolicy, MediaResourceLimit, TruncatedStream,
+        )
 
         if match.inputMode != "video":
             raise HTTPException(status_code=409, detail="Clip export requires source video")
@@ -267,10 +269,19 @@ def create_match_detail_router(
         temporary = Path(tempfile.mkdtemp(prefix="clip-", dir=storage.storage_root))
         output = temporary / "clip.mp4"
         try:
-            FfmpegProbe(policy=MediaExecutionPolicy(max_width=4096, max_height=2160)).export_clip(
+            # A saved interval is already bounded by its source, so the diagnostic
+            # 120 s clip ceiling does not apply here.
+            FfmpegProbe(policy=MediaExecutionPolicy(max_width=4096, max_height=2160,
+                                                    max_duration_seconds=10_800)).export_clip(
                                       storage.get_match_input_path(match.id), output,
                                       start_seconds=start, duration_seconds=end - start, frame_exact=True)
-        except Exception:
+        except MediaResourceLimit as exc:
+            shutil.rmtree(temporary)
+            raise HTTPException(status_code=413, detail=f"Clip export exceeds media limits: {exc}") from exc
+        except (ValueError, DecoderFailed, TruncatedStream) as exc:
+            shutil.rmtree(temporary)
+            raise HTTPException(status_code=422, detail=f"Clip could not be exported: {exc}") from exc
+        except BaseException:
             shutil.rmtree(temporary)
             raise
         return FileResponse(output, media_type="video/mp4", filename=f"{match.id}-clip.mp4",

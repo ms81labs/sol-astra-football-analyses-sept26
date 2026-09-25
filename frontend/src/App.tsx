@@ -650,8 +650,13 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
     const workspaceRequestId = activeWorkspaceRequestRef.current;
     setReportEvidenceNotice(null);
     if (reference.kind === 'event') {
+      // The backend formats the timestamp with Python float repr (12.0), JS as 12:
+      // compare the parsed number, not the string.
+      const [frameText, type, ...timestampParts] = reference.localId.split(':');
+      const timestampText = timestampParts.join(':');
       const event = activeMatch.backendEvents.find((item) =>
-        reference.localId === `${item.frameId}:${item.type}:${item.timestamp}` && item.reviewStatus !== 'rejected');
+        String(item.frameId) === frameText && item.type === type && timestampText !== ''
+        && Number(timestampText) === item.timestamp && item.reviewStatus !== 'rejected');
       if (!event) {
         setSelectedSearch(null);
         setReportEvidenceNotice('Report evidence is unavailable in this generation.');
@@ -665,7 +670,9 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
       let frame = matchData.find((item) => String(item.Frame_ID) === reference.localId);
       if (!frame && /^(0|[1-9]\d*)$/.test(reference.localId) && Number.isSafeInteger(Number(reference.localId))) {
         try {
-          const page = await fetchMatchFrames(activeMatch.id, { afterFrame: Number(reference.localId), limit: 1,
+          // Load a full page from the cited frame, as playback paging does, so the
+          // view is not left holding a single frame.
+          const page = await fetchMatchFrames(activeMatch.id, { afterFrame: Number(reference.localId),
             generationId: reference.generationId });
           if (requestId !== reportEvidenceRequestRef.current || workspaceRequestId !== activeWorkspaceRequestRef.current
             || activeMatchIdRef.current !== reference.matchId || activeGenerationRef.current !== reference.generationId) return;
@@ -821,7 +828,11 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
       frameCount: Math.max(timelineWindow.frameCount, 1), events, reviewRange: review.reviewRange });
     if (next.isPlaying !== isPlaying) setIsPlaying(next.isPlaying);
     if (next.currentFrame !== currentFrame) handleSeek(next.currentFrame);
-    if (next.reviewRange?.startFrame !== review.reviewRange?.startFrame || next.reviewRange?.endFrame !== review.reviewRange?.endFrame) review.setReviewRange(next.reviewRange);
+    if (next.reviewRange?.startFrame !== review.reviewRange?.startFrame || next.reviewRange?.endFrame !== review.reviewRange?.endFrame) {
+      // Manual marks replace a selected search hit's interval, as a timeline drag does.
+      setSelectedSearch(null);
+      review.setReviewRange(next.reviewRange);
+    }
     if ((action === 'accept' || action === 'reject') && activeMatch) {
       const kind = action === 'accept' ? 'event_accept' : 'event_reject';
       const reviewed = next.events.find((event) => event.frame === next.currentFrame);

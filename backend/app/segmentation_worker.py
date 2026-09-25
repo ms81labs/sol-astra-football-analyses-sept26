@@ -11,7 +11,6 @@ import shutil
 import stat
 import tempfile
 from collections.abc import Callable, Mapping
-from collections import Counter
 from fractions import Fraction
 from io import BytesIO
 from pathlib import Path, PurePosixPath
@@ -51,7 +50,7 @@ def stage_sam_source_window(source: Path, request: SegmentationRequest, workspac
     from PIL import Image
     from .remote_contracts import canonical_json_bytes
     from .workbench.media import (FfmpegProbe, _ShowinfoParser,
-        _assert_safe_ffmpeg_argv, _run_bounded_media_process)
+        _assert_safe_ffmpeg_argv, _run_bounded_media_process, verified_source_pts_index)
     from .workbench.media_execution import MediaExecutionPolicy
 
     if type(timeout_seconds) not in (int, float) or not math.isfinite(timeout_seconds) \
@@ -78,24 +77,10 @@ def stage_sam_source_window(source: Path, request: SegmentationRequest, workspac
     if identity.sourceSha256 != request.sourceSha256 or (identity.width, identity.height) != \
             (request.width, request.height) or not identity.timeBaseNum or not identity.timeBaseDen:
         raise ValueError("shadow source identity mismatch")
-    command = [probe.ffprobe, "-protocol_whitelist", "file,pipe", "-threads", str(policy.threads),
-        "-v", "error", "-select_streams", "v:0", "-show_entries",
-        "frame=best_effort_timestamp", "-of", "csv=p=0", str(source)]
-    _assert_safe_ffmpeg_argv(command)
-    index = _run_bounded_media_process(command, timeout=min(30, timeout_seconds),
-        output_cap=policy.captured_output_bytes, file_cap=policy.max_file_bytes, policy=policy)
-    if index.returncode != 0:
-        raise ValueError("shadow source frame index unavailable")
-    rows = [line.strip().rstrip(",") for line in index.stdout.decode().splitlines() if line.strip()]
-    if len(rows) > policy.max_frames or any(not re.fullmatch(r"-?\d+", row) for row in rows):
-        raise ValueError("shadow source frame index ambiguous")
-    ticks = [int(row) for row in rows]
-    counts = Counter(ticks)
-    time_base = Fraction(identity.timeBaseNum, identity.timeBaseDen)
-    if any(frame.frameId >= len(ticks) or counts[ticks[frame.frameId]] != 1 or not math.isclose(
-        float(ticks[frame.frameId] * time_base), frame.ptsSeconds, rel_tol=0, abs_tol=1e-6)
-        for frame in request.frames):
-        raise ValueError("shadow source frame PTS mismatch")
+    ticks = verified_source_pts_index(probe, source, policy,
+        time_base=Fraction(identity.timeBaseNum, identity.timeBaseDen),
+        expected={frame.frameId: frame.ptsSeconds for frame in request.frames},
+        timeout=min(30, timeout_seconds), mismatch_message="shadow source frame PTS mismatch")
     root = Path(tempfile.mkdtemp(prefix="sam-window-", dir=workspace))
     os.chmod(root, 0o700)
     try:
@@ -275,17 +260,14 @@ def run_sam3_multiplex_window(window_root: Path, checkpoint_path: Path,
                             or int(object_id) in seen_objects:
                         raise ValueError("SAM output object identity is invalid")
                     seen_objects.add(int(object_id))
-                    counts = [0]
-                    foreground = False
-                    for pixel in mask.T.flat:
-                        value = bool(pixel)
-                        if value != foreground:
-                            counts.append(0)
-                            foreground = value
-                            total_runs += 1
-                            if total_runs > 4_000_000:
-                                raise ValueError("SAM mask output exceeds byte limit")
-                        counts[-1] += 1
+                    # Column-major RLE starting with a background run, vectorised.
+                    flat = mask.T.reshape(-1)
+                    changes = np.flatnonzero(flat[1:] != flat[:-1]) + 1
+                    total_runs += len(changes) + int(flat[0])
+                    if total_runs > 4_000_000:
+                        raise ValueError("SAM mask output exceeds byte limit")
+                    runs = np.diff(np.concatenate(([0], changes, [flat.size]))).tolist()
+                    counts = [0, *runs] if flat[0] else runs
                     frame = request.frames[index]
                     masks.append(FrameMask(objectId=by_id[int(object_id)], sourceFrameId=frame.frameId,
                         ptsSeconds=frame.ptsSeconds,
@@ -644,7 +626,7 @@ def preflight_shadow_window(storage, match_id: str, generation_id: str, payload:
             for item in request.frames) \
             or request.baseTrackingDigest != digest([frame.model_dump(mode="json") for frame in frames]):
         raise ValueError("shadow frames do not match frozen tracking")
-    from .workbench.media import FfmpegProbe, _assert_safe_ffmpeg_argv, _run_bounded_media_process
+    from .workbench.media import FfmpegProbe, verified_source_pts_index
     from .workbench.media_execution import MediaExecutionPolicy
 
     timeout = min(30.0, deadline_seconds)
@@ -659,26 +641,16 @@ def preflight_shadow_window(storage, match_id: str, generation_id: str, payload:
     if (media_identity.sourceSha256 != source_sha or (request.width, request.height) != (media_identity.width, media_identity.height)
             or not media_identity.timeBaseNum or not media_identity.timeBaseDen):
         raise ValueError("shadow source dimensions or identity mismatch")
-    command = [probe.ffprobe, "-protocol_whitelist", "file,pipe", "-threads", str(policy.threads),
-        "-v", "error", "-select_streams", "v:0", "-show_entries", "frame=best_effort_timestamp",
-        "-of", "csv=p=0", str(source)]
-    _assert_safe_ffmpeg_argv(command)
-    result = _run_bounded_media_process(command, timeout=timeout,
-        output_cap=policy.captured_output_bytes, file_cap=policy.max_file_bytes, policy=policy)
-    if cancellation_requested():
-        raise ValueError("shadow job cancelled during preflight")
-    if result.returncode != 0:
-        raise ValueError("shadow source frame index unavailable")
-    rows = [line.strip().rstrip(",") for line in result.stdout.decode().splitlines() if line.strip()]
-    if len(rows) > policy.max_frames or any(not re.fullmatch(r"-?\d+", row) for row in rows):
-        raise ValueError("shadow source frame index ambiguous")
-    ticks = [int(row) for row in rows]
-    tick_counts = Counter(ticks)
-    time_base = Fraction(media_identity.timeBaseNum, media_identity.timeBaseDen)
-    if any(item.frameId >= len(ticks) or tick_counts[ticks[item.frameId]] != 1
-           or not math.isclose(float(ticks[item.frameId] * time_base), item.ptsSeconds,
-                               rel_tol=0, abs_tol=1e-6) for item in request.frames):
-        raise ValueError("shadow source frame PTS mismatch")
+    try:
+        verified_source_pts_index(probe, source, policy,
+            time_base=Fraction(media_identity.timeBaseNum, media_identity.timeBaseDen),
+            expected={item.frameId: item.ptsSeconds for item in request.frames},
+            timeout=timeout, cancelled=cancellation_requested,
+            mismatch_message="shadow source frame PTS mismatch")
+    except ValueError as exc:
+        if cancellation_requested():
+            raise ValueError("shadow job cancelled during preflight") from exc
+        raise
     for path, expected, label in ((source, source_sha, "source"),
                                   (checkpoint, checkpoint_sha, "checkpoint")):
         if path.is_symlink() or not stat.S_ISREG(path.stat(follow_symlinks=False).st_mode) \

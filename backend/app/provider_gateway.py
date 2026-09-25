@@ -437,10 +437,18 @@ class ProviderGateway:
         prepared = build_astra_request(prompt, approved_images, approved_images=images,
             max_output_tokens=spend.max_output_tokens, task_type=task_type)
         request_id = "provider:" + hashlib.sha256(json.dumps([match_id, request_key]).encode()).hexdigest()
+        # Proposal keys are deterministic, so an attempt that failed before dispatch
+        # (no charge) must be retryable under the same key rather than dead forever.
+        try:
+            previous = self.budget_ledger.ledger.latest_attempt(request_id)
+        except KeyError:
+            previous = None
+        retry_anchor = previous.attemptId if previous is not None and previous.status == "failed" \
+            and self.budget_ledger.result(request_id) is None else None
         policy = self.resolve_policy(live_match, requested_provider="cloud", task_type=task_type,
             generation_id=generation_id, require_provider=True, prompt=prompt,
             request_id=request_id, source_identity=source_sha, adapter=adapter,
-            visual_images=images, prepared_request=prepared)
+            retry_of_attempt_id=retry_anchor, visual_images=images, prepared_request=prepared)
         ticket = policy.ticket
         if ticket is None:
             raise ProviderDenied(["PROVIDER_RESERVATION_MISSING"])
@@ -530,17 +538,21 @@ class ProviderGateway:
             image_payloads=inputs["visual_image_payloads"])
         if replay:
             return raw
-        draft = EventProposalDraft.model_validate(raw)
+        # The attempt is already complete and billed. An unusable answer is recorded
+        # as "no suggestion" so the request key replays instead of failing forever.
+        try:
+            draft = EventProposalDraft.model_validate(raw)
+        except ValueError:  # includes pydantic ValidationError
+            draft = None
         with self.storage.generations.guard(match_id, "publication"):
             if self.storage.generations.resolve(match_id).generationId != generation_id:
                 raise StaleEvidenceGeneration("Evidence changed during event proposal")
             if policy_revision(self.storage.get_match(match_id), self.settings) != revision \
                     or self.storage.source_sha256(match_id) != source_sha:
                 raise StaleReportPolicy("Policy or source changed during event proposal")
-            if draft.frameId not in frame_times:
-                raise ValueError("Proposed frame is not in the approved source images")
+            rejected = draft is None or (draft.type != "none" and draft.frameId not in frame_times)
             proposal = None
-            if draft.type != "none":
+            if not rejected and draft.type != "none":
                 proposal = ModelEventProposal(type=draft.type, frameId=draft.frameId,
                     timestamp=frame_times[draft.frameId], intervalStart=interval_start,
                     intervalEnd=interval_end, team=draft.team, description=draft.description,
@@ -549,6 +561,8 @@ class ProviderGateway:
             result = {"schemaVersion": "event_proposal_receipt_v1", "requestId": request_id,
                 "matchId": match_id, "generationId": generation_id, "sourceSha256": source_sha,
                 "modelId": policy.model_id, "modelVersion": policy.model_id, "proposal": proposal}
+            if rejected:
+                result["modelOutputRejected"] = True
             self.budget_ledger.save_result(request_id, result)
         return result
 
@@ -583,11 +597,20 @@ class ProviderGateway:
             live_match=live_match, prompt=prompt, request_key=body["requestId"], frames=[])
         if replay:
             return raw
-        draft = QueryProposalDraft.model_validate(raw)
-        if draft.status == "query":
-            fields = draft.query.model_dump(mode="json", exclude_none=True)
+        # The attempt is already complete and billed: record an unusable filter as an
+        # unsupported answer so the same request key replays rather than failing forever.
+        try:
+            draft = QueryProposalDraft.model_validate(raw)
             query = validate_query_proposal({"matchId": match_id, "generationId": generation_id,
-                "query": fields}, match_id=match_id, generation_id=generation_id)
+                "query": draft.query.model_dump(mode="json", exclude_none=True)},
+                match_id=match_id, generation_id=generation_id) if draft.status == "query" else None
+        except ValueError:  # includes pydantic ValidationError
+            draft, query = None, None
+        if draft is None:
+            search = {"query": {"unanswerable": True, "reason": "invalid_model_output"},
+                "interpreted": None, "unsupportedTerms": [], "results": [],
+                "unknownLocationCount": 0, "coverageState": "unsupported"}
+        elif query is not None:
             with self.storage.generation_snapshot(match_id, generation_id=generation_id):
                 search = self.storage.query_match_events(match_id, query)
         else:

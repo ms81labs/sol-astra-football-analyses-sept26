@@ -3020,6 +3020,31 @@ describe('App analysis provider capabilities', () => {
     expect(screen.getByText(/Selected evidence: event:1:turnover:4.2/)).toBeTruthy();
   });
 
+  it('matches a whole-second report event written with Python float formatting', async () => {
+    mockReadyReviewMatch();
+    stubPitchCanvas();
+    const snapshot = reviewWorkspace();
+    snapshot.frames = [snapshot.frames[0], { ...snapshot.frames[0], Frame_ID: 1, Timestamp: 12 }];
+    snapshot.frameCount = 2;
+    snapshot.events = [{ eventId: 'ev-1', type: 'turnover', frameId: 1, timestamp: 12,
+      intervalStart: 12, intervalEnd: 12.4, description: 'Turnover' }];
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(snapshot);
+    vi.mocked(api.runMatchAnalysis).mockResolvedValue({ matchId: 'match-review', generationId: 'g-match-review',
+      status: 'current', grounding: 'referenced', observations: [{ text: 'Turnover', grounding: 'referenced',
+        evidence: [{ matchId: 'match-review', generationId: 'g-match-review', kind: 'event', localId: '1:turnover:12.0' }] }] });
+    render(<App runtimeCapabilities={localOnlyCapabilities} />);
+    await screen.findByText('Review Match');
+    fireEvent.click(screen.getByRole('button', { name: 'Report' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Full Report' }));
+    fireEvent.click(await screen.findByRole('button', { name: /event:1:turnover:12\.0/i }));
+    expect(screen.getByText(/Selected source interval: 12s to 12.4s/)).toBeTruthy();
+    expect(screen.queryByText(/Report evidence is unavailable/i)).toBeNull();
+    // A manual mark replaces the hit's interval, so the selection must be dropped.
+    fireEvent.keyDown(window, { key: ',' });
+    fireEvent.keyDown(window, { key: 'i' });
+    await waitFor(() => expect(screen.queryByText(/Selected source interval: 12s to 12.4s/)).toBeNull());
+  });
+
   it('loads a report frame outside the current page and reports a missing event', async () => {
     mockReadyReviewMatch();
     stubPitchCanvas();
@@ -3040,6 +3065,8 @@ describe('App analysis provider capabilities', () => {
     await waitFor(() => expect(api.fetchMatchFrames).toHaveBeenCalledWith('match-review', expect.objectContaining({
       afterFrame: 7, generationId: 'g-match-review',
     })));
+    // A full page is requested, not a single frame that would replace the loaded window.
+    expect(vi.mocked(api.fetchMatchFrames).mock.calls.at(-1)?.[1]).not.toHaveProperty('limit');
     expect(await screen.findByText(/Selected source interval: 1.4s to 1.4s/)).toBeTruthy();
     fireEvent.click(screen.getByRole('button', { name: /event:7:shot:1.4/i }));
     expect(screen.getByText(/Report evidence is unavailable in this generation/i)).toBeTruthy();

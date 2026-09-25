@@ -42,6 +42,27 @@ def test_exact_clip_keeps_only_source_frames_in_nonzero_half_open_interval(tmp_p
     assert pixels[1][2] > pixels[1][0] and pixels[1][2] > pixels[1][1]  # blue
 
 
+
+@pytest.mark.real_media
+def test_exact_clip_keeps_first_frame_at_fractional_frame_rate(tmp_path: Path) -> None:
+    ffmpeg = str(resolve_trusted_executable("ffmpeg"))
+    colors = ((240, 0, 0), (0, 240, 0), (0, 0, 240), (240, 240, 0), (0, 240, 240), (240, 0, 240))
+    for index, color in enumerate(colors):
+        (tmp_path / f"frame-{index}.ppm").write_bytes(b"P6\n16 16\n255\n" + bytes(color) * (16 * 16))
+    source = tmp_path / "source.mp4"
+    subprocess.run([ffmpeg, "-hide_banner", "-loglevel", "error", "-framerate", "30000/1001",
+                    "-i", str(tmp_path / "frame-%d.ppm"), "-pix_fmt", "yuv420p", "-y", str(source)],
+                   check=True, timeout=20)
+    output = tmp_path / "selected.mp4"
+    # Frame 2 starts at 2002/30000 s; rounding -ss to 0.067 would drop it.
+    FfmpegProbe().export_clip(source, output, start_seconds=2 * 1001 / 30000,
+                              duration_seconds=2 * 1001 / 30000, frame_exact=True)
+    decoded = subprocess.run([ffmpeg, "-hide_banner", "-loglevel", "error", "-i", str(output),
+                              "-f", "rawvideo", "-pix_fmt", "rgb24", "-"],
+                             capture_output=True, check=True, timeout=20).stdout
+    first = decoded[:3]
+    assert first[2] > first[0] and first[2] > first[1]  # blue: source frame 2
+
 @pytest.mark.integration
 @pytest.mark.real_media
 def test_saved_source_interval_downloads_playable_clip_and_rejects_unsaved_range(tmp_path: Path) -> None:

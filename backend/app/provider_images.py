@@ -60,8 +60,11 @@ def resolve_provider_image(
     if not isinstance(reference, ProviderImage):
         raise TypeError("approved image reference required")
     ref = ProviderImage.model_validate(reference.model_dump())
+    # The stored evidence clock and the decoder PTS clock can differ by float
+    # rounding; admission already bound them with the same 1e-6 tolerance.
+    frame_time = source_frames.get(ref.sourceFrameId)
     if (ref.matchId, ref.generationId, ref.sourceSha256) != (match_id, generation_id, source_sha256) \
-            or source_frames.get(ref.sourceFrameId) != ref.ptsSeconds:
+            or frame_time is None or not math.isclose(frame_time, ref.ptsSeconds, rel_tol=0, abs_tol=1e-6):
         raise ValueError("image source scope or frame time mismatch")
     if approved_images.get(ref.imageSha256) != ref:
         raise ValueError("image artifact is not approved")
@@ -160,7 +163,7 @@ def select_source_image_manifest(storage, match_id: str, generation_id: str,
     from .workbench.hashing import stream_sha256
     from .workbench.media import (
         DecodedFrame, FfmpegProbe, _ShowinfoParser, _assert_safe_ffmpeg_argv,
-        _run_bounded_media_process,
+        _run_bounded_media_process, verified_source_pts_index,
     )
     from .workbench.media_execution import MediaExecutionPolicy
 
@@ -194,28 +197,14 @@ def select_source_image_manifest(storage, match_id: str, generation_id: str,
         time_base = (identity.timeBaseNum, identity.timeBaseDen)
         if not all(isinstance(value, int) and value > 0 for value in time_base):
             raise ValueError("retained source has no exact time base")
-        index_command = [probe.ffprobe, "-protocol_whitelist", "file,pipe",
-            "-threads", str(policy.threads), "-v", "error", "-select_streams", "v:0",
-            "-show_entries", "frame=best_effort_timestamp", "-of", "csv=p=0", str(source)]
-        _assert_safe_ffmpeg_argv(index_command)
-        index_result = _run_bounded_media_process(index_command,
-            timeout=policy.job_timeout_seconds, output_cap=policy.captured_output_bytes,
-            file_cap=policy.max_file_bytes, policy=policy)
-        if index_result.returncode != 0:
-            raise ValueError("retained source frame index could not be verified")
-        rows = [line.strip().rstrip(",") for line in index_result.stdout.decode().splitlines() if line.strip()]
-        if len(rows) > policy.max_frames or any(not re.fullmatch(r"-?\d+", row) for row in rows):
-            raise ValueError("retained source frame index has ambiguous timing")
-        pts_by_frame = [int(row) for row in rows]
+        pts_by_frame = verified_source_pts_index(probe, source, policy,
+            time_base=Fraction(*time_base), timeout=policy.job_timeout_seconds,
+            expected={frame_id: selected[frame_id].timestamp for frame_id in source_frame_ids},
+            mismatch_message="selected source frame identity does not match current evidence")
         store = ArtifactStore(storage.storage_root / "artifacts")
         references = []
         for frame_id in source_frame_ids:
             expected = selected[frame_id].timestamp
-            if frame_id >= len(pts_by_frame) or pts_by_frame.count(pts_by_frame[frame_id]) != 1 or not math.isclose(
-                float(Fraction(pts_by_frame[frame_id] * time_base[0], time_base[1])),
-                expected, rel_tol=0, abs_tol=1e-6
-            ):
-                raise ValueError("selected source frame identity does not match current evidence")
             command = [probe.ffmpeg, "-hide_banner", "-nostdin", "-loglevel", "info",
                 "-protocol_whitelist", "file,pipe", "-threads", str(policy.threads),
                 "-noautorotate", "-ss", str(expected), "-copyts", "-i", str(source),

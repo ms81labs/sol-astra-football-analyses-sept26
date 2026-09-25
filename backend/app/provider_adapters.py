@@ -190,7 +190,7 @@ def bound_astra_request(body: dict[str, Any], *, input_price_per_million: str,
     input_tokens = 2 * text_bytes + 4096 + image_tokens
     input_price, output_price, limit = (money(item) for item in
         (input_price_per_million, output_price_per_million, authorised_limit))
-    if not 0 < input_price and 0 < output_price and 0 < limit:
+    if not (0 < input_price and 0 < output_price and 0 < limit):
         raise ValueError("positive verified prices and authorised budget required")
     maximum = ((input_tokens * input_price + output_limit * output_price) / Decimal(1_000_000)).quantize(
         Decimal("0.000000000001"), rounding=ROUND_UP)

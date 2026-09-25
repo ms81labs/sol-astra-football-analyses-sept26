@@ -1,5 +1,6 @@
 """W06: visual evidence must be a bounded source image, not FrameData JSON."""
 
+import math
 import hashlib
 import json
 from io import BytesIO
@@ -39,6 +40,18 @@ def test_approved_source_image_resolves_exact_artifact(tmp_path):
         source_sha256="a" * 64, source_frames={8: 0.5},
         approved_images={reference.imageSha256: reference}) == payload
 
+
+
+def test_evidence_clock_rounding_does_not_reject_an_admitted_image(tmp_path):
+    store, reference, payload = _fixture(tmp_path)
+    approved = {reference.imageSha256: reference}
+    # OpenCV msec/1000 and float(Fraction(pts, den)) can differ by one ULP.
+    assert resolve_provider_image(store, reference, match_id="match-1", generation_id="gen-1",
+        source_sha256="a" * 64, source_frames={8: math.nextafter(0.5, 1.0)},
+        approved_images=approved) == payload
+    with pytest.raises(ValueError, match="frame time"):
+        resolve_provider_image(store, reference, match_id="match-1", generation_id="gen-1",
+            source_sha256="a" * 64, source_frames={8: 0.50001}, approved_images=approved)
 
 @pytest.mark.parametrize("change", [
     {"generationId": "gen-2"}, {"sourceSha256": "b" * 64},
