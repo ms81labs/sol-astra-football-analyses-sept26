@@ -1466,6 +1466,276 @@ def _summary_metric_availability(
     ]
 
 
+def _append_same_team_pass_events(
+    previous_segment: OwnershipSegment,
+    current_segment: OwnershipSegment,
+    current_frame: FrameData,
+    previous_position: tuple[float, float] | None,
+    current_position: tuple[float, float] | None,
+    events: list[DetectedEvent],
+) -> None:
+    """Append a resolved-team pass and its derived suggestions in original order."""
+    if current_segment.start.team == "unassigned":
+        return
+    events.append(
+        DetectedEvent(
+            type="pass",
+            frameId=current_segment.start.frameId,
+            timestamp=current_segment.start.timestamp,
+            team=current_segment.start.team,
+            fromTrackId=previous_segment.end.trackId,
+            toTrackId=current_segment.start.trackId,
+            description=f"Pass from #{previous_segment.end.trackId} to #{current_segment.start.trackId}",
+        )
+    )
+    if current_segment.start.team in CONTROLLED_TEAMS:
+        opponents = current_frame.enemies if current_segment.start.team == "my_team" else current_frame.myTeam
+        if (
+            len(opponents) >= MIN_VISIBLE_DEFENDERS_FOR_LINE_BREAK
+            and previous_position is not None
+            and current_position is not None
+            and not _is_attacking_wide(current_segment.start.team, previous_position)
+            and _is_forward_progression(current_segment.start.team, previous_position[0], current_position[0])
+            and _is_advanced_target(current_segment.start.team, current_position[0])
+            and _count_broken_lines(current_segment.start.team, previous_position[0], current_position[0], opponents) >= 1
+        ):
+            events.append(
+                DetectedEvent(
+                    type="through_ball",
+                    frameId=current_segment.start.frameId,
+                    timestamp=current_segment.start.timestamp,
+                    team=current_segment.start.team,
+                    fromTrackId=previous_segment.end.trackId,
+                    toTrackId=current_segment.start.trackId,
+                    description=f"Through ball from #{previous_segment.end.trackId} to #{current_segment.start.trackId}",
+                )
+            )
+        if (
+            previous_position is not None
+            and current_position is not None
+            and _is_attacking_wide(previous_segment.end.team, previous_position)
+            and _is_attacking_box(current_segment.start.team, current_position)
+        ):
+            events.append(
+                DetectedEvent(
+                    type="cross",
+                    frameId=current_segment.start.frameId,
+                    timestamp=current_segment.start.timestamp,
+                    team=current_segment.start.team,
+                    fromTrackId=previous_segment.end.trackId,
+                    toTrackId=current_segment.start.trackId,
+                    description=f"Cross from #{previous_segment.end.trackId} to #{current_segment.start.trackId}",
+                )
+            )
+
+
+def _append_turnover_events(
+    previous_segment: OwnershipSegment,
+    current_segment: OwnershipSegment,
+    current_frame: FrameData,
+    previous_position: tuple[float, float] | None,
+    current_position: tuple[float, float] | None,
+    events: list[DetectedEvent],
+) -> None:
+    """Append the turnover before any pressure-based tackle or interception."""
+    events.append(
+        DetectedEvent(
+            type="turnover",
+            frameId=current_segment.start.frameId,
+            timestamp=current_segment.start.timestamp,
+            team=current_segment.start.team,
+            fromTrackId=previous_segment.end.trackId,
+            toTrackId=current_segment.start.trackId,
+            description=f"Possession changed to {current_segment.start.team.replace('_', ' ')}",
+        )
+    )
+    if previous_position is None:
+        previous_position = _lookup_player_position(current_frame, previous_segment.end.team, previous_segment.end.trackId)
+    if (
+        previous_position is not None
+        and current_position is not None
+        and current_segment.start.team in CONTROLLED_TEAMS
+        and previous_segment.end.team in CONTROLLED_TEAMS
+    ):
+        pressure_distance = sqrt((previous_position[0] - current_position[0]) ** 2 + (previous_position[1] - current_position[1]) ** 2)
+        if pressure_distance <= 6.0:
+            events.append(
+                DetectedEvent(
+                    type="tackle",
+                    frameId=current_segment.start.frameId,
+                    timestamp=current_segment.start.timestamp,
+                    team=current_segment.start.team,
+                    fromTrackId=previous_segment.end.trackId,
+                    toTrackId=current_segment.start.trackId,
+                    description=f"Tackle won by #{current_segment.start.trackId}",
+                )
+            )
+        elif _is_interception(previous_position, current_position):
+            events.append(
+                DetectedEvent(
+                    type="interception",
+                    frameId=current_segment.start.frameId,
+                    timestamp=current_segment.start.timestamp,
+                    team=current_segment.start.team,
+                    fromTrackId=previous_segment.end.trackId,
+                    toTrackId=current_segment.start.trackId,
+                    description=f"Interception by #{current_segment.start.trackId}",
+                )
+            )
+
+
+def _is_repeat_static_recovery(
+    current_segment: OwnershipSegment,
+    current_frame: FrameData,
+    frame_by_id: dict[int, FrameData],
+    events: list[DetectedEvent],
+) -> bool:
+    """Inspect prior recoveries with the existing owner, time and movement rules."""
+    suppress_recovery = False
+    if current_segment.start.team in PLAYER_CONTROL_TEAMS and current_segment.start.trackId is not None:
+        for prior_recovery in reversed(events):
+            if prior_recovery.type != "recovery":
+                continue
+            if prior_recovery.team != current_segment.start.team or prior_recovery.toTrackId != current_segment.start.trackId:
+                continue
+            if current_segment.start.timestamp - prior_recovery.timestamp > MAX_STATIC_NEUTRAL_RECOVERY_GAP_SECONDS:
+                break
+            last_recovery_frame = frame_by_id.get(prior_recovery.frameId)
+            ball_displacement = _ball_displacement(
+                last_recovery_frame.ball if last_recovery_frame is not None else None,
+                current_frame.ball,
+            )
+            if (
+                ball_displacement is not None
+                and ball_displacement <= MAX_STATIC_NEUTRAL_BALL_DISPLACEMENT
+            ):
+                suppress_recovery = True
+                break
+    return suppress_recovery
+
+
+def _append_loose_ball_events(
+    index: int,
+    current_segment: OwnershipSegment,
+    segments: list[OwnershipSegment],
+    canonical_frames: list[FrameData],
+    frame_by_id: dict[int, FrameData],
+    current_frame: FrameData,
+    current_position: tuple[float, float] | None,
+    events: list[DetectedEvent],
+) -> None:
+    """Preserve short pass bridges, recovery suppression and neutral carries."""
+    emitted_same_team_pass = False
+    if index > 0:
+        pre_loose_segment = segments[index - 1]
+        if (
+            pre_loose_segment.end.team in CONTROLLED_TEAMS
+            and current_segment.start.team == pre_loose_segment.end.team
+            and pre_loose_segment.end.trackId is not None
+            and current_segment.start.trackId is not None
+            and pre_loose_segment.end.trackId != current_segment.start.trackId
+            and current_segment.start.timestamp - pre_loose_segment.end.timestamp <= MAX_DEAD_BALL_BRIDGE_SECONDS
+        ):
+            events.append(
+                DetectedEvent(
+                    type="pass",
+                    frameId=current_segment.start.frameId,
+                    timestamp=current_segment.start.timestamp,
+                    team=current_segment.start.team,
+                    fromTrackId=pre_loose_segment.end.trackId,
+                    toTrackId=current_segment.start.trackId,
+                    description=f"Pass from #{pre_loose_segment.end.trackId} to #{current_segment.start.trackId}",
+                )
+            )
+            emitted_same_team_pass = True
+
+    suppress_recovery = _is_repeat_static_recovery(current_segment, current_frame, frame_by_id, events)
+
+    if not suppress_recovery and not emitted_same_team_pass:
+        events.append(
+            DetectedEvent(
+                type="recovery",
+                frameId=current_segment.start.frameId,
+                timestamp=current_segment.start.timestamp,
+                team=current_segment.start.team,
+                toTrackId=current_segment.start.trackId,
+                description=f"{current_segment.start.team.replace('_', ' ').title()} recovered the ball",
+            )
+        )
+    if (
+        current_segment.start.team == "unassigned"
+        and current_segment.start.trackId is not None
+        and index > 0
+    ):
+        pre_loose_segment = segments[index - 1]
+        pre_loose_frame = canonical_frames[pre_loose_segment.endIndex]
+        pre_loose_position = _lookup_player_position(
+            pre_loose_frame,
+            pre_loose_segment.end.team,
+            pre_loose_segment.end.trackId,
+        )
+        loose_gap_seconds = current_segment.start.timestamp - pre_loose_segment.end.timestamp
+        if (
+            pre_loose_segment.end.team == "unassigned"
+            and pre_loose_segment.end.trackId == current_segment.start.trackId
+            and pre_loose_position is not None
+            and current_position is not None
+            and loose_gap_seconds <= MAX_NEUTRAL_CARRY_GAP_SECONDS
+            and _is_neutral_progression(
+                pre_loose_position[0],
+                current_position[0],
+            )
+        ):
+            events.append(
+                DetectedEvent(
+                    type="carry",
+                    frameId=current_segment.start.frameId,
+                    timestamp=current_segment.start.timestamp,
+                    team="unassigned",
+                    fromTrackId=current_segment.start.trackId,
+                    toTrackId=current_segment.start.trackId,
+                    description=f"Carry by #{current_segment.start.trackId}",
+                )
+            )
+
+
+def _append_controlled_carry_events(
+    segments: list[OwnershipSegment],
+    canonical_frames: list[FrameData],
+    events: list[DetectedEvent],
+) -> None:
+    """Append within-owner carries only after transition events are collected."""
+    for segment in segments:
+        if (
+            segment.start.team not in CONTROLLED_TEAMS
+            or segment.start.trackId is None
+            or segment.startIndex >= segment.endIndex
+        ):
+            continue
+
+        start_frame = canonical_frames[segment.startIndex]
+        end_frame = canonical_frames[segment.endIndex]
+        start_position = _lookup_player_position(start_frame, segment.start.team, segment.start.trackId)
+        end_position = _lookup_player_position(end_frame, segment.end.team, segment.end.trackId)
+        if start_position is None or end_position is None:
+            continue
+
+        if not _segment_forward_progression(segment.start.team, start_position[0], end_position[0]):
+            continue
+
+        events.append(
+            DetectedEvent(
+                type="carry",
+                frameId=segment.end.frameId,
+                timestamp=segment.end.timestamp,
+                team=segment.start.team,
+                fromTrackId=segment.start.trackId,
+                toTrackId=segment.end.trackId,
+                description=f"Carry by #{segment.start.trackId}",
+            )
+        )
+
+
 def detect_events(frames: list[FrameData | dict], assignments: list[BallOwnership], *, attack_direction: str = "left_to_right") -> list[DetectedEvent]:
     canonical_frames = [frame if isinstance(frame, FrameData) else FrameData.model_validate(frame) for frame in frames]
     canonical_frames = _oriented_frames(canonical_frames, attack_direction)
@@ -1510,58 +1780,10 @@ def detect_events(frames: list[FrameData | dict], assignments: list[BallOwnershi
             and current_segment.start.trackId is not None
             and previous_segment.end.trackId != current_segment.start.trackId
         ):
-            if current_segment.start.team == "unassigned":
-                continue
-            events.append(
-                DetectedEvent(
-                    type="pass",
-                    frameId=current_segment.start.frameId,
-                    timestamp=current_segment.start.timestamp,
-                    team=current_segment.start.team,
-                    fromTrackId=previous_segment.end.trackId,
-                    toTrackId=current_segment.start.trackId,
-                    description=f"Pass from #{previous_segment.end.trackId} to #{current_segment.start.trackId}",
-                )
+            _append_same_team_pass_events(
+                previous_segment, current_segment, current_frame,
+                previous_position, current_position, events,
             )
-            if current_segment.start.team in CONTROLLED_TEAMS:
-                opponents = current_frame.enemies if current_segment.start.team == "my_team" else current_frame.myTeam
-                if (
-                    len(opponents) >= MIN_VISIBLE_DEFENDERS_FOR_LINE_BREAK
-                    and previous_position is not None
-                    and current_position is not None
-                    and not _is_attacking_wide(current_segment.start.team, previous_position)
-                    and _is_forward_progression(current_segment.start.team, previous_position[0], current_position[0])
-                    and _is_advanced_target(current_segment.start.team, current_position[0])
-                    and _count_broken_lines(current_segment.start.team, previous_position[0], current_position[0], opponents) >= 1
-                ):
-                    events.append(
-                        DetectedEvent(
-                            type="through_ball",
-                            frameId=current_segment.start.frameId,
-                            timestamp=current_segment.start.timestamp,
-                            team=current_segment.start.team,
-                            fromTrackId=previous_segment.end.trackId,
-                            toTrackId=current_segment.start.trackId,
-                            description=f"Through ball from #{previous_segment.end.trackId} to #{current_segment.start.trackId}",
-                        )
-                    )
-                if (
-                    previous_position is not None
-                    and current_position is not None
-                    and _is_attacking_wide(previous_segment.end.team, previous_position)
-                    and _is_attacking_box(current_segment.start.team, current_position)
-                ):
-                    events.append(
-                        DetectedEvent(
-                            type="cross",
-                            frameId=current_segment.start.frameId,
-                            timestamp=current_segment.start.timestamp,
-                            team=current_segment.start.team,
-                            fromTrackId=previous_segment.end.trackId,
-                            toTrackId=current_segment.start.trackId,
-                            description=f"Cross from #{previous_segment.end.trackId} to #{current_segment.start.trackId}",
-                        )
-                    )
             continue
 
         if (
@@ -1573,174 +1795,19 @@ def detect_events(frames: list[FrameData | dict], assignments: list[BallOwnershi
             continue
 
         if previous_segment.end.team in PLAYER_CONTROL_TEAMS and previous_segment.end.team != current_segment.start.team:
-            events.append(
-                DetectedEvent(
-                    type="turnover",
-                    frameId=current_segment.start.frameId,
-                    timestamp=current_segment.start.timestamp,
-                    team=current_segment.start.team,
-                    fromTrackId=previous_segment.end.trackId,
-                    toTrackId=current_segment.start.trackId,
-                    description=f"Possession changed to {current_segment.start.team.replace('_', ' ')}",
-                )
+            _append_turnover_events(
+                previous_segment, current_segment, current_frame,
+                previous_position, current_position, events,
             )
-            if previous_position is None:
-                previous_position = _lookup_player_position(current_frame, previous_segment.end.team, previous_segment.end.trackId)
-            if (
-                previous_position is not None
-                and current_position is not None
-                and current_segment.start.team in CONTROLLED_TEAMS
-                and previous_segment.end.team in CONTROLLED_TEAMS
-            ):
-                pressure_distance = sqrt((previous_position[0] - current_position[0]) ** 2 + (previous_position[1] - current_position[1]) ** 2)
-                if pressure_distance <= 6.0:
-                    events.append(
-                        DetectedEvent(
-                            type="tackle",
-                            frameId=current_segment.start.frameId,
-                            timestamp=current_segment.start.timestamp,
-                            team=current_segment.start.team,
-                            fromTrackId=previous_segment.end.trackId,
-                            toTrackId=current_segment.start.trackId,
-                            description=f"Tackle won by #{current_segment.start.trackId}",
-                        )
-                    )
-                elif _is_interception(previous_position, current_position):
-                    events.append(
-                        DetectedEvent(
-                            type="interception",
-                            frameId=current_segment.start.frameId,
-                            timestamp=current_segment.start.timestamp,
-                            team=current_segment.start.team,
-                            fromTrackId=previous_segment.end.trackId,
-                            toTrackId=current_segment.start.trackId,
-                            description=f"Interception by #{current_segment.start.trackId}",
-                        )
-                    )
             continue
 
         if previous_segment.end.team in LOOSE_BALL_STATES:
-            emitted_same_team_pass = False
-            if index > 0:
-                pre_loose_segment = segments[index - 1]
-                if (
-                    pre_loose_segment.end.team in CONTROLLED_TEAMS
-                    and current_segment.start.team == pre_loose_segment.end.team
-                    and pre_loose_segment.end.trackId is not None
-                    and current_segment.start.trackId is not None
-                    and pre_loose_segment.end.trackId != current_segment.start.trackId
-                    and current_segment.start.timestamp - pre_loose_segment.end.timestamp <= MAX_DEAD_BALL_BRIDGE_SECONDS
-                ):
-                    events.append(
-                        DetectedEvent(
-                            type="pass",
-                            frameId=current_segment.start.frameId,
-                            timestamp=current_segment.start.timestamp,
-                            team=current_segment.start.team,
-                            fromTrackId=pre_loose_segment.end.trackId,
-                            toTrackId=current_segment.start.trackId,
-                            description=f"Pass from #{pre_loose_segment.end.trackId} to #{current_segment.start.trackId}",
-                        )
-                    )
-                    emitted_same_team_pass = True
-
-            suppress_recovery = False
-            if current_segment.start.team in PLAYER_CONTROL_TEAMS and current_segment.start.trackId is not None:
-                for prior_recovery in reversed(events):
-                    if prior_recovery.type != "recovery":
-                        continue
-                    if prior_recovery.team != current_segment.start.team or prior_recovery.toTrackId != current_segment.start.trackId:
-                        continue
-                    if current_segment.start.timestamp - prior_recovery.timestamp > MAX_STATIC_NEUTRAL_RECOVERY_GAP_SECONDS:
-                        break
-                    last_recovery_frame = frame_by_id.get(prior_recovery.frameId)
-                    ball_displacement = _ball_displacement(
-                        last_recovery_frame.ball if last_recovery_frame is not None else None,
-                        current_frame.ball,
-                    )
-                    if (
-                        ball_displacement is not None
-                        and ball_displacement <= MAX_STATIC_NEUTRAL_BALL_DISPLACEMENT
-                    ):
-                        suppress_recovery = True
-                        break
-
-            if not suppress_recovery and not emitted_same_team_pass:
-                events.append(
-                    DetectedEvent(
-                        type="recovery",
-                        frameId=current_segment.start.frameId,
-                        timestamp=current_segment.start.timestamp,
-                        team=current_segment.start.team,
-                        toTrackId=current_segment.start.trackId,
-                        description=f"{current_segment.start.team.replace('_', ' ').title()} recovered the ball",
-                    )
-                )
-            if (
-                current_segment.start.team == "unassigned"
-                and current_segment.start.trackId is not None
-                and index > 0
-            ):
-                pre_loose_segment = segments[index - 1]
-                pre_loose_frame = canonical_frames[pre_loose_segment.endIndex]
-                pre_loose_position = _lookup_player_position(
-                    pre_loose_frame,
-                    pre_loose_segment.end.team,
-                    pre_loose_segment.end.trackId,
-                )
-                loose_gap_seconds = current_segment.start.timestamp - pre_loose_segment.end.timestamp
-                if (
-                    pre_loose_segment.end.team == "unassigned"
-                    and pre_loose_segment.end.trackId == current_segment.start.trackId
-                    and pre_loose_position is not None
-                    and current_position is not None
-                    and loose_gap_seconds <= MAX_NEUTRAL_CARRY_GAP_SECONDS
-                    and _is_neutral_progression(
-                        pre_loose_position[0],
-                        current_position[0],
-                    )
-                ):
-                    events.append(
-                        DetectedEvent(
-                            type="carry",
-                            frameId=current_segment.start.frameId,
-                            timestamp=current_segment.start.timestamp,
-                            team="unassigned",
-                            fromTrackId=current_segment.start.trackId,
-                            toTrackId=current_segment.start.trackId,
-                            description=f"Carry by #{current_segment.start.trackId}",
-                        )
-                    )
-
-    for segment in segments:
-        if (
-            segment.start.team not in CONTROLLED_TEAMS
-            or segment.start.trackId is None
-            or segment.startIndex >= segment.endIndex
-        ):
-            continue
-
-        start_frame = canonical_frames[segment.startIndex]
-        end_frame = canonical_frames[segment.endIndex]
-        start_position = _lookup_player_position(start_frame, segment.start.team, segment.start.trackId)
-        end_position = _lookup_player_position(end_frame, segment.end.team, segment.end.trackId)
-        if start_position is None or end_position is None:
-            continue
-
-        if not _segment_forward_progression(segment.start.team, start_position[0], end_position[0]):
-            continue
-
-        events.append(
-            DetectedEvent(
-                type="carry",
-                frameId=segment.end.frameId,
-                timestamp=segment.end.timestamp,
-                team=segment.start.team,
-                fromTrackId=segment.start.trackId,
-                toTrackId=segment.end.trackId,
-                description=f"Carry by #{segment.start.trackId}",
+            _append_loose_ball_events(
+                index, current_segment, segments, canonical_frames, frame_by_id,
+                current_frame, current_position, events,
             )
-        )
+
+    _append_controlled_carry_events(segments, canonical_frames, events)
 
     return sorted(events, key=lambda event: (event.timestamp, event.frameId))
 

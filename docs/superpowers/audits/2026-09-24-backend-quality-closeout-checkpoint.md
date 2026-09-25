@@ -1,3 +1,19 @@
+# BQ05 event-detector decomposition — 25 September 2026
+
+Production base: `ce16ac4cbe9fd98f41d679515c30819b647c5693`, tree `8a8e496ec3a8353289b76962903e4d81eb250146`. This applies the retained three-file event-detector patch without altering its source bytes; this checkpoint is the only additional file. Previous numeric/upload, pressing-summary, missing-frame, analytics-evidence and ingestion typing repairs are already published and must not be reapplied.
+
+The extraction separates pass suggestions, turnovers, static-recovery detection, loose-ball transitions and controlled carries. It retains the public signature, eager validation and position lookup, conditional arguments, thresholds, metadata, event append order and stable timestamp/frame sort. Reassembling the five new stages reproduces the original module AST. The original function's C901 complexity is 32; orchestration becomes 9 and new stages are at most 7. No football policy, input normalization, provider, storage or model behavior is changed.
+
+Permanent characterization contains 31 cases. Required pinned validation repeats original behavior, an exact structural RED after retiring only detect_events/C901, candidate behavior, 6,000 differential cases and three mutation checks. The broader 325-case selection explicitly includes the original 128 MiB stream-hashing test that failed on the local Python 3.13 environment; neither its limit nor selection is relaxed. Console pytest must also pass. Original and candidate complete OpenAPI documents are compared in the same pinned runtime.
+
+Only one C901 baseline identity is retired: Ruff becomes 408 (233 C901, 175 BLE001), with zero B008 and no new identities. Existing 79-file zero-error mypy scope, metadata, dependency locks, quality thresholds and normal CI selections are unchanged. No new remote branch, force push, paid provider/GPU execution, deployment or live-store mutation is part of this continuation. Temporary preflight machinery is absent from the final tree.
+
+Acceptance requires the pinned preflight and completed normal full-backend, canonical verify, quality/profile/integration/media and C05/C06 checks on the actually published revision. The checkpoint documents implementation, not an assertion that pending checks passed. CPU stubs and skipped GPU acceptance are not model-quality verification. Review is author self-review, not independent approval.
+
+Exact resume action: retain final published-head normal CI evidence, then take the next bounded structural or typing slice from the remaining diagnostic register. BQ03 route extraction, BQ04 storage refactors, wider BQ05 pipeline work, exception-boundary reviews, contract compatibility, broader typing and research/operational-command separation remain open. Do not repeat accepted repairs.
+
+---
+
 # BQ01 ingestion and reference typing — 25 September 2026
 
 Production base: `8d11249ebe74d6508b4948090c6dd6640a860710`, tree
