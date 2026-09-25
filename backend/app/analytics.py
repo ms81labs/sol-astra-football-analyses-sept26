@@ -292,40 +292,43 @@ def _is_pressing_zone(team: str, x: float) -> bool:
     return x <= 40
 
 
-def _summarize_pressing_metrics(
-    frames: list[FrameData],
+def _pressing_event_position(
+    event: DetectedEvent,
+    frame_by_id: dict[int, FrameData],
+) -> tuple[float, float] | None:
+    """Resolve the original sender/receiver preference within the event's frame."""
+    frame = frame_by_id.get(event.frameId)
+    if frame is None or event.team is None or event.team not in CONTROLLED_TEAMS:
+        return None
+
+    if event.type == "pass":
+        candidate_track_ids = [event.fromTrackId, event.toTrackId]
+    else:
+        candidate_track_ids = [event.toTrackId, event.fromTrackId]
+
+    for track_id in candidate_track_ids:
+        position = _lookup_player_position(frame, event.team, track_id)
+        if position is not None:
+            return position
+    return None
+
+
+def _count_pressing_events(
     events: list[DetectedEvent],
-) -> tuple[float | None, float | None, int | None, int | None, float | None, float | None]:
-    frame_by_id = {frame.frameId: frame for frame in frames}
-    regain_types = {"turnover", "recovery", "tackle"}
+    frame_by_id: dict[int, FrameData],
+    regain_types: set[str],
+) -> tuple[dict[str, int], dict[str, int], dict[str, bool]]:
+    """Count passes and regains while retaining observed-zero versus unknown."""
     teams = ("my_team", "enemy")
     passes_allowed = {team: 0 for team in teams}
     pressing_actions = {team: 0 for team in teams}
     observed_regain = {team: False for team in teams}
-
-    def event_position(event: DetectedEvent) -> tuple[float, float] | None:
-        frame = frame_by_id.get(event.frameId)
-        if frame is None or event.team not in CONTROLLED_TEAMS:
-            return None
-
-        candidate_track_ids = []
-        if event.type == "pass":
-            candidate_track_ids = [event.fromTrackId, event.toTrackId]
-        else:
-            candidate_track_ids = [event.toTrackId, event.fromTrackId]
-
-        for track_id in candidate_track_ids:
-            position = _lookup_player_position(frame, event.team, track_id)
-            if position is not None:
-                return position
-        return None
-
     for event in events:
-        if event.team not in CONTROLLED_TEAMS:
+        if event.team is None or event.team not in CONTROLLED_TEAMS:
             continue
 
         if event.type == "pass":
-            position = event_position(event)
+            position = _pressing_event_position(event, frame_by_id)
             if position is None:
                 continue
             opponent = "my_team" if event.team == "enemy" else "enemy"
@@ -334,19 +337,21 @@ def _summarize_pressing_metrics(
             continue
 
         if event.type in regain_types and event.toTrackId is not None:
-            position = event_position(event)
+            position = _pressing_event_position(event, frame_by_id)
             if position is None:
                 continue
             observed_regain[event.team] = True
             if _is_pressing_zone(event.team, position[0]):
                 pressing_actions[event.team] += 1
+    return passes_allowed, pressing_actions, observed_regain
 
-    ppda = {
-        team: round(passes_allowed[team] / pressing_actions[team], 1) if pressing_actions[team] > 0 else None
-        for team in teams
-    }
 
-    counterpress_samples = {team: [] for team in teams}
+def _counterpress_recovery_samples(
+    events: list[DetectedEvent],
+    regain_types: set[str],
+) -> dict[str, list[float]]:
+    """Keep input order, the inclusive eight-second window, and first recovery."""
+    samples: dict[str, list[float]] = {"my_team": [], "enemy": []}
     for index, event in enumerate(events):
         if event.type != "turnover" or event.team not in CONTROLLED_TEAMS:
             continue
@@ -356,22 +361,38 @@ def _summarize_pressing_metrics(
                 break
             if follow_up.team != losing_team or follow_up.type not in regain_types:
                 continue
-            counterpress_samples[losing_team].append(round(follow_up.timestamp - event.timestamp, 1))
+            samples[losing_team].append(round(follow_up.timestamp - event.timestamp, 1))
             break
+    return samples
 
-    def average_recovery(team: str) -> float | None:
-        samples = counterpress_samples[team]
-        if not samples:
-            return None
-        return round(sum(samples) / len(samples), 1)
 
+def _average_counterpress_recovery(samples: list[float]) -> float | None:
+    if not samples:
+        return None
+    return round(sum(samples) / len(samples), 1)
+
+
+def _summarize_pressing_metrics(
+    frames: list[FrameData],
+    events: list[DetectedEvent],
+) -> tuple[float | None, float | None, int | None, int | None, float | None, float | None]:
+    frame_by_id = {frame.frameId: frame for frame in frames}
+    regain_types = {"turnover", "recovery", "tackle"}
+    passes_allowed, pressing_actions, observed_regain = _count_pressing_events(
+        events, frame_by_id, regain_types,
+    )
+    ppda = {
+        team: round(passes_allowed[team] / pressing_actions[team], 1) if pressing_actions[team] > 0 else None
+        for team in ("my_team", "enemy")
+    }
+    counterpress_samples = _counterpress_recovery_samples(events, regain_types)
     return (
         ppda["my_team"],
         ppda["enemy"],
         pressing_actions["my_team"] if observed_regain["my_team"] else None,
         pressing_actions["enemy"] if observed_regain["enemy"] else None,
-        average_recovery("my_team"),
-        average_recovery("enemy"),
+        _average_counterpress_recovery(counterpress_samples["my_team"]),
+        _average_counterpress_recovery(counterpress_samples["enemy"]),
     )
 
 

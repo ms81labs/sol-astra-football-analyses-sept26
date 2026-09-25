@@ -1,3 +1,19 @@
+# BQ05 pressing-summary decomposition — 25 September 2026
+
+Parent source: `52a771073faf25dca888be6ac7f5b6344849fce2` (tree `a9e7003363f4eec892f9a90679a0e2c8ff675f19`). Its pinned numeric/upload preflight `36114690084` passed original 69, selected 250 and console 69 cases, full OpenAPI equality (490 paths/17 schemas), four route typing errors -> zero and the last B008 -> zero. Normal acceptance must be read from the source-bound CI, not inferred from this checkpoint.
+
+This next bounded BQ05 slice decomposes `_summarize_pressing_metrics` into event-position resolution, pass/regain counting, counterpress sample collection and averaging. The public summary entry point and return order are unchanged. Numeric expressions, player-preference order, missing-frame handling, last duplicate-frame behavior, observed-zero versus unknown values, first eligible recovery, inclusive eight-second window, input ordering (including negative deltas), and two-stage rounding are preserved. Explicit None guards only clarify the existing rejection of uncontrolled teams; no football policy, validation range or model changes are introduced.
+
+48 permanent characterization cases pass on original and modified source. A source-bound supplemental comparison covers 2,003 deterministic scenarios, including missing ids, duplicates, both teams, out-of-order events and non-finite event timestamps, without mutating inputs. Mutation tests must detect exclusive-window, zero-for-unknown and swapped pass-player preference errors. The combined analytics/numeric/upload selection contains 176 tests. The original function's C901 complexity is 21; the extracted stages are at most 9, with orchestration at 1.
+
+Only that one C901 identity is retired: wider Ruff has 409 remaining entries (234 C901, 175 BLE001), with no B008. Existing scoped mypy remains zero. Explicit analytics mypy is still not clean: 16 -> 15 diagnostics in the local profile; only the missing counterpress-sample annotation is resolved. Do not treat those 15 pre-existing diagnostics as accepted new baseline entries or suppress them. Runtime locks, scorer pins, quality configuration, model behavior, routes and normal CI selections remain unchanged.
+
+Pinned preflight must rerun original/modified characterization, deterministic differential comparison, the combined selection, console pytest, exact quality baselines, and the explicit analytics diagnostic comparison. Final acceptance requires complete-backend, all canonical gates and other applicable normal CI lanes plus C05/C06 on the published final SHA. Review is author self-review. GPU acceptance stays intentionally unrequested; no deployment, paid provider/GPU execution, live data mutation, extra remote branch or force push is involved. Remove the temporary preflight workflow from the final tree.
+
+Exact next action: retain completed final-head normal CI. Then continue remaining complexity and broad-catch/typing work in bounded, behavior-preserving slices. All other BQ03/BQ04/BQ05 structural work, broader contracts and research/operational-command separation remain open. Do not repeat the completed numeric/upload or match-bound dependency repairs.
+
+---
+
 # BQ01 numeric typing / BQ03 required upload — 25 September 2026
 
 Accepted parent: `df85fb95ac2e276e4cc32dbb07f13747f081cb3b` (tree `0459dd443f80ffd97d5914b0eb37a86ee1a24869`). Parent CI `36076462690` completed with 4,857 full-backend passes / 18 skips and 4,263 canonical backend passes / 18 skips. Do not reapply the 85 match-bound or eight artifact dependency migrations, or the SQLite WAL repair.

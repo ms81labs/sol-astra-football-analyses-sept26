@@ -18,7 +18,6 @@
   "diagnostics": [
     "[\"backend/app/accepted_state.py\", \"validate_state\", \"C901\", \"def validate_state(\", \"`validate_state` is too complex (14 > 10)\"]",
     "[\"backend/app/analytics.py\", \"_summarize_defensive_context\", \"C901\", \"def _summarize_defensive_context(\", \"`_summarize_defensive_context` is too complex (13 > 10)\"]",
-    "[\"backend/app/analytics.py\", \"_summarize_pressing_metrics\", \"C901\", \"def _summarize_pressing_metrics(\", \"`_summarize_pressing_metrics` is too complex (21 > 10)\"]",
     "[\"backend/app/analytics.py\", \"build_accepted_match_state\", \"C901\", \"def build_accepted_match_state(\", \"`build_accepted_match_state` is too complex (15 > 10)\"]",
     "[\"backend/app/analytics.py\", \"detect_events\", \"C901\", \"def detect_events(frames: list[FrameData | dict], assignments: list[BallOwnership], *, attack_direction: str = \\\"left_to_right\\\") -> list[DetectedEvent]:\", \"`detect_events` is too complex (32 > 10)\"]",
     "[\"backend/app/analytics.py\", \"summarize_match\", \"C901\", \"def summarize_match(\", \"`summarize_match` is too complex (19 > 10)\"]",
