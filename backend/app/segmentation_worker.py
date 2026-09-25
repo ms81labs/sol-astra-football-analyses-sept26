@@ -398,6 +398,54 @@ def retain_shadow_mask_result(storage, bundle_root: Path, output) -> dict:
         return pointer
 
 
+def current_shadow_mask_overlay(storage, match_id: str, generation_id: str, frame_id: int) -> dict:
+    """Read a retained mask only while its source, generation, and rights remain current."""
+    from .remote_contracts import MAX_SEGMENTATION_RESULT_BYTES
+    from .segmentation import MaskResult
+    from .workbench.artifacts import ArtifactStore
+
+    with storage._generation_lock(match_id):
+        if storage.current_generation(match_id).generationId != generation_id:
+            raise ValueError("stale mask generation")
+        match = storage.get_match(match_id)
+        if match.inputMode != "video" or not match.config.rights.cloudPermission \
+                or match.config.rights.processingScope == "local_only":
+            raise FileNotFoundError("review mask unavailable")
+        try:
+            pointer = storage.load_analysis_artifact(match_id, "sam_shadow_mask")
+        except FileNotFoundError:
+            raise FileNotFoundError("review mask unavailable") from None
+        if pointer.get("schemaVersion") != "sam_shadow_mask_receipt_v1" \
+                or pointer.get("matchId") != match_id or pointer.get("generationId") != generation_id \
+                or pointer.get("sourceSha256") != storage.source_sha256(match_id) \
+                or pointer.get("qualityAccepted") is not False:
+            raise FileNotFoundError("review mask unavailable")
+        try:
+            raw = ArtifactStore(storage.storage_root / "artifacts").get(
+                pointer["maskArtifactDigest"], namespace="segmentation",
+                max_bytes=MAX_SEGMENTATION_RESULT_BYTES)
+            mask = MaskResult.model_validate_json(raw)
+        except (KeyError, ValueError):
+            raise ValueError("retained review mask is invalid") from None
+        if mask.sourceSha256 != pointer["sourceSha256"] \
+                or mask.requestDigest != pointer["requestDigest"] \
+                or mask.outputDigest != pointer["maskOutputDigest"] \
+                or mask.executionClass != pointer["executionClass"] \
+                or mask.status != pointer["status"]:
+            raise ValueError("retained review mask identity changed")
+        frame = next((item for item in mask.frames if item.frameId == frame_id), None)
+        if frame is None:
+            raise FileNotFoundError("review mask frame unavailable")
+        tracks = {item.objectId: item.trackId for item in mask.objects}
+        return {"schemaVersion": "mask_overlay_v1", "matchId": match_id,
+            "generationId": generation_id, "sourceSha256": mask.sourceSha256,
+            "sourceFrameId": frame_id, "ptsSeconds": frame.ptsSeconds,
+            "width": mask.width, "height": mask.height,
+            "qualification": "review_only", "executionClass": mask.executionClass,
+            "masks": [{"objectId": item.objectId, "trackId": tracks[item.objectId], "rle": item.rle}
+                for item in mask.masks if item.sourceFrameId == frame_id]}
+
+
 def _validate_sam_release(root: Path, job, receipt, segmentation: SegmentationRequest) -> dict:
     """Bind a distinct SAM release declaration to sealed files and request identity."""
     from .remote_contracts import confined_path, load_canonical_json

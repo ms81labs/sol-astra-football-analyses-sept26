@@ -1,10 +1,12 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import MatchVideoPanel from './MatchVideoPanel';
 
 afterEach(() => {
   cleanup();
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe('MatchVideoPanel', () => {
@@ -112,4 +114,42 @@ it('reports native playback state including ended and rejected play', async () =
   await Promise.resolve();
   expect(onPlayingChange).toHaveBeenLastCalledWith(false);
   play.mockRestore();
+});
+
+it('shows a source-frame review mask over the original video with its track mapping', async () => {
+  const fillRect = vi.fn();
+  vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({ clearRect: vi.fn(), fillRect } as unknown as CanvasRenderingContext2D);
+  const fetch = vi.fn().mockResolvedValue({ ok: true, json: async () => ({
+    generationId: 'gen_one', sourceFrameId: 4, ptsSeconds: 0.16, width: 2, height: 2,
+    qualification: 'review_only', executionClass: 'stub',
+    masks: [{ objectId: 'o1', trackId: '7', rle: { size: [2, 2], counts: [0, 2, 2] } }],
+  }) });
+  vi.stubGlobal('fetch', fetch);
+  render(<MatchVideoPanel videoUrl="/video" currentTimestamp={0.16} isPlaying={false}
+    onVideoTimeChange={() => {}} matchId="m1" generationId="gen_one" sourceFrameId={4} sourceFramePts={0.16} />);
+  const video = screen.getByTestId('match-video') as HTMLVideoElement;
+  Object.defineProperties(video, { videoWidth: { value: 2 }, videoHeight: { value: 2 } });
+  fireEvent.loadedMetadata(video);
+  fireEvent.click(screen.getByRole('button', { name: /show review masks/i }));
+  await waitFor(() => expect(fillRect).toHaveBeenCalledWith(0, 0, 1, 2));
+  expect(fetch).toHaveBeenCalledWith('/api/matches/m1/mask-overlay?frameId=4&generationId=gen_one', expect.anything());
+  expect(screen.getByText(/track 7.*stub.*review only/i)).toBeTruthy();
+  expect(video.src).toContain('/video');
+});
+
+it('ignores an old mask response after the generation changes', async () => {
+  let resolveOld!: (value: unknown) => void;
+  const fetch = vi.fn().mockImplementationOnce(() => new Promise((resolve) => { resolveOld = resolve; }))
+    .mockResolvedValue({ ok: false, status: 404, json: async () => ({}) });
+  vi.stubGlobal('fetch', fetch);
+  const props = { videoUrl: '/video', currentTimestamp: 0.16, isPlaying: false,
+    onVideoTimeChange: () => {}, matchId: 'm1', sourceFrameId: 4, sourceFramePts: 0.16 };
+  const { rerender } = render(<MatchVideoPanel {...props} generationId="gen_one" />);
+  fireEvent.loadedMetadata(screen.getByTestId('match-video'));
+  fireEvent.click(screen.getByRole('button', { name: /show review masks/i }));
+  rerender(<MatchVideoPanel {...props} generationId="gen_two" />);
+  resolveOld({ ok: true, json: async () => ({ generationId: 'gen_one', sourceFrameId: 4,
+    ptsSeconds: 0.16, width: 2, height: 2, qualification: 'review_only', executionClass: 'stub', masks: [] }) });
+  await waitFor(() => expect(screen.getByText(/no review mask for this frame/i)).toBeTruthy());
+  expect(screen.queryByText(/track 7/i)).toBeNull();
 });

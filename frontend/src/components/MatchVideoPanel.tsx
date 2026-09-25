@@ -1,6 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { shouldResyncVideo } from '../utils/videoSync';
+import { ApiError, readGeneration } from '../utils/request';
+
+interface ReviewMaskOverlay {
+  generationId: string;
+  sourceFrameId: number;
+  ptsSeconds: number;
+  width: number;
+  height: number;
+  qualification: 'review_only';
+  executionClass: 'stub' | 'real_model';
+  masks: Array<{ objectId: string; trackId: string; rle: { size: [number, number]; counts: number[] } }>;
+}
 
 interface MatchVideoPanelProps {
   videoUrl: string;
@@ -10,6 +22,10 @@ interface MatchVideoPanelProps {
   onPlayingChange?: (playing: boolean) => void;
   seekVersion?: number;
   sourcePresentationFps?: number;
+  matchId?: string;
+  generationId?: string | null;
+  sourceFrameId?: number;
+  sourceFramePts?: number;
 }
 
 export default function MatchVideoPanel({
@@ -20,12 +36,81 @@ export default function MatchVideoPanel({
   onPlayingChange,
   seekVersion,
   sourcePresentationFps = 25,
+  matchId,
+  generationId,
+  sourceFrameId,
+  sourceFramePts,
 }: MatchVideoPanelProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isReady, setIsReady] = useState(false);
   const appliedSeekRef = useRef<number | undefined>(undefined);
   const [hasError, setHasError] = useState(false);
   const [playbackRate, setPlaybackRate] = useState(1);
+  const [showMasks, setShowMasks] = useState(false);
+  const [overlay, setOverlay] = useState<ReviewMaskOverlay | null>(null);
+  const [maskMessage, setMaskMessage] = useState('');
+
+  useEffect(() => {
+    setOverlay(null);
+    setMaskMessage('');
+    if (!showMasks || isPlaying || !matchId || !generationId || sourceFrameId === undefined) return;
+    const controller = new AbortController();
+    let current = true;
+    const path = `/api/matches/${encodeURIComponent(matchId)}/mask-overlay?frameId=${sourceFrameId}`;
+    readGeneration<ReviewMaskOverlay>(path, generationId, controller.signal)
+      .then((result) => {
+        if (!current) return;
+        if (result.sourceFrameId !== sourceFrameId || result.ptsSeconds !== sourceFramePts
+            || result.qualification !== 'review_only') {
+          setMaskMessage('Review mask does not match this source frame.');
+          return;
+        }
+        setOverlay(result);
+        setMaskMessage(result.masks.length ? '' : 'No review mask for this frame.');
+      })
+      .catch((error: unknown) => {
+        if (!current) return;
+        setMaskMessage(error instanceof ApiError && error.status === 404
+          ? 'No review mask for this frame.' : 'Review mask unavailable.');
+      });
+    return () => { current = false; controller.abort(); };
+  }, [showMasks, isPlaying, matchId, generationId, sourceFrameId, sourceFramePts]);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const video = videoRef.current;
+    if (!canvas || !video || !overlay || !isReady || isPlaying) return;
+    if (video.videoWidth !== overlay.width || video.videoHeight !== overlay.height) {
+      setMaskMessage('Review mask dimensions do not match the video.');
+      setOverlay(null);
+      return;
+    }
+    const context = canvas.getContext('2d');
+    if (!context) return;
+    canvas.width = overlay.width;
+    canvas.height = overlay.height;
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    for (const item of overlay.masks) {
+      const hue = [...item.trackId].reduce((value, char) => value + char.charCodeAt(0), 0) % 360;
+      context.fillStyle = `hsla(${hue}, 90%, 55%, 0.35)`;
+      let offset = 0;
+      item.rle.counts.forEach((count, index) => {
+        if (index % 2) {
+          let remaining = count;
+          while (remaining > 0) {
+            const y = offset % overlay.height;
+            const span = Math.min(remaining, overlay.height - y);
+            context.fillRect(Math.floor(offset / overlay.height), y, 1, span);
+            offset += span;
+            remaining -= span;
+          }
+        } else {
+          offset += count;
+        }
+      });
+    }
+  }, [overlay, isReady, isPlaying]);
 
   const stepSourceFrame = (direction: -1 | 1) => {
     const video = videoRef.current;
@@ -103,6 +188,17 @@ export default function MatchVideoPanel({
           setHasError(true);
         }}
       />
+      {showMasks && overlay && !isPlaying && (
+        <canvas ref={canvasRef} data-testid="review-mask-overlay" aria-label="Review mask overlay"
+          className="pointer-events-none absolute inset-0 h-full w-full object-contain" />
+      )}
+      {showMasks && !isPlaying && (overlay?.masks.length || maskMessage) && (
+        <div className="pointer-events-none absolute left-2 top-2 rounded bg-slate-950/85 px-2 py-1 text-[11px] text-white">
+          {overlay?.masks.length
+            ? `Track ${overlay.masks.map((mask) => mask.trackId).join(', ')} · ${overlay.executionClass} · review only`
+            : maskMessage}
+        </div>
+      )}
       <div className="absolute bottom-2 left-2 flex items-center gap-2 rounded bg-slate-900/80 px-2 py-1 text-[11px] text-slate-300">
         <button
           type="button"
@@ -111,6 +207,13 @@ export default function MatchVideoPanel({
         >
           Previous frame
         </button>
+        {matchId && generationId && sourceFrameId !== undefined && (
+          <button type="button" onClick={() => setShowMasks((value) => !value)}
+            aria-pressed={showMasks}
+            className="rounded border border-slate-600 px-1.5 py-0.5 hover:bg-slate-800">
+            {showMasks ? 'Hide review masks' : 'Show review masks'}
+          </button>
+        )}
         <button
           type="button"
           onClick={() => stepSourceFrame(1)}

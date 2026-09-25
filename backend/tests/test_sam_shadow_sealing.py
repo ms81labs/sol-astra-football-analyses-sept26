@@ -129,6 +129,18 @@ def test_staged_sam_window_seals_distinct_release_and_reopens_exact_inputs(tmp_p
     assert load_result(ArtifactStore(storage.storage_root / "artifacts"),
                        imported["maskArtifactDigest"]) == mask
     assert storage.load_analysis_artifact(match_id, "sam_shadow_mask") == imported
+    from fastapi.testclient import TestClient
+    from backend.app.main import create_app
+    with TestClient(create_app(storage_root=storage.storage_root), base_url="http://127.0.0.1") as client:
+        overlay = client.get(f"/api/matches/{match_id}/mask-overlay",
+            params={"generationId": generation_id, "frameId": 0})
+        assert overlay.status_code == 200
+        assert overlay.json() == {"schemaVersion": "mask_overlay_v1", "matchId": match_id,
+            "generationId": generation_id, "sourceSha256": request.sourceSha256,
+            "sourceFrameId": 0, "ptsSeconds": frames[0].timestamp,
+            "width": request.width, "height": request.height,
+            "qualification": "review_only", "executionClass": "stub",
+            "masks": [{"objectId": "o1", "trackId": "7", "rle": mask.masks[0].rle}]}
     altered = mask.model_dump(mode="json")
     altered["baseTrackingDigest"] = "f" * 64
     altered["outputDigest"] = hashlib.sha256(json.dumps({key: value for key, value in altered.items()
@@ -144,12 +156,18 @@ def test_staged_sam_window_seals_distinct_release_and_reopens_exact_inputs(tmp_p
     with pytest.raises(ValueError, match="rights"):
         retain_shadow_mask_result(storage, root, downloaded(mask))
     assert storage.load_analysis_artifact(match_id, "sam_shadow_mask") == imported
+    with TestClient(create_app(storage_root=storage.storage_root), base_url="http://127.0.0.1") as client:
+        assert client.get(f"/api/matches/{match_id}/mask-overlay",
+            params={"generationId": generation_id, "frameId": 0}).status_code == 404
     storage.update_match_config(match_id, config)
     source_path = storage.get_match_input_path(match_id)
     source_bytes = source_path.read_bytes()
     source_path.write_bytes(source_bytes + b"changed")
     with pytest.raises(ValueError, match="source"):
         retain_shadow_mask_result(storage, root, downloaded(mask))
+    with TestClient(create_app(storage_root=storage.storage_root), base_url="http://127.0.0.1") as client:
+        assert client.get(f"/api/matches/{match_id}/mask-overlay",
+            params={"generationId": generation_id, "frameId": 0}).status_code == 404
     source_path.write_bytes(source_bytes)
     assert storage.load_analysis_artifact(match_id, "sam_shadow_mask") == imported
     extra = root / "inputs/undeclared.bin"

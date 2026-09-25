@@ -1303,6 +1303,10 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
                   currentTimestamp={currentTimestamp}
                   isPlaying={isPlaying}
                   seekVersion={seekVersion}
+                  matchId={activeMatch?.id}
+                  generationId={activeMatch?.detail.generationId}
+                  sourceFrameId={currentFrameRecord?.Frame_ID}
+                  sourceFramePts={currentFrameRecord?.Timestamp}
                   onPlayingChange={setIsPlaying}
                   onVideoTimeChange={handleVideoTimeChange}
                 />

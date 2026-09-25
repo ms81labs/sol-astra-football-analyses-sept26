@@ -10,6 +10,7 @@ from pydantic import ValidationError
 
 from .schemas import MatchAnalyticsResponse, MatchFramesResponse, MatchRecord
 from .settings import ProcessingSettings
+from .segmentation_worker import current_shadow_mask_overlay
 from .storage import Storage
 from .workbench.review import correction_api_payload
 
@@ -56,6 +57,17 @@ def create_match_runtime_router(
             raise HTTPException(status_code=404, detail="Video file not found.")
     
         return FileResponse(video_path, media_type="video/mp4", filename=match.originalFilename)
+
+    @router.get("/api/matches/{match_id}/mask-overlay")
+    def get_mask_overlay(match: MatchRecord = Depends(require_match), generationId: str = "", frameId: int = 0) -> dict:
+        if not generationId or frameId < 0:
+            raise HTTPException(status_code=422, detail="Generation and source frame are required")
+        try:
+            return current_shadow_mask_overlay(storage, match.id, generationId, frameId)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
     
     
     @router.get("/api/matches/{match_id}/frames")
