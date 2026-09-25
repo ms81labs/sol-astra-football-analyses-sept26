@@ -1,6 +1,6 @@
 """Review bundle, annotation, issue, and trust-crop API routes."""
 
-from __future__ import annotations
+from typing import Annotated
 
 from collections.abc import Callable
 
@@ -107,19 +107,19 @@ def create_review_router(
     # ===== Annotations & Issues =====
 
     @router.get("/api/matches/{match_id}/annotations")
-    def list_annotations(match: MatchRecord = Depends(require_match)) -> dict:
+    def list_annotations(match: Annotated[MatchRecord, Depends(require_match)]) -> dict:
         """List all annotations for a match."""
         annotations = storage.list_annotations(match.id)
         return {"matchId": match.id, "annotations": [a.model_dump(mode="json") for a in annotations]}
 
     @router.post("/api/matches/{match_id}/annotations", status_code=201)
-    def create_annotation(request: CreateAnnotationRequest, match: MatchRecord = Depends(require_match)) -> dict:
+    def create_annotation(request: CreateAnnotationRequest, match: Annotated[MatchRecord, Depends(require_match)]) -> dict:
         """Create a new annotation on a match."""
         record = storage.create_annotation(match.id, request)
         return record.model_dump(mode="json")
 
     @router.delete("/api/matches/{match_id}/annotations/{annotation_id}", status_code=204)
-    def delete_annotation(annotation_id: str, match: MatchRecord = Depends(require_match)) -> None:
+    def delete_annotation(annotation_id: str, match: Annotated[MatchRecord, Depends(require_match)]) -> None:
         """Delete an annotation."""
         try:
             storage.delete_annotation(match.id, annotation_id)
@@ -127,19 +127,19 @@ def create_review_router(
             raise HTTPException(status_code=404, detail="Match not found") from exc
 
     @router.get("/api/matches/{match_id}/issues")
-    def list_issues(match: MatchRecord = Depends(require_match)) -> dict:
+    def list_issues(match: Annotated[MatchRecord, Depends(require_match)]) -> dict:
         """List all issues for a match."""
         issues = storage.list_issues(match.id)
         return {"matchId": match.id, "issues": [i.model_dump(mode="json") for i in issues]}
 
     @router.post("/api/matches/{match_id}/issues", status_code=201)
-    def create_issue(request: CreateIssueRequest, match: MatchRecord = Depends(require_match)) -> dict:
+    def create_issue(request: CreateIssueRequest, match: Annotated[MatchRecord, Depends(require_match)]) -> dict:
         """Create a new issue on a match."""
         record = storage.create_issue(match.id, request)
         return record.model_dump(mode="json")
 
     @router.delete("/api/matches/{match_id}/issues/{issue_id}", status_code=204)
-    def delete_issue(issue_id: str, match: MatchRecord = Depends(require_match)) -> None:
+    def delete_issue(issue_id: str, match: Annotated[MatchRecord, Depends(require_match)]) -> None:
         """Delete an issue."""
         try:
             storage.delete_issue(match.id, issue_id)
@@ -148,7 +148,7 @@ def create_review_router(
 
     @router.get("/api/matches/{match_id}/trust-crops")
     def get_trust_crops(
-        match: MatchRecord = Depends(require_match),
+        match: Annotated[MatchRecord, Depends(require_match)],
         limit: int = 20,
         generationId: str | None = None,
     ) -> dict:

@@ -1,4 +1,4 @@
-from __future__ import annotations
+from typing import Annotated
 from fastapi import APIRouter, Depends, Header, HTTPException
 from ..schemas import MatchRecord
 from ..storage import Storage
@@ -272,13 +272,13 @@ def register_match_post_routes(router: APIRouter, storage: Storage) -> None:
 
 
     @router.post("/matches/{match_id}/heatmap")
-    def post_match_heatmap(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+    def post_match_heatmap(match: Annotated[MatchRecord, Depends(require_match)], payload: dict | None = None) -> dict:
         del payload
         return storage.heatmap_for_match(match.id)
 
 
     @router.post("/matches/{match_id}/players")
-    def post_match_players(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+    def post_match_players(match: Annotated[MatchRecord, Depends(require_match)], payload: dict | None = None) -> dict:
         del payload
         try:
             return storage.player_observations_for_match(match.id)
@@ -287,7 +287,7 @@ def register_match_post_routes(router: APIRouter, storage: Storage) -> None:
 
 
     @router.post("/matches/{match_id}/ownership")
-    def post_match_ownership(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+    def post_match_ownership(match: Annotated[MatchRecord, Depends(require_match)], payload: dict | None = None) -> dict:
         del payload
         try:
             return storage.classify_match_ownership(match.id)
@@ -296,7 +296,7 @@ def register_match_post_routes(router: APIRouter, storage: Storage) -> None:
 
 
     @router.post("/matches/{match_id}/package")
-    def post_match_package(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+    def post_match_package(match: Annotated[MatchRecord, Depends(require_match)], payload: dict | None = None) -> dict:
         del payload
         try:
             return storage.assemble_stored_match_package(match.id)
@@ -305,7 +305,7 @@ def register_match_post_routes(router: APIRouter, storage: Storage) -> None:
 
 
     @router.post("/matches/{match_id}/incidents/geometry")
-    def post_match_incident_geometry(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+    def post_match_incident_geometry(match: Annotated[MatchRecord, Depends(require_match)], payload: dict | None = None) -> dict:
         del payload
         try:
             return storage.incident_geometry_for_match(match.id)
@@ -314,7 +314,7 @@ def register_match_post_routes(router: APIRouter, storage: Storage) -> None:
 
 
     @router.post("/matches/{match_id}/metrics")
-    def post_match_metrics(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+    def post_match_metrics(match: Annotated[MatchRecord, Depends(require_match)], payload: dict | None = None) -> dict:
         del payload
         try:
             return storage.match_metrics_for_match(match.id)
@@ -323,13 +323,13 @@ def register_match_post_routes(router: APIRouter, storage: Storage) -> None:
 
 
     @router.post("/matches/{match_id}/incidents/package")
-    def post_match_incident_package(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+    def post_match_incident_package(match: Annotated[MatchRecord, Depends(require_match)], payload: dict | None = None) -> dict:
         del payload
         return storage.incident_package_for_match(match.id)
 
 
     @router.post("/matches/{match_id}/incidents/review")
-    def post_match_incident_review(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+    def post_match_incident_review(match: Annotated[MatchRecord, Depends(require_match)], payload: dict | None = None) -> dict:
         del payload
         try:
             return storage.incident_review_for_match(match.id)
@@ -338,7 +338,7 @@ def register_match_post_routes(router: APIRouter, storage: Storage) -> None:
 
 
     @router.post("/matches/{match_id}/assistance/fallback")
-    def post_match_assistance_fallback(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+    def post_match_assistance_fallback(match: Annotated[MatchRecord, Depends(require_match)], payload: dict | None = None) -> dict:
         del payload
         try:
             return storage.assistance_fallback_for_match(match.id)
@@ -347,37 +347,37 @@ def register_match_post_routes(router: APIRouter, storage: Storage) -> None:
 
 
     @router.post("/matches/{match_id}/identity")
-    def post_match_identity(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+    def post_match_identity(match: Annotated[MatchRecord, Depends(require_match)], payload: dict | None = None) -> dict:
         del payload
         return storage.identity_for_match(match.id)
 
 
     @router.post("/matches/{match_id}/cache")
-    def post_match_cache(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+    def post_match_cache(match: Annotated[MatchRecord, Depends(require_match)], payload: dict | None = None) -> dict:
         del payload
         return storage.cache_identity_for_match(match.id)
 
 
     @router.post("/matches/{match_id}/records/migrate")
-    def post_match_legacy_migrate(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+    def post_match_legacy_migrate(match: Annotated[MatchRecord, Depends(require_match)], payload: dict | None = None) -> dict:
         del payload
         return storage.migrate_legacy_for_match(match.id)
 
 
     @router.post("/matches/{match_id}/formation")
-    def post_match_formation(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+    def post_match_formation(match: Annotated[MatchRecord, Depends(require_match)], payload: dict | None = None) -> dict:
         del payload
         return storage.formation_for_match(match.id)
 
 
     @router.post("/matches/{match_id}/events/partition")
-    def post_match_event_partition(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+    def post_match_event_partition(match: Annotated[MatchRecord, Depends(require_match)], payload: dict | None = None) -> dict:
         del payload
         return storage.partition_events_for_match(match.id)
 
 
     @router.post("/matches/{match_id}/reports/provenance")
-    def post_match_report_provenance(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+    def post_match_report_provenance(match: Annotated[MatchRecord, Depends(require_match)], payload: dict | None = None) -> dict:
         body = payload or {}
         claimed = body.get("claims")
         claimed_ids: list[str] | None = None
@@ -394,24 +394,24 @@ def register_match_post_routes(router: APIRouter, storage: Storage) -> None:
 
 
     @router.post("/matches/{match_id}/shots/quality")
-    def post_match_shot_quality(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+    def post_match_shot_quality(match: Annotated[MatchRecord, Depends(require_match)], payload: dict | None = None) -> dict:
         del payload
         return storage.shot_quality_for_match(match.id)
 
 
     @router.post("/matches/{match_id}/artifacts/alongside")
-    def post_match_write_alongside(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+    def post_match_write_alongside(match: Annotated[MatchRecord, Depends(require_match)], payload: dict | None = None) -> dict:
         del payload
         return storage.write_alongside_for_match(match.id)
 
 
     @router.post("/matches/{match_id}/tracklets")
-    def post_match_tracklets(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+    def post_match_tracklets(match: Annotated[MatchRecord, Depends(require_match)], payload: dict | None = None) -> dict:
         del payload
         return storage.tracklets_for_match(match.id)
 
 
     @router.post("/matches/{match_id}/shots/features")
-    def post_match_shot_features(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+    def post_match_shot_features(match: Annotated[MatchRecord, Depends(require_match)], payload: dict | None = None) -> dict:
         del payload
         return storage.shot_features_for_match(match.id)

@@ -1,3 +1,27 @@
+# BQ03 remaining match dependencies — 25 September 2026
+
+## Current bounded scope
+
+Parent production source: `5c6570e3202f031cf5691066b8ac5ca0f363d489` (47 match-detail dependencies). Its pinned preflight is run `36074041909`; normal acceptance is run `36074390891`. Consult the completed, source-bound receipts rather than inferring acceptance from this checkpoint.
+
+This continuation migrates 38 `match` dependency declarations in `insight_routes.py` (1), `job_routes.py` (2), `match_runtime_routes.py` (9), `review_routes.py` (7), and `workbench/leftover_match_routes.py` (19). All corresponding handler bodies and decorators remain unchanged. Each factory retains its own dependency callback and storage binding. The standalone required multipart upload marker is intentionally unchanged.
+
+The new 99-case suite covers local callback identity, all 38 routes' access denial and interleaved two-app dependency overrides, five original route-contract fixtures, and successful/missing-data/default-value paths. Locally it produced 38 expected annotation-metadata failures and 61 behavior passes against unmodified production, then 99 passes after migration. Pinned validation must repeat the full cycle and compare complete test-app OpenAPI documents before publication.
+
+Exactly 38 matching B008 identities are removed from the existing Ruff baseline. The remaining total is 411 (235 C901, 175 BLE001, 1 B008). Existing tool/configuration metadata and the scoped mypy baseline are unchanged. The scoped mypy gate remains zero; separately checking these five files reports four pre-existing typing diagnostics locally, unchanged before and after this patch. Do not suppress them or mislabel the expanded scope as clean.
+
+## Verification qualifications
+
+The sandbox runtime is Python 3.13.5 / AnyIO 4.13.0 / FastAPI 0.128.2 / Pydantic 2.13.4, not the pinned acceptance profile. A broader supplemental run completed 212 passes and one failure in `test_workbench_concurrent_requests_do_not_change_factual_measurements`: local AnyIO lacks `gather`. The unchanged original source fails in the same place. This local failure is retained; no shim or test exclusion is part of this repair. CI uses the unchanged AnyIO 4.15.1 lock and must run the original concurrency test successfully.
+
+Published acceptance requires the normal complete-backend, canonical verify, quality, integration, generated-media, excluded-backend and profile checks plus C05/C06 on the final source. CPU stubs do not establish GPU/model-quality acceptance. Review is author self-review, not an independent review.
+
+## Exact next action
+
+Inspect and retain the final published source's completed normal CI results. Then address the one required upload B008 separately without silently changing requiredness, body shape, callable compatibility or defaults. BQ03 structural route extraction, broader typing, exception boundary review, storage/pipeline refactors and research-command separation remain open. Do not redo the completed 8 artifact / 47 match-detail migrations or the SQLite WAL repair.
+
+---
+
 # Backend quality close-out checkpoint
 
 ## Match-detail dependency continuation — 25 September 2026

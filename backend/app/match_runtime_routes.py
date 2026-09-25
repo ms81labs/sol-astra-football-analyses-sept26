@@ -1,6 +1,6 @@
 """Core match read, media, analytics, and correction routes."""
 
-from __future__ import annotations
+from typing import Annotated
 
 from collections.abc import Callable
 
@@ -31,7 +31,7 @@ def create_match_runtime_router(
     
     
     @router.get("/api/matches/{match_id}")
-    def get_match(match: MatchRecord = Depends(require_match), generationId: str | None = None) -> dict:
+    def get_match(match: Annotated[MatchRecord, Depends(require_match)], generationId: str | None = None) -> dict:
         def detail() -> dict:
             result = storage.get_match(match.id).model_dump(mode="json")
             try:
@@ -47,7 +47,7 @@ def create_match_runtime_router(
     
     
     @router.get("/api/matches/{match_id}/video")
-    def get_match_video(match: MatchRecord = Depends(require_match)):
+    def get_match_video(match: Annotated[MatchRecord, Depends(require_match)]):
         if match.inputMode != "video":
             raise HTTPException(status_code=409, detail="Video playback is only available for video-backed matches.")
     
@@ -60,7 +60,7 @@ def create_match_runtime_router(
     
     @router.get("/api/matches/{match_id}/frames")
     def get_frames(
-        match: MatchRecord = Depends(require_match),
+        match: Annotated[MatchRecord, Depends(require_match)],
         afterFrame: int | None = None,
         cursor: str | None = None,
         limit: int | None = None,
@@ -80,7 +80,7 @@ def create_match_runtime_router(
     
     @router.get("/api/matches/{match_id}/evidence")
     def get_match_evidence(
-        match: MatchRecord = Depends(require_match),
+        match: Annotated[MatchRecord, Depends(require_match)],
         intervalStart: float | None = None,
         intervalEnd: float | None = None,
         cursor: str | None = None,
@@ -97,7 +97,7 @@ def create_match_runtime_router(
     
     
     @router.get("/api/matches/{match_id}/analytics")
-    def get_analytics(match: MatchRecord = Depends(require_match), generationId: str | None = None) -> dict:
+    def get_analytics(match: Annotated[MatchRecord, Depends(require_match)], generationId: str | None = None) -> dict:
         try:
             with storage.generation_snapshot(match.id, generation_id=generationId) as ref:
                 summary, assignments, formation_timeline, shots = storage.load_analytics(match.id)
@@ -111,7 +111,7 @@ def create_match_runtime_router(
     
     
     @router.post("/api/matches/{match_id}/corrections")
-    def post_match_correction(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+    def post_match_correction(match: Annotated[MatchRecord, Depends(require_match)], payload: dict | None = None) -> dict:
         body = payload or {}
         if not isinstance(body.get("payload", {}), dict):
             from .semantic_commands import SemanticCommandError
@@ -140,7 +140,7 @@ def create_match_runtime_router(
     
     
     @router.post("/api/matches/{match_id}/corrections/{correction_id}/recover")
-    def recover_match_correction(correction_id: str, match: MatchRecord = Depends(require_match)) -> dict:
+    def recover_match_correction(correction_id: str, match: Annotated[MatchRecord, Depends(require_match)]) -> dict:
         try:
             saved = storage.recover_correction(match.id, correction_id)
         except KeyError as exc:
@@ -149,7 +149,7 @@ def create_match_runtime_router(
     
     
     @router.post("/api/matches/{match_id}/corrections/{correction_id}/undo")
-    def undo_match_correction(correction_id: str, match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+    def undo_match_correction(correction_id: str, match: Annotated[MatchRecord, Depends(require_match)], payload: dict | None = None) -> dict:
         try:
             body = payload or {}
             saved = storage.undo_correction(match.id, correction_id,
@@ -161,7 +161,7 @@ def create_match_runtime_router(
     
     
     @router.get("/api/matches/{match_id}/corrections")
-    def list_match_corrections(match: MatchRecord = Depends(require_match), state: str | None = None) -> dict:
+    def list_match_corrections(match: Annotated[MatchRecord, Depends(require_match)], state: str | None = None) -> dict:
         return {"items": storage.list_corrections(match.id, state=state)}
     
 

@@ -1,6 +1,6 @@
 """Job lifecycle and cost API routes."""
 
-from __future__ import annotations
+from typing import Annotated
 
 import asyncio
 import uuid
@@ -52,7 +52,7 @@ def create_job_router(
         return attach_durable_job_view(job.model_dump(mode="json"), runner.ledger)
     
     @router.get("/api/matches/{match_id}/cost")
-    def get_match_cost(match: MatchRecord = Depends(require_match)) -> dict:
+    def get_match_cost(match: Annotated[MatchRecord, Depends(require_match)]) -> dict:
         return {"matchId": match.id, **runner.ledger.cost_summary(match_id=match.id)}
     
     @router.get("/api/jobs/{job_id}/cost")
@@ -292,7 +292,7 @@ def create_job_router(
 
 
     @router.post("/api/matches/{match_id}/jobs", status_code=202)
-    def post_match_job(match: MatchRecord = Depends(require_match), payload: dict | None = None) -> dict:
+    def post_match_job(match: Annotated[MatchRecord, Depends(require_match)], payload: dict | None = None) -> dict:
         body = payload or {}
         request_id = str(body.get("requestId") or uuid.uuid4().hex)
         from .workbench.money import admission_money

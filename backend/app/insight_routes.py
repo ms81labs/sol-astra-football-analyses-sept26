@@ -1,6 +1,6 @@
 """Aggregate dashboard and tactical-search API routes."""
 
-from __future__ import annotations
+from typing import Annotated
 
 import math
 from collections.abc import Callable
@@ -233,7 +233,7 @@ def create_insight_router(
         }
 
     @router.get("/api/matches/{match_id}/themes")
-    def get_match_themes(match: MatchRecord = Depends(require_match)) -> dict:
+    def get_match_themes(match: Annotated[MatchRecord, Depends(require_match)]) -> dict:
         """Get detected tactical themes for a specific match.
         
         Returns:
