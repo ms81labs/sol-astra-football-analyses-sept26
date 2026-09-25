@@ -1,0 +1,180 @@
+name: BQ01 numeric and upload validation
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/bq01-numeric-upload-validation.yml']
+
+permissions:
+  contents: read
+
+env:
+  VERIFY_DAYTONA: '0'
+  ALLOW_DAYTONA_MUTATION: '0'
+  PYTHON_DOTENV_DISABLED: '1'
+
+jobs:
+  candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Restore exact candidate without modifying production
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$(git rev-parse HEAD^)" = df85fb95ac2e276e4cc32dbb07f13747f081cb3b
+          mkdir -p .bq01-upload
+          python - <<'PY'
+          import base64, hashlib, json, lzma, os, pathlib, subprocess, urllib.request
+          url = 'https://api.github.com/repos/ms81labs/sol-astra-football-analyses-sept26/git/blobs/98c596de690afd909accc001bc9add436008a7d1'
+          request = urllib.request.Request(url, headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json'})
+          with urllib.request.urlopen(request, timeout=60) as response:
+              packed = base64.b64decode(json.load(response)['content'])
+          assert hashlib.sha256(packed).hexdigest() == '59562a3584592fa8fac0779b77ceb745b7018d94a423b301ade805f261a9ccf4'
+          patch = lzma.decompress(packed)
+          assert hashlib.sha256(patch).hexdigest() == 'd63a34031fc4cc20d3390acbcff2724e3d8c8be813b1dc1f3ba8d9f23b63aaad'
+          pathlib.Path('.bq01-upload/candidate.patch').write_bytes(patch)
+          subprocess.run(['git', 'apply', '--check', '.bq01-upload/candidate.patch'], check=True)
+          subprocess.run(['git', 'apply', '--include=backend/tests/test_quality_numeric_contracts.py', '--include=backend/tests/test_required_upload_contract.py', '.bq01-upload/candidate.patch'], check=True)
+          for name in ('match_ingest_routes.py', 'workbench/jobs.py'):
+              destination = pathlib.Path('.bq01-upload/original') / name
+              destination.parent.mkdir(parents=True, exist_ok=True)
+              destination.write_bytes((pathlib.Path('backend/app') / name).read_bytes())
+          PY
+      - name: Install required media executables
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install unchanged locked runtime and isolated quality profiles
+        run: |
+          python -m pip install --require-hashes -r backend/requirements/dev.lock
+          python -m pip install -e . --no-deps
+          python -m venv .quality-tools
+          .quality-tools/bin/python -m pip install --require-hashes -r backend/requirements/quality-linux.lock -r backend/requirements/typing-linux.lock
+          python - <<'PY'
+          import json, sys
+          from pathlib import Path
+          from importlib.metadata import version
+          assert sys.version_info[:2] == (3, 11)
+          expected = {'fastapi': '0.121.0', 'pydantic': '2.13.5', 'anyio': '4.15.1'}
+          actual = {name: version(name) for name in expected}
+          assert actual == expected, actual
+          Path('.bq01-upload/runtime.json').write_text(json.dumps({'python': sys.version, 'packages': actual}, indent=2) + '\n')
+          PY
+      - name: Prove original runtime contracts and four type errors plus one B008
+        run: |
+          set -o pipefail
+          python -m pytest -q backend/tests/test_quality_numeric_contracts.py backend/tests/test_required_upload_contract.py --junitxml=.bq01-upload/before.xml 2>&1 | tee .bq01-upload/before.log
+          .quality-tools/bin/python - <<'PY'
+          import json, pathlib, subprocess, sys
+          targets = ['backend/app/insight_routes.py', 'backend/app/job_routes.py', 'backend/app/match_runtime_routes.py', 'backend/app/review_routes.py', 'backend/app/workbench/leftover_match_routes.py']
+          result = subprocess.run([sys.executable, '-m', 'mypy', '--config-file', 'pyproject.toml', '--output=json', '--no-incremental', *targets], capture_output=True, text=True)
+          pathlib.Path('.bq01-upload/mypy-before.jsonl').write_text(result.stdout)
+          assert result.returncode == 1 and not result.stderr, (result.returncode, result.stderr)
+          errors = [json.loads(line) for line in result.stdout.splitlines() if json.loads(line).get('severity') == 'error']
+          assert len(errors) == 4 and sorted(row['code'] for row in errors) == ['arg-type', 'arg-type', 'arg-type', 'call-overload'], errors
+          result = subprocess.run(['.quality-tools/bin/ruff', 'check', 'backend/app/match_ingest_routes.py', '--select', 'B008', '--output-format=json'], capture_output=True, text=True)
+          pathlib.Path('.bq01-upload/ruff-before.json').write_text(result.stdout)
+          rows = json.loads(result.stdout)
+          assert result.returncode == 1 and len(rows) == 1 and rows[0]['code'] == 'B008' and not result.stderr
+          print('Original: four expected type diagnostics and one required-upload B008')
+          PY
+          python - <<'PY'
+          import json, pathlib, tempfile
+          import backend.tests.conftest
+          from backend.app.main import create_app
+          with tempfile.TemporaryDirectory(prefix='bq01-schema-before-') as temporary:
+              app = create_app(storage_root=pathlib.Path(temporary), run_jobs_inline=False)
+              try:
+                  pathlib.Path('.bq01-upload/openapi-before.json').write_text(json.dumps(app.openapi(), sort_keys=True, indent=2) + '\n')
+              finally:
+                  app.state.storage.close()
+          PY
+      - name: Apply candidate and verify unchanged bodies and full OpenAPI
+        run: |
+          git add backend/tests/test_quality_numeric_contracts.py backend/tests/test_required_upload_contract.py
+          git apply --index --exclude=backend/tests/test_quality_numeric_contracts.py --exclude=backend/tests/test_required_upload_contract.py .bq01-upload/candidate.patch
+          git rm -- .github/workflows/bq01-numeric-upload-validation.yml
+          git diff --cached --check
+          test "$(git write-tree)" = a9e7003363f4eec892f9a90679a0e2c8ff675f19
+          python - <<'PY'
+          import ast, json, pathlib, tempfile
+          import backend.tests.conftest
+          from backend.app.main import create_app
+          for name, function in [('match_ingest_routes.py', 'create_match'), ('workbench/jobs.py', 'cancellation_does_not_erase_charges')]:
+              before = ast.parse((pathlib.Path('.bq01-upload/original') / name).read_text())
+              after = ast.parse((pathlib.Path('backend/app') / name).read_text())
+              def body(tree):
+                  return [ast.dump(n, include_attributes=False) for fn in ast.walk(tree) if isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)) and fn.name == function for n in fn.body]
+              assert body(before) == body(after), name
+          with tempfile.TemporaryDirectory(prefix='bq01-schema-after-') as temporary:
+              app = create_app(storage_root=pathlib.Path(temporary), run_jobs_inline=False)
+              try:
+                  after = app.openapi()
+                  pathlib.Path('.bq01-upload/openapi-after.json').write_text(json.dumps(after, sort_keys=True, indent=2) + '\n')
+              finally:
+                  app.state.storage.close()
+          before = json.loads(pathlib.Path('.bq01-upload/openapi-before.json').read_text())
+          assert before == after
+          result = {'equal': True, 'paths': len(after['paths']), 'schemas': len(after['components']['schemas'])}
+          pathlib.Path('.bq01-upload/schema-equivalence.json').write_text(json.dumps(result, indent=2) + '\n')
+          print(result)
+          PY
+      - name: Verify numeric, geometry, cancellation, upload and admission behavior
+        run: |
+          set -o pipefail
+          python -m pytest -q backend/tests/test_quality_numeric_contracts.py backend/tests/test_required_upload_contract.py backend/tests/test_dashboard.py backend/tests/test_trust_crop_snapshot.py backend/tests/test_job_route_composition.py backend/tests/test_workbench_contracts.py backend/tests/test_match_admission.py --junitxml=.bq01-upload/after.xml 2>&1 | tee .bq01-upload/after.log
+          pytest -q backend/tests/test_quality_numeric_contracts.py backend/tests/test_required_upload_contract.py --junitxml=.bq01-upload/console.xml 2>&1 | tee .bq01-upload/console.log
+      - name: Verify exact quality configuration and retire the final B008
+        run: |
+          export PATH="$PWD/.quality-tools/bin:$PATH"
+          set -o pipefail
+          ruff check backend --select F,S110,B904,B008 | tee .bq01-upload/ruff-clean.log
+          python scripts/check_python_quality.py ruff | tee .bq01-upload/ruff-ratchet.log
+          python scripts/check_python_quality.py mypy | tee .bq01-upload/mypy-ratchet.log
+          python -m mypy --config-file pyproject.toml backend/app/insight_routes.py backend/app/job_routes.py backend/app/match_runtime_routes.py backend/app/review_routes.py backend/app/workbench/leftover_match_routes.py backend/app/numeric_types.py | tee .bq01-upload/mypy-after.log
+      - name: Retain exact validated Git objects without updating a ref
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          import hashlib, json, os, pathlib, subprocess, urllib.request
+          tree_sha = subprocess.check_output(['git', 'write-tree']).decode().strip()
+          assert tree_sha == 'a9e7003363f4eec892f9a90679a0e2c8ff675f19'
+          names = subprocess.check_output(['git', 'diff', '--cached', '--name-only', '--diff-filter=AM', '-z']).decode().rstrip('\0').split('\0')
+          assert len(names) == 10 and all(not name.startswith('.github/') for name in names), names
+          def api(endpoint, data):
+              request = urllib.request.Request('https://api.github.com/repos/ms81labs/sol-astra-football-analyses-sept26/' + endpoint, data=json.dumps(data).encode(), method='POST', headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json'})
+              with urllib.request.urlopen(request, timeout=60) as response:
+                  return json.load(response)
+          entries, manifest = [], {}
+          for name in names:
+              data = pathlib.Path(name).read_bytes()
+              sha = hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
+              assert sha == subprocess.check_output(['git', 'rev-parse', ':' + name]).decode().strip(), name
+              blob = api('git/blobs', {'content': data.decode(), 'encoding': 'utf-8'})
+              assert blob['sha'] == sha
+              entries.append({'path': name, 'mode': '100644', 'type': 'blob', 'sha': sha})
+              manifest[name] = {'blob': sha, 'sha256': hashlib.sha256(data).hexdigest()}
+          tree = api('git/trees', {'base_tree': '0459dd443f80ffd97d5914b0eb37a86ee1a24869', 'tree': entries})
+          assert tree['sha'] == tree_sha
+          receipt = {'base': 'df85fb95ac2e276e4cc32dbb07f13747f081cb3b', 'parent': os.environ['GITHUB_SHA'], 'tree': tree_sha, 'files': manifest, 'workflowRun': os.environ['GITHUB_RUN_ID'], 'publication': 'No commit or ref written; publish this exact tree through authorized connector and inspect normal CI.'}
+          pathlib.Path('.bq01-upload/candidate.json').write_text(json.dumps(receipt, indent=2) + '\n')
+          print(json.dumps({key: value for key, value in receipt.items() if key != 'files'}, indent=2))
+          PY
+      - name: Retain validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bq01-numeric-upload-validation
+          path: .bq01-upload/
+          include-hidden-files: true
+          retention-days: 30
+          if-no-files-found: error
