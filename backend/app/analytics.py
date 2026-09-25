@@ -432,6 +432,46 @@ def _pitch_zone(x: float, team: str | None) -> str:
     return "middle_third"
 
 
+def _summarize_regain_zones(
+    events: list[DetectedEvent],
+    frame_by_id: dict[int, FrameData],
+    regain_types: set[str],
+) -> tuple[dict[str, int] | None, dict[str, int] | None]:
+    """Count located regains without conflating their fallback with exposure lookup."""
+    my_team_regain_zones = {"defensive_third": 0, "middle_third": 0, "attacking_third": 0}
+    enemy_regain_zones = {"defensive_third": 0, "middle_third": 0, "attacking_third": 0}
+    observed_regain = {"my_team": False, "enemy": False}
+    for event in events:
+        if event.type not in regain_types or event.toTrackId is None:
+            continue
+
+        # Find position of the recovery/turnover
+        position = None
+        for track_id in [event.toTrackId, event.fromTrackId]:
+            if track_id is not None:
+                pos = _lookup_player_position(frame_by_id.get(event.frameId), event.team, track_id)
+                if pos is not None:
+                    position = pos
+                    break
+
+        if position is None:
+            continue
+
+        zone = _pitch_zone(position[0], event.team)
+
+        if event.team == "my_team":
+            my_team_regain_zones[zone] += 1
+            observed_regain["my_team"] = True
+        elif event.team == "enemy":
+            enemy_regain_zones[zone] += 1
+            observed_regain["enemy"] = True
+
+    return (
+        my_team_regain_zones if observed_regain["my_team"] else None,
+        enemy_regain_zones if observed_regain["enemy"] else None,
+    )
+
+
 def _summarize_defensive_context(
     frames: list[FrameData],
     assignments: list[BallOwnership],
@@ -443,44 +483,19 @@ def _summarize_defensive_context(
     # Block height classification
     my_team_block_height = None if my_team_defensive_line_height is None else _classify_block_height(my_team_defensive_line_height)
     enemy_block_height = None if enemy_defensive_line_height is None else _classify_block_height(enemy_defensive_line_height)
-    
-    # Regain zones - count recoveries by pitch third
-    my_team_regain_zones = {"defensive_third": 0, "middle_third": 0, "attacking_third": 0}
-    enemy_regain_zones = {"defensive_third": 0, "middle_third": 0, "attacking_third": 0}
-    observed_regain = {"my_team": False, "enemy": False}
+
     frame_by_id = {frame.frameId: frame for frame in frames}
-    
+
     regain_types = {"recovery", "tackle", "turnover"}
     teams = ("my_team", "enemy")
-    
+
     # Count turnovers faced (transitions where team lost ball)
     turnovers_faced = {team: 0 for team in teams}
-    
-    for event in events:
-        if event.type not in regain_types or event.toTrackId is None:
-            continue
-        
-        # Find position of the recovery/turnover
-        position = None
-        for track_id in [event.toTrackId, event.fromTrackId]:
-            if track_id is not None:
-                pos = _lookup_player_position(frame_by_id.get(event.frameId), event.team, track_id)
-                if pos is not None:
-                    position = pos
-                    break
-        
-        if position is None:
-            continue
-        
-        zone = _pitch_zone(position[0], event.team)
-        
-        if event.team == "my_team":
-            my_team_regain_zones[zone] += 1
-            observed_regain["my_team"] = True
-        elif event.team == "enemy":
-            enemy_regain_zones[zone] += 1
-            observed_regain["enemy"] = True
-    
+
+    my_team_regain_zones, enemy_regain_zones = _summarize_regain_zones(
+        events, frame_by_id, regain_types,
+    )
+
     # Transition exposure: ratio of turnovers faced to high-press regains
     # Higher value = more vulnerable (facing turnovers without regaining high up)
     for event in events:
@@ -488,14 +503,14 @@ def _summarize_defensive_context(
             # Team that lost the ball "faces" a turnover
             losing_team = "my_team" if event.team == "enemy" else "enemy"
             turnovers_faced[losing_team] += 1
-    
+
     # Calculate exposure ratio: turnovers faced / high-press regains
     # If no high-press regains but turnovers faced, exposure is high
     def calc_exposure(turnovers: int, high_press_regains: int) -> float | None:
         if high_press_regains == 0:
             return None
         return round(turnovers / high_press_regains, 2)
-    
+
     # Get high-press regains from events (recoveries in attacking third)
     my_team_high_press = sum(
         1
@@ -513,15 +528,15 @@ def _summarize_defensive_context(
         and (event_x := _get_event_x(event, frame_by_id)) is not None
         and _is_pressing_zone("enemy", event_x)
     )
-    
+
     my_team_exposure = calc_exposure(turnovers_faced["my_team"], my_team_high_press)
     enemy_exposure = calc_exposure(turnovers_faced["enemy"], enemy_high_press)
-    
+
     return (
         my_team_block_height,
         enemy_block_height,
-        my_team_regain_zones if observed_regain["my_team"] else None,
-        enemy_regain_zones if observed_regain["enemy"] else None,
+        my_team_regain_zones,
+        enemy_regain_zones,
         my_team_exposure,
         enemy_exposure,
     )
@@ -1106,21 +1121,10 @@ def build_shot_analytics(frames: list[FrameData | dict], events: list[DetectedEv
     return sorted(shots, key=lambda shot: (shot.timestamp, shot.frameId, shot.playerId))
 
 
-def summarize_match(
-    frames: list[dict | FrameData],
+def _possession_durations(
     assignments: list[BallOwnership],
-    shots: list[ShotAnalytics] | None = None,
-    events: list[DetectedEvent | dict] | None = None,
-    *, attack_direction: str = "left_to_right",
-    identity_continuous: bool = False,
-    calibration_accepted: bool = False,
-    pitch_length_m: float = PITCH_LENGTH_M,
-    pitch_width_m: float = PITCH_WIDTH_M,
-) -> MatchSummary:
-    canonical_frames = [frame if isinstance(frame, FrameData) else FrameData.model_validate(frame) for frame in frames]
-    canonical_events = [event if isinstance(event, DetectedEvent) else DetectedEvent.model_validate(event) for event in (events or [])]
-    directional_frames = _oriented_frames(canonical_frames, attack_direction)
-    formation_timeline = build_formation_timeline(directional_frames)
+) -> tuple[float, float, float, bool]:
+    """Measure eligible intervals; retain the equal-duration fallback when needed."""
     controlled = [assignment for assignment in assignments if assignment.team in {"my_team", "enemy"}]
     controlled_frames = len(controlled)
     eligible_seconds = 0.0
@@ -1140,6 +1144,57 @@ def summarize_match(
         eligible_seconds = float(controlled_frames)
         requested_seconds = eligible_seconds
         my_team_seconds = float(sum(1 for assignment in controlled if assignment.team == "my_team"))
+
+    return eligible_seconds, requested_seconds, my_team_seconds, equal_duration_assumed
+
+
+def _accumulate_team_motion(
+    players: list[PlayerData],
+    previous_players: list[PlayerData],
+    *,
+    dt: float,
+    pitch_length_m: float,
+    pitch_width_m: float,
+    total_distance: float,
+    top_speed: float,
+    sprint_count: int,
+    previous_sprints: set[int],
+) -> tuple[float, float, int, set[int]]:
+    """Accumulate in player order and count only entries into a sprint."""
+    current_sprints: set[int] = set()
+    for current_player in players:
+        previous_player = next((player for player in previous_players if player.id == current_player.id), None)
+        if previous_player is None:
+            continue
+        dx = (current_player.x - previous_player.x) / 100 * pitch_length_m
+        dy = (current_player.y - previous_player.y) / 100 * pitch_width_m
+        distance = sqrt(dx * dx + dy * dy)
+        speed = (distance / dt) * 3.6
+        total_distance += distance
+        top_speed = max(top_speed, speed)
+        if speed > 25:
+            sprint_count += int(current_player.id not in previous_sprints)
+            current_sprints.add(current_player.id)
+
+    return total_distance, top_speed, sprint_count, current_sprints
+
+
+def summarize_match(
+    frames: list[dict | FrameData],
+    assignments: list[BallOwnership],
+    shots: list[ShotAnalytics] | None = None,
+    events: list[DetectedEvent | dict] | None = None,
+    *, attack_direction: str = "left_to_right",
+    identity_continuous: bool = False,
+    calibration_accepted: bool = False,
+    pitch_length_m: float = PITCH_LENGTH_M,
+    pitch_width_m: float = PITCH_WIDTH_M,
+) -> MatchSummary:
+    canonical_frames = [frame if isinstance(frame, FrameData) else FrameData.model_validate(frame) for frame in frames]
+    canonical_events = [event if isinstance(event, DetectedEvent) else DetectedEvent.model_validate(event) for event in (events or [])]
+    directional_frames = _oriented_frames(canonical_frames, attack_direction)
+    formation_timeline = build_formation_timeline(directional_frames)
+    eligible_seconds, requested_seconds, my_team_seconds, equal_duration_assumed = _possession_durations(assignments)
 
     my_team_total_dist = 0.0
     enemy_total_dist = 0.0
@@ -1182,33 +1237,18 @@ def summarize_match(
             continue
         current_sprints: dict[str, set[int]] = {"my_team": set(), "enemy": set()}
 
-        for current_player in frame.myTeam:
-            previous_player = next((player for player in previous.myTeam if player.id == current_player.id), None)
-            if previous_player is None:
-                continue
-            dx = (current_player.x - previous_player.x) / 100 * pitch_length_m
-            dy = (current_player.y - previous_player.y) / 100 * pitch_width_m
-            distance = sqrt(dx * dx + dy * dy)
-            speed = (distance / dt) * 3.6
-            my_team_total_dist += distance
-            my_team_top_speed = max(my_team_top_speed, speed)
-            if speed > 25:
-                my_team_sprints += int(current_player.id not in sprinting["my_team"])
-                current_sprints["my_team"].add(current_player.id)
-
-        for current_player in frame.enemies:
-            previous_player = next((player for player in previous.enemies if player.id == current_player.id), None)
-            if previous_player is None:
-                continue
-            dx = (current_player.x - previous_player.x) / 100 * pitch_length_m
-            dy = (current_player.y - previous_player.y) / 100 * pitch_width_m
-            distance = sqrt(dx * dx + dy * dy)
-            speed = (distance / dt) * 3.6
-            enemy_total_dist += distance
-            enemy_top_speed = max(enemy_top_speed, speed)
-            if speed > 25:
-                enemy_sprints += int(current_player.id not in sprinting["enemy"])
-                current_sprints["enemy"].add(current_player.id)
+        my_team_total_dist, my_team_top_speed, my_team_sprints, current_sprints["my_team"] = _accumulate_team_motion(
+            frame.myTeam, previous.myTeam, dt=dt,
+            pitch_length_m=pitch_length_m, pitch_width_m=pitch_width_m,
+            total_distance=my_team_total_dist, top_speed=my_team_top_speed,
+            sprint_count=my_team_sprints, previous_sprints=sprinting["my_team"],
+        )
+        enemy_total_dist, enemy_top_speed, enemy_sprints, current_sprints["enemy"] = _accumulate_team_motion(
+            frame.enemies, previous.enemies, dt=dt,
+            pitch_length_m=pitch_length_m, pitch_width_m=pitch_width_m,
+            total_distance=enemy_total_dist, top_speed=enemy_top_speed,
+            sprint_count=enemy_sprints, previous_sprints=sprinting["enemy"],
+        )
         sprinting = current_sprints
 
     formation = _select_primary_formation(formation_timeline)
@@ -1235,7 +1275,7 @@ def summarize_match(
         my_team_counterpress_recovery_seconds,
         enemy_counterpress_recovery_seconds,
     ) = _summarize_pressing_metrics(directional_frames, canonical_events)
-    
+
     # Defensive context metrics
     (
         my_team_block_height,
