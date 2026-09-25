@@ -506,6 +506,7 @@ export interface MatchExportBundle {
   playlist?: { sourceSha256?: string; intervals?: Array<[number, number]> };
   corrections?: unknown[];
   annotations?: unknown[];
+  reports?: Record<string, unknown>;
   provenance?: { storageArtifactsAreSourceOfTruth?: boolean; llmGenerated?: boolean };
   exports?: {
     matchJson?: string;

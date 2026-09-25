@@ -25,7 +25,8 @@ export default function MatchPackagePanel({ matchId, generationId, onReopen }: M
       if (imported.schemaVersion !== 'match_bundle_v1' || typeof imported.matchId !== 'string'
           || !/^[a-f0-9]{32}$/.test(imported.matchId)
           || typeof imported.generationId !== 'string' || !imported.generationId || !imported.playlist?.sourceSha256
-          || !Array.isArray(imported.corrections) || !Array.isArray(imported.annotations)) {
+          || !Array.isArray(imported.corrections) || !Array.isArray(imported.annotations)
+          || !imported.reports || typeof imported.reports !== 'object' || Array.isArray(imported.reports)) {
         throw new Error('Invalid editable match package.');
       }
       const retained = await fetchMatchExport(imported.matchId);
@@ -36,7 +37,8 @@ export default function MatchPackagePanel({ matchId, generationId, onReopen }: M
       }
       if (JSON.stringify(retained.playlist) !== JSON.stringify(imported.playlist)
           || JSON.stringify(retained.corrections) !== JSON.stringify(imported.corrections)
-          || JSON.stringify(retained.annotations) !== JSON.stringify(imported.annotations)) {
+          || JSON.stringify(retained.annotations) !== JSON.stringify(imported.annotations)
+          || JSON.stringify(retained.reports) !== JSON.stringify(imported.reports)) {
         throw new Error('Package contents differ from retained state; import would lose those edits.');
       }
       if (await onReopen(imported.matchId, imported.generationId) === false) throw new Error('Could not reopen the retained match.');
