@@ -102,7 +102,17 @@ select = ["F", "B", "BLE", "S110", "B904", "C901"]
 [tool.mypy]
 python_version = "3.11"
 plugins = ["pydantic.mypy"]
-files = ["backend/app/workbench", "backend/app/schemas.py", "backend/app/settings.py", "backend/app/run_benchmarks.py"]
+files = [
+    "backend/app/workbench",
+    "backend/app/schemas.py",
+    "backend/app/settings.py",
+    "backend/app/run_benchmarks.py",
+    "backend/app/insight_routes.py",
+    "backend/app/job_routes.py",
+    "backend/app/match_runtime_routes.py",
+    "backend/app/review_routes.py",
+    "backend/app/numeric_types.py",
+]
 follow_imports = "silent"
 ignore_missing_imports = true
 check_untyped_defs = true

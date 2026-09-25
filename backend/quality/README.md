@@ -27,3 +27,13 @@ python scripts/check_python_quality.py mypy --write-baseline
 Tool pins, platform-specific wheel hashes, configuration hashes and initial diagnostic details are retained beside the source. Runtime dependency locks are unchanged.
 
 The broader exact Ruff baseline now contains no `B008` entries, so new calls in argument defaults fail the ratchet. The required upload retains a named, per-router `File(...)` marker to preserve HTTP requiredness and direct-call positional compatibility without sharing marker state across applications.
+
+### Explicit clean route typing coverage
+
+The zero-diagnostic mypy scope now explicitly includes `insight_routes.py`,
+`job_routes.py`, `match_runtime_routes.py`, `review_routes.py` and `numeric_types.py`,
+in addition to the original workbench/contracts/settings/benchmark scope. The
+workbench match routes were already covered by the directory scope. Only the
+mypy configuration digest changed; no diagnostic or ignore was added. Analytics
+is not falsely marked clean: its remaining five explicit parsing/evidence
+diagnostics still require compatibility review outside this initial gate.

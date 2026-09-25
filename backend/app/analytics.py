@@ -126,8 +126,8 @@ def _bridge_short_dead_ball_gaps(assignments: list[BallOwnership]) -> list[BallO
     return bridged
 
 
-def _lookup_player_position(frame: FrameData, team: str, track_id: int | None) -> tuple[float, float] | None:
-    if track_id is None:
+def _lookup_player_position(frame: FrameData | None, team: str | None, track_id: int | None) -> tuple[float, float] | None:
+    if frame is None or track_id is None:
         return None
     if team == "my_team":
         player = next((player for player in frame.myTeam if player.id == track_id), None)
@@ -201,9 +201,9 @@ def _pitch_position_to_meters(x: float, y: float) -> tuple[float, float]:
 def _goal_geometry(team: str) -> tuple[tuple[float, float], tuple[float, float], tuple[float, float]]:
     half_goal_width = 7.32 / 2
     if team == "my_team":
-        center = (PITCH_LENGTH_M, PITCH_WIDTH_M / 2)
-        top_post = (PITCH_LENGTH_M, (PITCH_WIDTH_M / 2) - half_goal_width)
-        bottom_post = (PITCH_LENGTH_M, (PITCH_WIDTH_M / 2) + half_goal_width)
+        center: tuple[float, float] = (PITCH_LENGTH_M, PITCH_WIDTH_M / 2)
+        top_post: tuple[float, float] = (PITCH_LENGTH_M, (PITCH_WIDTH_M / 2) - half_goal_width)
+        bottom_post: tuple[float, float] = (PITCH_LENGTH_M, (PITCH_WIDTH_M / 2) + half_goal_width)
         return center, top_post, bottom_post
     center = (0.0, PITCH_WIDTH_M / 2)
     top_post = (0.0, (PITCH_WIDTH_M / 2) - half_goal_width)
@@ -410,7 +410,7 @@ def _classify_block_height(defensive_line_height: float) -> str:
     return "mid_block"
 
 
-def _pitch_zone(x: float, team: str) -> str:
+def _pitch_zone(x: float, team: str | None) -> str:
     """Determine which third of the pitch a position is in.
     
     Pitch is divided into thirds:
@@ -970,7 +970,7 @@ def detect_formation(players: list[dict[str, float]]) -> str:
 
 
 def build_formation_timeline(
-    frames: list[dict | FrameData],
+    frames: Iterable[dict | FrameData],
     *,
     team: str = "my_team",
     window_size: int = 5,
@@ -1123,7 +1123,7 @@ def summarize_match(
     enemy_sprints = 0
     physical_eligible_seconds = 0.0
     physical_requested_seconds = 0.0
-    sprinting = {"my_team": set(), "enemy": set()}
+    sprinting: dict[str, set[int]] = {"my_team": set(), "enemy": set()}
     my_team_pos_sum = {"x": 0.0, "y": 0.0, "count": 0}
     enemy_pos_sum = {"x": 0.0, "y": 0.0, "count": 0}
 
@@ -1154,7 +1154,7 @@ def summarize_match(
             physical_eligible_seconds += dt
         if not identity_continuous:
             continue
-        current_sprints = {"my_team": set(), "enemy": set()}
+        current_sprints: dict[str, set[int]] = {"my_team": set(), "enemy": set()}
 
         for current_player in frame.myTeam:
             previous_player = next((player for player in previous.myTeam if player.id == current_player.id), None)

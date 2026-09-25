@@ -1,3 +1,19 @@
+# Analytics missing-frame safety and clean-scope expansion — 25 September 2026
+
+Production base: `eb39f3974986da1acf0bc8f73f85afa78d58cf70`, tree `bfc208eb7f96086e49edd463b167affeb23bac55`. The pressing extraction is already published; inspect its normal CI `36116338451` rather than reapplying it.
+
+A runtime reproduction found that `summarize_match` raises AttributeError when a recovery/tackle/turnover references a frame absent from its snapshot. The pre-existing defensive-context code passes None to `_lookup_player_position`, which dereferences it. The shared lookup now treats missing frames as unavailable positions, matching existing missing-player behavior. This is an intentional correctness fix, not a claim of exception-for-exception equivalence on missing-frame inputs. It does not borrow a neighbor frame, invent zero-valued evidence, or discard later located events.
+
+The 44-case contract suite produced 22 missing-frame failures and 22 compatibility passes before the guard, then 44 passes after the minimal fix. Existing-frame team/track selection, unsupported team fallback, goal coordinate runtime types, read-only formation iterables and untouched inputs are covered. Remaining changes in analytics are annotations only: optional accepted inputs, goal tuples, sprint sets and the read-only Iterable formation parameter. Explicit analytics mypy improves from 15 to five pre-existing parser/evidence errors; those five remain open, not suppressed. Broader selected tests and pinned CI are required before publication.
+
+Five already-clean modules are added to the explicit zero-error mypy scope: insight_routes, job_routes, match_runtime_routes, review_routes and numeric_types. Workbench coverage is retained. A new scope regression fails on the old configuration. The exact mypy baseline remains empty, with only its configuration hash changed. Ruff remains 409 (234 C901, 175 BLE001) with zero B008. No tool/dependency versions, runtime locks, scorer pins, broad ignores or quality thresholds change.
+
+Acceptance requires the exact pinned candidate plus completed normal CI on the final published SHA, including complete backend/canonical verify/C05/C06. CPU stubs do not establish GPU/model-quality acceptance; author review is not independent approval. No new branch, force push, paid provider/GPU operation or live-store mutation is authorized. Temporary validation machinery must be absent from the final tree.
+
+Exact resume action: inspect final normal CI and retained evidence, then address the five remaining analytics coercion/evidence diagnostics with explicit compatibility tests. Do not reapply numeric/upload, pressing extraction or missing-frame fixes, and do not label the broader typing/structural/exception cleanup complete.
+
+---
+
 # BQ05 pressing-summary decomposition — 25 September 2026
 
 Parent source: `52a771073faf25dca888be6ac7f5b6344849fce2` (tree `a9e7003363f4eec892f9a90679a0e2c8ff675f19`). Its pinned numeric/upload preflight `36114690084` passed original 69, selected 250 and console 69 cases, full OpenAPI equality (490 paths/17 schemas), four route typing errors -> zero and the last B008 -> zero. Normal acceptance must be read from the source-bound CI, not inferred from this checkpoint.

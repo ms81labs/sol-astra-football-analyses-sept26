@@ -5,6 +5,7 @@ import json
 import runpy
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -74,3 +75,18 @@ def test_quality_tests_load_without_repository_on_import_path(tmp_path):
         check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_mypy_scope_keeps_clean_numeric_and_route_contracts():
+    root = Path(__file__).resolve().parents[2]
+    config = tomllib.loads((root / "pyproject.toml").read_text())
+    required = {
+        "backend/app/workbench", "backend/app/schemas.py",
+        "backend/app/settings.py", "backend/app/run_benchmarks.py",
+        "backend/app/insight_routes.py", "backend/app/job_routes.py",
+        "backend/app/match_runtime_routes.py", "backend/app/review_routes.py",
+        "backend/app/numeric_types.py",
+    }
+    assert required <= set(config["tool"]["mypy"]["files"])
+    baseline = json.loads((root / "backend/quality/mypy-baseline.json").read_text())
+    assert baseline["diagnostics"] == []
