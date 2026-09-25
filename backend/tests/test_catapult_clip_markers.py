@@ -10,6 +10,7 @@ from backend.app.main import create_app
 from backend.app.schemas import CreateAnnotationRequest
 from backend.app.storage import Storage
 from backend.app.workbench.media import FfmpegProbe, resolve_trusted_executable
+from backend.app.workbench.media_execution import MediaExecutionPolicy
 from backend.tests.test_audit_v3_final_journey import _install_video
 
 
@@ -78,3 +79,22 @@ def test_saved_source_interval_downloads_playable_clip_and_rejects_unsaved_range
     reopened = Storage(storage.storage_root)
     assert reopened.edit_list_for_match(match_id, generation_id=generation)["intervals"] == [(0.25, 0.75)]
     assert reopened.list_annotations(match_id)[0].text == "Pressing cue"
+
+
+@pytest.mark.integration
+@pytest.mark.real_media
+def test_saved_interval_exports_processed_wide_source(tmp_path: Path) -> None:
+    storage = Storage(tmp_path / "store")
+    match_id = _install_video(storage, tmp_path, size="2048x600")
+    storage.submit_correction(match_id, kind="playlist_item", payload={
+        "timestampStart": 0.25, "timestampEnd": 0.75, "notes": "Wide source export",
+    })
+    generation = storage.current_generation(match_id).generationId
+    with TestClient(create_app(storage_root=storage.storage_root), base_url="http://127.0.0.1") as client:
+        response = client.get(f"/api/matches/{match_id}/edits/clip", params={
+            "generationId": generation, "start": 0.25, "end": 0.75,
+        })
+    assert response.status_code == 200
+    output = tmp_path / "export.mp4"
+    output.write_bytes(response.content)
+    assert FfmpegProbe(policy=MediaExecutionPolicy(max_width=4096)).probe_identity(output).width == 2048

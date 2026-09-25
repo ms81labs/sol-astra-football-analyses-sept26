@@ -252,6 +252,7 @@ def create_match_detail_router(
         match: MatchRecord = Depends(require_match), generationId: str = "", start: float = 0.0, end: float = 0.0,
     ) -> FileResponse:
         from .workbench.media import FfmpegProbe
+        from .workbench.media_execution import MediaExecutionPolicy
 
         if match.inputMode != "video":
             raise HTTPException(status_code=409, detail="Clip export requires source video")
@@ -266,7 +267,8 @@ def create_match_detail_router(
         temporary = Path(tempfile.mkdtemp(prefix="clip-", dir=storage.storage_root))
         output = temporary / "clip.mp4"
         try:
-            FfmpegProbe().export_clip(storage.get_match_input_path(match.id), output,
+            FfmpegProbe(policy=MediaExecutionPolicy(max_width=4096, max_height=2160)).export_clip(
+                                      storage.get_match_input_path(match.id), output,
                                       start_seconds=start, duration_seconds=end - start, frame_exact=True)
         except Exception:
             shutil.rmtree(temporary)
