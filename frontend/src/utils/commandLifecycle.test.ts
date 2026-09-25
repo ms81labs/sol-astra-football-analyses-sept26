@@ -36,6 +36,10 @@ describe('C02 application contracts', () => {
     const pendingUndo = { ...newer, kind: 'undo', undoOf: 'one', applyState: 'received' as const };
     expect(playlistClipsFromCorrections([applied, pendingUndo], ['command-one', 'command-two'])).toHaveLength(1);
   });
+  it('restores a saved playlist title with its source interval', () => {
+    expect(playlistClipsFromCorrections([{ ...applied, payload: { ...applied.payload, title: 'Pressing cue' } }], ['command-one'], 'g1'))
+      .toMatchObject([{ generationId: 'g1', title: 'Pressing cue', start: 0, end: 1, notes: 'Approved' }]);
+  });
   it.each([0, 0.2, 1, -1, 100000])('uses the smallest representable half-open endpoint after %s', (time) => {
     const end = nextTimestamp(time);
     expect(end).toBeGreaterThan(time);

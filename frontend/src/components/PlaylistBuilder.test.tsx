@@ -29,6 +29,7 @@ it('exports time-bounded clips with notes and refuses whole-match frequency clai
   render(<PlaylistBuilder sourceFps={25} />);
   fireEvent.change(screen.getByLabelText(/clip start/i), { target: { value: '12' } });
   fireEvent.change(screen.getByLabelText(/clip end/i), { target: { value: '14' } });
+  fireEvent.change(screen.getByLabelText(/^title$/i), { target: { value: 'Second-half recovery' } });
   fireEvent.change(screen.getByLabelText(/notes/i), { target: { value: 'second-half turnover then shot' } });
   fireEvent.click(screen.getByRole('button', { name: /add clip/i }));
   await waitFor(() => {
@@ -41,14 +42,16 @@ it('exports time-bounded clips with notes and refuses whole-match frequency clai
   expect(exportCall?.[1]?.body).toContain('"sourceFps":25');
   expect(await screen.findByText(/12s to 14s/)).toBeTruthy();
   expect(screen.getByText(/frame 350 exclusive/i)).toBeTruthy();
+  expect(screen.getByText(/Second-half recovery/)).toBeTruthy();
   expect(screen.getByText(/second-half turnover then shot/)).toBeTruthy();
   expect(screen.getByText(/do not establish a whole-match frequency/i)).toBeTruthy();
 });
 
 it('offers exact saved video intervals as source-bound playable downloads', () => {
   render(<PlaylistBuilder matchId="match-a" generationId="g1" videoAvailable storedClips={[
-    { generationId: 'g1', start: 1.1, end: 2.1, notes: 'Key moment', sourceEndFrameExclusive: 11 },
+    { generationId: 'g1', start: 1.1, end: 2.1, title: 'Pressing cue', notes: 'Key moment', sourceEndFrameExclusive: 11 },
   ]} />);
+  expect(screen.getByText(/Pressing cue/)).toBeTruthy();
   const link = screen.getByRole('link', { name: /download rendered clip/i });
   expect(link.getAttribute('href')).toBe('/api/matches/match-a/edits/clip?generationId=g1&start=1.1&end=2.1');
 });

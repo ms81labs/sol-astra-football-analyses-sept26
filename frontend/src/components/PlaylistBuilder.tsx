@@ -53,6 +53,7 @@ export default function PlaylistBuilder({
   const [draft, setDraft] = useState({ key: '', start: '12', end: '14' });
   const start = marked && draft.key !== rangeKey ? String(marked.start) : draft.start;
   const end = marked && draft.key !== rangeKey ? String(marked.end) : draft.end;
+  const [title, setTitle] = useState('');
   const [notes, setNotes] = useState('');
   const [clips, setClips] = useState<PlaylistClip[]>([]);
   const [exportError, setExportError] = useState<string | null>(null);
@@ -94,6 +95,7 @@ export default function PlaylistBuilder({
         ...(generationId ? { generationId } : {}),
         start: interval.sourceStartSeconds,
         end: interval.sourceEndSeconds,
+        title: title.trim(),
         notes,
         sourceEndFrameExclusive: interval.sourceEndFrameExclusive,
       };
@@ -166,6 +168,10 @@ export default function PlaylistBuilder({
         />
       </label>
       <label className="block text-xs text-slate-400">
+        Title
+        <input value={title} onChange={(event) => setTitle(event.target.value)} className="mt-1 w-full rounded border border-slate-600 bg-slate-900 px-2 py-1 text-slate-200" />
+      </label>
+      <label className="block text-xs text-slate-400">
         Notes
         <input value={notes} onChange={(event) => setNotes(event.target.value)} className="mt-1 w-full rounded border border-slate-600 bg-slate-900 px-2 py-1 text-slate-200" />
       </label>
@@ -187,7 +193,7 @@ export default function PlaylistBuilder({
           onClick={() => onOpenInterval?.(clip.start)}
           className="block text-left text-xs text-slate-300 hover:text-emerald-300"
         >
-          {clip.start}s to {clip.end}s (frame {clip.sourceEndFrameExclusive} exclusive){clip.notes ? ` · ${clip.notes}` : ''}
+          {clip.title ? `${clip.title} · ` : ''}{clip.start}s to {clip.end}s (frame {clip.sourceEndFrameExclusive} exclusive){clip.notes ? ` · ${clip.notes}` : ''}
         </button>
         {videoAvailable && matchId && generationId && clip.generationId === generationId && (
           <a className="text-xs text-emerald-300 underline" download

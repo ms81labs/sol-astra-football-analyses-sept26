@@ -4,12 +4,13 @@ export interface PlaylistClip {
   generationId?: string;
   start: number;
   end: number;
+  title?: string;
   notes: string;
   sourceEndFrameExclusive: number;
 }
 
 export function clipKey(clip: PlaylistClip): string {
-  return `${clip.start}-${clip.end}-${clip.sourceEndFrameExclusive}-${clip.notes}`;
+  return `${clip.start}-${clip.end}-${clip.sourceEndFrameExclusive}-${clip.title ?? ''}-${clip.notes}`;
 }
 
 export function playlistClipsFromCorrections(
@@ -41,6 +42,7 @@ export function playlistClipsFromCorrections(
       ...(generationId ? { generationId } : {}),
       start,
       end,
+      title: typeof payload.title === 'string' ? payload.title : '',
       notes: typeof payload.notes === 'string' ? payload.notes : '',
       sourceEndFrameExclusive: Number.isFinite(exclusive) ? exclusive : 0,
     });

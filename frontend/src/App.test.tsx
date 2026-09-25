@@ -1166,6 +1166,7 @@ describe('App match workspace loading', () => {
       expect((screen.getByLabelText(/clip start/i) as HTMLInputElement).value).toBe('0');
       expect((screen.getByLabelText(/clip end/i) as HTMLInputElement).value).toBe('0.2');
     });
+    fireEvent.change(screen.getByLabelText(/^title$/i), { target: { value: 'Recovery passage' } });
     fireEvent.click(screen.getByRole('button', { name: /add clip/i }));
     await waitFor(() => {
       expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/playlists/export-interval'))).toBe(true);
@@ -1193,6 +1194,7 @@ describe('App match workspace loading', () => {
     expect(clipCall?.[1]?.body).toContain('"kind":"playlist_item"');
     expect(clipCall?.[1]?.body).toContain('"timestampStart":0');
     expect(clipCall?.[1]?.body).toContain('"timestampEnd":0.2');
+    expect(clipCall?.[1]?.body).toContain('"title":"Recovery passage"');
     expect(clipCall?.[1]?.body).not.toContain('"events"');
     expect(clipCall?.[1]?.body).not.toContain('"eventId"');
     expect(await screen.findByRole('button', { name: 'Undo clip-1' })).toBeTruthy();

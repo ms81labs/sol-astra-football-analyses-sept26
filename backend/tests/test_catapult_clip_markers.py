@@ -49,7 +49,7 @@ def test_saved_source_interval_downloads_playable_clip_and_rejects_unsaved_range
     match_id = _install_video(storage, tmp_path)
     storage.submit_correction(match_id, kind="playlist_item", payload={
         "timestampStart": 0.25, "timestampEnd": 0.75,
-        "sourceEndFrameExclusive": 3, "notes": "Watch the release",
+        "sourceEndFrameExclusive": 3, "title": "Pressing cue", "notes": "Watch the release",
     })
     storage.create_annotation(match_id, CreateAnnotationRequest(
         type="note", frameStart=1, frameEnd=3, timestampStart=0.25,
@@ -74,6 +74,7 @@ def test_saved_source_interval_downloads_playable_clip_and_rejects_unsaved_range
     assert FfmpegProbe().probe_identity(downloaded).durationSeconds is not None
     package = exported.json()
     assert package["generationId"] == generation
+    assert package["corrections"][-1]["payload"]["title"] == "Pressing cue"
     assert package["corrections"][-1]["payload"]["notes"] == "Watch the release"
     assert package["annotations"][0]["text"] == "Pressing cue"
     reopened = Storage(storage.storage_root)
