@@ -1,0 +1,80 @@
+name: BQ05 summary-stage validation
+
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/bq05-summary-validation.yml']
+
+permissions:
+  contents: read
+
+env:
+  VERIFY_DAYTONA: '0'
+  ALLOW_DAYTONA_MUTATION: '0'
+  PYTHON_DOTENV_DISABLED: '1'
+  PYTHONDONTWRITEBYTECODE: '1'
+
+jobs:
+  candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Restore exact reviewed patch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test "$(git rev-parse HEAD^)" = ace521d7077a8ccb77d0091bd498aa713cf21cf3
+          mkdir -p .bq05-summary
+          python - <<'PY'
+          import base64, hashlib, json, lzma, os, pathlib, urllib.request
+          request = urllib.request.Request(
+              'https://api.github.com/repos/ms81labs/sol-astra-football-analyses-sept26/git/blobs/6e4264d7d5b953e63d7a9974a7dc25f84f127a89',
+              headers={'Authorization': 'Bearer ' + os.environ['GH_TOKEN'], 'Accept': 'application/vnd.github+json'})
+          with urllib.request.urlopen(request, timeout=60) as response:
+              packed = base64.b64decode(json.load(response)['content'])
+          assert hashlib.sha256(packed).hexdigest() == '18e63619c60250731fdb3137972a08b6c6da1ccd6c8fa991774f51417cfd9cf2'
+          files = json.loads(lzma.decompress(packed))
+          assert set(files) == {'candidate.patch', 'runner.py', 'proof.py', 'mutations.py', 'manifest.json', 'retired-diagnostics.json'}
+          folder = pathlib.Path('.bq05-summary')
+          for name, content in files.items():
+              (folder / name).write_text(content)
+          assert hashlib.sha256((folder / 'candidate.patch').read_bytes()).hexdigest() == '4cbca674171bc40ebf7f0375eea2484831fb9330762302414f1aaa6441f417e4'
+          PY
+      - name: Install required media executables
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      - name: Install unchanged locked runtime and quality profiles
+        run: |
+          python -m pip install --require-hashes -r backend/requirements/dev.lock
+          python -m pip install -e . --no-deps
+          python -m venv .quality-tools
+          .quality-tools/bin/python -m pip install --require-hashes -r backend/requirements/quality-linux.lock -r backend/requirements/typing-linux.lock
+      - name: Characterize original behavior and reproduce complexity findings
+        run: python .bq05-summary/runner.py before
+      - name: Apply exact candidate and check source boundaries
+        run: python .bq05-summary/runner.py apply
+      - name: Verify summary behavior, structural equivalence and mutations
+        run: python .bq05-summary/runner.py after
+      - name: Verify unchanged typing and exact Ruff retirement
+        run: python .bq05-summary/runner.py quality
+      - name: Retain verified Git objects without updating a ref
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python .bq05-summary/runner.py retain
+      - name: Retain source-bound validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bq05-summary-validation
+          path: .bq05-summary/
+          include-hidden-files: true
+          retention-days: 30
+          if-no-files-found: error
