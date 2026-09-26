@@ -18,28 +18,74 @@
       "macos-profile": 108263069436
     },
     "conclusionForEachApplicableJob": "success",
-    "gpuJob": {"id": 108263070495, "conclusion": "skipped"}
+    "gpuJob": {
+      "id": 108263070495,
+      "conclusion": "skipped"
+    }
   },
   "dedicated": {
-    "C05": {"run": 36193237997, "job": 108263069946, "conclusion": "success"},
-    "C06": {"run": 36193237979, "job": 108263068749, "conclusion": "success"}
+    "C05": {
+      "run": 36193237997,
+      "job": 108263069946,
+      "conclusion": "success"
+    },
+    "C06": {
+      "run": 36193237979,
+      "job": 108263068749,
+      "conclusion": "success"
+    }
   },
   "tests": {
-    "completeBackend": {"passed": 5453, "skipped": 18, "failed": 0, "errors": 0},
-    "canonicalBackend": {"passed": 4859, "skipped": 18, "failed": 0},
+    "completeBackend": {
+      "passed": 5453,
+      "skipped": 18,
+      "failed": 0,
+      "errors": 0
+    },
+    "canonicalBackend": {
+      "passed": 4859,
+      "skipped": 18,
+      "failed": 0
+    },
     "sidecarPassed": 100,
     "frontendPassed": 441,
     "canonicalGatesPassed": 9,
-    "integration": {"passed": 364, "skipped": 15},
-    "generatedMedia": {"passed": 23, "skipped": 4},
+    "integration": {
+      "passed": 364,
+      "skipped": 15
+    },
+    "generatedMedia": {
+      "passed": 23,
+      "skipped": 4
+    },
     "excludedBackendPassed": 594,
     "countsOverlap": true
   },
   "artifactRecovery": [
-    {"name": "complete-backend-evidence", "id": 10890062320, "run": 36193238101, "sha256": "b7b503d3c2cb31eb949120fec1fde3fed08d4e66b7fb88c6660de98c086b916c"},
-    {"name": "verify-evidence", "id": 10890571021, "run": 36193238101, "sha256": "d54c00e7483b0334126a731b10e46ceff4aa70921efa081d83201500173fa2e4"},
-    {"name": "c05-source-and-scorer", "id": 10888244199, "run": 36193237997, "sha256": "783024375d431104f0a8036469fbf829cdd6a2cabea9213610a56637a6763e9d"},
-    {"name": "c06-media-source-evidence", "id": 10889251910, "run": 36193237979, "sha256": "39bd36eb0712f0cc98b00c4197d0b810f11c257c4f169609e8f9f5f753242780"}
+    {
+      "name": "complete-backend-evidence",
+      "id": 10890062320,
+      "run": 36193238101,
+      "sha256": "b7b503d3c2cb31eb949120fec1fde3fed08d4e66b7fb88c6660de98c086b916c"
+    },
+    {
+      "name": "verify-evidence",
+      "id": 10890571021,
+      "run": 36193238101,
+      "sha256": "d54c00e7483b0334126a731b10e46ceff4aa70921efa081d83201500173fa2e4"
+    },
+    {
+      "name": "c05-source-and-scorer",
+      "id": 10888244199,
+      "run": 36193237997,
+      "sha256": "783024375d431104f0a8036469fbf829cdd6a2cabea9213610a56637a6763e9d"
+    },
+    {
+      "name": "c06-media-source-evidence",
+      "id": 10889251910,
+      "run": 36193237979,
+      "sha256": "39bd36eb0712f0cc98b00c4197d0b810f11c257c4f169609e8f9f5f753242780"
+    }
   ],
   "qualifications": [
     "Historical artifacts can expire; IDs and hashes are not a promise of perpetual availability.",
@@ -49,5 +95,80 @@
     "Author self-review, not independent approval.",
     "No standalone pinned preflight claimed for this typing batch; existing pinned CI accepted it after ordinary publication.",
     "This acceptance does not belong to a later documentation or application SHA."
+  ],
+  "subsequentAcceptances": [
+    {
+      "task": "REPORT_STORE_STRUCTURE",
+      "commit": "1dd6bdd9fe9bee940a8a702ddd6947383fc4a19b",
+      "tree": "e6768bccc5f1134a8f07f71b0f24690ff0912ab2",
+      "publishedVia": "PR #14 merge commit (catapult-workbench merged into main in the same PR); application commits e09aa99 (saved patch, unchanged) and fcb0425 (merge resolution)",
+      "scope": "report-store structural slice plus the catapult merge it shipped with; not overall audit closure",
+      "pendingJobsAtRecordedAcceptance": [],
+      "normalRun": {
+        "id": 36253514511,
+        "completedApplicableJobs": {
+          "verify": 108435862155,
+          "complete-backend": 108435862100,
+          "python-quality": 108435862215,
+          "integration": 108435862177,
+          "real-media": 108435862111,
+          "excluded-backend": 108435862071,
+          "api-profile": 108435862115,
+          "macos-profile": 108435862166
+        },
+        "conclusionForEachApplicableJob": "success",
+        "gpuJob": {
+          "id": 108435862720,
+          "conclusion": "skipped"
+        }
+      },
+      "dedicated": {
+        "C05": {
+          "run": 36253514493,
+          "job": 108435862020,
+          "conclusion": "success"
+        },
+        "C06": {
+          "run": 36253514457,
+          "job": 108435861822,
+          "conclusion": "success"
+        }
+      },
+      "tests": {
+        "completeBackend": {
+          "passed": 5578,
+          "skipped": 18,
+          "failed": 0,
+          "errors": 0
+        },
+        "reportStoreContractCases": 70
+      },
+      "quality": {
+        "ruffLegacy": 423,
+        "ruffNew": 0,
+        "ruffStale": 0,
+        "scopedMypyNew": 0
+      },
+      "artifactRecovery": [
+        {
+          "name": "complete-backend-evidence",
+          "id": 10910566066,
+          "run": 36253514511,
+          "zipSha256": "167d8f33cf293446febb20597d6ca5af6717fafd893fd35469478c0d96722e01"
+        },
+        {
+          "name": "ruff-debt-evidence",
+          "id": 10909983089,
+          "run": 36253514511,
+          "zipSha256": "7915d71cbfae6527dd836bc3e33a7159ea5acf4e8f0f16915536927092bad00d"
+        }
+      ],
+      "qualifications": [
+        "Counts read from job logs; canonical gate hashes and receipts were not re-verified for this record.",
+        "ultralytics CPU stub active; no GPU or model-quality acceptance.",
+        "Author self-review, not independent approval.",
+        "Ruff rose from 405 to 423 because the catapult merge added 30 recorded diagnostics (23 C901, 7 BLE001) and retired 9 stale ones; the report-store slice itself retired exactly 3."
+      ]
+    }
   ]
 }
