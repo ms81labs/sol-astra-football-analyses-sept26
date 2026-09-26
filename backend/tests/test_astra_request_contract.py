@@ -81,6 +81,10 @@ def test_astra_request_rejects_changed_pixels_and_unbounded_or_billed_modes():
     with pytest.raises(ValueError, match="budget"):
         bound_astra_request(body, input_price_per_million="11", output_price_per_million="41.25",
             authorised_limit="0.001")
+    for prices in (("0", "41.25"), ("11", "0")):
+        with pytest.raises(ValueError, match="positive verified prices"):
+            bound_astra_request(body, input_price_per_million=prices[0],
+                output_price_per_million=prices[1], authorised_limit="1")
 
 
 def test_astra_request_without_visuals_contains_only_text():

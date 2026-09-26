@@ -185,7 +185,10 @@ class ReviewService:
             if frame is None or abs(frame.timestamp - proposal.timestamp) > 1e-6:
                 raise SemanticCommandError("STALE_EVENT_PROPOSAL", "Source frame or timestamp changed", status_code=409)
             event_id = "ev_model_" + digest({"matchId": match_id, **proposal.model_dump(mode="json")})[:16]
-            if any(item.eventId == event_id for item in self.storage.load_events(match_id)):
+            # Evidence IDs are event:{frameId}:{type}:{timestamp}; a second event with the
+            # same frame and type would make every later provider request ambiguous.
+            if any(item.eventId == event_id or (item.frameId, item.type) == (proposal.frameId, proposal.type)
+                   for item in self.storage.load_events(match_id)):
                 raise SemanticCommandError("DUPLICATE_EVENT_PROPOSAL", "Visual event proposal already exists", status_code=409)
             return {**proposal.model_dump(mode="json"), "eventId": event_id,
                     "providerRequestId": receipt_id, "sourceSha256": source_sha}

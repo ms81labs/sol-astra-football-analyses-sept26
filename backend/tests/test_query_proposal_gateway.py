@@ -65,6 +65,19 @@ def test_mocked_query_proposal_is_scoped_validated_and_executed_by_typed_search(
     assert refused["results"] == []
     assert refused["coverageState"] == "unsupported"
 
+    # A schema-valid but unsupported filter is billed; it must be recorded and
+    # replayable rather than leaving the request key permanently unusable.
+    draft.update(status="query", reason="none", query={"eventFamily": "dribble", **{key: None for key in (
+        "team", "period", "playerTrackId", "reviewStatus", "pitchRegion", "successor",
+        "timeStartSeconds", "timeEndSeconds")}})
+    calls_before = len(calls)
+    invalid_body = {**body, "requestId": "invalid-family"}
+    rejected = gateway.execute_query_proposal(match_id, body=invalid_body)
+    assert rejected["query"] == {"unanswerable": True, "reason": "invalid_model_output"}
+    assert rejected["results"] == [] and rejected["coverageState"] == "unsupported"
+    assert gateway.execute_query_proposal(match_id, body=invalid_body) == rejected
+    assert len(calls) == calls_before + 1
+
     draft.update(status="query", reason="none", query={
         "eventFamily": "recovery", "sql": "SELECT * FROM events"})
     with pytest.raises(ValueError):

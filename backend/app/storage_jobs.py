@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import logging
 import os
 import stat
@@ -14,7 +13,6 @@ from .schemas import JobRecord, MatchConfig, MatchRecord
 
 
 LOGGER = logging.getLogger(__name__)
-_COPY_CHUNK_BYTES = 64 * 1024
 
 
 class JobCancellationRequested(RuntimeError):
@@ -122,11 +120,9 @@ class _JobStorageMixin:
         path = self.get_match_input_path(match_id)
         if not path.exists() or not path.is_file():
             return "0" * 64
-        digest = hashlib.sha256()
-        with path.open("rb") as handle:
-            for chunk in iter(lambda: handle.read(_COPY_CHUNK_BYTES), b""):
-                digest.update(chunk)
-        return digest.hexdigest()
+        # Called on every materialization, mask overlay and proposal; the stat-keyed
+        # cache avoids re-reading multi-gigabyte sources while they are unchanged.
+        return self.hash_cache.identity(path).sha256
 
 
     def has_active_job(self, match_id: str) -> bool:

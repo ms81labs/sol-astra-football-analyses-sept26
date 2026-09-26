@@ -102,3 +102,63 @@ def test_event_proposal_api_refuses_cloud_disabled_without_dispatch(tmp_path):
         "requestId": "disabled-cloud"})
     assert response.status_code == 403, response.text
     assert Storage(root).job_ledger.cost_summary()["attemptCount"] == 0
+
+
+@pytest.mark.integration
+@pytest.mark.real_media
+def test_event_proposals_stay_unambiguous_and_replayable_after_rejected_output(tmp_path):
+    from backend.app.semantic_commands import SemanticCommandError
+
+    storage = Storage(tmp_path / "store")
+    match_id = _install_video(storage, tmp_path)
+    config = storage.get_match(match_id).config.model_copy(deep=True)
+    config.rights.cloudPermission = True
+    config.rights.processingScope = "local_plus_burst"
+    storage.update_match_config(match_id, config)
+    generation_id = storage.current_generation(match_id).generationId
+    manifest = select_source_image_manifest(storage, match_id, generation_id, [0])
+    answer = {"type": "shot", "frameId": 0, "team": None, "description": "Possible shot"}
+    sent = []
+
+    def transport(request, timeout, *, api_key):
+        sent.append(request)
+        return json.dumps({"id": f"mock-event-{len(sent)}", "model": "gpt-6-astra", "status": "completed",
+            "service_tier": "default", "incomplete_details": None, "error": None,
+            "output": [{"type": "message", "role": "assistant", "status": "completed",
+                "content": [{"type": "output_text", "text": json.dumps(answer)}]}],
+            "usage": {"input_tokens": 100, "output_tokens": 100, "total_tokens": 200}}).encode()
+
+    spend = AstraSpendPolicy(task_types=("event_proposal",), max_output_tokens=4096,
+        input_price_per_million="22", output_price_per_million="82.5")
+    settings = ProcessingSettings(cloud_provider_enabled=True, cloud_provider_api_key="test-only",
+        allowed_model_ids=("gpt-6-astra",), cloud_model_id="gpt-6-astra",
+        provider_call_reservation=5, provider_budget_limit=10, provider_spend_policy=spend)
+    gateway = ProviderGateway(storage, settings,
+        adapter_factory=lambda: make_astra_adapter("test-only", transport=transport),
+        budget_ledger=ProviderBudgetLedger(storage.job_ledger.db_path, 10))
+
+    def request(request_id):
+        return gateway.execute_event_proposal(match_id, body={"generationId": generation_id,
+            "imageManifestDigest": manifest, "requestId": request_id})
+
+    # A billed answer naming a frame outside the approved images is recorded, not lost.
+    answer["frameId"] = 7
+    rejected = request("outside-images")
+    assert rejected["proposal"] is None and rejected["modelOutputRejected"] is True
+    assert request("outside-images") == rejected
+    assert len(sent) == 1
+
+    answer["frameId"] = 0
+    first = request("first")
+    storage.submit_correction(match_id, kind="event_propose",
+        payload={**first["proposal"], "providerRequestId": first["requestId"]})
+    generation_id = storage.current_generation(match_id).generationId
+    manifest = select_source_image_manifest(storage, match_id, generation_id, [0])
+    answer["description"] = "Same shot, different words"
+    second = request("second")
+    # Same frame and type would share evidence ID event:0:shot:<t> with the first.
+    with pytest.raises(SemanticCommandError) as refused:
+        storage.submit_correction(match_id, kind="event_propose",
+            payload={**second["proposal"], "providerRequestId": second["requestId"]})
+    assert refused.value.code == "DUPLICATE_EVENT_PROPOSAL"
+    gateway.build_evidence(match_id, storage.current_generation(match_id).generationId, "event_proposal")
