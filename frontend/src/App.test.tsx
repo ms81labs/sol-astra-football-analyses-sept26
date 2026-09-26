@@ -15,6 +15,7 @@ vi.mock('./utils/api', async (importOriginal) => {
     fetchMatchIssues: vi.fn(),
     fetchMatches: vi.fn(),
     fetchMatchWorkspace: vi.fn(),
+    fetchMatchFrames: vi.fn(),
     runMatchAnalysis: vi.fn(),
     updateMatchConfig: vi.fn(),
     waitForJobCompletion: vi.fn(),
@@ -526,6 +527,257 @@ describe('App match workspace loading', () => {
     expect(await screen.findByText(/1 evidence-linked interval/i)).toBeTruthy();
   });
 
+  it('shares a selected search interval with evidence, timeline and playlist', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    stubSnapshotWorkspace({
+      ...loadedWorkspace('match-a', 'Match A'),
+      frames: [0, 1.2, 2, 2.2].map((Timestamp, Frame_ID) => ({
+        Frame_ID, Timestamp, Ball: null, My_Team: [], Enemies: [],
+      })),
+      frameCount: 4,
+    });
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      if (String(input).includes('/api/matches/match-a/queries') && init?.method === 'POST') {
+        return Promise.resolve({ ok: true, json: async () => ({
+          generationId: 'g-match-a', query: { unanswerable: false },
+          results: [{ eventId: 'ev-1', matchId: 'match-a', timestamp: 1.2,
+            intervalStart: 1.1, intervalEnd: 2.1, evidenceIds: ['e-1'],
+            label: 'turnover', reviewStatus: 'accepted' }],
+        }) } as Response);
+      }
+      if (String(input).includes('/api/playlists/export-interval') && init?.method === 'POST') {
+        return Promise.resolve({ ok: true, json: async () => ({
+          sourceStartSeconds: 1.1, sourceEndSeconds: 2.1, sourceEndFrameExclusive: 53,
+        }) } as Response);
+      }
+      if (String(input).includes('/api/matches/match-a/corrections') && init?.method === 'POST') {
+        return Promise.resolve({ ok: true, json: async () => ({
+          correctionId: 'linked-clip', kind: 'playlist_item', saveState: 'saved',
+          applyState: 'applied', appliedGeneration: 'g-match-a-next',
+          payload: JSON.parse(String(init.body)).payload,
+        }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${String(input)}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    fireEvent.click(screen.getByRole('button', { name: /search evidence/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /turnover.*1.1.*2.1/i }));
+    await waitFor(() => {
+      expect((screen.getByLabelText(/clip start/i) as HTMLInputElement).value).toBe('1.1');
+      expect((screen.getByLabelText(/clip end/i) as HTMLInputElement).value).toBe('2.1');
+    });
+    expect(screen.getByText(/selected evidence: e-1/i)).toBeTruthy();
+    expect(within(screen.getByRole('region', { name: 'Evidence inspector' })).getAllByText('1.2s').length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole('button', { name: /add clip/i }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) =>
+      String(url).includes('/api/matches/match-a/corrections') && init?.method === 'POST')).toBe(true));
+    const clipCall = fetchMock.mock.calls.find(([url, init]) =>
+      String(url).includes('/api/matches/match-a/corrections') && init?.method === 'POST');
+    expect(JSON.parse(String(clipCall?.[1]?.body)).payload.evidenceIds).toEqual(['e-1']);
+  });
+
+  it('opens a source-linked visual event proposal in review without auto-accepting it', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    stubSnapshotWorkspace({ ...loadedWorkspace('match-a', 'Match A'), events: [{
+      eventId: 'ev_model_1', type: 'shot', frameId: 0, timestamp: 0, description: 'Possible shot',
+      reviewStatus: 'unreviewed', proposalModelId: 'visual-model',
+      proposalModelVersion: 'v1', proposalEvidenceIds: ['frame:0'], proposalRequestId: 'provider-request-1',
+    }] });
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes('/api/matches/match-a/queries') && init?.method === 'POST') {
+        return Promise.resolve({ ok: true, json: async () => ({ generationId: 'g-match-a',
+          query: { unanswerable: false }, results: [{ eventId: 'ev_model_1', matchId: 'match-a',
+            frameId: 0, timestamp: 0, evidenceIds: ['frame:0'], label: 'shot', reviewStatus: 'unreviewed' }] }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && init?.method === 'POST') {
+        return Promise.resolve({ ok: true, json: async () => ({ generationId: 'g-match-a',
+          correctionId: 'accept-model-1', saveState: 'saved', applyState: 'applied',
+          appliedGeneration: 'g-match-a-next', kind: 'event_accept' }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    fireEvent.click(screen.getByRole('button', { name: /search evidence/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /shot.*0s/i }));
+    const inspector = screen.getByRole('region', { name: 'Evidence inspector' });
+    expect(within(inspector).getByText(/visual-model.*v1/i)).toBeTruthy();
+    expect(within(inspector).getByText(/frame:0/i)).toBeTruthy();
+    fireEvent.click(within(inspector).getByRole('button', { name: /accept proposed event/i }));
+    await waitFor(() => {
+      const request = fetchMock.mock.calls.find(([url, init]) => String(url).includes('/corrections') && init?.method === 'POST');
+      expect(request?.[1]?.body).toContain('"kind":"event_accept"');
+      expect(request?.[1]?.body).toContain('"eventId":"ev_model_1"');
+    });
+    await waitFor(() => expect(screen.getByTestId('analysis-generation').textContent).toContain('g-match-a-next'));
+    expect(within(inspector).queryByRole('button', { name: /accept proposed event/i })).toBeNull();
+  });
+
+  it('requests a visual suggestion for the selected source frame and sends its receipt into review', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    const loaded = loadedWorkspace('match-a', 'Match A');
+    stubSnapshotWorkspace({ ...loaded, detail: { ...loaded.detail, inputMode: 'video',
+      config: { rights: { cloudPermission: true, processingScope: 'local_plus_burst', retentionClass: 'review' } } } });
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/api/matches/match-a/event-proposals') && !init?.method) {
+        return Promise.resolve({ ok: true, json: async () => ({ generationId: 'g-match-a', available: true }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/queries') && init?.method === 'POST') {
+        return Promise.resolve({ ok: true, json: async () => ({ generationId: 'g-match-a',
+          query: { unanswerable: false }, results: [{ eventId: 'ev-1', matchId: 'match-a',
+            frameId: 0, timestamp: 0, evidenceIds: ['frame:0'], label: 'shot' }] }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/provider-images') && init?.method === 'POST') {
+        return Promise.resolve({ ok: true, json: async () => ({ generationId: 'g-match-a', imageManifestDigest: 'manifest-1' }) } as Response);
+      }
+      if (url.endsWith('/api/matches/match-a/event-proposals') && init?.method === 'POST') {
+        return Promise.resolve({ ok: true, json: async () => ({ schemaVersion: 'event_proposal_receipt_v1',
+          requestId: 'provider:receipt-1', generationId: 'g-match-a', proposal: { type: 'shot', frameId: 0,
+            timestamp: 0, intervalStart: 0, intervalEnd: 0, team: null, description: 'Possible shot',
+            modelId: 'gpt-6-astra', modelVersion: 'gpt-6-astra', evidenceIds: ['frame:0'] } }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/corrections') && init?.method === 'POST') {
+        return Promise.resolve({ ok: true, json: async () => ({ correctionId: 'candidate-1', kind: 'event_propose',
+          saveState: 'saved', applyState: 'applied', appliedGeneration: 'g-match-a-next' }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    fireEvent.click(screen.getByRole('button', { name: /search evidence/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /shot.*0s/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /request visual suggestion/i }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => String(url).includes('/corrections')
+      && init?.method === 'POST' && String(init.body).includes('"kind":"event_propose"'))).toBe(true));
+    const imageCall = fetchMock.mock.calls.find(([url]) => String(url).includes('/provider-images'));
+    expect(imageCall?.[1]?.body).toContain('"sourceFrameIds":[0]');
+    const proposalCall = fetchMock.mock.calls.find(([url, init]) => String(url).endsWith('/event-proposals') && init?.method === 'POST');
+    expect(proposalCall?.[1]?.body).toContain('"requestId":"event:g-match-a:manifest-1"');
+    const correction = fetchMock.mock.calls.find(([url, init]) => String(url).includes('/corrections') && init?.method === 'POST');
+    expect(correction?.[1]?.body).toContain('"providerRequestId":"provider:receipt-1"');
+  });
+
+  it('does not attach an old visual suggestion after switching matches', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A'), readyMatch('match-b', 'Match B')]);
+    const a = loadedWorkspace('match-a', 'Match A');
+    vi.mocked(api.fetchMatchWorkspace).mockImplementation(async (matchId) => matchId === 'match-a'
+      ? { ...a, detail: { ...a.detail, inputMode: 'video',
+        config: { rights: { cloudPermission: true, processingScope: 'local_plus_burst', retentionClass: 'review' } } } }
+      : loadedWorkspace('match-b', 'Match B'));
+    const late = deferred<Response>();
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/api/matches/match-a/event-proposals') && !init?.method) {
+        return Promise.resolve({ ok: true, json: async () => ({ generationId: 'g-match-a', available: true }) } as Response);
+      }
+      if (url.endsWith('/api/matches/match-b/event-proposals') && !init?.method) {
+        return Promise.resolve({ ok: true, json: async () => ({ generationId: 'g-match-b', available: false }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/queries') && init?.method === 'POST') {
+        return Promise.resolve({ ok: true, json: async () => ({ generationId: 'g-match-a',
+          query: { unanswerable: false }, results: [{ eventId: 'ev-1', matchId: 'match-a',
+            frameId: 0, timestamp: 0, evidenceIds: ['frame:0'], label: 'shot' }] }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/provider-images') && init?.method === 'POST') {
+        return Promise.resolve({ ok: true, json: async () => ({ generationId: 'g-match-a', imageManifestDigest: 'manifest-1' }) } as Response);
+      }
+      if (url.endsWith('/api/matches/match-a/event-proposals') && init?.method === 'POST') return late.promise;
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    fireEvent.click(screen.getByRole('button', { name: /search evidence/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /shot.*0s/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /request visual suggestion/i }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) => String(url).endsWith('/event-proposals')
+      && init?.method === 'POST')).toBe(true));
+    fireEvent.change(screen.getByRole('combobox', { name: 'Active match' }), { target: { value: 'match-b' } });
+    await screen.findByText('Match B', { selector: 'header span' });
+    await act(async () => late.resolve({ ok: true, json: async () => ({ generationId: 'g-match-a',
+      requestId: 'provider:old', proposal: { type: 'shot', frameId: 0, timestamp: 0,
+        intervalStart: 0, intervalEnd: 0, team: null, description: 'Old candidate',
+        modelId: 'gpt-6-astra', modelVersion: 'gpt-6-astra', evidenceIds: ['frame:0'] } }) } as Response));
+    expect(fetchMock.mock.calls.some(([url, init]) => String(url).includes('/corrections') && init?.method === 'POST')).toBe(false);
+    expect(screen.queryByRole('button', { name: /request visual suggestion/i })).toBeNull();
+  });
+
+  it('shows an abstention without creating a review event', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    const loaded = loadedWorkspace('match-a', 'Match A');
+    stubSnapshotWorkspace({ ...loaded, detail: { ...loaded.detail, inputMode: 'video',
+      config: { rights: { cloudPermission: true, processingScope: 'local_plus_burst', retentionClass: 'review' } } } });
+    const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
+      const url = String(input);
+      if (url.endsWith('/api/matches/match-a/event-proposals') && !init?.method) {
+        return Promise.resolve({ ok: true, json: async () => ({ generationId: 'g-match-a', available: true }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/queries') && init?.method === 'POST') {
+        return Promise.resolve({ ok: true, json: async () => ({ generationId: 'g-match-a',
+          query: { unanswerable: false }, results: [{ eventId: 'ev-1', matchId: 'match-a',
+            frameId: 0, timestamp: 0, evidenceIds: ['frame:0'], label: 'shot' }] }) } as Response);
+      }
+      if (url.includes('/api/matches/match-a/provider-images') && init?.method === 'POST') {
+        return Promise.resolve({ ok: true, json: async () => ({ generationId: 'g-match-a', imageManifestDigest: 'manifest-1' }) } as Response);
+      }
+      if (url.endsWith('/api/matches/match-a/event-proposals') && init?.method === 'POST') {
+        return Promise.resolve({ ok: true, json: async () => ({ generationId: 'g-match-a',
+          requestId: 'provider:abstain', proposal: null }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${url}`));
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    fireEvent.click(screen.getByRole('button', { name: /search evidence/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /shot.*0s/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /request visual suggestion/i }));
+    expect(await screen.findByText(/visual evidence was insufficient/i)).toBeTruthy();
+    expect(fetchMock.mock.calls.some(([url, init]) => String(url).includes('/corrections') && init?.method === 'POST')).toBe(false);
+    expect(screen.getByRole('button', { name: /request visual suggestion/i })).toHaveProperty('disabled', true);
+  });
+
+  it('seeks a search hit by source frame and restores its range after a paged frame load', async () => {
+    stubPitchCanvas();
+    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
+    stubSnapshotWorkspace({ ...loadedWorkspace('match-a', 'Match A'), frameCount: 10 });
+    vi.mocked(api.fetchMatchFrames).mockResolvedValue({
+      generationId: 'g-match-a', frameCount: 10, nextCursor: null,
+      frames: [7, 8, 9].map((Frame_ID) => ({ Frame_ID, Timestamp: Frame_ID / 5,
+        Ball: null, My_Team: [], Enemies: [] })),
+    });
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo, init?: RequestInit) => {
+      if (String(input).includes('/api/matches/match-a/queries') && init?.method === 'POST') {
+        return Promise.resolve({ ok: true, json: async () => ({
+          generationId: 'g-match-a', query: { unanswerable: false },
+          results: [{ eventId: 'ev-7', matchId: 'match-a', frameId: 7, timestamp: 1.4,
+            intervalStart: 1.4, intervalEnd: 1.8, evidenceIds: ['e-7'], label: 'turnover' }],
+        }) } as Response);
+      }
+      return Promise.reject(new Error(`unexpected ${String(input)}`));
+    }));
+    render(<App />);
+    await screen.findByText('Match A', { selector: 'header span' });
+    fireEvent.click(screen.getByRole('button', { name: /search evidence/i }));
+    fireEvent.click(await screen.findByRole('button', { name: /turnover.*1.4.*1.8/i }));
+    await waitFor(() => expect(api.fetchMatchFrames).toHaveBeenCalledWith('match-a', expect.objectContaining({
+      afterFrame: 7, generationId: 'g-match-a',
+    })));
+    expect(await screen.findByText('7 - 8')).toBeTruthy();
+    expect((screen.getByLabelText(/clip start/i) as HTMLInputElement).value).toBe('1.4');
+  });
+
   it('refreshes stored events after accept without rewriting the playhead or injecting event ids', async () => {
     stubPitchCanvas();
     vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
@@ -883,10 +1135,14 @@ describe('App match workspace loading', () => {
     expect(await screen.findByText('unreviewed')).toBeTruthy();
   });
 
-  it('exports the marked review range as a half-open source interval without claiming whole-match frequency', async () => {
+  it.each([
+    ['tracking_json', 5, 1],
+    ['video', 25, 5],
+  ] as const)('exports a %s review range using its source fps', async (inputMode, sourceFps, endFrame) => {
     stubPitchCanvas();
-    vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('match-a', 'Match A')]);
-    stubSnapshotWorkspace(loadedWorkspace('match-a', 'Match A'));
+    const detail = { ...readyMatch('match-a', 'Match A'), inputMode };
+    vi.mocked(api.fetchMatches).mockResolvedValue([detail]);
+    stubSnapshotWorkspace({ ...loadedWorkspace('match-a', 'Match A'), detail, sourceFps });
     const fetchMock = vi.fn((input: RequestInfo, init?: RequestInit) => {
       const url = String(input);
       if (url.includes('/api/matches/match-a/heatmap')) {
@@ -907,7 +1163,7 @@ describe('App match workspace loading', () => {
           json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a',
             sourceStartSeconds: 0,
             sourceEndSeconds: 0.2,
-            sourceEndFrameExclusive: 1,
+            sourceEndFrameExclusive: endFrame,
           }),
         } as Response);
       }
@@ -929,6 +1185,7 @@ describe('App match workspace loading', () => {
       expect((screen.getByLabelText(/clip start/i) as HTMLInputElement).value).toBe('0');
       expect((screen.getByLabelText(/clip end/i) as HTMLInputElement).value).toBe('0.2');
     });
+    fireEvent.change(screen.getByLabelText(/^title$/i), { target: { value: 'Recovery passage' } });
     fireEvent.click(screen.getByRole('button', { name: /add clip/i }));
     await waitFor(() => {
       expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/api/playlists/export-interval'))).toBe(true);
@@ -937,10 +1194,9 @@ describe('App match workspace loading', () => {
     expect(exportCall?.[1]?.method).toBe('POST');
     expect(exportCall?.[1]?.body).toContain('"timestampStart":0');
     expect(exportCall?.[1]?.body).toContain('"timestampEnd":0.2');
-    expect(exportCall?.[1]?.body).toContain('"sourceFps":5');
-    expect(exportCall?.[1]?.body).not.toContain('"sourceFps":25');
+    expect(exportCall?.[1]?.body).toContain(`"sourceFps":${sourceFps}`);
     expect(await screen.findByText(/0s to 0.2s/)).toBeTruthy();
-    expect(screen.getByText(/frame 1 exclusive/i)).toBeTruthy();
+    expect(screen.getByText(new RegExp(`frame ${endFrame} exclusive`, 'i'))).toBeTruthy();
     expect(screen.getByText(/do not establish a whole-match frequency/i)).toBeTruthy();
     await waitFor(() => {
       expect(fetchMock.mock.calls.some(([url, init]) => (
@@ -957,6 +1213,7 @@ describe('App match workspace loading', () => {
     expect(clipCall?.[1]?.body).toContain('"kind":"playlist_item"');
     expect(clipCall?.[1]?.body).toContain('"timestampStart":0');
     expect(clipCall?.[1]?.body).toContain('"timestampEnd":0.2');
+    expect(clipCall?.[1]?.body).toContain('"title":"Recovery passage"');
     expect(clipCall?.[1]?.body).not.toContain('"events"');
     expect(clipCall?.[1]?.body).not.toContain('"eventId"');
     expect(await screen.findByRole('button', { name: 'Undo clip-1' })).toBeTruthy();
@@ -1186,6 +1443,13 @@ describe('App match workspace loading', () => {
           json: async () => ({ generationId: new URL(url, 'http://localhost').searchParams.get('generationId') ?? 'g-match-a', items: [] }),
         } as Response);
       }
+      if (url.includes('/api/matches/match-a/corrections') && init?.method === 'POST') {
+        return Promise.resolve({ ok: true, json: async () => ({
+          correctionId: 'clip-2', kind: 'playlist_item', saveState: 'saved', applyState: 'applied',
+          baseGeneration: 'g-match-a', appliedGeneration: 'g-match-a-next',
+          payload: JSON.parse(String(init.body)).payload,
+        }) } as Response);
+      }
       if (url.includes('/api/matches/match-a/corrections') && (!init?.method || init.method === 'GET')) {
         return Promise.resolve({
           ok: true,
@@ -1201,6 +1465,7 @@ describe('App match workspace loading', () => {
                   timestampStart: 0,
                   timestampEnd: 0.2,
                   sourceEndFrameExclusive: 1,
+                  title: 'Old title',
                   notes: 'turnover then shot',
                 },
               },
@@ -1238,8 +1503,17 @@ describe('App match workspace loading', () => {
     expect(screen.queryByText(/12s to 14s/)).toBeNull();
     expect(screen.queryByText(/frame 70 exclusive/i)).toBeNull();
     expect(screen.getByRole('button', { name: 'Undo clip-1' })).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /edit clip old title/i }));
+    fireEvent.change(screen.getByLabelText(/^title$/i), { target: { value: 'New title' } });
+    fireEvent.change(screen.getByLabelText(/notes/i), { target: { value: 'New note' } });
+    fireEvent.click(screen.getByRole('button', { name: /save clip changes/i }));
+    await waitFor(() => expect(fetchMock.mock.calls.some(([url, init]) =>
+      String(url).includes('/api/matches/match-a/corrections') && init?.method === 'POST'
+      && String(init.body).includes('"replaces":"clip-1"')
+      && String(init.body).includes('"title":"New title"')
+      && String(init.body).includes('"notes":"New note"'))).toBe(true));
     expect(screen.getByText(/do not establish a whole-match frequency/i)).toBeTruthy();
-    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(1);
+    expect(api.fetchMatchWorkspace).toHaveBeenCalledTimes(2);
   });
 
   it('opens a stored playlist clip on the review source interval', async () => {
@@ -2288,7 +2562,7 @@ describe('App match workspace loading', () => {
 
     render(<App />);
     await screen.findByText('Match A', { selector: 'header span' });
-    const activeSelector = screen.getAllByRole('combobox')[0];
+    const activeSelector = screen.getByRole('combobox', { name: 'Active match' });
 
     fireEvent.change(activeSelector, { target: { value: 'match-b' } });
     await screen.findByText('Match B', { selector: 'header span' });
@@ -2334,7 +2608,7 @@ describe('App match workspace loading', () => {
     fireEvent.click(screen.getByRole('img'), { clientX: 25, clientY: 40 });
     expect(screen.getByText('Track 7')).toBeTruthy();
 
-    fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: 'match-b' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Active match' }), { target: { value: 'match-b' } });
     await screen.findByText('Match B', { selector: 'header span' });
 
     expect(screen.queryByText('Track 7')).toBeNull();
@@ -2357,7 +2631,7 @@ describe('App match workspace loading', () => {
 
     render(<App />);
     await screen.findByText('Match A', { selector: 'header span' });
-    const activeSelector = screen.getAllByRole('combobox')[0] as HTMLSelectElement;
+    const activeSelector = screen.getByRole('combobox', { name: 'Active match' }) as HTMLSelectElement;
 
     fireEvent.change(activeSelector, { target: { value: 'match-b' } });
     expect((await screen.findByRole('alert')).textContent).toContain('Match B unavailable');
@@ -2387,7 +2661,7 @@ describe('App match workspace loading', () => {
 
     render(<App />);
     await screen.findByText('Match A', { selector: 'header span' });
-    const activeSelector = screen.getAllByRole('combobox')[0];
+    const activeSelector = screen.getByRole('combobox', { name: 'Active match' });
     fireEvent.change(activeSelector, { target: { value: 'match-b' } });
     fireEvent.change(activeSelector, { target: { value: 'match-c' } });
 
@@ -2424,7 +2698,7 @@ describe('App match workspace loading', () => {
 
     render(<App />);
     await screen.findByText('Match A', { selector: 'header span' });
-    const comparisonSelector = screen.getAllByRole('combobox')[1];
+    const comparisonSelector = screen.getByRole('combobox', { name: 'Comparison match' });
 
     fireEvent.change(comparisonSelector, { target: { value: 'match-b' } });
     await screen.findByText('Match B', { selector: 'span.font-mono' });
@@ -2455,8 +2729,7 @@ describe('App match workspace loading', () => {
     ));
 
     const { container } = render(<App />);
-    await waitFor(() => expect(screen.getAllByRole('combobox')).toHaveLength(4));
-    const activeSelector = screen.getAllByRole('combobox')[0] as HTMLSelectElement;
+    const activeSelector = await screen.findByRole('combobox', { name: 'Active match' }) as HTMLSelectElement;
     const uploadInput = container.querySelector('input[type="file"]') as HTMLInputElement;
     fireEvent.change(activeSelector, { target: { value: 'match-b' } });
 
@@ -2484,7 +2757,7 @@ describe('App match workspace loading', () => {
 
     const { container } = render(<App />);
     await screen.findByText('Match A', { selector: 'header span' });
-    const activeSelector = screen.getAllByRole('combobox')[0];
+    const activeSelector = screen.getByRole('combobox', { name: 'Active match' });
     const uploadInput = container.querySelector('input[type="file"]') as HTMLInputElement;
     fireEvent.change(uploadInput, { target: { files: [new File(['[]'], 'upload.json', { type: 'application/json' })] } });
     await waitFor(() => expect(api.fetchMatchWorkspace).toHaveBeenCalledWith('match-upload', expect.any(AbortSignal)));
@@ -2518,7 +2791,7 @@ describe('App match workspace loading', () => {
     const uploadInput = container.querySelector('input[type="file"]') as HTMLInputElement;
     fireEvent.change(uploadInput, { target: { files: [new File(['[]'], 'upload.json', { type: 'application/json' })] } });
     await waitFor(() => expect(api.waitForJobCompletion).toHaveBeenCalledTimes(1));
-    fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: 'match-b' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Active match' }), { target: { value: 'match-b' } });
     await screen.findByText('Match B', { selector: 'header span' });
 
     await act(async () => completedJob.resolve({ id: 'job-upload', matchId: 'match-upload', status: 'completed', progress: 1 }));
@@ -2551,7 +2824,7 @@ describe('App match workspace loading', () => {
     await screen.findByText('Match A', { selector: 'header span' });
     fireEvent.click(screen.getByRole('button', { name: 'Use cluster 1' }));
     await waitFor(() => expect(api.updateMatchConfig).toHaveBeenCalledWith('match-a', expect.objectContaining({ myTeamCluster: 1, baseGeneration: 'g-match-a', commandId: expect.any(String) })));
-    fireEvent.change(screen.getAllByRole('combobox')[0], { target: { value: 'match-b' } });
+    fireEvent.change(screen.getByRole('combobox', { name: 'Active match' }), { target: { value: 'match-b' } });
 
     await act(async () => configUpdate.resolve(readyMatch('match-a', 'Match A')));
     expect(vi.mocked(api.fetchMatchWorkspace).mock.calls.map(([matchId]) => matchId)).toEqual(['match-a', 'match-b']);
@@ -2726,6 +2999,80 @@ describe('App review drawing', () => {
 });
 
 describe('App analysis provider capabilities', () => {
+  it('seeks an exact current report event through the shared evidence selection', async () => {
+    mockReadyReviewMatch();
+    stubPitchCanvas();
+    const snapshot = reviewWorkspace();
+    snapshot.frames = [snapshot.frames[0], { ...snapshot.frames[0], Frame_ID: 1, Timestamp: 4.2 }];
+    snapshot.frameCount = 2;
+    snapshot.events = [{ eventId: 'ev-1', type: 'turnover', frameId: 1, timestamp: 4.2,
+      intervalStart: 4.2, intervalEnd: 4.4, description: 'Turnover' }];
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(snapshot);
+    vi.mocked(api.runMatchAnalysis).mockResolvedValue({ matchId: 'match-review', generationId: 'g-match-review',
+      status: 'current', grounding: 'referenced', observations: [{ text: 'Turnover', grounding: 'referenced',
+        evidence: [{ matchId: 'match-review', generationId: 'g-match-review', kind: 'event', localId: '1:turnover:4.2' }] }] });
+    render(<App runtimeCapabilities={localOnlyCapabilities} />);
+    await screen.findByText('Review Match');
+    fireEvent.click(screen.getByRole('button', { name: 'Report' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Full Report' }));
+    fireEvent.click(await screen.findByRole('button', { name: /event:1:turnover:4.2/i }));
+    expect(screen.getByText(/Selected source interval: 4.2s to 4.4s/)).toBeTruthy();
+    expect(screen.getByText(/Selected evidence: event:1:turnover:4.2/)).toBeTruthy();
+  });
+
+  it('matches a whole-second report event written with Python float formatting', async () => {
+    mockReadyReviewMatch();
+    stubPitchCanvas();
+    const snapshot = reviewWorkspace();
+    snapshot.frames = [snapshot.frames[0], { ...snapshot.frames[0], Frame_ID: 1, Timestamp: 12 }];
+    snapshot.frameCount = 2;
+    snapshot.events = [{ eventId: 'ev-1', type: 'turnover', frameId: 1, timestamp: 12,
+      intervalStart: 12, intervalEnd: 12.4, description: 'Turnover' }];
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(snapshot);
+    vi.mocked(api.runMatchAnalysis).mockResolvedValue({ matchId: 'match-review', generationId: 'g-match-review',
+      status: 'current', grounding: 'referenced', observations: [{ text: 'Turnover', grounding: 'referenced',
+        evidence: [{ matchId: 'match-review', generationId: 'g-match-review', kind: 'event', localId: '1:turnover:12.0' }] }] });
+    render(<App runtimeCapabilities={localOnlyCapabilities} />);
+    await screen.findByText('Review Match');
+    fireEvent.click(screen.getByRole('button', { name: 'Report' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Full Report' }));
+    fireEvent.click(await screen.findByRole('button', { name: /event:1:turnover:12\.0/i }));
+    expect(screen.getByText(/Selected source interval: 12s to 12.4s/)).toBeTruthy();
+    expect(screen.queryByText(/Report evidence is unavailable/i)).toBeNull();
+    // A manual mark replaces the hit's interval, so the selection must be dropped.
+    fireEvent.keyDown(window, { key: ',' });
+    fireEvent.keyDown(window, { key: 'i' });
+    await waitFor(() => expect(screen.queryByText(/Selected source interval: 12s to 12.4s/)).toBeNull());
+  });
+
+  it('loads a report frame outside the current page and reports a missing event', async () => {
+    mockReadyReviewMatch();
+    stubPitchCanvas();
+    const snapshot = reviewWorkspace();
+    snapshot.frameCount = 10;
+    vi.mocked(api.fetchMatchWorkspace).mockResolvedValue(snapshot);
+    vi.mocked(api.fetchMatchFrames).mockResolvedValue({ generationId: 'g-match-review', frameCount: 10,
+      nextCursor: null, frames: [{ ...snapshot.frames[0], Frame_ID: 7, Timestamp: 1.4 }] });
+    vi.mocked(api.runMatchAnalysis).mockResolvedValue({ matchId: 'match-review', generationId: 'g-match-review',
+      status: 'current', grounding: 'referenced', observations: [{ text: 'Late frame', grounding: 'referenced',
+        evidence: [{ matchId: 'match-review', generationId: 'g-match-review', kind: 'frame', localId: '7' },
+          { matchId: 'match-review', generationId: 'g-match-review', kind: 'event', localId: '7:shot:1.4' }] }] });
+    render(<App runtimeCapabilities={localOnlyCapabilities} />);
+    await screen.findByText('Review Match');
+    fireEvent.click(screen.getByRole('button', { name: 'Report' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Full Report' }));
+    fireEvent.click(await screen.findByRole('button', { name: /frame:7/i }));
+    await waitFor(() => expect(api.fetchMatchFrames).toHaveBeenCalledWith('match-review', expect.objectContaining({
+      afterFrame: 7, generationId: 'g-match-review',
+    })));
+    // A full page is requested, not a single frame that would replace the loaded window.
+    expect(vi.mocked(api.fetchMatchFrames).mock.calls.at(-1)?.[1]).not.toHaveProperty('limit');
+    expect(await screen.findByText(/Selected source interval: 1.4s to 1.4s/)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /event:7:shot:1.4/i }));
+    expect(screen.getByText(/Report evidence is unavailable in this generation/i)).toBeTruthy();
+    expect(screen.queryByText(/Selected source interval: 1.4s to 1.4s/)).toBeNull();
+  });
+
   it('keeps cloud unavailable and runs locally when only local analysis is supported', async () => {
     mockReadyReviewMatch();
     stubPitchCanvas();
@@ -2833,12 +3180,14 @@ it('normalizes event and imported playlist timestamps before timeline navigation
   vi.mocked(api.fetchMatches).mockResolvedValue([readyMatch('m', 'Sparse Match')]);
   vi.mocked(api.fetchMatchWorkspace).mockResolvedValue({ ...loadedWorkspace('m', 'Sparse Match'),
     frames: [100, 200].map((Frame_ID, index) => ({ Frame_ID, Timestamp: index * 2, Ball: null, My_Team: [], Enemies: [] })),
-    frameCount: 201,
+    frameCount: 2,
+    lastFrameId: 200,
     events: [{ frameId: 200, timestamp: 2, type: 'shot', description: 'Sparse shot' }],
   });
   render(<App />);
   fireEvent.click(await screen.findByTitle(/Sparse shot @ 2s/));
   expect((screen.getByLabelText('Timeline scrubber') as HTMLInputElement).value).toBe('200');
+  expect((screen.getByLabelText('Timeline scrubber') as HTMLInputElement).max).toBe('200');
   act(() => { window.dispatchEvent(new CustomEvent('add-event', { detail: { frame: 100, timestamp: 0, label: 'Imported playlist', type: 'custom' } })); });
   fireEvent.click(screen.getByTitle(/Imported playlist @ 0s/));
   expect((screen.getByLabelText('Timeline scrubber') as HTMLInputElement).value).toBe('100');

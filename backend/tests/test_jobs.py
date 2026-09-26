@@ -139,6 +139,59 @@ def test_job_runner_rejects_unbudgeted_daytona_dispatch(tmp_path: Path) -> None:
         JobRunner(tmp_path, settings=settings).start("unbudgeted-daytona")
 
 
+@pytest.mark.parametrize("backend", ["local", "daytona"])
+def test_shadow_ledger_request_cannot_dispatch_processor_worker(tmp_path: Path, backend: str) -> None:
+    settings = ProcessingSettings(
+        processing_backend=backend,
+        daytona_api_key="configured-secret" if backend == "daytona" else None,
+        daytona_policy=load_daytona_policy() if backend == "daytona" else None,
+    )
+    runner = JobRunner(tmp_path, run_jobs_inline=True, settings=settings)
+    runner.ledger.admit(
+        jobs_module.JobRequest(
+            requestId="shadow-job", matchId="match", sourceSha256="a" * 64,
+            intervalStart=0.0, intervalEnd=1.0, temporalPolicy="source_global_grid",
+            decoderVersion="opencv", modelHash="b" * 64,
+            outputSchema="segmentation_result_v1", budget=1.0,
+            authorisedLocation=backend, namespace="production",
+        ), mode="submit", owner_id="job:shadow-job", lease_seconds=60.0,
+    )
+    with (
+        patch("backend.app.jobs.run_job") as local_worker,
+        patch("backend.app.remote_worker.run_remote_job") as remote_worker,
+        pytest.raises(jobs_module.JobDispatchError, match="unsupported job output schema"),
+    ):
+        runner.start("shadow-job")
+    local_worker.assert_not_called()
+    remote_worker.assert_not_called()
+    assert runner.receipt("shadow-job").status == "failed"
+
+
+@pytest.mark.parametrize(("module", "entry", "target"), [
+    ("backend.app.worker", "run_job", "process_match"),
+    ("backend.app.remote_worker", "run_remote_job", "_run_remote_job"),
+])
+def test_direct_processor_entry_rejects_shadow_request(tmp_path: Path, module: str, entry: str, target: str) -> None:
+    from importlib import import_module
+
+    ledger = JobRunner(tmp_path).ledger
+    ledger.admit(
+        jobs_module.JobRequest(
+            requestId="shadow-direct", matchId="match", sourceSha256="a" * 64,
+            intervalStart=0.0, intervalEnd=1.0, temporalPolicy="source_global_grid",
+            decoderVersion="opencv", modelHash="b" * 64,
+            outputSchema="segmentation_result_v1", budget=0.0,
+            authorisedLocation="local", namespace="production",
+        ), mode="submit", owner_id="job:shadow-direct", lease_seconds=60.0,
+    )
+    worker = import_module(module)
+    with patch.object(worker, target) as processor, pytest.raises(
+        jobs_module.JobDispatchError, match="unsupported job output schema"
+    ):
+        getattr(worker, entry)(tmp_path, "shadow-direct")
+    processor.assert_not_called()
+
+
 def test_storage_and_runner_share_daytona_admission_payload(tmp_path: Path) -> None:
     settings = ProcessingSettings(
         processing_backend="daytona",

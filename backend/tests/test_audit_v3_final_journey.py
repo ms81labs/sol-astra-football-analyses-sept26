@@ -33,8 +33,8 @@ from backend.tests.test_audit_v3_c06_media import clip
 pytestmark = [pytest.mark.integration, pytest.mark.real_media]
 
 
-def _install_video(storage: Storage, tmp_path: Path) -> str:
-    source = clip(tmp_path / "journey.mp4", duration=1, rate=4, size="1000x600")
+def _install_video(storage: Storage, tmp_path: Path, *, size: str = "1000x600") -> str:
+    source = clip(tmp_path / "journey.mp4", duration=1, rate=4, size=size)
     match = storage.create_match(
         "V3T50 synthetic video observations", "video", source.name, source,
         MatchConfig(myTeamCluster=0, pitchLengthM=100.0, pitchWidthM=60.0),

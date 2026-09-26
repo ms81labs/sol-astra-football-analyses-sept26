@@ -58,7 +58,7 @@ class TestCLIPaths:
         assert result.returncode == 0
         assert result.stdout == (
             f"Resolved storage root: {Path(tmpdir).resolve()}\n"
-            "Default run root: /tmp/fotball-analyst-research-addon\n"
+            f"Default run root: {Path(tempfile.gettempdir()).resolve() / 'fotball-analyst-research-addon'}\n"
             "Status: SAFE - using validated root\n"
         )
         assert result.stderr == ""

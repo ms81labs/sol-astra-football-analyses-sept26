@@ -451,6 +451,8 @@ def build_prompt(
             "Withheld/unknown metrics cannot be claimed. Preserve experimental labels. "
             "Observation prose with references is not semantically certified. Put tactical opinions and recommendations "
             "in interpretation/recommendations (or drills); do not describe them as measured facts. "
+            "Frame samples are structured observations, not image pixels; do not infer unseen visual details. "
+            "Image references alone do not contain pixels; describe visual content only when an image part is attached. "
             "No unsupported metrics, scores or factual top-player rankings. Pure interpretation is allowed. "
             f"Attack direction: {attack_direction}. Schema: {json.dumps(ReportDraft.model_json_schema())} "
             f"Approved evidence (including source-bound sampled frames): {json.dumps(approved_evidence, allow_nan=False)}"

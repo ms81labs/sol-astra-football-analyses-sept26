@@ -81,6 +81,12 @@ ENDPOINTS = [
     ("analyze_match", "POST", "/api/matches/{match_id}/analysis/{analysis_type}"),
     ("get_match_benchmark", "GET", "/api/matches/{match_id}/benchmark"),
     ("update_match_config", "PATCH", "/api/matches/{match_id}/config"),
+    ("download_match_clip", "GET", "/api/matches/{match_id}/edits/clip"),
+    ("get_event_proposal_capability", "GET", "/api/matches/{match_id}/event-proposals"),
+    ("post_event_proposal", "POST", "/api/matches/{match_id}/event-proposals"),
+    ("get_query_proposal_capability", "GET", "/api/matches/{match_id}/query-proposals"),
+    ("post_query_proposal", "POST", "/api/matches/{match_id}/query-proposals"),
+    ("prepare_provider_images", "POST", "/api/matches/{match_id}/provider-images"),
 ]
 
 

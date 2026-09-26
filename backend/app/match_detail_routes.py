@@ -1,10 +1,16 @@
 """Match detail, diagnostic, report, and analysis routes."""
 
 from collections.abc import Callable
+import math
+import shutil
+import tempfile
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import ValidationError
+from starlette.background import BackgroundTask
 
 from .provider_gateway import ProviderDenied, ProviderGateway
 from .run_benchmarks import summarize_match_benchmark
@@ -25,6 +31,20 @@ def create_match_detail_router(
     @router.post("/api/matches/{match_id}/queries")
     def post_match_query(match: Annotated[MatchRecord, Depends(require_match)], payload: dict | None = None) -> dict:
         body = payload or {}
+        if "typedQuery" in body:
+            from .workbench.assistance import validate_query_proposal
+            generation_id = body.get("generationId")
+            if "query" in body or not isinstance(generation_id, str):
+                raise HTTPException(status_code=422, detail="Typed query requires one explicit generation")
+            if storage.current_generation(match.id).generationId != generation_id:
+                raise HTTPException(status_code=409, detail="Stale query generation")
+            try:
+                query = validate_query_proposal(
+                    {"matchId": match.id, "generationId": generation_id, "query": body["typedQuery"]},
+                    match_id=match.id, generation_id=generation_id)
+            except (ValueError, ValidationError) as exc:
+                raise HTTPException(status_code=422, detail="Unsupported typed query") from exc
+            return snapshot_response(match.id, lambda: storage.query_match_events(match.id, query), generation_id)
         return snapshot_response(match.id, lambda: storage.query_match_events(match.id, str(body.get("query") or "")), body.get("generationId"))
     
     @router.post("/api/matches/{match_id}/reports")
@@ -225,6 +245,47 @@ def create_match_detail_router(
             end=float(body.get("end") or 0.0),
             generation_id=body.get("generationId"),
         )
+
+    @router.get("/api/matches/{match_id}/edits/clip")
+    def download_match_clip(
+        match: Annotated[MatchRecord, Depends(require_match)], generationId: str = "", start: float = 0.0, end: float = 0.0,
+    ) -> FileResponse:
+        from .workbench.media import FfmpegProbe
+        from .workbench.media_execution import (
+            DecoderFailed, MediaExecutionPolicy, MediaResourceLimit, TruncatedStream,
+        )
+
+        if match.inputMode != "video":
+            raise HTTPException(status_code=409, detail="Clip export requires source video")
+        if not generationId or not all(map(math.isfinite, (start, end))) or start < 0 or end <= start:
+            raise HTTPException(status_code=422, detail="Invalid source interval or generation")
+        try:
+            edits = storage.edit_list_for_match(match.id, generation_id=generationId)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail="Generation not found") from exc
+        if (start, end) not in [tuple(interval) for interval in edits["intervals"]]:
+            raise HTTPException(status_code=422, detail="Save this source interval before exporting")
+        temporary = Path(tempfile.mkdtemp(prefix="clip-", dir=storage.storage_root))
+        output = temporary / "clip.mp4"
+        try:
+            # A saved interval is already bounded by its source, so the diagnostic
+            # 120 s clip ceiling does not apply here.
+            FfmpegProbe(policy=MediaExecutionPolicy(max_width=4096, max_height=2160,
+                                                    max_duration_seconds=10_800)).export_clip(
+                                      storage.get_match_input_path(match.id), output,
+                                      start_seconds=start, duration_seconds=end - start, frame_exact=True)
+        except MediaResourceLimit as exc:
+            shutil.rmtree(temporary)
+            raise HTTPException(status_code=413, detail=f"Clip export exceeds media limits: {exc}") from exc
+        except (ValueError, DecoderFailed, TruncatedStream) as exc:
+            shutil.rmtree(temporary)
+            raise HTTPException(status_code=422, detail=f"Clip could not be exported: {exc}") from exc
+        except BaseException:
+            shutil.rmtree(temporary)
+            raise
+        return FileResponse(output, media_type="video/mp4", filename=f"{match.id}-clip.mp4",
+                            headers={"X-Generation-Id": generationId},
+                            background=BackgroundTask(shutil.rmtree, temporary))
     
     @router.get("/api/matches/{match_id}/tracklets")
     def get_match_tracklets(match: Annotated[MatchRecord, Depends(require_match)]) -> dict:
@@ -280,6 +341,58 @@ def create_match_detail_router(
             raise HTTPException(status_code=400, detail=str(exc)) from exc
     
         return result
+
+    @router.get("/api/matches/{match_id}/event-proposals")
+    def get_event_proposal_capability(match: Annotated[MatchRecord, Depends(require_match)]) -> dict:
+        return {"generationId": storage.current_generation(match.id).generationId,
+                "available": provider_gateway.event_proposal_available(match)}
+
+    @router.post("/api/matches/{match_id}/event-proposals")
+    def post_event_proposal(match: Annotated[MatchRecord, Depends(require_match)], body: dict | None = None) -> dict:
+        try:
+            return provider_gateway.execute_event_proposal(match.id, body=body or {})
+        except DomainError:
+            raise
+        except ProviderDenied as exc:
+            raise HTTPException(status_code=403, detail={"reasonCodes": exc.reason_codes}) from exc
+        except (KeyError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=404, detail="Source frames not ready") from exc
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @router.get("/api/matches/{match_id}/query-proposals")
+    def get_query_proposal_capability(match: Annotated[MatchRecord, Depends(require_match)]) -> dict:
+        return {"generationId": storage.current_generation(match.id).generationId,
+                "available": provider_gateway.proposal_available(match, "query_proposal")}
+
+    @router.post("/api/matches/{match_id}/query-proposals")
+    def post_query_proposal(match: Annotated[MatchRecord, Depends(require_match)], body: dict | None = None) -> dict:
+        try:
+            return provider_gateway.execute_query_proposal(match.id, body=body or {})
+        except DomainError:
+            raise
+        except ProviderDenied as exc:
+            raise HTTPException(status_code=403, detail={"reasonCodes": exc.reason_codes}) from exc
+        except (KeyError, FileNotFoundError) as exc:
+            raise HTTPException(status_code=404, detail="Source events not ready") from exc
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    @router.post("/api/matches/{match_id}/provider-images")
+    def prepare_provider_images(match: Annotated[MatchRecord, Depends(require_match)], body: dict | None = None) -> dict:
+        from .provider_images import select_source_image_manifest
+        from .workbench.media_execution import MediaResourceLimit
+
+        payload = body or {}
+        generation_id = payload.get("generationId")
+        frame_ids = payload.get("sourceFrameIds")
+        if not isinstance(generation_id, str) or not generation_id or not isinstance(frame_ids, list):
+            raise HTTPException(status_code=400, detail="Current generation and source frames required")
+        try:
+            digest = select_source_image_manifest(storage, match.id, generation_id, frame_ids)
+        except (ValueError, MediaResourceLimit) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return {"matchId": match.id, "generationId": generation_id, "imageManifestDigest": digest}
     
     @router.get("/api/matches/{match_id}/benchmark")
     def get_match_benchmark(match: Annotated[MatchRecord, Depends(require_match)], includeSelectedClusterProbe: bool = False,

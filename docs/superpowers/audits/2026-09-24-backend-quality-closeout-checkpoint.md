@@ -24,11 +24,26 @@ Evidence and the exact missing gates: [source review record](../handoffs/backend
 
 The session could read repository text and download CI artifacts through the connector, but could not obtain a complete local checkout; shell Git remote reads failed DNS. Available Python was 3.13.5/Pydantic 2.13.4, not the pinned Python 3.11 profile; Ruff and mypy were absent. No fresh full-checkout original/candidate pytest, entry-point parity, C03/API/journey, pinned quality, complete-candidate or new-SHA CI gates ran. No application CI run was launched by this review. Author self-review only; no independent reviewer ran.
 
+## 2026-09-26 continuation — REPORT_STORE_STRUCTURE implemented and locally verified
+
+Status: **implemented, locally verified, publication pending CI. Not yet accepted.**
+
+Reconciled live main `afa7a87` (docs-only beyond `efcc3e1`; neither touched file changed). The saved patch hash matched, `git apply --check` passed, and it was applied unchanged as commit `e09aa99`; the resulting `report_store.py` and `ruff-baseline.json` blobs equal the manifest (`7a0daca`, `66e913b`).
+
+Environment: Linux, CPython 3.11.15, dev.lock, isolated quality+typing locks (Ruff 0.16.8, mypy 2.3.1), ffmpeg present, no IPv6.
+
+- Original `afa7a87`: report-store+quality-gate 72 passed; console contract 59 passed; C03/API/journey 180 passed, 2 skipped (dedicated V3T50 lane); Ruff 405, 0 new/stale; scoped mypy clean.
+- Candidate `e09aa99`: the same three sets pass identically; Ruff 402, 0 new, exactly the three intended C901 removals; scoped and report_store mypy clean. Full backend: 5,452 passed, 18 skipped, 3 failed, all `::1` loopback tests that fail only because the container has no IPv6.
+- The handoff checker reports the whole module AST equal after inlining the five helpers.
+- Mutation: 12 targeted mutants of the helpers; existing tests killed 10. Symlinked-member refusal and the narrow catch boundary survived, so two contract tests were added. Both pass on original and candidate and kill those mutants.
+
+Publication: a direct push to main was refused by this session's safety policy, so the commit is published through PR #14, which also merges `integration/catapult-workbench`. Catapult had added stored metric-coverage checks to the code the extraction moved into `_strip_claim_metadata`, taking it to C901 11. Those checks were moved unchanged into `_validate_metric_claim_coverage`, called at the same point. No existing test covered them, so eight contract cases were added; they pass on pre-extraction catapult source and all fail if the call is removed. Merged tree: related report/API/journey tests 407 passed, 4 skipped; contract 70 passed; Ruff 423, 0 new/stale; mypy clean.
+
+Author self-review only; no independent reviewer ran.
+
 ## Exact next action
 
-Continue `REPORT_STORE_STRUCTURE` in a complete checkout with the unchanged pinned profiles, following NEXT_TASK.md and VERIFICATION_RUNBOOK.md. Reconcile live main again, retain this documentation, run the required original/candidate checks, and apply `docs/superpowers/handoffs/backend-quality/unpublished/report-store-extraction.patch` only after its prerequisites pass. Then use permitted main publication and require completed normal CI plus dedicated C05/C06 on the new application SHA before accepting the slice.
-
-The patch still proposes exactly three complexity retirements (405 to 402); that reduction is **not** published or accepted. Preserve validation order, legacy/reference refusal, generation isolation, lock spans and publication operations. Do not redo completed repairs or substitute the source-only checker for runtime/quality verification. Do not reset newer main to the old application base or require the historical candidate tree to include later documents.
+After #14 merges, confirm completed normal CI plus C05/C06 on the merged main SHA, then record those run IDs and mark only `REPORT_STORE_STRUCTURE` accepted. Do not re-apply the saved patch; it is in main. Broader audit work below stays open.
 
 ## Boundaries and history
 

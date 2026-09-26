@@ -132,7 +132,66 @@ class ReviewService:
             # Fail ambiguous legacy replay before appending a new command.
             self._effective_config(match_id, active_commands(history))
         if kind in {"event_accept", "event_reject"}:
-            return {**payload, "previous": self.storage._event_review_snapshot(match_id, payload)}
+            previous = self.storage._event_review_snapshot(match_id, payload)
+            if kind == "event_accept" and any(item.get("proposalModelId") and not item.get("proposalRequestId")
+                                               for item in previous):
+                raise SemanticCommandError("MODEL_PROPOSAL_RECEIPT_REQUIRED", "A provider receipt is required to accept a model event", status_code=409)
+            canonical = {key: value for key, value in payload.items() if key not in {"previous", "proposal"}}
+            if len(previous) == 1 and previous[0].get("proposalModelId"):
+                canonical["proposal"] = {"modelId": previous[0]["proposalModelId"],
+                    "modelVersion": previous[0]["proposalModelVersion"],
+                    "evidenceIds": previous[0]["proposalEvidenceIds"],
+                    "providerRequestId": previous[0]["proposalRequestId"]}
+            return {**canonical, "previous": previous}
+        if kind == "event_propose":
+            from .workbench.events import ModelEventProposal
+            from pydantic import ValidationError
+
+            try:
+                proposal = ModelEventProposal.model_validate({key: value for key, value in payload.items()
+                    if key != "providerRequestId"})
+            except ValidationError as exc:
+                raise SemanticCommandError("INVALID_EVENT_PROPOSAL", "Visual event proposal is invalid") from exc
+            receipt_id = payload.get("providerRequestId")
+            if not isinstance(receipt_id, str) or not 0 < len(receipt_id) <= 160:
+                raise SemanticCommandError("MODEL_PROPOSAL_RECEIPT_REQUIRED", "A server-owned provider receipt is required", status_code=409)
+            ledger = self.storage.job_ledger
+            try:
+                request = ledger.request(receipt_id)
+                attempt = ledger.latest_attempt(receipt_id)
+                result = ledger.provider_result(receipt_id)
+            except KeyError:
+                result = None
+            source_sha = self.storage.source_sha256(match_id)
+            generation_id = self.storage.current_generation(match_id).generationId
+            bound = (request.executionBound or {}) if result is not None else {}
+            if not isinstance(result, dict) or not (
+                request.scope == "provider" and request.providerTask == "event_proposal"
+                and request.matchId == match_id and request.sourceSha256 == source_sha
+                and request.modelHash == proposal.modelId
+                and bound.get("generationId") == generation_id
+                and bound.get("modelVersion") == proposal.modelVersion
+                and attempt.status == "complete" and attempt.dispatchStarted is True
+                and result.get("schemaVersion") == "event_proposal_receipt_v1"
+                and result.get("requestId") == receipt_id and result.get("matchId") == match_id
+                and result.get("generationId") == generation_id and result.get("sourceSha256") == source_sha
+                and result.get("modelId") == proposal.modelId
+                and result.get("modelVersion") == proposal.modelVersion
+                and result.get("proposal") == proposal.model_dump(mode="json")
+            ):
+                raise SemanticCommandError("MODEL_PROPOSAL_RECEIPT_REQUIRED", "A matching server-owned provider receipt is required", status_code=409)
+            frame = next((item for item in self.storage.load_frames(match_id)
+                          if item.frameId == proposal.frameId), None)
+            if frame is None or abs(frame.timestamp - proposal.timestamp) > 1e-6:
+                raise SemanticCommandError("STALE_EVENT_PROPOSAL", "Source frame or timestamp changed", status_code=409)
+            event_id = "ev_model_" + digest({"matchId": match_id, **proposal.model_dump(mode="json")})[:16]
+            # Evidence IDs are event:{frameId}:{type}:{timestamp}; a second event with the
+            # same frame and type would make every later provider request ambiguous.
+            if any(item.eventId == event_id or (item.frameId, item.type) == (proposal.frameId, proposal.type)
+                   for item in self.storage.load_events(match_id)):
+                raise SemanticCommandError("DUPLICATE_EVENT_PROPOSAL", "Visual event proposal already exists", status_code=409)
+            return {**proposal.model_dump(mode="json"), "eventId": event_id,
+                    "providerRequestId": receipt_id, "sourceSha256": source_sha}
         if kind == "config_set":
             if set(payload) != {"values"}:
                 raise SemanticCommandError("INVALID_SEMANTIC_CONFIG", "config_set requires only values")
@@ -156,6 +215,34 @@ class ReviewService:
                                           selected=match.config.myTeamCluster,
                                           tracking_role=self._tracking_role(match_id, active_commands(history)),
                                           input_mode=match.inputMode)
+        if kind == "playlist_item" and "replaces" in payload:
+            if set(payload) != {"replaces", "title", "notes"} or not all(
+                isinstance(payload[key], str) for key in ("replaces", "title", "notes")
+            ) or len(payload["title"]) > 160 or len(payload["notes"]) > 4000:
+                raise SemanticCommandError("INVALID_PLAYLIST_EDIT", "Edit only a saved clip's title and notes")
+            target = next((item for item in self.storage._active_playlist_items(match_id)
+                           if item["correctionId"] == payload["replaces"]), None)
+            if target is None:
+                raise SemanticCommandError("PLAYLIST_ITEM_NOT_ACTIVE", "Refresh the saved clip before editing", status_code=409)
+            return {**target["payload"], "replaces": target["correctionId"],
+                    "title": payload["title"], "notes": payload["notes"]}
+        if kind == "playlist_item" and "evidenceIds" in payload:
+            from math import isfinite
+            from .workbench.evidence import records_from_match
+
+            ids = payload["evidenceIds"]
+            start, end = payload.get("timestampStart"), payload.get("timestampEnd")
+            if (type(ids) is not list or not 0 < len(ids) <= 16
+                    or any(type(item) is not str or not 0 < len(item) <= 160 for item in ids)
+                    or len(set(ids)) != len(ids)
+                    or type(start) not in (int, float) or type(end) not in (int, float)
+                    or not isfinite(start) or not isfinite(end) or end <= start):
+                raise SemanticCommandError("INVALID_PLAYLIST_EVIDENCE", "Playlist evidence and interval are invalid")
+            known = {item.evidenceId for item in records_from_match(
+                self.storage.load_frames(match_id), self.storage.load_events(match_id),
+                interval_start=start, interval_end=end)}
+            if not set(ids) <= known:
+                raise SemanticCommandError("INVALID_PLAYLIST_EVIDENCE", "Playlist evidence is not in this source interval")
         if kind == "calibration" and set(payload) == {"profile"}:
             from .workbench.geometry import CalibrationProfile, commit_calibration
             profile = CalibrationProfile.model_validate(payload["profile"])
@@ -472,6 +559,7 @@ class ReviewService:
 
         enriched, summary, events, assignments, formations, shots, accepted = processor._compute_outputs_and_match_state(
             frames,
+            source_sha256=self.storage.source_sha256(match_id),
             attack_direction=config.attackDirection,
             ball_truth_layers=ball_truth_layers,
             match_state_evidence=match_state_evidence,

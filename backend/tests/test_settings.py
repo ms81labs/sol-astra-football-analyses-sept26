@@ -19,6 +19,10 @@ DAYTONA_ENV_KEYS = (
     "GA_CLOUD_PROVIDER_ENABLED",
     "GA_PROVIDER_CALL_RESERVATION",
     "GA_PROVIDER_BUDGET_LIMIT",
+    "GA_ASTRA_ENABLED",
+    "GA_ASTRA_INPUT_PRICE_PER_MILLION",
+    "GA_ASTRA_OUTPUT_PRICE_PER_MILLION",
+    "OPENAI_API_KEY",
 )
 
 
@@ -252,3 +256,23 @@ def test_settings_are_frozen_and_slots_based(monkeypatch: pytest.MonkeyPatch) ->
     assert not hasattr(settings, "__dict__")
     with pytest.raises((AttributeError, dataclasses.FrozenInstanceError)):
         settings.processing_backend = "daytona"  # type: ignore[misc]
+
+
+def test_astra_settings_require_explicit_cloud_budget_key_model_and_price_floor(monkeypatch):
+    monkeypatch.setenv("GA_ASTRA_ENABLED", "1")
+    with pytest.raises(SettingsError):
+        ProcessingSettings.from_env()
+    monkeypatch.setenv("GA_CLOUD_PROVIDER_ENABLED", "1")
+    monkeypatch.setenv("OPENAI_API_KEY", "test-only")
+    monkeypatch.setenv("GA_ALLOWED_MODEL_IDS", "gpt-6-astra")
+    monkeypatch.setenv("GA_PROVIDER_CALL_RESERVATION", "5")
+    monkeypatch.setenv("GA_PROVIDER_BUDGET_LIMIT", "10")
+    monkeypatch.setenv("GA_ASTRA_INPUT_PRICE_PER_MILLION", "22")
+    monkeypatch.setenv("GA_ASTRA_OUTPUT_PRICE_PER_MILLION", "82.5")
+    settings = ProcessingSettings.from_env()
+    assert settings.cloud_model_id == "gpt-6-astra"
+    assert settings.provider_spend_policy.adapter_id == "astra-responses-v1"
+    assert "test-only" not in repr(settings)
+    monkeypatch.setenv("GA_ASTRA_INPUT_PRICE_PER_MILLION", "10")
+    with pytest.raises(SettingsError):
+        ProcessingSettings.from_env()

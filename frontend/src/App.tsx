@@ -59,7 +59,7 @@ import { getUploadFailureGuidance } from './utils/uploadErrors';
 import { findNearestFrameIndex } from './utils/videoSync';
 import { playlistClipsFromCorrections } from './utils/playlist';
 import { applyReviewShortcut, type ReviewAction } from './utils/reviewShortcuts';
-import { fetchAssistance, fetchCorrectionHistory, fetchPendingCorrections, fetchHeatmap, fetchIncidentReview, fetchMatchFormation, fetchMatchMetrics, fetchNative, fetchNativeMemory, fetchQualityTimeline, fetchRecovery, fetchSecurity, fetchWorkbenchDossier, promoteMatchIdentity, recoverMatchCorrection, repairMatchIdentity, requestAccessDeletion, submitMatchCorrection, undoMatchCorrection, type FormationAvailability, type MetricAvailability } from './utils/workbench';
+import { fetchAssistance, fetchCorrectionHistory, fetchEventProposalAvailability, fetchPendingCorrections, fetchHeatmap, fetchIncidentReview, fetchMatchFormation, fetchMatchMetrics, fetchNative, fetchNativeMemory, fetchQualityTimeline, fetchRecovery, fetchSecurity, fetchWorkbenchDossier, prepareEventProposalImages, promoteMatchIdentity, recoverMatchCorrection, repairMatchIdentity, requestAccessDeletion, requestEventProposal, submitMatchCorrection, undoMatchCorrection, type FormationAvailability, type MetricAvailability, type SearchHit } from './utils/workbench';
 import { windowedTimelineProps } from './utils/windowedTimeline';
 import { splitScores } from './utils/quantities';
 
@@ -69,6 +69,8 @@ interface MatchEntry {
   detail: MatchRecord;
   data: FrameData[];
   frameCount: number;
+  lastFrameId: number | null;
+  sourceFps: number | null;
   stats: MatchStats;
   benchmark: MatchBenchmarkSummary | null;
   formationTimeline: FormationSegment[];
@@ -118,6 +120,8 @@ function workspaceToEntry(workspace: Awaited<ReturnType<typeof fetchMatchWorkspa
     detail: workspace.detail,
     data: workspace.frames,
     frameCount: workspace.frameCount ?? workspace.frames.length,
+    lastFrameId: workspace.lastFrameId ?? workspace.frames.at(-1)?.Frame_ID ?? null,
+    sourceFps: workspace.sourceFps ?? null,
     stats: workspace.analytics.summary,
     benchmark: workspace.benchmark,
     formationTimeline: workspace.analytics.formationTimeline,
@@ -194,6 +198,13 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
   const [loadError, setLoadError] = useState<string | null>(null);
   const [comparisonLoadError, setComparisonLoadError] = useState<string | null>(null);
   const [events, setEvents] = useState<EventTag[]>([]);
+  const [selectedSearch, setSelectedSearch] = useState<{ generationId: string | null; hit: SearchHit } | null>(null);
+  const [eventProposalAvailable, setEventProposalAvailable] = useState(false);
+  const [proposalRequestState, setProposalRequestState] = useState<'idle' | 'pending' | 'done' | 'unknown'>('idle');
+  const [proposalRequestMessage, setProposalRequestMessage] = useState<string | null>(null);
+  const proposalSelectionVersionRef = useRef(0);
+  const [reportEvidenceNotice, setReportEvidenceNotice] = useState<string | null>(null);
+  const reportEvidenceRequestRef = useRef(0);
   const [jobStatus, setJobStatus] = useState<string | null>(null);
   const uploadAbortControllerRef = useRef<AbortController | null>(null);
   const activeWorkspaceRequestRef = useRef(0);
@@ -230,6 +241,28 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
   useLayoutEffect(() => {
     activeMatchIdRef.current = activeMatch?.id ?? null;
     activeGenerationRef.current = activeMatch?.detail.generationId ?? null;
+  }, [activeMatch?.id, activeMatch?.detail.generationId]);
+  useLayoutEffect(() => {
+    proposalSelectionVersionRef.current += 1;
+    setProposalRequestState('idle');
+    setProposalRequestMessage(null);
+    return () => { proposalSelectionVersionRef.current += 1; };
+  }, [activeMatch?.id, activeMatch?.detail.generationId, selectedSearch]);
+  useEffect(() => {
+    const matchId = activeMatch?.id;
+    const generationId = activeMatch?.detail.generationId;
+    let cancelled = false;
+    setEventProposalAvailable(false);
+    if (matchId && generationId && activeMatch?.detail.inputMode === 'video') {
+      void fetchEventProposalAvailability(matchId, generationId)
+        .then((available) => { if (!cancelled) setEventProposalAvailable(available); })
+        .catch(() => { if (!cancelled) setEventProposalAvailable(false); });
+    }
+    return () => { cancelled = true; };
+  }, [activeMatch?.id, activeMatch?.detail.generationId, activeMatch?.detail.inputMode]);
+  useEffect(() => {
+    reportEvidenceRequestRef.current += 1;
+    setReportEvidenceNotice(null);
   }, [activeMatch?.id, activeMatch?.detail.generationId]);
   useEffect(() => {
     setStoredIncident(null);
@@ -387,8 +420,8 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
   const matchData = useMemo(() => activeMatch?.data || [], [activeMatch]);
   const totalFrameCount = activeMatch?.frameCount ?? matchData.length;
   const timelineWindow = useMemo(
-    () => windowedTimelineProps(matchData, currentFrame, totalFrameCount),
-    [matchData, currentFrame, totalFrameCount],
+    () => windowedTimelineProps(matchData, currentFrame, totalFrameCount, activeMatch?.lastFrameId),
+    [matchData, currentFrame, totalFrameCount, activeMatch?.lastFrameId],
   );
   const [correctionSaveState, setCorrectionSaveState] = useState<CommandState | null>(null);
   const [commandMessage, setCommandMessage] = useState<string | null>(null);
@@ -445,6 +478,10 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
   const currentFrameRecord = matchData.find((frame) => frame.Frame_ID === currentFrame) ?? matchData[currentFrame] ?? null;
   const currentTimestamp = currentFrameRecord?.Timestamp ?? 0;
   const currentEvent = events.find((event) => event.frame === currentFrame) ?? events.find((event) => Math.abs(event.timestamp - currentTimestamp) < 0.2) ?? null;
+  const selectedHit = selectedSearch && selectedSearch.hit.matchId === activeMatch?.id
+    && selectedSearch.generationId === (activeMatch?.detail.generationId ?? null) ? selectedSearch.hit : null;
+  const selectedProposal = activeMatch?.backendEvents.find((event) =>
+    event.eventId === selectedHit?.eventId && event.proposalModelId) ?? null;
   const incidentTouchStart = storedIncident?.touchStart ?? currentEvent?.intervalStart ?? currentTimestamp;
   const incidentTouchEnd = storedIncident?.touchEnd ?? currentEvent?.intervalEnd ?? Number((currentTimestamp + 0.12).toFixed(2));
   const incidentSamples = storedIncident?.samples ?? [];
@@ -458,6 +495,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
   // A.4 — Review surface hook: manages annotations, issues, review range, pitch placement
   const review = useReviewSurface({
     activeMatchId: activeMatch?.id ?? null,
+    activeGenerationId: activeMatch?.detail.generationId ?? null,
     currentFrame,
     matchData,
     pausePlayback: () => setIsPlaying(false),
@@ -469,6 +507,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
     },
     setLoadError,
   });
+  const setReviewRange = review.setReviewRange;
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval>;
@@ -498,7 +537,8 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
       if (cancelled) return;
       setActiveMatch((previous) => (
         previous && previous.id === matchId && previous.detail.generationId === generationId
-          ? { ...previous, data: page.frames, frameCount: page.frameCount || previous.frameCount }
+          ? { ...previous, data: page.frames, frameCount: page.frameCount || previous.frameCount,
+            lastFrameId: page.lastFrameId ?? previous.lastFrameId }
           : previous
       ));
     }).catch(() => undefined);
@@ -506,6 +546,19 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
       cancelled = true;
     };
   }, [activeMatch, currentFrame, matchData, totalFrameCount]);
+
+  useEffect(() => {
+    if (!selectedHit || selectedHit.frameId == null
+        || !matchData.some((frame) => frame.Frame_ID === selectedHit.frameId)) return;
+    const start = selectedHit.intervalStart ?? selectedHit.timestamp;
+    const end = selectedHit.intervalEnd ?? selectedHit.timestamp;
+    const startIndex = matchData.findIndex((frame) => frame.Timestamp >= start);
+    const afterEnd = matchData.findIndex((frame) => frame.Timestamp >= end);
+    if (startIndex >= 0) {
+      setReviewRange({ startFrame: matchData[startIndex].Frame_ID,
+        endFrame: matchData[Math.max(startIndex, afterEnd < 0 ? matchData.length - 1 : afterEnd - 1)].Frame_ID });
+    }
+  }, [matchData, selectedHit, setReviewRange]);
 
   useEffect(() => {
     return () => {
@@ -566,11 +619,80 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
   const togglePlay = useCallback(() => setIsPlaying((playing) => !playing), []);
 
   const handleSeek = useCallback((frame: number) => {
-    const last = Math.max(totalFrameCount, 1) - 1;
+    const last = timelineWindow.frameCount - 1;
     setCurrentFrame(Math.max(0, Math.min(last, Math.trunc(frame))));
     setSeekVersion(version => version + 1);
     coach.clearResponse();
-  }, [coach, totalFrameCount]);
+  }, [coach, timelineWindow.frameCount]);
+
+  const selectSearchHit = (hit: SearchHit) => {
+    if (hit.matchId !== activeMatch?.id) return;
+    setSelectedSearch({ generationId: activeMatch.detail.generationId ?? null, hit });
+    setIsPlaying(false);
+    const start = hit.intervalStart ?? hit.timestamp;
+    const end = hit.intervalEnd ?? hit.timestamp;
+    const startIndex = matchData.findIndex((frame) => frame.Timestamp >= start);
+    const afterEnd = matchData.findIndex((frame) => frame.Timestamp >= end);
+    const anchor = startIndex >= 0 ? startIndex : findNearestFrameIndex(frameTimestamps, hit.timestamp);
+    const anchorLoaded = hit.frameId == null || matchData.some((frame) => frame.Frame_ID === hit.frameId);
+    if (anchorLoaded && anchor >= 0 && matchData[anchor]) {
+      review.setReviewRange({ startFrame: matchData[anchor].Frame_ID,
+        endFrame: matchData[Math.max(anchor, afterEnd < 0 ? matchData.length - 1 : afterEnd - 1)].Frame_ID });
+    }
+    if (hit.frameId != null) handleSeek(hit.frameId);
+    else if (anchorLoaded && anchor >= 0 && matchData[anchor]) handleSeek(matchData[anchor].Frame_ID);
+  };
+
+  const selectReportEvidence = async (reference: import('./types').ReportEvidenceRef) => {
+    if (!activeMatch || reference.matchId !== activeMatch.id
+      || reference.generationId !== activeMatch.detail.generationId) return;
+    const requestId = ++reportEvidenceRequestRef.current;
+    const workspaceRequestId = activeWorkspaceRequestRef.current;
+    setReportEvidenceNotice(null);
+    if (reference.kind === 'event') {
+      // The backend formats the timestamp with Python float repr (12.0), JS as 12:
+      // compare the parsed number, not the string.
+      const [frameText, type, ...timestampParts] = reference.localId.split(':');
+      const timestampText = timestampParts.join(':');
+      const event = activeMatch.backendEvents.find((item) =>
+        String(item.frameId) === frameText && item.type === type && timestampText !== ''
+        && Number(timestampText) === item.timestamp && item.reviewStatus !== 'rejected');
+      if (!event) {
+        setSelectedSearch(null);
+        setReportEvidenceNotice('Report evidence is unavailable in this generation.');
+        return;
+      }
+      selectSearchHit({ matchId: activeMatch.id, eventId: event.eventId ?? reference.localId,
+        frameId: event.frameId, timestamp: event.timestamp, intervalStart: event.intervalStart,
+        intervalEnd: event.intervalEnd, label: event.description,
+        reviewStatus: event.reviewStatus, evidenceIds: [`event:${reference.localId}`] });
+    } else if (reference.kind === 'frame') {
+      let frame = matchData.find((item) => String(item.Frame_ID) === reference.localId);
+      if (!frame && /^(0|[1-9]\d*)$/.test(reference.localId) && Number.isSafeInteger(Number(reference.localId))) {
+        try {
+          // Load a full page from the cited frame, as playback paging does, so the
+          // view is not left holding a single frame.
+          const page = await fetchMatchFrames(activeMatch.id, { afterFrame: Number(reference.localId),
+            generationId: reference.generationId });
+          if (requestId !== reportEvidenceRequestRef.current || workspaceRequestId !== activeWorkspaceRequestRef.current
+            || activeMatchIdRef.current !== reference.matchId || activeGenerationRef.current !== reference.generationId) return;
+          frame = page.frames.find((item) => String(item.Frame_ID) === reference.localId);
+          if (frame) setActiveMatch((previous) => previous && previous.id === reference.matchId
+            && previous.detail.generationId === reference.generationId ? { ...previous, data: page.frames } : previous);
+        } catch {
+          if (requestId !== reportEvidenceRequestRef.current || workspaceRequestId !== activeWorkspaceRequestRef.current
+            || activeMatchIdRef.current !== reference.matchId || activeGenerationRef.current !== reference.generationId) return;
+        }
+      }
+      if (!frame) {
+        setSelectedSearch(null);
+        setReportEvidenceNotice('Report evidence is unavailable in this generation.');
+        return;
+      }
+      selectSearchHit({ matchId: activeMatch.id, eventId: reference.localId, frameId: frame.Frame_ID,
+        timestamp: frame.Timestamp, label: `Frame ${frame.Frame_ID}`, evidenceIds: [`frame:${reference.localId}`] });
+    }
+  };
 
   const loadWorkspaceIntoState = useCallback(
     async (
@@ -618,7 +740,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
         setComparisonMatch(null);
         setComparisonLoadError(null);
         const sameMatch = activeMatchIdRef.current === matchId;
-        setCurrentFrame((previous) => sameMatch ? Math.min(previous, Math.max(0, entry.frameCount - 1))
+        setCurrentFrame((previous) => sameMatch ? Math.min(previous, Math.max(entry.frameCount - 1, entry.lastFrameId ?? 0))
           : entry.data[0]?.Frame_ID ?? 0);
         setIsPlaying(false);
         setSelectedPlayer(null);
@@ -703,10 +825,14 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
 
   const handleReviewShortcut = useCallback((action: ReviewAction) => {
     const next = applyReviewShortcut(action, { isPlaying, currentFrame,
-      frameCount: Math.max(totalFrameCount, 1), events, reviewRange: review.reviewRange });
+      frameCount: Math.max(timelineWindow.frameCount, 1), events, reviewRange: review.reviewRange });
     if (next.isPlaying !== isPlaying) setIsPlaying(next.isPlaying);
     if (next.currentFrame !== currentFrame) handleSeek(next.currentFrame);
-    if (next.reviewRange?.startFrame !== review.reviewRange?.startFrame || next.reviewRange?.endFrame !== review.reviewRange?.endFrame) review.setReviewRange(next.reviewRange);
+    if (next.reviewRange?.startFrame !== review.reviewRange?.startFrame || next.reviewRange?.endFrame !== review.reviewRange?.endFrame) {
+      // Manual marks replace a selected search hit's interval, as a timeline drag does.
+      setSelectedSearch(null);
+      review.setReviewRange(next.reviewRange);
+    }
     if ((action === 'accept' || action === 'reject') && activeMatch) {
       const kind = action === 'accept' ? 'event_accept' : 'event_reject';
       const reviewed = next.events.find((event) => event.frame === next.currentFrame);
@@ -720,7 +846,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
         (item.kind === 'event_accept' || item.kind === 'event_reject') && canUndo(item, history));
       if (target) handleUndoCommand(target.correctionId);
     } else if (action !== 'accept' && action !== 'reject' && action !== 'undo') setEvents(next.events as EventTag[]);
-  }, [activeMatch, currentFrame, events, executeCommand, handleSeek, handleUndoCommand, isPlaying, totalFrameCount, review]);
+  }, [activeMatch, currentFrame, events, executeCommand, handleSeek, handleUndoCommand, isPlaying, timelineWindow.frameCount, review]);
 
   const handleDrawingAnnotation = useCallback(
     (x: number, y: number, x2?: number, y2?: number) => {
@@ -952,14 +1078,69 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
     } finally { setTeamSelectionSaving(false); }
   }, [activeMatch, executeCommand]);
 
-  const handleClipSaved = useCallback(async (clip: { start: number; end: number; notes: string; sourceEndFrameExclusive: number }) => {
+  const handleClipSaved = useCallback(async (clip: { start: number; end: number; title?: string; notes: string; evidenceIds?: string[]; sourceEndFrameExclusive: number }) => {
     if (!activeMatch) return;
     const receipt = await executeCommand((controls) => submitMatchCorrection(activeMatch.id, {
       kind: 'playlist_item', ...controls,
-      payload: { timestampStart: clip.start, timestampEnd: clip.end, sourceEndFrameExclusive: clip.sourceEndFrameExclusive, notes: clip.notes },
+      payload: { timestampStart: clip.start, timestampEnd: clip.end, sourceEndFrameExclusive: clip.sourceEndFrameExclusive, title: clip.title ?? '', notes: clip.notes, ...(clip.evidenceIds?.length ? { evidenceIds: clip.evidenceIds } : {}) },
     }));
     if (!receipt || commandState(receipt) !== 'applied') throw new Error('Clip application is not confirmed. See the correction status.');
   }, [activeMatch, executeCommand]);
+
+  const handleClipUpdated = useCallback(async (correctionId: string, title: string, notes: string) => {
+    if (!activeMatch) return;
+    const receipt = await executeCommand((controls) => submitMatchCorrection(activeMatch.id, {
+      kind: 'playlist_item', ...controls, payload: { replaces: correctionId, title, notes },
+    }));
+    if (!receipt || commandState(receipt) !== 'applied') throw new Error('Clip edit application is not confirmed. See the correction status.');
+  }, [activeMatch, executeCommand]);
+
+  const handleRequestEventProposal = useCallback(async () => {
+    if (!activeMatch || !selectedHit || selectedHit.frameId == null || !eventProposalAvailable
+      || activeMatch.detail.inputMode !== 'video' || !activeMatch.detail.generationId) return;
+    const matchId = activeMatch.id;
+    const generationId = activeMatch.detail.generationId;
+    const workspaceVersion = activeWorkspaceRequestRef.current;
+    const selectionVersion = proposalSelectionVersionRef.current;
+    const stillSelected = () => activeWorkspaceRequestRef.current === workspaceVersion
+      && proposalSelectionVersionRef.current === selectionVersion
+      && activeMatchIdRef.current === matchId && activeGenerationRef.current === generationId;
+    const start = selectedHit.intervalStart ?? selectedHit.timestamp;
+    const end = selectedHit.intervalEnd ?? selectedHit.timestamp;
+    const sourceFrameIds = [selectedHit.frameId, ...matchData
+      .filter((frame) => frame.Frame_ID !== selectedHit.frameId
+        && frame.Timestamp >= start && frame.Timestamp <= end)
+      .slice(0, 3).map((frame) => frame.Frame_ID)].sort((a, b) => a - b);
+    setProposalRequestState('pending');
+    setProposalRequestMessage(null);
+    try {
+      const manifest = await prepareEventProposalImages(matchId, generationId, sourceFrameIds);
+      if (!stillSelected()) return;
+      const receipt = await requestEventProposal(matchId, generationId, manifest,
+        `event:${generationId}:${manifest}`);
+      if (!stillSelected()) return;
+      const proposal = receipt.proposal;
+      if (!proposal) {
+        setProposalRequestState('done');
+        setProposalRequestMessage('Visual evidence was insufficient for a suggested event.');
+        return;
+      }
+      const correction = await executeCommand((controls) => submitMatchCorrection(matchId, {
+        kind: 'event_propose', payload: { ...proposal, providerRequestId: receipt.requestId }, ...controls,
+      }));
+      if (stillSelected()) {
+        setProposalRequestState('done');
+        setProposalRequestMessage(correction ? 'Suggested event is ready for review.'
+          : 'The provider receipt is saved; check correction status before another request.');
+      }
+    } catch (error) {
+      if (!stillSelected()) return;
+      setProposalRequestState('unknown');
+      setProposalRequestMessage(error instanceof Error
+        ? `${error.message} Check the request outcome before trying again.`
+        : 'Request outcome unknown. Check the request before trying again.');
+    }
+  }, [activeMatch, eventProposalAvailable, executeCommand, matchData, selectedHit]);
 
   const handleSwapTeams = useCallback(() => {
     if (!activeMatch || requiresTeamSelection) return;
@@ -1146,6 +1327,11 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
                   currentTimestamp={currentTimestamp}
                   isPlaying={isPlaying}
                   seekVersion={seekVersion}
+                  matchId={activeMatch?.id}
+                  generationId={activeMatch?.detail.generationId}
+                  sourceFrameId={currentFrameRecord?.Frame_ID}
+                  sourceFramePts={currentFrameRecord?.Timestamp}
+                  sourcePresentationFps={activeMatch?.sourceFps ?? 25}
                   onPlayingChange={setIsPlaying}
                   onVideoTimeChange={handleVideoTimeChange}
                 />
@@ -1230,7 +1416,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
             </div>
           )}
 
-          <Timeline
+            <Timeline
             matchData={timelineWindow.matchData}
             currentFrame={timelineWindow.currentFrame}
             currentRecord={timelineWindow.currentRecord}
@@ -1239,7 +1425,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
             fps={fps}
             events={events}
             reviewRange={review.reviewRange}
-            onRangeChange={review.setReviewRange}
+            onRangeChange={(range) => { setSelectedSearch(null); review.setReviewRange(range); }}
             onSeek={handleSeek}
             onTogglePlay={togglePlay}
           />
@@ -1356,7 +1542,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
           )}
         </div>
 
-        <div className="bg-slate-800 rounded-xl shadow-lg border border-slate-700 p-4 flex flex-col" style={{ maxHeight: '85vh' }}>
+        <div className="bg-slate-800 rounded-xl shadow-lg border border-slate-700 p-4 flex flex-col overflow-y-auto" style={{ maxHeight: '85vh' }}>
           <h2 className="text-lg font-semibold mb-3 text-emerald-400 border-b border-slate-700 pb-2">Tactical Brain</h2>
 
           {isTacticalInterpretationPaused && (
@@ -1408,7 +1594,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
             />
           </div>
           <div className="mb-3 shrink-0">
-            <AiUnavailableBanner providersEnabled={providersEnabled} />
+            <AiUnavailableBanner providersEnabled={providersEnabled || eventProposalAvailable} />
           </div>
           <div className="mb-3 shrink-0">
             <LoopbackBanner deploymentBoundary={deploymentBoundary} />
@@ -1454,8 +1640,24 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
             <EvidenceInspector
               matchId={activeMatch?.id}
               frame={currentFrameRecord}
+              selectedInterval={selectedHit ? { start: selectedHit.intervalStart ?? selectedHit.timestamp, end: selectedHit.intervalEnd ?? selectedHit.timestamp, evidenceIds: selectedHit.evidenceIds } : null}
               cameraProfile={activeMatch?.detail.config?.cameraProfile ?? uploadCameraProfile}
-              reviewStatus={currentEvent?.reviewStatus ?? 'unreviewed'}
+              reviewStatus={selectedHit?.reviewStatus ?? currentEvent?.reviewStatus ?? 'unreviewed'}
+              proposal={selectedProposal?.proposalModelId && selectedProposal.proposalModelVersion
+                ? { modelId: selectedProposal.proposalModelId, modelVersion: selectedProposal.proposalModelVersion,
+                    evidenceIds: selectedProposal.proposalEvidenceIds ?? [],
+                    requestId: selectedProposal.proposalRequestId } : null}
+              onRequestProposal={eventProposalAvailable && isVideoMatch && selectedHit?.frameId != null && !selectedProposal
+                ? () => { void handleRequestEventProposal(); } : undefined}
+              proposalRequestState={proposalRequestState}
+              proposalRequestMessage={proposalRequestMessage}
+              onProposalDecision={selectedProposal?.reviewStatus === 'unreviewed' ? (decision) => {
+                if (!activeMatch || !selectedProposal.eventId) return;
+                void executeCommand((controls) => submitMatchCorrection(activeMatch.id, {
+                  kind: decision === 'accept' ? 'event_accept' : 'event_reject',
+                  payload: { eventId: selectedProposal.eventId }, ...controls,
+                }));
+              } : undefined}
               configVersion={activeMatch?.evidence?.items[0]?.schemaVersion ?? 'evidence_v1'}
               coordinateSpace={activeMatch?.evidence?.coordinateSpace}
               definitionVersion={activeMatch?.evidence?.definitionVersion}
@@ -1481,10 +1683,14 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
               matchId={activeMatch?.id}
               generationId={activeMatch?.detail.generationId ?? undefined}
               reviewRange={review.reviewRange}
+              sourceInterval={selectedHit ? { start: selectedHit.intervalStart ?? selectedHit.timestamp, end: selectedHit.intervalEnd ?? selectedHit.timestamp, evidenceIds: selectedHit.evidenceIds } : null}
               frames={matchData}
-              sourceFps={fps}
+              sourceFps={isVideoMatch ? activeMatch?.sourceFps ?? 25 : fps}
+              sampleFps={fps}
+              videoAvailable={isVideoMatch}
               storedClips={playlistClipsFromCorrections(correctionHistory, activeMatch?.detail.includedCommandIds ?? [], activeMatch?.detail.generationId ?? undefined)}
               onClipSaved={handleClipSaved}
+              onClipUpdated={handleClipUpdated}
               onOpenInterval={(timestamp) => {
                 setIsPlaying(false);
                 const index = findNearestFrameIndex(matchData.map((frame) => frame.Timestamp), timestamp);
@@ -1493,7 +1699,8 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
             />
           </div>
           <div className="mb-3 shrink-0">
-            <MatchPackagePanel matchId={activeMatch?.id} />
+            <MatchPackagePanel matchId={activeMatch?.id} generationId={activeMatch?.detail.generationId ?? undefined}
+              onReopen={(matchId, generationId) => loadWorkspaceIntoState(matchId, { force: true, generationId })} />
           </div>
           <div className="mb-3 shrink-0">
             <FourRatesPanel matchId={activeMatch?.id} />
@@ -1520,11 +1727,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
             <TypedSearchPanel key={`${activeMatch?.id}:${activeMatch?.detail.generationId}`}
               generationId={activeMatch?.detail.generationId ?? undefined}
               matchId={activeMatch?.id}
-              onSeek={(timestamp) => {
-                setIsPlaying(false);
-                const index = findNearestFrameIndex(matchData.map((frame) => frame.Timestamp), timestamp);
-                if (index >= 0) handleSeek(matchData[index]?.Frame_ID ?? index);
-              }}
+              onSelectHit={selectSearchHit}
             />
           </div>
           <div className="mb-3 flex-1 overflow-y-auto">
@@ -1542,7 +1745,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
               <p>Waiting for processed match data...</p>
             </div>
           ) : (
-            <div className="flex flex-col flex-1 overflow-hidden">
+            <div className="flex flex-col shrink-0">
               <div className="flex bg-slate-900 rounded p-0.5 border border-slate-700 mb-3 shrink-0">
                 <button
                   onClick={() => coach.selectLlmProvider('local')}
@@ -1619,6 +1822,7 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
                 )}
 
                 {!isTacticalInterpretationPaused && (coach.activeTab === 'report' || coach.activeTab === 'drills') && (
+                <>
                 <CoachInsights
                   activeTab={coach.activeTab === 'report' ? 'report' : 'drills'}
                   llmThinking={coach.llmThinking}
@@ -1633,7 +1837,10 @@ function App({ runtimeCapabilities = LOCAL_RUNTIME_CAPABILITIES }: AppProps = {}
                   onSwitchMatch={loadWorkspaceIntoState}
                   onGenerateReport={() => coach.runScenario({ matchId: activeMatch?.id ?? null, currentFrame, scenario: 'tactical_report' })}
                   onGenerateDrills={() => coach.runScenario({ matchId: activeMatch?.id ?? null, currentFrame, scenario: 'drills' })}
+                  onSelectEvidence={(reference) => { void selectReportEvidence(reference); }}
                 />
+                {reportEvidenceNotice && <p role="status" className="text-xs text-amber-200">{reportEvidenceNotice}</p>}
+                </>
               )}
                 {isTacticalInterpretationPaused && coach.activeTab !== 'analysis' && (
                   <div className="rounded-lg border border-slate-700 bg-slate-900/70 p-3 text-xs text-slate-400">

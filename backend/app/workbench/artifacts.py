@@ -24,15 +24,22 @@ class ArtifactStore:
             path.write_bytes(payload)
         return digest
 
-    def get(self, digest: str, *, namespace: str) -> bytes:
+    def get(self, digest: str, *, namespace: str, max_bytes: int | None = None) -> bytes:
         if not re.fullmatch(r"[a-f0-9]{64}", digest) or not re.fullmatch(r"[A-Za-z0-9_-]+", namespace):
             raise ValueError("Invalid artifact identity or namespace")
+        if max_bytes is not None and (type(max_bytes) is not int or max_bytes <= 0):
+            raise ValueError("Invalid artifact byte limit")
         path = self.root / namespace / digest
         if path.parent.is_symlink() or path.is_symlink():
             raise ValueError("Artifact symlink is not a verified hit")
         if not path.exists():
             raise KeyError(digest)
-        payload = path.read_bytes()
+        if max_bytes is not None and path.stat().st_size > max_bytes:
+            raise ValueError("Artifact exceeds byte limit")
+        with path.open("rb") as handle:
+            payload = handle.read() if max_bytes is None else handle.read(max_bytes + 1)
+        if max_bytes is not None and len(payload) > max_bytes:
+            raise ValueError("Artifact exceeds byte limit")
         if hashlib.sha256(payload).hexdigest() != digest:
             raise ValueError("Artifact digest mismatch")
         return payload

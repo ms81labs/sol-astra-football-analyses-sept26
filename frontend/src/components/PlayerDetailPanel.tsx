@@ -42,11 +42,11 @@ export default function PlayerDetailPanel({ player, events, identityContinuous =
             <div className="space-y-1 border-b border-slate-700 pb-3">
                 <div className="flex items-center gap-2">
                     <h3 className="text-lg font-semibold text-slate-50 font-mono">
-                        {player.jerseyNumber != null ? `#${player.jerseyNumber}` : `Track ${player.playerId ?? '?'}`}
+                        Track {player.playerId ?? '?'}
                     </h3>
-                    {player.jerseyNumber != null && (
-                        <span className="text-xs text-slate-500 font-mono">T{player.playerId ?? '?'}</span>
-                    )}
+                    <span className="text-xs text-amber-200 font-mono">
+                        {player.jerseyNumber != null ? `Jersey candidate #${player.jerseyNumber}` : 'Identity unknown'}
+                    </span>
                     <span className="rounded-full bg-blue-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-blue-300">
                         {formatTeam(player.team ?? 'my_team')}
                     </span>

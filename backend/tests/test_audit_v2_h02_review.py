@@ -61,6 +61,32 @@ def install_tracking_match(storage: Storage) -> str:
     return match.id
 
 
+def _with_completed_provider_receipt(storage: Storage, match_id: str, proposal: dict, *,
+                                     task_type: str = "event_proposal", dispatched: bool = True) -> dict:
+    """Mock the server-owned result row; no model or billing claim is made here."""
+    from backend.app.provider_billing import ProviderBudgetLedger
+
+    request_id = "test-event-proposal-" + str(len(storage.list_corrections(match_id)))
+    generation_id = storage.current_generation(match_id).generationId
+    source_sha = storage.source_sha256(match_id)
+    ledger = ProviderBudgetLedger(storage.job_ledger.db_path, 1)
+    ticket = ledger.admit(match_id=match_id, task_type=task_type, request_id=request_id,
+        source_identity=source_sha, authorised_budget=1,
+        execution_bound={"maximumCost": "0.01", "currency": "USD", "modelId": proposal["modelId"],
+                         "modelVersion": proposal["modelVersion"], "generationId": generation_id})
+    assert ticket is not None
+    if dispatched:
+        ledger.claim(ticket)
+        attempt = ledger.ledger.latest_attempt(request_id)
+        ledger.ledger.transition(attempt.attemptId, expected_revision=attempt.revision,
+            owner_id=ticket.owner_id, status="complete")
+    ledger.save_result(request_id, {"schemaVersion": "event_proposal_receipt_v1",
+        "requestId": request_id, "matchId": match_id, "generationId": generation_id,
+        "sourceSha256": source_sha, "modelId": proposal["modelId"],
+        "modelVersion": proposal["modelVersion"], "proposal": proposal})
+    return {**proposal, "providerRequestId": request_id}
+
+
 def _team_for_track(storage: Storage, match_id: str, track_id: int) -> str | None:
     frame = storage.load_frames(match_id)[0]
     if any(player.id == track_id for player in frame.myTeam):
@@ -234,6 +260,198 @@ def test_t04_event_review_rebuilds_shots_metrics_and_report_inputs(tmp_path: Pat
         / "manifest.json"
     )
     assert "tactical_report" in json.loads(manifest_path.read_text(encoding="utf-8"))["stale"]
+
+
+def test_model_event_candidate_stays_provisional_through_accept_undo_and_rebuild(tmp_path: Path) -> None:
+    storage_root = tmp_path / "storage"
+    storage = Storage(storage_root)
+    match_id = install_tracking_match(storage)
+    frame = storage.load_frames(match_id)[0]
+    baseline_shots = len(storage.load_analytics(match_id)[3])
+    proposal = {
+        "type": "shot", "frameId": frame.frameId, "timestamp": frame.timestamp,
+        "intervalStart": frame.timestamp, "intervalEnd": frame.timestamp + 0.1,
+        "team": "my_team", "description": "Possible shot",
+        "modelId": "visual-model", "modelVersion": "v1",
+        "evidenceIds": [f"frame:{frame.frameId}"],
+    }
+    candidate = storage.submit_correction(match_id, kind="event_propose",
+        payload=_with_completed_provider_receipt(storage, match_id, proposal))
+    assert candidate.applyState == "applied"
+    assert candidate.payload["sourceSha256"] == storage.source_sha256(match_id)
+    event_id = candidate.payload["eventId"]
+    proposed = next(event for event in storage.load_events(match_id) if event.eventId == event_id)
+    assert proposed.reviewStatus == "unreviewed"
+    assert proposed.proposalModelId == "visual-model"
+    assert proposed.proposalModelVersion == "v1"
+    assert proposed.proposalEvidenceIds == [f"frame:{frame.frameId}"]
+    assert proposed.proposalRequestId == candidate.payload["providerRequestId"]
+    assert len(storage.load_analytics(match_id)[3]) == baseline_shots
+    proposal_hit = next(hit for hit in storage.query_match_events(match_id, "shots")["results"]
+                        if hit["eventId"] == event_id)
+    assert proposal_hit["evidenceIds"] == [f"frame:{frame.frameId}"]
+    assert event_id not in {item["id"] for item in storage.partition_events_for_match(match_id)["acceptedViews"]}
+    from backend.app.processor import _compute_outputs_and_match_state
+    changed_frames = [frame.model_copy(update={"frameId": 999}), *storage.load_frames(match_id)[1:]]
+    _frames, _summary, stale_events, _assignments, _formations, _shots, state = _compute_outputs_and_match_state(
+        changed_frames, review_commands=[candidate])
+    assert all(event.eventId != event_id for event in stale_events)
+    assert event_id in state["orphanedDecisions"]
+    _frames, _summary, stale_events, _assignments, _formations, _shots, state = _compute_outputs_and_match_state(
+        storage.load_frames(match_id), review_commands=[candidate], source_sha256="different-source")
+    assert all(event.eventId != event_id for event in stale_events)
+    assert event_id in state["orphanedDecisions"]
+
+    accepted = storage.submit_correction(match_id, kind="event_accept", payload={"eventId": event_id})
+    assert accepted.applyState == "applied"
+    assert accepted.payload["proposal"] == {
+        "modelId": "visual-model", "modelVersion": "v1", "evidenceIds": [f"frame:{frame.frameId}"],
+        "providerRequestId": candidate.payload["providerRequestId"]}
+    assert next(event for event in storage.load_events(match_id) if event.eventId == event_id).reviewStatus == "accepted"
+    assert event_id in {item["eventId"] for item in storage.partition_events_for_match(match_id)["acceptedViews"]}
+    process_match(storage, storage.create_job(match_id).id)
+    restarted = Storage(storage_root)
+    replayed = next(event for event in restarted.load_events(match_id) if event.eventId == event_id)
+    assert replayed.reviewStatus == "accepted"
+    assert replayed.proposalRequestId == candidate.payload["providerRequestId"]
+
+    restarted.undo_correction(match_id, accepted.correctionId)
+    assert next(event for event in restarted.load_events(match_id) if event.eventId == event_id).reviewStatus == "unreviewed"
+    assert len(restarted.load_analytics(match_id)[3]) == baseline_shots
+    rejected = restarted.submit_correction(match_id, kind="event_reject", payload={"eventId": event_id})
+    assert next(event for event in restarted.load_events(match_id) if event.eventId == event_id).reviewStatus == "rejected"
+    assert len(restarted.load_analytics(match_id)[3]) == baseline_shots
+    restarted.undo_correction(match_id, rejected.correctionId)
+    restarted.undo_correction(match_id, candidate.correctionId)
+    assert all(event.eventId != event_id for event in restarted.load_events(match_id))
+
+
+def test_legacy_unreceipted_model_event_cannot_be_promoted_or_used_as_evidence(tmp_path: Path) -> None:
+    from backend.app.processor import _compute_outputs_and_match_state
+    from backend.app.provider_gateway import ProviderGateway
+    from backend.app.settings import ProcessingSettings
+    from backend.app.semantic_commands import SemanticCommandError
+
+    storage = Storage(tmp_path / "storage")
+    match_id = install_tracking_match(storage)
+    frame = storage.load_frames(match_id)[0]
+    legacy = {"type": "shot", "frameId": frame.frameId, "timestamp": frame.timestamp,
+        "intervalStart": frame.timestamp, "intervalEnd": frame.timestamp + 0.1,
+        "team": "my_team", "description": "Legacy claim", "modelId": "visual-model",
+        "modelVersion": "v1", "evidenceIds": [f"frame:{frame.frameId}"]}
+    from backend.app.workbench.events import event_from_proposal
+    event = event_from_proposal({**legacy, "eventId": "ev_legacy"}).model_copy(
+        update={"reviewStatus": "accepted"})
+    baseline_shots = len(storage.load_analytics(match_id)[3])
+    storage.save_events(match_id, [*storage.load_events(match_id), event])
+    with pytest.raises(SemanticCommandError, match="provider receipt"):
+        storage.submit_correction(match_id, kind="event_accept", payload={"eventId": event.eventId})
+    assert event.eventId not in {item["eventId"] for item in
+        storage.partition_events_for_match(match_id)["acceptedViews"]}
+    generation_id = storage.current_generation(match_id).generationId
+    gateway = ProviderGateway(storage, ProcessingSettings(), adapter_factory=lambda: None)
+    package, _ = gateway.build_evidence(match_id, generation_id, "tactical_report")
+    assert all(item.get("eventId") != event.eventId for item in package.events)
+    assert all(ref.get("localId", "").find("shot") < 0 for ref in package.aliases.values()
+               if ref["kind"] == "event" and ref["localId"].startswith(f"{frame.frameId}:"))
+    candidate = storage.submit_correction(match_id, kind="event_reject", payload={"eventId": event.eventId})
+    assert candidate.applyState == "applied"
+    from backend.app.workbench.review import Correction
+    proposal_command = Correction(correctionId="legacy-proposal", commandId="legacy-proposal",
+        matchId=match_id, kind="event_propose", author="provider", createdAt="2026-09-24T00:00:00Z",
+        payload={**legacy, "eventId": event.eventId, "sourceSha256": storage.source_sha256(match_id)})
+    accept_command = proposal_command.model_copy(update={"kind": "event_accept",
+        "payload": {"eventId": event.eventId}})
+    _frames, _summary, _events, _assignments, _formations, shots, _state = _compute_outputs_and_match_state(
+        storage.load_frames(match_id), review_commands=[proposal_command, accept_command],
+        source_sha256=storage.source_sha256(match_id))
+    assert len(shots) == baseline_shots
+
+
+def test_model_event_proposal_rejects_client_claim_without_provider_receipt(tmp_path: Path) -> None:
+    from backend.app.semantic_commands import SemanticCommandError
+
+    storage = Storage(tmp_path / "storage")
+    match_id = install_tracking_match(storage)
+    frame = storage.load_frames(match_id)[0]
+    payload = {"type": "shot", "frameId": frame.frameId, "timestamp": frame.timestamp,
+               "intervalStart": frame.timestamp, "intervalEnd": frame.timestamp + 0.1,
+               "team": "my_team", "description": "Possible shot", "modelId": "visual-model",
+               "modelVersion": "v1", "evidenceIds": [f"frame:{frame.frameId}"]}
+    before = len(storage.list_corrections(match_id))
+    with pytest.raises(SemanticCommandError, match="provider receipt"):
+        storage.submit_correction(match_id, kind="event_propose", payload=payload, author="provider")
+    with TestClient(create_app(storage_root=storage.storage_root, run_jobs_inline=True),
+                    base_url="http://127.0.0.1") as client:
+        response = client.post(f"/api/matches/{match_id}/corrections", json={
+            "kind": "event_propose", "author": "provider", "payload": payload})
+    assert response.status_code == 409, response.text
+    assert len(storage.list_corrections(match_id)) == before
+
+
+@pytest.mark.parametrize("task_type,dispatched", [("tactical_report", True), ("event_proposal", False)])
+def test_model_event_proposal_rejects_wrong_task_or_unexecuted_receipt(
+    tmp_path: Path, task_type: str, dispatched: bool,
+) -> None:
+    from backend.app.semantic_commands import SemanticCommandError
+
+    storage = Storage(tmp_path / "storage")
+    match_id = install_tracking_match(storage)
+    frame = storage.load_frames(match_id)[0]
+    proposal = {"type": "shot", "frameId": frame.frameId, "timestamp": frame.timestamp,
+        "intervalStart": frame.timestamp, "intervalEnd": frame.timestamp + 0.1,
+        "team": "my_team", "description": "Possible shot", "modelId": "visual-model",
+        "modelVersion": "v1", "evidenceIds": [f"frame:{frame.frameId}"]}
+    payload = _with_completed_provider_receipt(storage, match_id, proposal,
+        task_type=task_type, dispatched=dispatched)
+    with pytest.raises(SemanticCommandError, match="provider receipt"):
+        storage.submit_correction(match_id, kind="event_propose", payload=payload)
+    assert storage.list_corrections(match_id) == []
+
+
+def test_model_event_proposal_rejects_receipt_from_old_generation(tmp_path: Path) -> None:
+    from backend.app.semantic_commands import SemanticCommandError
+
+    storage = Storage(tmp_path / "storage")
+    match_id = install_tracking_match(storage)
+    frame = storage.load_frames(match_id)[0]
+    proposal = {"type": "shot", "frameId": frame.frameId, "timestamp": frame.timestamp,
+        "intervalStart": frame.timestamp, "intervalEnd": frame.timestamp + 0.1,
+        "team": "my_team", "description": "Possible shot", "modelId": "visual-model",
+        "modelVersion": "v1", "evidenceIds": [f"frame:{frame.frameId}"]}
+    payload = _with_completed_provider_receipt(storage, match_id, proposal)
+    storage.submit_correction(match_id, kind="team_mapping", payload={"swap": True})
+    with pytest.raises(SemanticCommandError, match="provider receipt"):
+        storage.submit_correction(match_id, kind="event_propose", payload=payload)
+    assert not any(item["kind"] == "event_propose" for item in storage.list_corrections(match_id))
+
+
+def test_model_event_proposal_requires_current_source_frame_and_provenance(tmp_path: Path) -> None:
+    from backend.app.semantic_commands import SemanticCommandError
+
+    storage = Storage(tmp_path / "storage")
+    match_id = install_tracking_match(storage)
+    frame = storage.load_frames(match_id)[0]
+    payload = {"type": "shot", "frameId": frame.frameId, "timestamp": frame.timestamp,
+               "intervalStart": frame.timestamp, "intervalEnd": frame.timestamp + 0.1,
+               "team": "my_team", "description": "Possible shot", "modelId": "visual-model",
+               "modelVersion": "v1", "evidenceIds": [f"frame:{frame.frameId}"]}
+    payload = _with_completed_provider_receipt(storage, match_id, payload)
+    for invalid in (
+        {**payload, "description": "Unreceipted edit"},
+        {**payload, "timestamp": frame.timestamp + 1},
+        {**payload, "frameId": 999},
+        {**payload, "type": "offside"},
+        {**payload, "type": "press"},
+        {**payload, "evidenceIds": ["frame:999"]},
+        {**payload, "modelId": " "},
+        {**payload, "intervalEnd": frame.timestamp + 11},
+    ):
+        with pytest.raises(SemanticCommandError):
+            storage.submit_correction(match_id, kind="event_propose", payload=invalid)
+    storage.submit_correction(match_id, kind="event_propose", payload=payload)
+    with pytest.raises(SemanticCommandError):
+        storage.submit_correction(match_id, kind="event_propose", payload=payload)
 
 
 def _report_html(summary) -> str:

@@ -24,7 +24,7 @@ from typing import Any, Protocol
 
 from backend.app.gpu_worker import LIVE_PROGRESS_PREFIX
 from backend.app.remote_contracts import (
-    MAX_PROCESSOR_RESULT_BYTES, MAX_PROGRESS_EVENTS, MAX_PROGRESS_LINE_BYTES,
+    MAX_PROCESSOR_RESULT_BYTES, MAX_SEGMENTATION_RESULT_BYTES, MAX_PROGRESS_EVENTS, MAX_PROGRESS_LINE_BYTES,
     MAX_PROGRESS_TOTAL_BYTES, MAX_RESULT_BYTES,
     CompletionReceipt, JobReceipt,
     JobRequest, ProgressEvent, ResultBundle, canonical_json_bytes, confined_path,
@@ -150,6 +150,8 @@ class DaytonaExecutionResult:
                 != self.processor_path
                 or confined_path(self.staging_root, PurePosixPath(progress_relative.as_posix()))
                 != self.progress_path
+                or PurePosixPath(processor_relative.as_posix()) != self.result.primary_artifact_path
+                or PurePosixPath(progress_relative.as_posix()) != PurePosixPath(self.result.result["progressPath"])
             ):
                 raise ValueError
         except Exception:
@@ -443,6 +445,8 @@ def _preflight(execution: DaytonaExecutionRequest) -> tuple[Path, Path, JobReque
     workspace = _safe_root(execution.workspace, "workspace")
     request_path = confined_path(root, "job-request.json")
     request, request_identity = _read_preflight_contract(request_path, JobRequest)
+    if request.config.get("jobKind") == "segmentation_shadow":
+        raise DaytonaExecutionError("preflight: SAM release preflight is unavailable")
     receipt_path = confined_path(root, request.receipt_path)
     receipt, receipt_identity = _read_preflight_contract(receipt_path, JobReceipt)
     try:
@@ -523,7 +527,8 @@ def _preflight(execution: DaytonaExecutionRequest) -> tuple[Path, Path, JobReque
             identity = _preflight_file_identity(local_path)
             if metadata.get(artifact_id) != identity: raise ValueError
             proof_ids.append((relative, *identity))
-        sealed = [(e.relative_path, e.sha256, e.size_bytes) for e in receipt.files if e.role == "runtime_artifact"]
+        sealed = [(e.relative_path, e.sha256, e.size_bytes) for e in receipt.files
+                  if e.role == "runtime_artifact"]
         if sorted(proof_ids) != sorted(sealed): raise ValueError
     except Exception:
         raise DaytonaExecutionError("preflight: release artifact binding mismatch") from None
@@ -646,7 +651,7 @@ def _validate_result_envelopes(
         ):
             raise ValueError
         result_path = completion.result_path
-        processor_path = PurePosixPath(result.result["processorResultPath"])
+        processor_path = result.primary_artifact_path
         progress_path = PurePosixPath(result.result["progressPath"])
         if (
             len(result_path.parts) != 3
@@ -1142,7 +1147,8 @@ def _collect_result(sandbox: _Sandbox, workspace: Path, request: JobRequest,
         files: dict[PurePosixPath, Path] = {}
         progress_rel = PurePosixPath(result.result["progressPath"])
         for entry in result.artifacts:
-            maximum = MAX_PROGRESS_TOTAL_BYTES if entry.relative_path == progress_rel else MAX_PROCESSOR_RESULT_BYTES
+            maximum = (MAX_PROGRESS_TOTAL_BYTES if entry.relative_path == progress_rel else
+                       MAX_SEGMENTATION_RESULT_BYTES if result.schema_version == 3 else MAX_PROCESSOR_RESULT_BYTES)
             destination = confined_path(staging, entry.relative_path)
             _download(sandbox.fs, _remote_output(entry.relative_path), destination,
                       timeout=timeout, maximum=maximum,
@@ -1151,7 +1157,7 @@ def _collect_result(sandbox: _Sandbox, workspace: Path, request: JobRequest,
         validate_completion(staging, request, receipt, result, completion)
         successful = True
         return (staging_owner, completion, result,
-                files[PurePosixPath(result.result["processorResultPath"])],
+                files[result.primary_artifact_path],
                 files[progress_rel])
     except DaytonaExecutionError:
         raise

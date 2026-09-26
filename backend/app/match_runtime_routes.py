@@ -3,6 +3,7 @@
 from typing import Annotated
 
 from collections.abc import Callable
+import math
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse
@@ -10,6 +11,7 @@ from pydantic import ValidationError
 
 from .schemas import MatchAnalyticsResponse, MatchFramesResponse, MatchRecord
 from .settings import ProcessingSettings
+from .segmentation_worker import current_shadow_mask_overlay
 from .storage import Storage
 from .workbench.review import correction_api_payload
 
@@ -56,6 +58,17 @@ def create_match_runtime_router(
             raise HTTPException(status_code=404, detail="Video file not found.")
     
         return FileResponse(video_path, media_type="video/mp4", filename=match.originalFilename)
+
+    @router.get("/api/matches/{match_id}/mask-overlay")
+    def get_mask_overlay(match: Annotated[MatchRecord, Depends(require_match)], generationId: str = "", frameId: int = 0) -> dict:
+        if not generationId or frameId < 0:
+            raise HTTPException(status_code=422, detail="Generation and source frame are required")
+        try:
+            return current_shadow_mask_overlay(storage, match.id, generationId, frameId)
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
     
     
     @router.get("/api/matches/{match_id}/frames")
@@ -69,9 +82,16 @@ def create_match_runtime_router(
         try:
             with storage.generation_snapshot(match.id, generation_id=generationId) as ref:
                 page = storage.load_frames_page(match.id, after_frame=afterFrame, cursor=cursor, limit=limit)
+                try:
+                    source_clock = storage.load_analysis_artifact(match.id, "source_clock")
+                except FileNotFoundError:
+                    source_clock = None
+                source_fps = source_clock.get("nominalFps") if isinstance(source_clock, dict) else None
                 response = MatchFramesResponse(
                     matchId=match.id, frames=page["frames"], nextCursor=page["nextCursor"],
                     frameCount=page["frameCount"], intervalEndpoint=page["intervalEndpoint"],
+                    lastFrameId=page["lastFrameId"],
+                    sourceFps=source_fps if isinstance(source_fps, (int, float)) and math.isfinite(source_fps) and source_fps > 0 else None,
                 ).model_dump(mode="json")
                 return {**response, "generationId": ref.generationId}
         except FileNotFoundError as exc:

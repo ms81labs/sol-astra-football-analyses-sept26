@@ -42,6 +42,7 @@ from .remote_contracts import (
     validate_progress_jsonl,
 )
 from .settings import ProcessingSettings
+from .jobs import require_processor_request
 from .storage import Storage
 from .workbench.jobs import maintain_job_lease
 from backend.release.preflight import build_validated_tar_context, validate_release_preflight
@@ -864,6 +865,7 @@ def run_remote_job(
 ) -> None:
     storage = Storage(storage_root)
     try:
+        require_processor_request(storage.job_ledger, job_id)
         with maintain_job_lease(
             storage.job_ledger,
             job_id,

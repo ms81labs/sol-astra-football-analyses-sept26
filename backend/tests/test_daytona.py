@@ -104,6 +104,203 @@ def _bundle(tmp_path: Path):
     return root, workspace, preflight, request, receipt, result, completion, remote
 
 
+def test_processor_preflight_rejects_shadow_while_worker_checks_sealed_request(tmp_path):
+    from backend.app.daytona import DaytonaExecutionError, DaytonaExecutionRequest, _preflight, execute_daytona_job
+    from backend.app.segmentation import SegmentationRequest, FramePoint, Prompt, request_identity
+
+    root, workspace, proof, request, receipt, *_ = _bundle(tmp_path)
+    checkpoint = b"approved checkpoint fixture"
+    segmentation = SegmentationRequest(
+        sourceSha256=hashlib.sha256(b"video").hexdigest(), baseTrackingDigest="a" * 64,
+        modelAlias="sam31-video", modelDigest="b" * 64,
+        checkpointDigest=hashlib.sha256(checkpoint).hexdigest(), workerDigest="c" * 64,
+        executionMode="sam31_object_multiplex", cropDigest="d" * 64, precision="bf16",
+        width=2, height=2, intervalStart=0, intervalEnd=1,
+        frames=[FramePoint(frameId=0, ptsSeconds=0)],
+        prompts=[Prompt(objectId="o1", trackId="t1", frameId=0, point=(0, 0))],
+        maxFrames=1, maxObjects=1,
+    )
+    shadow_request = json.dumps(segmentation.model_dump(mode="json"), sort_keys=True,
+        separators=(",", ":"), allow_nan=False).encode()
+    assert hashlib.sha256(shadow_request).hexdigest() == request_identity(segmentation)
+    shadow = {"schemaVersion": 1, "matchId": request.match_id, "generationId": GENERATION,
+              "requestDigest": hashlib.sha256(shadow_request).hexdigest(),
+              "sourceSha256": hashlib.sha256(b"video").hexdigest(),
+              "checkpointDigest": hashlib.sha256(checkpoint).hexdigest(), "deadlineSeconds": 30}
+    shadow["jobIdentity"] = hashlib.sha256(json.dumps({key: shadow[key] for key in
+        ("matchId", "generationId", "requestDigest", "checkpointDigest")},
+        sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    request = replace(request, config={"jobKind": "segmentation_shadow",
+        "rights": {"cloudPermission": True, "processingScope": "local_plus_burst"},
+        "shadowSegmentation": shadow})
+    request_bytes = canonical_json_bytes(request.to_mapping())
+    (root / "job-request.json").write_bytes(request_bytes)
+    (root / "inputs/checkpoint.bin").write_bytes(checkpoint)
+    (root / "inputs/segmentation-request.json").write_bytes(shadow_request)
+    entries = tuple(_entry(item.role, item.relative_path.as_posix(),
+        request_bytes if item.role == "job_request" else (root / item.relative_path).read_bytes())
+        for item in receipt.files)
+    receipt = replace(receipt, job_request_sha256=hashlib.sha256(request_bytes).hexdigest(),
+        files=(*entries, _entry("runtime_artifact", "inputs/checkpoint.bin", checkpoint),
+               _entry("runtime_artifact", "inputs/segmentation-request.json", shadow_request)))
+    (root / request.receipt_path).write_bytes(canonical_json_bytes(receipt.to_mapping()))
+    execution = DaytonaExecutionRequest("fixture-key", load_daytona_policy(), root, workspace, proof)
+    with pytest.raises(DaytonaExecutionError, match="SAM release preflight"):
+        _preflight(execution)
+    def forbidden_client(*_args):
+        raise AssertionError("processor runtime must not launch for a shadow bundle")
+    with pytest.raises(DaytonaExecutionError, match="SAM release preflight"):
+        execute_daytona_job(execution, client_factory=forbidden_client)
+    from backend.app.segmentation_worker import load_sealed_shadow_bundle
+    from backend.app.segmentation_worker import validate_sealed_shadow_request
+    assert load_sealed_shadow_bundle(root) == (request, receipt, segmentation)
+    (root / "inputs/checkpoint.bin").write_bytes(b"changed after transport preflight")
+    with pytest.raises(ValueError, match="sealed shadow bundle"):
+        load_sealed_shadow_bundle(root)
+    (root / "inputs/checkpoint.bin").write_bytes(checkpoint)
+    payload = segmentation.model_dump(mode="json")
+    invalid = (b"sealed but not a segmentation request",
+        json.dumps({**payload, "sourceSha256": "e" * 64}, sort_keys=True, separators=(",", ":")).encode(),
+        json.dumps({**payload, "checkpointDigest": "e" * 64}, sort_keys=True, separators=(",", ":")).encode(),
+        json.dumps({**payload, "maxFrames": 121}, sort_keys=True, separators=(",", ":")).encode(),
+        json.dumps(SegmentationRequest.model_validate_json(json.dumps({**payload,
+            "prompts": [{"objectId": "o1", "trackId": "t1", "frameId": 0,
+                "box": [0, 0, 1, 1]}]})).model_dump(mode="json"),
+            sort_keys=True, separators=(",", ":")).encode(),
+        json.dumps({**payload, "sourceUrl": "https://example.invalid/video"},
+            sort_keys=True, separators=(",", ":")).encode())
+    for bad_payload in invalid:
+        corrupt = {**shadow, "requestDigest": hashlib.sha256(bad_payload).hexdigest()}
+        corrupt["jobIdentity"] = hashlib.sha256(json.dumps({key: corrupt[key] for key in
+            ("matchId", "generationId", "requestDigest", "checkpointDigest")},
+            sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+        bad_request = replace(request, config={**request.config, "shadowSegmentation": corrupt})
+        bad_bytes = canonical_json_bytes(bad_request.to_mapping())
+        (root / "job-request.json").write_bytes(bad_bytes)
+        (root / "inputs/segmentation-request.json").write_bytes(bad_payload)
+        bad_receipt = replace(receipt, job_request_sha256=hashlib.sha256(bad_bytes).hexdigest(),
+            files=tuple(_entry(item.role, item.relative_path.as_posix(),
+                bad_bytes if item.role == "job_request" else bad_payload if item.relative_path ==
+                PurePosixPath("inputs/segmentation-request.json") else (root / item.relative_path).read_bytes())
+                for item in receipt.files))
+        (root / request.receipt_path).write_bytes(canonical_json_bytes(bad_receipt.to_mapping()))
+        with pytest.raises(ValueError, match="sealed shadow request"):
+            validate_sealed_shadow_request(root / "inputs/segmentation-request.json", corrupt)
+        with pytest.raises(ValueError, match="sealed shadow bundle"):
+            load_sealed_shadow_bundle(root)
+    (root / "job-request.json").write_bytes(request_bytes)
+    (root / "inputs/segmentation-request.json").write_bytes(shadow_request)
+    (root / request.receipt_path).write_bytes(canonical_json_bytes(receipt.to_mapping()))
+    denied = replace(request, config={**request.config, "rights":
+        {"cloudPermission": False, "processingScope": "local_only"}})
+    denied_bytes = canonical_json_bytes(denied.to_mapping())
+    (root / "job-request.json").write_bytes(denied_bytes)
+    denied_receipt = replace(receipt, job_request_sha256=hashlib.sha256(denied_bytes).hexdigest(),
+        files=tuple(_entry(item.role, item.relative_path.as_posix(), denied_bytes)
+            if item.role == "job_request" else item for item in receipt.files))
+    (root / request.receipt_path).write_bytes(canonical_json_bytes(denied_receipt.to_mapping()))
+    with pytest.raises(ValueError, match="sealed shadow bundle"):
+        load_sealed_shadow_bundle(root)
+    (root / "job-request.json").write_bytes(request_bytes)
+    (root / request.receipt_path).write_bytes(canonical_json_bytes(receipt.to_mapping()))
+    extra = root / "inputs/unlisted.bin"
+    extra.write_bytes(b"unlisted")
+    receipt = replace(receipt, files=(*receipt.files,
+        _entry("runtime_artifact", "inputs/unlisted.bin", b"unlisted")))
+    (root / request.receipt_path).write_bytes(canonical_json_bytes(receipt.to_mapping()))
+    with pytest.raises(ValueError, match="sealed shadow bundle"):
+        load_sealed_shadow_bundle(root)
+
+
+def test_shadow_window_contract_rechecks_only_sealed_frames_and_worker_pixels(tmp_path):
+    from io import BytesIO
+    from PIL import Image
+    from backend.app.daytona import DaytonaExecutionError, DaytonaExecutionRequest, _preflight
+    from backend.app.remote_contracts import RemoteContractError, validate_shadow_inputs
+    from backend.app.segmentation import SegmentationRequest, FramePoint, Prompt, request_identity
+    from backend.app.segmentation_worker import load_sealed_shadow_bundle
+
+    root, workspace, proof, request, receipt, *_ = _bundle(tmp_path)
+    checkpoint = b"approved checkpoint fixture"
+    segmentation = SegmentationRequest(sourceSha256=hashlib.sha256(b"video").hexdigest(),
+        baseTrackingDigest="a" * 64, modelAlias="sam31-video", modelDigest="b" * 64,
+        checkpointDigest=hashlib.sha256(checkpoint).hexdigest(), workerDigest="c" * 64,
+        executionMode="sam31_object_multiplex", cropDigest="d" * 64, precision="bf16",
+        width=2, height=2, intervalStart=0, intervalEnd=1,
+        frames=[FramePoint(frameId=0, ptsSeconds=0)],
+        prompts=[Prompt(objectId="o1", trackId="t1", frameId=0, point=(0, 0))],
+        maxFrames=1, maxObjects=1)
+    segmentation_bytes = json.dumps(segmentation.model_dump(mode="json"), sort_keys=True,
+        separators=(",", ":"), allow_nan=False).encode()
+    image = BytesIO()
+    Image.new("RGB", (2, 2), (7, 11, 13)).save(image, format="PNG")
+    png = image.getvalue()
+    window = {"schemaVersion": 1, "sourceSha256": segmentation.sourceSha256,
+        "requestDigest": request_identity(segmentation), "frames": [{"localIndex": 0,
+            "sourceFrameId": 0, "ptsSeconds": 0, "path": "0.png",
+            "sha256": hashlib.sha256(png).hexdigest(), "sizeBytes": len(png)}]}
+    window_bytes = canonical_json_bytes(window)
+    shadow = {"schemaVersion": 2, "matchId": request.match_id, "generationId": GENERATION,
+        "requestDigest": request_identity(segmentation),
+        "sourceSha256": segmentation.sourceSha256,
+        "checkpointDigest": segmentation.checkpointDigest,
+        "windowDigest": hashlib.sha256(window_bytes).hexdigest(), "deadlineSeconds": 30}
+    shadow["jobIdentity"] = hashlib.sha256(json.dumps({key: shadow[key] for key in
+        ("matchId", "generationId", "requestDigest", "checkpointDigest", "windowDigest")},
+        sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    request = replace(request, input_video_path=PurePosixPath("inputs/window/window.json"),
+        config={"jobKind": "segmentation_shadow", "rights": {"cloudPermission": True,
+            "processingScope": "local_plus_burst"}, "shadowSegmentation": shadow})
+    payloads = {"job-request.json": canonical_json_bytes(request.to_mapping()),
+        "inputs/window/window.json": window_bytes, "inputs/window/0.png": png,
+        "inputs/checkpoint.bin": checkpoint, "inputs/segmentation-request.json": segmentation_bytes}
+    for relative, payload in payloads.items():
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(payload)
+    entries = tuple(_entry(item.role, item.relative_path.as_posix(),
+        payloads.get(item.relative_path.as_posix(), (root / item.relative_path).read_bytes()))
+        if item.role != "input_video" else _entry("input_video", "inputs/window/window.json", window_bytes)
+        for item in receipt.files)
+    receipt = replace(receipt, job_request_sha256=hashlib.sha256(payloads["job-request.json"]).hexdigest(),
+        files=(*entries, _entry("runtime_artifact", "inputs/checkpoint.bin", checkpoint),
+            _entry("runtime_artifact", "inputs/segmentation-request.json", segmentation_bytes),
+            _entry("runtime_artifact", "inputs/window/0.png", png)))
+    (root / request.receipt_path).write_bytes(canonical_json_bytes(receipt.to_mapping()))
+    execution = DaytonaExecutionRequest("fixture-key", load_daytona_policy(), root, workspace, proof)
+    with pytest.raises(DaytonaExecutionError, match="SAM release preflight"):
+        _preflight(execution)
+    assert load_sealed_shadow_bundle(root) == (request, receipt, segmentation)
+    with pytest.raises(RemoteContractError):
+        validate_shadow_inputs(replace(request, match_id="another-match"), receipt)
+    wrong_window = {**shadow, "windowDigest": "f" * 64}
+    with pytest.raises(RemoteContractError):
+        validate_shadow_inputs(replace(request, config={**request.config,
+            "shadowSegmentation": wrong_window}), receipt)
+    original_receipt = receipt
+    changed = b"not a PNG"
+    (root / "inputs/window/0.png").write_bytes(changed)
+    receipt = replace(receipt, files=tuple(_entry(item.role, item.relative_path.as_posix(), changed)
+        if item.relative_path == PurePosixPath("inputs/window/0.png") else item
+        for item in receipt.files))
+    (root / request.receipt_path).write_bytes(canonical_json_bytes(receipt.to_mapping()))
+    with pytest.raises(ValueError, match="sealed shadow bundle"):
+        load_sealed_shadow_bundle(root)
+    (root / "inputs/window/0.png").write_bytes(png)
+    missing = replace(original_receipt, files=tuple(item for item in original_receipt.files
+        if item.relative_path != PurePosixPath("inputs/window/0.png")))
+    (root / request.receipt_path).write_bytes(canonical_json_bytes(missing.to_mapping()))
+    with pytest.raises(ValueError, match="sealed shadow bundle"):
+        load_sealed_shadow_bundle(root)
+    (root / request.receipt_path).write_bytes(canonical_json_bytes(original_receipt.to_mapping()))
+    (root / "inputs/window/1.png").write_bytes(png)
+    extra = replace(original_receipt, files=(*original_receipt.files,
+        _entry("runtime_artifact", "inputs/window/1.png", png)))
+    (root / request.receipt_path).write_bytes(canonical_json_bytes(extra.to_mapping()))
+    with pytest.raises(ValueError, match="sealed shadow bundle"):
+        load_sealed_shadow_bundle(root)
+
+
 class _Response:
     def __init__(self, exit_code=0, result="ok"):
         self.exit_code = exit_code

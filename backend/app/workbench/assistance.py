@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import re
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from backend.app.ai_policy import ground_output
 from backend.app.provider_gateway import ApprovedEvidencePackage, validate_output
@@ -35,22 +35,34 @@ ALLOWED_TEAMS = frozenset({"my_team", "enemy"})
 class SuccessorConstraint(StrictModel):
     kind: str
     team: Literal["same", "opponent", "my_team", "enemy"] | None = None
-    period: int | None = None
-    withinSeconds: float | None = None
+    period: int | None = Field(default=None, ge=1, le=4)
+    withinSeconds: float | None = Field(default=None, gt=0, le=600, allow_inf_nan=False)
 
 
 class TypedQuery(StrictModel):
     team: Literal["my_team", "enemy"] | None = None
-    period: int | None = None
+    period: int | None = Field(default=None, ge=1, le=4)
     eventFamily: str
+    playerTrackId: int | None = Field(default=None, ge=0, le=1_000_000)
+    reviewStatus: Literal["accepted", "unreviewed"] | None = None
+    pitchRegion: Literal["left_third", "middle_third", "right_third"] | None = None
     successor: SuccessorConstraint | None = None
-    timeStartSeconds: float | None = None
-    timeEndSeconds: float | None = None
+    timeStartSeconds: float | None = Field(default=None, ge=0, le=86_400, allow_inf_nan=False)
+    timeEndSeconds: float | None = Field(default=None, ge=0, le=86_400, allow_inf_nan=False)
     includeUnknown: bool = False
     interpreted: dict[str, Any] = Field(default_factory=dict)
     unsupportedTerms: list[str] = Field(default_factory=list)
     unanswerable: bool = False
     reason: str | None = None
+
+    @model_validator(mode="after")
+    def supported_predicates(self) -> "TypedQuery":
+        if self.eventFamily not in ALLOWED_EVENT_FAMILIES \
+                or (self.successor and self.successor.kind not in ALLOWED_EVENT_FAMILIES) \
+                or (self.timeStartSeconds is not None and self.timeEndSeconds is not None
+                    and self.timeStartSeconds > self.timeEndSeconds):
+            raise ValueError("unsupported or invalid typed query predicate")
+        return self
 
     @property
     def successorEvent(self) -> str | None:
@@ -65,6 +77,10 @@ class SearchHit(StrictModel):
     eventId: str
     matchId: str
     timestamp: float
+    frameId: int | None = None
+    intervalStart: float | None = None
+    intervalEnd: float | None = None
+    reviewStatus: str | None = None
     evidenceIds: list[str] = Field(default_factory=list)
     label: str
 
@@ -88,18 +104,37 @@ class AssistanceDisposition(StrictModel):
     output: dict[str, Any] = Field(default_factory=dict)
 
 
+_EVENT_NAMES = {
+    "pass": "pass", "passes": "pass",
+    "progressive pass": "progressive_pass", "progressive passes": "progressive_pass",
+    "through ball": "through_ball", "through balls": "through_ball",
+    "cross": "cross", "crosses": "cross",
+    "shot": "shot", "shots": "shot",
+    "goal": "goal", "goals": "goal",
+    "turnover": "turnover", "turnovers": "turnover",
+    "recovery": "recovery", "recoveries": "recovery",
+    "tackle": "tackle", "tackles": "tackle",
+    "interception": "interception", "interceptions": "interception",
+    "carry": "carry", "carries": "carry",
+    "box entry": "box_entry", "box entries": "box_entry",
+    "final third entry": "final_third_entry", "final third entries": "final_third_entry",
+}
+_EVENT_PATTERN = "|".join(re.escape(name) for name in sorted(_EVENT_NAMES, key=len, reverse=True))
 _QUERY_RE = re.compile(
     r"(?:(?P<team>our|my team|enemy|opponent) )?"
     r"(?:(?P<period>first-half|second-half|period\s+(?P<period_n>\d+)) )?"
-    r"(?P<event>turnovers|turnover|shots|shot|passes|pass|recoveries|recovery)"
+    r"(?:(?P<review>accepted|unreviewed) )?"
+    rf"(?P<event>{_EVENT_PATTERN})"
     r"(?: followed by (?:a )?(?:(?P<successor_team>our|my team|enemy|opponent|same) )?"
-    r"(?P<successor>shots|shot|passes|pass|turnovers|turnover)(?: within (?P<gap>\d+|ten) seconds)?)?",
+    rf"(?P<successor>{_EVENT_PATTERN})(?: within (?P<gap>\d+|ten) seconds)?)?",
     re.IGNORECASE,
 )
 
 
 def parse_typed_query(text: str, *, include_unknown: bool = False) -> TypedQuery:
     stripped = text.strip()
+    if len(stripped) > 512:
+        return TypedQuery(eventFamily="pass", unanswerable=True, reason="query_too_long")
     if not stripped:
         return TypedQuery(eventFamily="pass", unanswerable=True, reason="empty_query")
     lowered = stripped.lower()
@@ -122,8 +157,12 @@ def parse_typed_query(text: str, *, include_unknown: bool = False) -> TypedQuery
         period = int(match.group("period_n"))
     elif match.group("period"):
         period = 1 if "first" in match.group("period").lower() else 2
+    if period is not None and not 1 <= period <= 4:
+        return TypedQuery(eventFamily=event, unanswerable=True, reason="invalid_period")
     gap_token = match.group("gap")
     gap = 10.0 if gap_token == "ten" else (float(gap_token) if gap_token else None)
+    if gap is not None and not 0 < gap <= 600:
+        return TypedQuery(eventFamily=event, unanswerable=True, reason="invalid_time_range")
     if event not in ALLOWED_EVENT_FAMILIES:
         return TypedQuery(eventFamily=event, unanswerable=True, reason="unknown_event_family")
     if successor and successor not in ALLOWED_EVENT_FAMILIES:
@@ -143,6 +182,29 @@ def parse_typed_query(text: str, *, include_unknown: bool = False) -> TypedQuery
         else None
     )
     outside = f"{stripped[:match.start()]} {stripped[match.end():]}"
+    player_match = re.search(r"\bby player (?P<id>\d+)\b", outside, re.IGNORECASE)
+    player_id = int(player_match.group("id")) if player_match else None
+    if player_id is not None and player_id > 1_000_000:
+        return TypedQuery(eventFamily=event, unanswerable=True, reason="invalid_player")
+    if player_match:
+        outside = outside.replace(player_match.group(), " ", 1)
+    time_match = re.search(r"\bbetween (?P<start>\d+(?:\.\d+)?) and (?P<end>\d+(?:\.\d+)?) seconds\b",
+        outside, re.IGNORECASE)
+    start = float(time_match.group("start")) if time_match else None
+    end = float(time_match.group("end")) if time_match else None
+    if time_match:
+        outside = outside.replace(time_match.group(), " ", 1)
+    region_match = re.search(r"\bin (?:the )?(left|middle|right) third\b", outside, re.IGNORECASE)
+    # The regexes admit only these literal values.
+    region = cast(Literal["left_third", "middle_third", "right_third"] | None,
+                  f"{region_match.group(1).lower()}_third" if region_match else None)
+    review_status = cast(Literal["accepted", "unreviewed"] | None,
+                         match.group("review").lower() if match.group("review") else None)
+    if region_match:
+        outside = outside[:region_match.start()] + " " + outside[region_match.end():]
+    if start is not None and end is not None and (start > end or end > 86_400):
+        return TypedQuery(eventFamily=event, unanswerable=True, reason="invalid_time_range",
+            interpreted={"eventFamily": event, "timeStartSeconds": start, "timeEndSeconds": end})
     unsupported = [
         token.lower()
         for token in re.findall(r"[A-Za-z0-9_'-]+", outside)
@@ -152,6 +214,11 @@ def parse_typed_query(text: str, *, include_unknown: bool = False) -> TypedQuery
         "team": team,
         "period": period,
         "eventFamily": event,
+        "playerTrackId": player_id,
+        "reviewStatus": review_status,
+        "pitchRegion": region,
+        "timeStartSeconds": start,
+        "timeEndSeconds": end,
         "successor": successor_constraint.model_dump(mode="json") if successor_constraint else None,
         "includeUnknown": include_unknown,
     }
@@ -159,11 +226,31 @@ def parse_typed_query(text: str, *, include_unknown: bool = False) -> TypedQuery
         team=team,
         period=period,
         eventFamily=event,
+        playerTrackId=player_id,
+        reviewStatus=review_status,
+        pitchRegion=region,
+        timeStartSeconds=start,
+        timeEndSeconds=end,
         successor=successor_constraint,
         includeUnknown=include_unknown,
         interpreted=interpreted,
         unsupportedTerms=unsupported,
+        unanswerable=bool(unsupported),
+        reason="unsupported_terms" if unsupported else None,
     )
+
+
+def validate_query_proposal(raw: dict[str, Any], *, match_id: str, generation_id: str) -> TypedQuery:
+    """Admit a model's filters only for the current scope and the existing executor."""
+    if not isinstance(raw, dict) or set(raw) != {"matchId", "generationId", "query"} \
+            or raw["matchId"] != match_id or raw["generationId"] != generation_id:
+        raise ValueError("query proposal scope does not match")
+    fields = raw["query"]
+    allowed = {"eventFamily", "team", "playerTrackId", "period", "reviewStatus",
+               "pitchRegion", "timeStartSeconds", "timeEndSeconds", "successor"}
+    if not isinstance(fields, dict) or "eventFamily" not in fields or set(fields) - allowed:
+        raise ValueError("unsupported query proposal predicate")
+    return TypedQuery.model_validate({**fields, "interpreted": fields})
 
 
 def execute_typed_query(events: list[dict[str, Any]], query: TypedQuery, *, match_id: str) -> list[SearchHit]:
@@ -180,6 +267,12 @@ def execute_typed_query(events: list[dict[str, Any]], query: TypedQuery, *, matc
             continue
         if query.period is not None and not _matches_explicit(event.get("period"), query.period, query.includeUnknown, unknown=(None, 0, "unknown")):
             continue
+        if query.playerTrackId is not None and query.playerTrackId not in (event.get("fromTrackId"), event.get("toTrackId")):
+            continue
+        if query.reviewStatus is not None and event.get("reviewStatus") != query.reviewStatus:
+            continue
+        if query.pitchRegion is not None and event.get("pitchRegion") != query.pitchRegion:
+            continue
         timestamp = event.get("timestamp")
         if query.timeStartSeconds is not None and not _at_or_after(timestamp, query.timeStartSeconds, query.includeUnknown):
             continue
@@ -194,6 +287,10 @@ def execute_typed_query(events: list[dict[str, Any]], query: TypedQuery, *, matc
                 eventId=str(event.get("id") or f"{match_id}:{index}"),
                 matchId=match_id,
                 timestamp=float(event.get("timestamp") or 0.0),
+                frameId=event.get("frameId"),
+                intervalStart=event.get("intervalStart"),
+                intervalEnd=event.get("intervalEnd"),
+                reviewStatus=event.get("reviewStatus"),
                 evidenceIds=list(event.get("evidenceIds") or []),
                 label=str(event.get("type")),
             )
@@ -252,17 +349,7 @@ def _is_rejected_event(event: dict[str, Any]) -> bool:
 
 
 def _canonical_event(token: str) -> str:
-    mapping = {
-        "turnovers": "turnover",
-        "turnover": "turnover",
-        "shots": "shot",
-        "shot": "shot",
-        "passes": "pass",
-        "pass": "pass",
-        "recoveries": "recovery",
-        "recovery": "recovery",
-    }
-    return mapping.get(token.lower(), token.lower())
+    return _EVENT_NAMES[token.lower()]
 
 
 def events_as_query_rows(events: list[Any], *, match_id: str) -> list[dict[str, Any]]:
@@ -270,8 +357,8 @@ def events_as_query_rows(events: list[Any], *, match_id: str) -> list[dict[str, 
     for index, event in enumerate(events):
         payload = event.model_dump(mode="json") if hasattr(event, "model_dump") else dict(event)
         evidence_id = f"event:{payload.get('frameId')}:{payload.get('type')}:{payload.get('timestamp')}"
-        payload["id"] = payload.get("id") or f"{match_id}:{index}"
-        payload["evidenceIds"] = list(payload.get("evidenceIds") or [evidence_id])
+        payload["id"] = payload.get("id") or payload.get("eventId") or f"{match_id}:{index}"
+        payload["evidenceIds"] = list(payload.get("evidenceIds") or payload.get("proposalEvidenceIds") or [evidence_id])
         rows.append(payload)
     return rows
 

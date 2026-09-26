@@ -264,10 +264,14 @@ def create_app(
     app = FastAPI(title="Guerilla Analytics API", version="0.1.0", lifespan=lifespan)
     app.state.storage = storage
     app.state.runner = runner
+    from .provider_billing import AstraSpendPolicy
+    from .provider_adapters import make_astra_adapter
+
     provider_gateway = ProviderGateway(
         storage,
         settings,
-        adapter_factory=lambda: run_analysis,
+        adapter_factory=lambda: (make_astra_adapter(settings.cloud_provider_api_key)
+            if isinstance(settings.provider_spend_policy, AstraSpendPolicy) else run_analysis),
         budget_ledger=ProviderBudgetLedger(
             storage.job_ledger.db_path,
             settings.provider_budget_limit,

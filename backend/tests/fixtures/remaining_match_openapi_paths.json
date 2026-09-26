@@ -2412,6 +2412,67 @@
         "summary": "Get Frames"
       }
     },
+    "/api/matches/{match_id}/mask-overlay": {
+      "get": {
+        "operationId": "get_mask_overlay_api_matches__match_id__mask_overlay_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "match_id",
+            "required": true,
+            "schema": {
+              "title": "Match Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "generationId",
+            "required": false,
+            "schema": {
+              "default": "",
+              "title": "Generationid",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "frameId",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "Frameid",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Mask Overlay Api Matches  Match Id  Mask Overlay Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Mask Overlay"
+      }
+    },
     "/api/matches/{match_id}/video": {
       "get": {
         "operationId": "get_match_video_api_matches__match_id__video_get",
