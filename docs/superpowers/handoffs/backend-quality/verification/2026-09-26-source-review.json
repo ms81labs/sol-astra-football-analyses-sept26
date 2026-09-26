@@ -1,0 +1,144 @@
+{
+  "schemaVersion": 1,
+  "recordedDate": "2026-09-26",
+  "task": "REPORT_STORE_STRUCTURE",
+  "result": "SOURCE_REVIEW_COMPLETED_IMPLEMENTATION_BLOCKED",
+  "reviewedMainCommit": "86e44500e528c051f78dcdb6f0bfb3dc6d16fe33",
+  "reviewedMainTree": "8c74f4b61fa248c7cf1d36f6c81435ac4375f0da",
+  "reconciliation": "One documentation-only commit after accepted application efcc3e1193428c554449bf3d5c5f671635f1b235; no intervening application changes.",
+  "applicationPublished": false,
+  "applicationAccepted": false,
+  "newApplicationCIIds": [],
+  "reviewer": "author self-review; no independent reviewer executed",
+  "localEnvironment": {
+    "python": "3.13.5",
+    "pydantic": "2.13.4",
+    "fullCheckoutAvailable": false,
+    "python311Available": false,
+    "ruffAvailable": false,
+    "mypyAvailable": false,
+    "gitRemoteReadFailure": "Could not resolve host: github.com"
+  },
+  "sourceCheck": {
+    "kind": "supplemental-source-only-review",
+    "sourceBlob": "8c319d0eaa675e7c2e930662a77003ac5e2ea046",
+    "candidateApplicationBlob": "7a0daca35bb0b13363421b334b7e618914160c74",
+    "patchSha256": "8ba72cfb2dde0ff31f5747e1e1688bf0fed1e134f52137c34dea7962ca31d651",
+    "sourceOnlyGitApplyCheckExit": 0,
+    "sourceOnlyGitApplyExit": 0,
+    "wholeModuleAstReconstruction": "equal after inlining all five extracted helpers",
+    "transactionMutationDetected": true,
+    "baselinePatchRemoved": [
+      [
+        "backend/app/report_store.py",
+        "ReportStore.view",
+        "C901",
+        "def view(self, match_id: str, *, generation_id: str | None = None) -> dict:",
+        "`view` is too complex (11 > 10)"
+      ],
+      [
+        "backend/app/report_store.py",
+        "_validate_narrative_payload",
+        "C901",
+        "def _validate_narrative_payload(payload, match_id, generation_id, task, schema, disposition):",
+        "`_validate_narrative_payload` is too complex (17 > 10)"
+      ],
+      [
+        "backend/app/report_store.py",
+        "validate_record",
+        "C901",
+        "def validate_record(document, match_id: str, generation_id: str, task: str) -> None:",
+        "`validate_record` is too complex (18 > 10)"
+      ]
+    ],
+    "baselinePatchAdded": 0,
+    "fullBaselineBlobReconstruction": "not performed",
+    "behavioralTestsRun": false,
+    "pinnedQualityGatesRun": false,
+    "applicationAccepted": false,
+    "limitations": [
+      "This is a one-file temporary fixture, not a complete source checkout.",
+      "AST reconstruction is not proof over arbitrary custom objects, object lifetimes, or concurrent mutation.",
+      "The runbook's behavioral, quality, full-project and new-SHA CI requirements still apply."
+    ]
+  },
+  "sourceCheckerNegativeControls": [
+    {
+      "case": "changed source",
+      "exitCode": 1,
+      "expectedError": "Source changed"
+    },
+    {
+      "case": "changed patch",
+      "exitCode": 1,
+      "expectedError": "Saved patch hash mismatch"
+    }
+  ],
+  "sourceCheckerGitBlob": "e78f6447ada4af8a3eca97e1e543a6eca6e39440",
+  "originalCI": {
+    "kind": "recorded pre-change CI evidence verified during resume; not new candidate execution",
+    "sourceCommit": "86e44500e528c051f78dcdb6f0bfb3dc6d16fe33",
+    "sourceTree": "8c74f4b61fa248c7cf1d36f6c81435ac4375f0da",
+    "workflowRunId": 36197474643,
+    "artifacts": {
+      "complete-backend": 10891606534,
+      "verify": 10891426723,
+      "ruff-debt": 10890633591
+    },
+    "artifactArchiveHashesVerified": 3,
+    "canonicalLogHashesVerified": 9,
+    "nestedBackendReceiptHashVerified": true,
+    "completeBackend": {
+      "passed": 5453,
+      "skipped": 18,
+      "failed": 0,
+      "errors": 0
+    },
+    "reportStoreContracts": {
+      "passed": 59,
+      "skipped": 0
+    },
+    "canonicalBackend": {
+      "passed": 4859,
+      "skipped": 18
+    },
+    "ruff": {
+      "legacy": 405,
+      "new": 0,
+      "stale": 0
+    },
+    "scopedMypy": {
+      "legacy": 0,
+      "new": 0,
+      "stale": 0
+    },
+    "qualifications": {
+      "sourceDirty": true,
+      "diffSha256": "20c1da94b3fe4ec75c81bd3f8a955bba178807898caab67009e676357f968d80",
+      "stubsActive": [
+        "ultralytics"
+      ],
+      "notCandidateAcceptance": true
+    },
+    "archiveSha256": {
+      "complete-backend": "d0b33e932a087c44c4a6b44aa7f21b9a088d4aa69b6185603057c9e2ade9d2f9",
+      "verify": "d641ca3fd6a11c40052d7c8d00d7eaeb79026bd3cb920a2171c9205cabe7e0cb",
+      "ruff-debt": "1ede33ac224364821d229488a1cae2c03eb784f798382e00e6b465c0fd981187"
+    },
+    "recordedEnvironment": {
+      "python": "3.11.16",
+      "devLockSha256": "f16a7566a94a0daf9b1a6a8383569d4bdbd9cc9228623edab140b61a88d60798",
+      "lockHashIndependentlyRecomputedFromRepository": false
+    }
+  },
+  "notRun": [
+    "fresh full-checkout original and candidate pytest commands",
+    "candidate pytest module and console entry-point parity",
+    "candidate C03/API/final-journey suite",
+    "candidate pinned Ruff and mypy gates",
+    "full candidate backend and canonical verification",
+    "new candidate SHA normal CI and dedicated C05/C06"
+  ],
+  "nextAction": "Use a complete checkout and the unchanged pinned Python 3.11 profiles. Reconcile main, run the required original and candidate runbook gates, apply only the saved two-file patch after its prerequisites pass, publish through permitted main integration, and await completed existing new-SHA CI before acceptance. Do not rerun completed repairs or use this source-only checker as an acceptance replacement.",
+  "protectedSurfacesChanged": []
+}

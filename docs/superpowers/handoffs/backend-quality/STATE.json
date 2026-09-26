@@ -23,18 +23,78 @@
   },
   "nextTask": {
     "id": "REPORT_STORE_STRUCTURE",
-    "status": "SAVED_DRAFT_NOT_APPLIED_NOT_ACCEPTED",
+    "status": "IMPLEMENTED_LOCALLY_VERIFIED_PUBLICATION_PENDING_CI",
     "base": "efcc3e1193428c554449bf3d5c5f671635f1b235",
     "patch": "unpublished/report-store-extraction.patch",
     "manifest": "unpublished/MANIFEST.json",
     "patchSha256": "8ba72cfb2dde0ff31f5747e1e1688bf0fed1e134f52137c34dea7962ca31d651",
     "originalTwoFileCandidateTree": "eaffc7f8ff8a53b5f61cd3b0283a6030c17c24cd",
     "candidateTreeCaveat": "Only base plus draft. Later documentation changes legitimately change the full tree; retain them and verify the two file blobs instead.",
-    "files": ["backend/app/report_store.py", "backend/quality/ruff-baseline.json"],
+    "files": [
+      "backend/app/report_store.py",
+      "backend/quality/ruff-baseline.json"
+    ],
     "expectedRuffAfter": 402,
     "expectedRemovedC901": 3,
     "expectedAddedDiagnostics": 0,
-    "requires": ["review", "fresh characterization and quality checks", "permitted publication", "completed existing CI on new application SHA"]
+    "requires": [
+      "review",
+      "fresh characterization and quality checks",
+      "permitted publication",
+      "completed existing CI on new application SHA"
+    ],
+    "sourceReviewRecord": "verification/2026-09-26-source-review.json",
+    "appliedAs": {
+      "commit": "e09aa99",
+      "base": "afa7a87dfbb7b7ffc21cd36746f8700f98efd907",
+      "reportStoreBlob": "7a0daca35bb0b13363421b334b7e618914160c74",
+      "ruffBaselineBlob": "66e913bab84aa11aee66d853448b86dab3193d82",
+      "ruffAtThatCommit": 402,
+      "addedTests": 2
+    },
+    "publication": {
+      "route": "pull request #14 (catapult-workbench merged into main), because a direct push to main was refused by this session's safety policy",
+      "mergedWithCatapult": "catapult later added metric-coverage checks inside the extracted _strip_claim_metadata; they were moved unchanged into _validate_metric_claim_coverage to stay under C901 10",
+      "ruffAfterMerge": 423,
+      "ruffNew": 0,
+      "acceptanceRequires": "completed normal CI plus C05/C06 on the merged main SHA"
+    }
+  },
+  "lastResume": {
+    "date": "2026-09-26",
+    "reviewedMainCommit": "afa7a87dfbb7b7ffc21cd36746f8700f98efd907",
+    "result": "IMPLEMENTED_AND_LOCALLY_VERIFIED",
+    "applicationPublished": false,
+    "applicationAccepted": false,
+    "environment": "Linux, CPython 3.11.15, dev.lock; isolated quality+typing locks (Ruff 0.16.8, mypy 2.3.1); ffmpeg present; no IPv6",
+    "evidence": {
+      "originalAfa7a87": {
+        "reportStoreAndQualityGate": "72 passed",
+        "consoleContract": "59 passed",
+        "c03ApiJourney": "180 passed, 2 skipped",
+        "ruff": 405,
+        "mypyNew": 0
+      },
+      "candidateE09aa99": {
+        "reportStoreAndQualityGate": "72 passed",
+        "consoleContract": "59 passed",
+        "c03ApiJourney": "180 passed, 2 skipped",
+        "ruff": 402,
+        "ruffNew": 0,
+        "mypyNew": 0,
+        "fullBackend": "5452 passed, 18 skipped, 3 failed (::1 loopback tests; container has no IPv6)"
+      },
+      "sourceEquivalence": "handoff checker: whole-module AST equal after inlining the five helpers",
+      "mutation": "12 targeted mutants; 10 killed by existing tests; symlinked member and catch-boundary survived until 2 new contract tests were added (both pass on original and candidate)",
+      "mergedWithCatapult": {
+        "relatedTests": "407 passed, 4 skipped",
+        "contract": "70 passed (8 new metric-coverage cases, pass on pre-extraction catapult source; all fail if the coverage helper call is removed)",
+        "ruff": 423,
+        "ruffNew": 0,
+        "mypyNew": 0
+      }
+    },
+    "nextAction": "After #14 merges, confirm completed normal CI and C05/C06 on the merged main SHA, then mark REPORT_STORE_STRUCTURE accepted with those run IDs. Broader audit work stays open."
   },
   "checkpoint": "docs/superpowers/audits/2026-09-24-backend-quality-closeout-checkpoint.md",
   "authority": "Current user instructions and safety/tool permissions first; current GitHub source and SHA-bound CI outrank historical documents.",

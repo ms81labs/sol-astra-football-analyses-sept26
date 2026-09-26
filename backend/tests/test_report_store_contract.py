@@ -143,6 +143,30 @@ def test_unpublishable_metric_claims_are_not_exposed(availability):
         validate_record(document, "match", "generation", "tactical_report")
 
 
+def test_stored_metric_coverage_labels_are_accepted_when_well_formed():
+    document = _document("metric")
+    document["payload"]["metricClaims"][0].update(
+        eligibleSeconds=8.0, requestedSeconds=10, denominator="tracked seconds", reasonCodes=["PARTIAL_COVERAGE"])
+    validate_record(document, "match", "generation", "tactical_report")
+
+
+@pytest.mark.parametrize("fields,message", [
+    ({"eligibleSeconds": 11.0, "requestedSeconds": 10.0}, "Malformed stored metric coverage"),
+    ({"eligibleSeconds": -1.0, "requestedSeconds": 10.0}, "Malformed stored metric coverage"),
+    ({"eligibleSeconds": 5.0}, "Malformed stored metric coverage"),
+    ({"eligibleSeconds": True, "requestedSeconds": 10.0}, "Malformed stored metric coverage"),
+    ({"eligibleSeconds": float("nan"), "requestedSeconds": 10.0}, "Malformed stored metric coverage"),
+    ({"denominator": 3}, "Malformed stored metric denominator"),
+    ({"reasonCodes": "PARTIAL"}, "Malformed stored metric limitations"),
+    ({"reasonCodes": [1]}, "Malformed stored metric limitations"),
+])
+def test_malformed_stored_metric_coverage_labels_are_rejected(fields, message):
+    document = _document("metric")
+    document["payload"]["metricClaims"][0].update(fields)
+    with pytest.raises(ValueError, match=message):
+        validate_record(document, "match", "generation", "tactical_report")
+
+
 @pytest.mark.parametrize("field,value,message", [
     ("summary", None, "Malformed deterministic summary"),
     ("metrics", {}, "Malformed deterministic report"),
@@ -230,3 +254,44 @@ def test_report_view_keeps_latest_valid_record_despite_a_newer_invalid_one(tmp_p
         {"taskType": "tactical_report", "code": "REPORT_VERIFICATION_REQUIRED"},
     ]
     assert invalid.read_bytes() == before
+
+
+@pytest.mark.integration
+def test_report_view_refuses_a_symlinked_member_even_when_its_target_is_valid(tmp_path):
+    from backend.tests.test_audit_v3_c03_reports import _store
+    storage, mid = _store(tmp_path)
+    generation = storage.current_generation(mid).generationId
+    real, chosen = _write_record(storage, mid, generation, "report_a")
+    # A newer, otherwise valid record reachable only through a symlink must not be read.
+    target = tmp_path / "outside" / "report_b.json"
+    target.parent.mkdir()
+    linked = _document("mixed", mid, generation, "report_b")
+    linked["createdAt"] = "2099-01-01T00:00:00+00:00"
+    linked["contentDigest"] = digest(linked)
+    target.write_text(json.dumps(linked))
+    (real.parent / "report_b.json").symlink_to(target)
+    view = ReportStore(storage).view(mid)
+    assert view["reports"]["tactical_report"] == {**chosen, "status": "current"}
+    assert view["notices"] == [
+        {"taskType": "drills", "code": "REPORT_UNAVAILABLE_FOR_GENERATION"},
+        {"taskType": "tactical_report", "code": "REPORT_VERIFICATION_REQUIRED"},
+    ]
+
+
+@pytest.mark.integration
+def test_report_view_only_isolates_expected_record_errors(tmp_path, monkeypatch):
+    from backend.tests.test_audit_v3_c03_reports import _store
+    storage, mid = _store(tmp_path)
+    generation = storage.current_generation(mid).generationId
+    record, _ = _write_record(storage, mid, generation)
+    read_json = storage._read_json
+
+    def unexpected(path):
+        if path == record:
+            raise RuntimeError("unexpected storage failure")
+        return read_json(path)
+
+    # Only malformed-record errors become notices; other failures still surface.
+    monkeypatch.setattr(storage, "_read_json", unexpected)
+    with pytest.raises(RuntimeError, match="unexpected storage failure"):
+        ReportStore(storage).view(mid)
