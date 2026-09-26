@@ -1,6 +1,6 @@
 # Completed and open work
 
-This is retained project state at efcc3e1, not a new audit. Reconcile live source before acting.
+This is retained project state, last updated at 1dd6bdd, not a new audit. Reconcile live source before acting.
 
 ## Do not repeat completed repairs
 
@@ -12,22 +12,22 @@ Pilot evaluator/validator runtime code was separated into app/pilot_labels.py an
 
 All later 93 match-bound dependencies were migrated: eight artifact, 47 match-detail and 38 other match routes. Required-upload B008 uses a per-factory named File marker, preserving requiredness and positional direct calls. Do not change it to a shared mutable marker or reordered signature just for uniformity.
 
-Numeric/cancellation typing, missing-frame safety, pressing stages, analytics evidence parsing, provenance/observation/reference typing, event-family and initial-state extraction, LLM typing and analytics-summary stages are published. Report-store typing and its 59 permanent contracts are accepted at efcc3e1. The report-store structural patch is still a draft.
+Numeric/cancellation typing, missing-frame safety, pressing stages, analytics evidence parsing, provenance/observation/reference typing, event-family and initial-state extraction, LLM typing and analytics-summary stages are published. Report-store typing and its 59 permanent contracts are accepted at efcc3e1. The report-store structural extraction is accepted at 1dd6bdd, with the contract suite now at 70 cases (symlinked-member refusal, the narrow catch boundary and stored metric-coverage labels).
 
-Key Git history anchors: ef714ca SQLite; 2d8cf99 artifact; 5c6570e/df85fb9 match dependencies; 52a7710 numeric/upload; eb39f39/1b6fa61 pressing/missing frames; 8d11249/ce16ac4 evidence/ingestion; 76238c4/04891a5 event/classification; ace521d/aa97f25 LLM/summary; efcc3e1 report-store typing.
+Key Git history anchors: ef714ca SQLite; 2d8cf99 artifact; 5c6570e/df85fb9 match dependencies; 52a7710 numeric/upload; eb39f39/1b6fa61 pressing/missing frames; 8d11249/ce16ac4 evidence/ingestion; 76238c4/04891a5 event/classification; ace521d/aa97f25 LLM/summary; efcc3e1 report-store typing; e09aa99/fcb0425 report-store structure; 1dd6bdd catapult merge.
 
 ## Open packages
 
 - BQ00: accepted-head restoration complete. Investigate new regressions only if new evidence shows them.
 - BQ01: partial. The 81-file enforced typing scope is clean; supplemental Python 3.13 full-app checking reported 292 findings. Expand coverage and review Pydantic compatibility individually.
-- BQ02: partial. 405 Ruff identities remain: 230 C901 and 175 BLE001. Source of exact identities is backend/quality/ruff-baseline.json. Broad catches require boundary-specific review, not blanket narrowing or unsafe logs.
+- BQ02: partial. 423 Ruff identities remain at 1dd6bdd; the catapult merge added 23 C901 and 7 BLE001 and retired 9 stale entries. Source of exact identities is backend/quality/ruff-baseline.json. Broad catches require boundary-specific review, not blanket narrowing or unsafe logs.
 - BQ03: partial. Declaration migration and first domain assembly are done. Remaining route responsibilities need extraction with identical OpenAPI, auth/order and two-app isolation.
-- BQ04: partial. Next is the saved report-store decomposition, then remaining storage work preserving transactions, rollback, generations, locks and publication.
+- BQ04: partial. The report-store decomposition is accepted. Remaining storage work must preserve transactions, rollback, generations, locks and publication.
 - BQ05: partial. Several analytics stages are done; larger pipeline/CLI and run_guerilla.py decomposition remains.
 - BQ06: partial. Runtime pilot imports/wheel separation are done; physical research/operational-command organization still needs review.
 - BQ07: open. Reconcile all original and subsequent findings, explicit approved exceptions and completed acceptance. Baseline tolerance is not remediation.
 
-These labels are work packages, not assertions that corresponding GitHub issues exist. Deferred work remains open absent an explicitly changed scope. The next draft proposes 405 to 402; published remediation stays at 405 until that application change is accepted.
+These labels are work packages, not assertions that corresponding GitHub issues exist. Deferred work remains open absent an explicitly changed scope. The 405-to-402 report-store reduction is accepted; later totals include catapult debt recorded at the merge.
 
 ## Historical audit corrections
 

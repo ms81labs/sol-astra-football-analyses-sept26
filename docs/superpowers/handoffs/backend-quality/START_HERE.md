@@ -29,11 +29,11 @@ Read individual source files and evidence only as needed. Do not load the whole 
 
 ## Resume point
 
-Accepted application source: `efcc3e1193428c554449bf3d5c5f671635f1b235`, tree `416f8762c2e9845f8fdbbf03178d6a60723f587e`. Its report-store typing batch and accumulated source passed the applicable existing CI. There were no pending acceptance jobs for that SHA. [ACCEPTANCE.json](ACCEPTANCE.json) records the completed results and qualifications.
+Accepted application source: `1dd6bdd9fe9bee940a8a702ddd6947383fc4a19b`, tree `e6768bccc5f1134a8f07f71b0f24690ff0912ab2`. It is the merge of PR #14, which brought `integration/catapult-workbench` onto main together with the `REPORT_STORE_STRUCTURE` slice. Normal CI `36253514511`, C05 `36253514493` and C06 `36253514457` completed successfully on that SHA (complete backend 5,578 passed / 18 skipped). [ACCEPTANCE.json](ACCEPTANCE.json) records it under `subsequentAcceptances`; the earlier `efcc3e1` record is kept.
 
-The next task is **not yet implemented in application source**: [unpublished/report-store-extraction.patch](unpublished/report-store-extraction.patch). Committing this patch as a documentation attachment does not apply it. The proposed Ruff reduction from 405 to 402 is not published remediation or accepted work.
+There is **no saved draft** now. The report-store patch under `unpublished/` was applied unchanged as `e09aa99` and accepted; it stays only for provenance. Ruff is 423 at the accepted head: the slice retired 3 entries, and the catapult merge recorded 30 new ones (23 C901, 7 BLE001) and retired 9 stale ones. [NEXT_TASK.md](NEXT_TASK.md) says how to choose the next bounded batch.
 
-The commit adding this handoff changes documentation only. The accepted application SHA above deliberately stays fixed: do not relabel old CI as acceptance of a newer SHA, and do not create another docs-only commit merely to replace a self-referential head. Inspect intervening changes; preserve these handoff files when applying the draft. Its recorded candidate tree is the original base plus the two-file draft, not a full-tree expectation after this documentation commit.
+main is the only integration branch. Keep it that way: short-lived PR branches are merged and then deleted.
 
 ## Where the rest lives
 

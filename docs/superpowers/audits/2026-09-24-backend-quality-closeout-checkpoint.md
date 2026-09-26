@@ -4,7 +4,7 @@
 
 Start at [the handoff](../handoffs/backend-quality/START_HERE.md). A new session needs that repository path and GitHub access, not the previous chat or its ZIP. State, runbook, completed/open work, acceptance references and the exact saved draft are all linked there.
 
-## Accepted application source — unchanged
+## Earlier accepted application source
 
 `efcc3e1193428c554449bf3d5c5f671635f1b235`, tree `416f8762c2e9845f8fdbbf03178d6a60723f587e`.
 
@@ -24,9 +24,9 @@ Evidence and the exact missing gates: [source review record](../handoffs/backend
 
 The session could read repository text and download CI artifacts through the connector, but could not obtain a complete local checkout; shell Git remote reads failed DNS. Available Python was 3.13.5/Pydantic 2.13.4, not the pinned Python 3.11 profile; Ruff and mypy were absent. No fresh full-checkout original/candidate pytest, entry-point parity, C03/API/journey, pinned quality, complete-candidate or new-SHA CI gates ran. No application CI run was launched by this review. Author self-review only; no independent reviewer ran.
 
-## 2026-09-26 continuation — REPORT_STORE_STRUCTURE implemented and locally verified
+## 2026-09-26 continuation — REPORT_STORE_STRUCTURE accepted
 
-Status: **implemented, locally verified, publication pending CI. Not yet accepted.**
+Status: **accepted at `1dd6bdd`** (PR #14 merge). Normal CI `36253514511` (complete backend 5,578 passed / 18 skipped / 0 failed; verify, python-quality, integration, real-media, excluded-backend, api-profile and macos-profile succeeded; GPU skipped), C05 `36253514493` and C06 `36253514457` completed successfully on that SHA. Recorded in ACCEPTANCE.json `subsequentAcceptances`. The evidence below was gathered before publication.
 
 Reconciled live main `afa7a87` (docs-only beyond `efcc3e1`; neither touched file changed). The saved patch hash matched, `git apply --check` passed, and it was applied unchanged as commit `e09aa99`; the resulting `report_store.py` and `ruff-baseline.json` blobs equal the manifest (`7a0daca`, `66e913b`).
 
@@ -43,7 +43,7 @@ Author self-review only; no independent reviewer ran.
 
 ## Exact next action
 
-After #14 merges, confirm completed normal CI plus C05/C06 on the merged main SHA, then record those run IDs and mark only `REPORT_STORE_STRUCTURE` accepted. Do not re-apply the saved patch; it is in main. Broader audit work below stays open.
+No saved draft. Choose the next bounded batch using NEXT_TASK.md and COMPLETED_AND_OPEN.md, reconcile live main, and follow the runbook. Do not re-apply the report-store patch. `integration/catapult-workbench` is merged into main; main is the only integration branch.
 
 ## Boundaries and history
 
