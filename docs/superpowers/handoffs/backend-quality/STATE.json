@@ -34,7 +34,20 @@
     "expectedRuffAfter": 402,
     "expectedRemovedC901": 3,
     "expectedAddedDiagnostics": 0,
-    "requires": ["review", "fresh characterization and quality checks", "permitted publication", "completed existing CI on new application SHA"]
+    "requires": ["review", "fresh characterization and quality checks", "permitted publication", "completed existing CI on new application SHA"],
+    "sourceReviewRecord": "verification/2026-09-26-source-review.json"
+  },
+  "lastResume": {
+    "date": "2026-09-26",
+    "reviewedMainCommit": "86e44500e528c051f78dcdb6f0bfb3dc6d16fe33",
+    "reviewedMainTree": "8c74f4b61fa248c7cf1d36f6c81435ac4375f0da",
+    "result": "SOURCE_REVIEW_COMPLETED_IMPLEMENTATION_BLOCKED",
+    "originalCIRunId": 36197474643,
+    "applicationPublished": false,
+    "applicationAccepted": false,
+    "newApplicationCIIds": [],
+    "blocker": "No complete local checkout or pinned Python 3.11/quality-tool profile; shell Git remote reads fail DNS. Source-only proof is not behavioral acceptance.",
+    "nextAction": "Continue REPORT_STORE_STRUCTURE in a complete checkout using VERIFICATION_RUNBOOK.md; run the required original/candidate gates before publication and new-SHA acceptance. Keep the existing patch and all newer documentation."
   },
   "checkpoint": "docs/superpowers/audits/2026-09-24-backend-quality-closeout-checkpoint.md",
   "authority": "Current user instructions and safety/tool permissions first; current GitHub source and SHA-bound CI outrank historical documents.",
