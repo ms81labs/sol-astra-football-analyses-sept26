@@ -146,6 +146,7 @@ def test_event_identifier_digest_stays_stable_and_declares_nonsecurity_use(monke
         return original_sha1(data, **kwargs)
     monkeypatch.setattr(hashlib, "sha1", sha1)
     event = SimpleNamespace(fromTrackId=7, toTrackId=None, type="pass", team="my_team", timestamp=1.2,
+                            heuristicName=None, eventId=None,
                             model_copy=lambda *, update: update)
     assert with_stable_event_id(event)["eventId"] == expected
     assert options == [{"usedforsecurity": False}]

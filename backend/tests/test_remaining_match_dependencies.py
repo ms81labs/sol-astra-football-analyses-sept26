@@ -41,6 +41,7 @@ ENDPOINTS = [
         "/api/matches/{match_id}/corrections/{correction_id}/undo",
     ),
     ("runtime", "list_match_corrections", "GET", "/api/matches/{match_id}/corrections"),
+    ("runtime", "get_mask_overlay", "GET", "/api/matches/{match_id}/mask-overlay"),
     ("review", "list_annotations", "GET", "/api/matches/{match_id}/annotations"),
     ("review", "create_annotation", "POST", "/api/matches/{match_id}/annotations"),
     (

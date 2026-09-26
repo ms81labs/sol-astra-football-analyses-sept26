@@ -1,12 +1,12 @@
 {
   "0": {
-    "routesSha256": "863b7a02234b26e079a12d65fceea0bc88f6da81fe970f716cccf9eff4922e38",
+    "routesSha256": "9c10f942696e828d81748d54f173b15afb4edc90c34ef70514a8479bdb18bfd4",
     "openapiSha256": "188443f0d6fde7933f70b61c748cd9ded4d15de5076efc602712302e6232f39e",
-    "pathCount": 319
+    "pathCount": 324
   },
   "1": {
-    "routesSha256": "ec9ceba076d21c7426ec7790807ccb12ed8f568c0d5e2ac0fa07bd0a405efb61",
+    "routesSha256": "f507cb1c220a5e2ce62a1d10d9ac47b9f07a34baa18cfa90e89ed57266315143",
     "openapiSha256": "1a9886ca1858ad089b95da01432f2cb071a04ce946b5c079025ece87d5341f1e",
-    "pathCount": 490
+    "pathCount": 495
   }
 }

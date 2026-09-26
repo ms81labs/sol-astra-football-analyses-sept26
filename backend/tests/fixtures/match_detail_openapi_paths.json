@@ -646,6 +646,73 @@
       "summary": "Get Match Edits"
     }
   },
+  "/api/matches/{match_id}/edits/clip": {
+    "get": {
+      "operationId": "download_match_clip_api_matches__match_id__edits_clip_get",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "generationId",
+          "required": false,
+          "schema": {
+            "default": "",
+            "title": "Generationid",
+            "type": "string"
+          }
+        },
+        {
+          "in": "query",
+          "name": "start",
+          "required": false,
+          "schema": {
+            "default": 0.0,
+            "title": "Start",
+            "type": "number"
+          }
+        },
+        {
+          "in": "query",
+          "name": "end",
+          "required": false,
+          "schema": {
+            "default": 0.0,
+            "title": "End",
+            "type": "number"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {}
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Download Match Clip"
+    }
+  },
   "/api/matches/{match_id}/edits/render": {
     "post": {
       "operationId": "post_match_edit_render_api_matches__match_id__edits_render_post",
@@ -703,6 +770,104 @@
         }
       },
       "summary": "Post Match Edit Render"
+    }
+  },
+  "/api/matches/{match_id}/event-proposals": {
+    "get": {
+      "operationId": "get_event_proposal_capability_api_matches__match_id__event_proposals_get",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Get Event Proposal Capability Api Matches  Match Id  Event Proposals Get",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Get Event Proposal Capability"
+    },
+    "post": {
+      "operationId": "post_event_proposal_api_matches__match_id__event_proposals_post",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Body"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Post Event Proposal Api Matches  Match Id  Event Proposals Post",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Post Event Proposal"
     }
   },
   "/api/matches/{match_id}/events/partition": {
@@ -1657,6 +1822,65 @@
       "summary": "Get Match Promotion"
     }
   },
+  "/api/matches/{match_id}/provider-images": {
+    "post": {
+      "operationId": "prepare_provider_images_api_matches__match_id__provider_images_post",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Body"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Prepare Provider Images Api Matches  Match Id  Provider Images Post",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Prepare Provider Images"
+    }
+  },
   "/api/matches/{match_id}/quality": {
     "get": {
       "operationId": "get_match_quality_api_matches__match_id__quality_get",
@@ -1771,6 +1995,104 @@
         }
       },
       "summary": "Post Match Query"
+    }
+  },
+  "/api/matches/{match_id}/query-proposals": {
+    "get": {
+      "operationId": "get_query_proposal_capability_api_matches__match_id__query_proposals_get",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        }
+      ],
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Get Query Proposal Capability Api Matches  Match Id  Query Proposals Get",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Get Query Proposal Capability"
+    },
+    "post": {
+      "operationId": "post_query_proposal_api_matches__match_id__query_proposals_post",
+      "parameters": [
+        {
+          "in": "path",
+          "name": "match_id",
+          "required": true,
+          "schema": {
+            "title": "Match Id",
+            "type": "string"
+          }
+        }
+      ],
+      "requestBody": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "anyOf": [
+                {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Body"
+            }
+          }
+        }
+      },
+      "responses": {
+        "200": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Response Post Query Proposal Api Matches  Match Id  Query Proposals Post",
+                "type": "object"
+              }
+            }
+          },
+          "description": "Successful Response"
+        },
+        "422": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HTTPValidationError"
+              }
+            }
+          },
+          "description": "Validation Error"
+        }
+      },
+      "summary": "Post Query Proposal"
     }
   },
   "/api/matches/{match_id}/rates": {
