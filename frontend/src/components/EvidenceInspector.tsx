@@ -7,6 +7,7 @@ import ClockReadout from './ClockReadout';
 interface EvidenceInspectorProps {
   matchId?: string;
   frame: FrameData | null;
+  selectedInterval?: { start: number; end: number; evidenceIds: string[] } | null;
   cameraProfile?: string;
   reviewStatus?: 'unreviewed' | 'accepted' | 'rejected' | 'corrected';
   modelHash?: string;
@@ -17,6 +18,11 @@ interface EvidenceInspectorProps {
   detectorScore?: number | null;
   calibratedProbability?: number | null;
   confidenceInterval?: [number, number] | null;
+  proposal?: { modelId: string; modelVersion: string; evidenceIds: string[]; requestId?: string | null } | null;
+  onProposalDecision?: (decision: 'accept' | 'reject') => void;
+  onRequestProposal?: () => void;
+  proposalRequestState?: 'idle' | 'pending' | 'done' | 'unknown';
+  proposalRequestMessage?: string | null;
 }
 
 function sourceLabel(frame: FrameData | null): string {
@@ -29,6 +35,7 @@ function sourceLabel(frame: FrameData | null): string {
 export default function EvidenceInspector({
   matchId,
   frame,
+  selectedInterval,
   cameraProfile,
   reviewStatus = 'unreviewed',
   modelHash,
@@ -39,6 +46,11 @@ export default function EvidenceInspector({
   detectorScore,
   calibratedProbability,
   confidenceInterval,
+  proposal,
+  onProposalDecision,
+  onRequestProposal,
+  proposalRequestState = 'idle',
+  proposalRequestMessage,
 }: EvidenceInspectorProps) {
   const [matchClockOffsetSeconds, setMatchClockOffsetSeconds] = useState(0);
   const presentationTimeSeconds = frame?.Timestamp ?? 0;
@@ -72,6 +84,23 @@ export default function EvidenceInspector({
         <span aria-label="review status icon">✓</span>
         {' '}Review status: <span className="font-mono text-amber-300">{reviewStatus}</span>
       </p>
+      {selectedInterval && <p>Selected source interval: {selectedInterval.start}s to {selectedInterval.end}s. Selected evidence: {selectedInterval.evidenceIds.join(', ') || 'unavailable'}.</p>}
+      {onRequestProposal && <button type="button" onClick={onRequestProposal}
+        disabled={proposalRequestState !== 'idle'}
+        className="rounded bg-slate-700 px-2 py-1 text-white disabled:opacity-50">
+        {proposalRequestState === 'pending' ? 'Requesting visual suggestion…' : 'Request visual suggestion'}
+      </button>}
+      {onRequestProposal && <p className="text-slate-500">Uses the selected source frames; a cloud request may incur cost. Review is required before use.</p>}
+      {proposalRequestMessage && <p role="status">{proposalRequestMessage}</p>}
+      {proposal && <p>Model proposal: {proposal.modelId} · {proposal.modelVersion}</p>}
+      {proposal?.requestId && <p>Provider request: {proposal.requestId}</p>}
+      {proposal && !proposal.requestId && <p>Provider receipt unavailable; this proposal cannot be accepted.</p>}
+      {proposal && reviewStatus === 'unreviewed' && onProposalDecision && (
+        <div className="flex gap-2">
+          <button type="button" disabled={!proposal.requestId} className="rounded bg-emerald-700 px-2 py-1 text-white disabled:opacity-50" onClick={() => onProposalDecision('accept')}>Accept proposed event</button>
+          <button type="button" className="rounded bg-slate-700 px-2 py-1 text-white" onClick={() => onProposalDecision('reject')}>Reject proposed event</button>
+        </div>
+      )}
       {cameraProfile && <p>Camera profile: <span className="font-mono">{cameraProfile}</span></p>}
       {modelHash && <p>Model: <span className="font-mono">{modelHash}</span></p>}
       {configVersion && <p>Config: <span className="font-mono">{configVersion}</span></p>}

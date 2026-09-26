@@ -77,17 +77,96 @@ export async function fetchWorkbenchDossier(): Promise<WorkbenchDossier> {
   return response.json() as Promise<WorkbenchDossier>;
 }
 
-export async function searchWorkbenchEvents(query: string, matchId: string, events: Array<Record<string, unknown>> = [], generationId?: string) {
+export interface SearchHit {
+  eventId: string;
+  matchId: string;
+  timestamp: number;
+  frameId?: number | null;
+  intervalStart?: number | null;
+  intervalEnd?: number | null;
+  reviewStatus?: 'unreviewed' | 'accepted' | 'rejected' | 'corrected' | null;
+  label: string;
+  evidenceIds: string[];
+}
+
+export interface EventProposalReceipt {
+  generationId: string;
+  requestId: string;
+  proposal: ({ type: 'pass' | 'turnover' | 'recovery' | 'shot'; frameId: number;
+    timestamp: number; intervalStart: number; intervalEnd: number; team: 'my_team' | 'enemy' | null;
+    description: string; modelId: string; modelVersion: string; evidenceIds: string[] }) | null;
+}
+
+export async function fetchEventProposalAvailability(matchId: string, generationId: string) {
+  const payload = await parseJson<{ generationId: string; available: boolean }>(
+    await fetch(`/api/matches/${matchId}/event-proposals`));
+  assertGeneration(payload, generationId);
+  return payload.available;
+}
+
+export async function prepareEventProposalImages(matchId: string, generationId: string, sourceFrameIds: number[]) {
+  const payload = await parseJson<{ generationId: string; imageManifestDigest: string }>(
+    await fetch(`/api/matches/${matchId}/provider-images`, { method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ generationId, sourceFrameIds }) }));
+  assertGeneration(payload, generationId);
+  return payload.imageManifestDigest;
+}
+
+export async function requestEventProposal(matchId: string, generationId: string,
+  imageManifestDigest: string, requestId: string) {
+  const payload = await parseJson<EventProposalReceipt>(await fetch(`/api/matches/${matchId}/event-proposals`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ generationId, imageManifestDigest, requestId }),
+  }));
+  assertGeneration(payload, generationId);
+  return payload;
+}
+
+export interface TypedSearchFilter {
+  eventFamily: string;
+  team?: string;
+  pitchRegion?: string;
+  reviewStatus?: string;
+}
+
+export async function searchWorkbenchEvents(query: string | TypedSearchFilter, matchId: string, events: Array<Record<string, unknown>> = [], generationId?: string) {
   void events;
+  if (typeof query !== 'string' && !generationId) throw new Error('Typed filters require a current generation');
   const response = await fetch(`/api/matches/${matchId}/queries`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ query, ...(generationId ? { generationId } : {}) }),
+    body: JSON.stringify({ ...(typeof query === 'string' ? { query } : { typedQuery: query }),
+      ...(generationId ? { generationId } : {}) }),
   });
   const payload = await parseJson<{
-    query: { unanswerable: boolean; reason: string | null; eventFamily: string };
-    results: Array<{ eventId: string; timestamp: number; evidenceIds: string[] }>;
+    query: { unanswerable: boolean; reason: string | null; eventFamily: string;
+      unsupportedTerms?: string[];
+      interpreted?: { eventFamily?: string; team?: string | null; playerTrackId?: number | null;
+        reviewStatus?: string | null; pitchRegion?: string | null; period?: number | null;
+        timeStartSeconds?: number | null; timeEndSeconds?: number | null } };
+    coverageState?: 'matched' | 'no_match' | 'partial' | 'insufficient' | 'unsupported';
+    unknownLocationCount?: number;
+    results: SearchHit[];
   } & { generationId?: string | null }>(response);
+  assertGeneration(payload, generationId);
+  return payload;
+}
+
+export async function fetchQueryProposalAvailability(matchId: string, generationId: string) {
+  const payload = await parseJson<{ generationId: string; available: boolean }>(
+    await fetch(`/api/matches/${matchId}/query-proposals`));
+  assertGeneration(payload, generationId);
+  return payload.available;
+}
+
+export async function requestQueryProposal(matchId: string, generationId: string,
+  question: string, requestId: string) {
+  const payload = await parseJson<Awaited<ReturnType<typeof searchWorkbenchEvents>>>(
+    await fetch(`/api/matches/${matchId}/query-proposals`, { method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ generationId, question, requestId }),
+    }));
   assertGeneration(payload, generationId);
   return payload;
 }
@@ -422,6 +501,12 @@ export async function postMatchLegacyMigrate(matchId: string) {
 
 export interface MatchExportBundle {
   schemaVersion: string;
+  matchId?: string;
+  generationId?: string;
+  playlist?: { sourceSha256?: string; intervals?: Array<[number, number]> };
+  corrections?: unknown[];
+  annotations?: unknown[];
+  reports?: Record<string, unknown>;
   provenance?: { storageArtifactsAreSourceOfTruth?: boolean; llmGenerated?: boolean };
   exports?: {
     matchJson?: string;
@@ -431,8 +516,9 @@ export interface MatchExportBundle {
   };
 }
 
-export async function fetchMatchExport(matchId: string) {
-  const response = await fetch(`/api/matches/${matchId}/export/match.json`);
+export async function fetchMatchExport(matchId: string, generationId?: string) {
+  const url = `/api/matches/${encodeURIComponent(matchId)}/export/match.json`;
+  const response = await fetch(generationId ? `${url}?generationId=${encodeURIComponent(generationId)}` : url);
   if (!response.ok) {
     throw new Error(`Failed to load match export: ${response.status}`);
   }

@@ -25,6 +25,10 @@ def build_match_bundle(storage: Storage, match_id: str, *, generation_id: str | 
             match_id, generation_id=generation.generationId
         )
         events = storage.load_events(match_id, generation_id=generation.generationId)
+        manifest, _ = storage.generations.manifest(match_id, generation.generationId)
+        included_commands = set(manifest.includedCommandIds)
+        corrections = [item for item in storage.list_corrections(match_id)
+                       if item.get("commandId", item.get("correctionId")) in included_commands]
         accepted_match_state = storage.load_accepted_match_state(match_id, generation_id=generation.generationId)
         report_view = ReportStore(storage).view(match_id, generation_id=generation.generationId)
         ball_truth_layers = _optional_artifact(storage, match_id, "ball_truth_layers")
@@ -65,6 +69,9 @@ def build_match_bundle(storage: Storage, match_id: str, *, generation_id: str | 
             "matchId": match_id, "generationId": generation.generationId,
             "reports": report_view,
             "playlist": storage.edit_list_for_match(match_id, generation_id=generation.generationId),
+            "corrections": corrections,
+            "annotations": [item.model_dump(mode="json") for item in storage.list_annotations(match_id)],
+            "annotationsScope": "match_current",
             "schemaVersion": SCHEMA_VERSION,
             "exportedAt": datetime.now(timezone.utc).isoformat(),
             "match": match.model_dump(mode="json"),

@@ -5,6 +5,7 @@ import traceback
 from pathlib import Path
 
 from .processor import process_match
+from .jobs import require_processor_request
 from .storage import JobCancellationRequested, Storage
 from .workbench.jobs import maintain_job_lease
 
@@ -29,6 +30,11 @@ def _confirm_cancelled(storage: Storage, job_id: str) -> None:
 
 def run_job(storage_root: Path, job_id: str) -> None:
     storage = Storage(storage_root)
+    try:
+        require_processor_request(storage.job_ledger, job_id)
+    except BaseException:
+        storage.close()
+        raise
     try:
         with maintain_job_lease(
             storage.job_ledger,

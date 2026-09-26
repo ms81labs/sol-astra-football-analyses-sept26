@@ -39,6 +39,9 @@ describe('CoachInsights', () => {
 
     expect(screen.getByText('Player Focus')).toBeTruthy();
     expect(screen.getByText('Primary Creator')).toBeTruthy();
+    expect(screen.getByText(/Track 7/i)).toBeTruthy();
+    expect(screen.getByText(/identity unverified/i)).toBeTruthy();
+    expect(screen.getByText(/Key track:/i)).toBeTruthy();
     expect(screen.getByText('2 through balls, 0.54 experimental shot quality created')).toBeTruthy();
     expect(screen.getByText(/reviewed passages do not establish a whole-match frequency/i)).toBeTruthy();
   });
@@ -221,17 +224,40 @@ describe('CoachInsights', () => {
 it('C03 displays scoped zero, experimental and unavailable facts without inventing a rating', () => {
   render(<CoachInsights activeTab="report" llmThinking={false} matchId="m" generationId="N" currentFrame={0}
     events={[]} tacticalReport={{ matchId: 'm', generationId: 'N', status: 'historical', grounding: 'interpretive',
-      metricClaims: [{ metric: 'shot_quality', value: 0, unit: 'score', availability: 'experimental', teamScope: 'my_team' }],
-      metrics: [{ metric: 'distance', value: null, unit: 'm', availability: 'withheld' }],
+      metricClaims: [{ metric: 'shot_quality', value: 0, unit: 'score', availability: 'experimental', teamScope: 'my_team',
+        eligibleSeconds: 2, requestedSeconds: 5, denominator: 'eligible source seconds', reasonCodes: ['PARTIAL_CAMERA_COVERAGE'] }],
+      metrics: [{ metric: 'distance', value: null, unit: 'm', availability: 'withheld', reasonCodes: ['IDENTITY_GAP'] }],
       interpretation: '<script>unsafe()</script>',
       evidence: [{ matchId: 'm', generationId: 'N', kind: 'event', localId: '0' }],
     }} drillResponse={null} onGenerateReport={vi.fn()} onGenerateDrills={vi.fn()} />);
   expect(screen.getByText(/shot_quality/).textContent).toContain('0');
   expect(screen.getByText(/distance/).textContent).toContain('unavailable');
   expect(screen.getByText(/experimental/)).toBeTruthy();
+  expect(screen.getByText(/shot_quality/).textContent).toContain('Coverage: 2/5 source seconds');
+  expect(screen.getByText(/shot_quality/).textContent).toContain('PARTIAL_CAMERA_COVERAGE');
+  expect(screen.getByText(/distance/).textContent).toContain('IDENTITY_GAP');
   expect(document.querySelector('script')).toBeNull();
   expect(screen.getByText(/unsafe\(\)/)).toBeTruthy();
   expect(screen.queryByText(/out of 10/i)).toBeNull();
+});
+
+it('opens current claim evidence and leaves historical, metric and prose references noninteractive', () => {
+  const onSelectEvidence = vi.fn();
+  render(<CoachInsights activeTab="report" llmThinking={false} matchId="m" generationId="N" currentFrame={0}
+    events={[]} tacticalReport={{ matchId: 'm', generationId: 'N',
+      observations: [{ text: 'Turnover led to a shot', grounding: 'referenced', evidence: [
+        { matchId: 'm', generationId: 'N', kind: 'event', localId: '12:turnover:2.4' },
+        { matchId: 'm', generationId: 'old', kind: 'frame', localId: '12' },
+        { matchId: 'm', generationId: 'N', kind: 'metric', localId: '0:shots' },
+        'legacy reference',
+      ] }],
+    }} drillResponse={null} onSelectEvidence={onSelectEvidence}
+    onGenerateReport={vi.fn()} onGenerateDrills={vi.fn()} />);
+  fireEvent.click(screen.getByRole('button', { name: /event:12:turnover:2.4/i }));
+  expect(onSelectEvidence).toHaveBeenCalledWith({ matchId: 'm', generationId: 'N', kind: 'event', localId: '12:turnover:2.4' });
+  expect(screen.queryByRole('button', { name: /frame:12/i })).toBeNull();
+  expect(screen.queryByRole('button', { name: /metric:0:shots/i })).toBeNull();
+  expect(screen.queryByRole('button', { name: /legacy reference/i })).toBeNull();
 });
 
 it('C03 refuses silent loading of a playlist from another generation', async () => {

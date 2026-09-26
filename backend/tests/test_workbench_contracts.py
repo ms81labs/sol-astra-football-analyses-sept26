@@ -11,8 +11,10 @@ from backend.app.schemas import MatchConfig
 from backend.app.workbench.assistance import (
     AssistancePolicy,
     AssistanceRouter,
+    TypedQuery,
     execute_typed_query,
     parse_typed_query,
+    validate_query_proposal,
     template_report,
 )
 from backend.app.workbench.contracts import CAPABILITY_IDS, INTERVAL_ENDPOINT, migrate_legacy_zero, unknown_metric
@@ -433,6 +435,16 @@ def test_typed_search_answers_known_and_unanswerable_queries_without_sql() -> No
     ]
     hits = execute_typed_query(events, query, match_id="m1")
     assert [hit.eventId for hit in hits] == ["t1"]
+    bounded = execute_typed_query([
+        {"id": "bounded", "type": "turnover", "team": "my_team", "period": 2,
+         "timestamp": 70.2, "frameId": 351, "intervalStart": 70.0, "intervalEnd": 71.0,
+         "reviewStatus": "accepted", "evidenceIds": ["event:bounded"]},
+    ], parse_typed_query("our second-half turnovers"), match_id="m1")
+    assert bounded[0].model_dump(mode="json") == {
+        "eventId": "bounded", "matchId": "m1", "timestamp": 70.2, "frameId": 351,
+        "intervalStart": 70.0, "intervalEnd": 71.0,
+        "reviewStatus": "accepted", "evidenceIds": ["event:bounded"], "label": "turnover",
+    }
     refused = parse_typed_query("select * from events; drop table matches")
     assert refused.unanswerable is True
     assert refused.reason == "refused_code_execution"
@@ -451,6 +463,174 @@ def test_typed_search_answers_known_and_unanswerable_queries_without_sql() -> No
         events[2],
     ]
     assert [hit.eventId for hit in execute_typed_query(rejected_successor, query, match_id="m1")] == []
+
+
+def test_search_does_not_execute_a_broader_fragment_when_terms_are_unsupported() -> None:
+    rows = [{"id": "r1", "type": "recovery", "team": "my_team", "timestamp": 3.0}]
+    query = parse_typed_query("show our recoveries near the left flank")
+    assert query.unanswerable is True
+    assert query.reason == "unsupported_terms"
+    assert query.unsupportedTerms == ["near", "the", "left", "flank"]
+    assert execute_typed_query(rows, query, match_id="m1") == []
+
+
+def test_natural_and_typed_recovery_filters_return_the_same_evidence() -> None:
+    rows = [
+        {"id": "wanted", "type": "recovery", "team": "my_team", "timestamp": 12.0,
+         "fromTrackId": 7, "reviewStatus": "accepted"},
+        {"id": "wrong-player", "type": "recovery", "team": "my_team", "timestamp": 12.0,
+         "fromTrackId": 9, "reviewStatus": "accepted"},
+        {"id": "unreviewed", "type": "recovery", "team": "my_team", "timestamp": 12.0,
+         "fromTrackId": 7, "reviewStatus": "unreviewed"},
+        {"id": "outside", "type": "recovery", "team": "my_team", "timestamp": 22.0,
+         "fromTrackId": 7, "reviewStatus": "accepted"},
+    ]
+    direct = TypedQuery(eventFamily="recovery", team="my_team", playerTrackId=7,
+        reviewStatus="accepted", timeStartSeconds=10, timeEndSeconds=20)
+    natural = parse_typed_query("show our accepted recoveries by player 7 between 10 and 20 seconds")
+    assert natural.unanswerable is False
+    assert [hit.eventId for hit in execute_typed_query(rows, direct, match_id="m1")] == ["wanted"]
+    assert [hit.eventId for hit in execute_typed_query(rows, natural, match_id="m1")] == ["wanted"]
+
+
+@pytest.mark.parametrize("spoken,kind", [
+    ("passes", "pass"), ("progressive passes", "progressive_pass"),
+    ("through balls", "through_ball"), ("crosses", "cross"),
+    ("shots", "shot"), ("goals", "goal"), ("turnovers", "turnover"),
+    ("recoveries", "recovery"), ("tackles", "tackle"),
+    ("interceptions", "interception"), ("carries", "carry"),
+    ("box entries", "box_entry"), ("final third entries", "final_third_entry"),
+])
+def test_every_supported_event_family_has_matching_natural_and_typed_evidence(spoken, kind) -> None:
+    rows = [{"id": "wanted", "type": kind, "team": "my_team", "fromTrackId": 7, "timestamp": 1.0},
+            {"id": "other", "type": kind, "team": "enemy", "fromTrackId": 7, "timestamp": 2.0}]
+    natural = parse_typed_query(f"show our {spoken} by player 7")
+    direct = TypedQuery(eventFamily=kind, team="my_team", playerTrackId=7)
+    assert natural.unanswerable is False
+    assert natural.eventFamily == kind
+    assert [hit.eventId for hit in execute_typed_query(rows, natural, match_id="m1")] == [
+        hit.eventId for hit in execute_typed_query(rows, direct, match_id="m1")] == ["wanted"]
+
+
+def test_supported_successor_family_keeps_exact_follow_up_scope() -> None:
+    query = parse_typed_query("our turnovers followed by opponent tackles within 10 seconds")
+    rows = [{"id": "start", "type": "turnover", "team": "my_team", "timestamp": 1.0},
+            {"id": "wrong", "type": "tackle", "team": "my_team", "timestamp": 2.0},
+            {"id": "wanted", "type": "tackle", "team": "enemy", "timestamp": 4.0}]
+    assert query.unanswerable is False
+    assert query.successorEvent == "tackle"
+    assert [hit.eventId for hit in execute_typed_query(rows, query, match_id="m1")] == ["start"]
+
+
+def test_calibrated_pitch_third_uses_the_same_typed_executor() -> None:
+    rows = [{"id": "right", "type": "recovery", "timestamp": 1.0, "pitchRegion": "right_third"},
+            {"id": "left", "type": "recovery", "timestamp": 2.0, "pitchRegion": "left_third"}]
+    direct = TypedQuery(eventFamily="recovery", pitchRegion="right_third")
+    natural = parse_typed_query("recoveries in the right third")
+    assert natural.unanswerable is False
+    assert natural.interpreted["pitchRegion"] == "right_third"
+    assert [hit.eventId for hit in execute_typed_query(rows, direct, match_id="m1")] == ["right"]
+    assert [hit.eventId for hit in execute_typed_query(rows, natural, match_id="m1")] == ["right"]
+
+
+@pytest.mark.integration
+@pytest.mark.real_media
+def test_pitch_region_search_requires_measured_calibration_and_reports_missing_actor(tmp_path, monkeypatch) -> None:
+    from backend.app.schemas import DetectedEvent
+    from backend.app.storage import Storage
+    from backend.tests.test_audit_v3_final_journey import _install_video
+
+    storage = Storage(tmp_path / "store")
+    match_id = _install_video(storage, tmp_path)
+    frame = storage.load_frames(match_id)[0]
+    assert any(player.id == 7 and player.x > 67 for player in frame.myTeam)
+    storage.save_events(match_id, [
+        DetectedEvent(eventId="located", type="recovery", frameId=frame.frameId,
+            timestamp=frame.timestamp, fromTrackId=7, team="my_team", description="Located recovery"),
+        DetectedEvent(eventId="unknown", type="recovery", frameId=frame.frameId,
+            timestamp=frame.timestamp, team="my_team", description="Unknown actor"),
+    ])
+    located_id = next(event.eventId for event in storage.load_events(match_id)
+                      if event.description == "Located recovery")
+    result = storage.query_match_events(match_id, "our recoveries in the right third")
+    assert [hit["eventId"] for hit in result["results"]] == [located_id]
+    assert result["coverageState"] == "partial"
+    assert result["unknownLocationCount"] == 1
+    monkeypatch.setattr(storage, "_stored_calibration_accepted", lambda _match_id: False)
+    withheld = storage.query_match_events(match_id, "our recoveries in the right third")
+    assert withheld["results"] == []
+    assert withheld["coverageState"] == "insufficient"
+    assert withheld["unknownLocationCount"] == 2
+    monkeypatch.setattr(storage, "_stored_calibration_accepted", lambda _match_id: True)
+    monkeypatch.setattr(storage, "load_frames", lambda _match_id: [frame.model_copy(update={"geometryAvailable": False})])
+    frame_unavailable = storage.query_match_events(match_id, "our recoveries in the right third")
+    assert frame_unavailable["coverageState"] == "insufficient"
+    assert frame_unavailable["unknownLocationCount"] == 2
+
+
+def test_typed_query_rejects_unsupported_or_invalid_predicates() -> None:
+    from pydantic import ValidationError
+    from backend.app.workbench.assistance import SuccessorConstraint
+    for fields in (
+        {"eventFamily": "foul"}, {"eventFamily": "recovery", "period": -1},
+        {"eventFamily": "recovery", "playerTrackId": -1},
+        {"eventFamily": "recovery", "timeStartSeconds": 20, "timeEndSeconds": 10},
+        {"eventFamily": "recovery", "timeStartSeconds": float("nan")},
+        {"eventFamily": "recovery", "successor": SuccessorConstraint(kind="sql")},
+        {"eventFamily": "recovery", "pitchRegion": "left_flank"},
+        {"eventFamily": "recovery", "period": 99},
+        {"eventFamily": "recovery", "playerTrackId": 1_000_001},
+        {"eventFamily": "recovery", "timeEndSeconds": 86_401},
+    ):
+        with pytest.raises(ValidationError):
+            TypedQuery(**fields)
+    invalid_time = parse_typed_query("recoveries between 20 and 10 seconds")
+    assert invalid_time.unanswerable is True
+    assert invalid_time.reason == "invalid_time_range"
+    assert parse_typed_query("period 99 recoveries").reason == "invalid_period"
+    assert parse_typed_query("recoveries by player 1000001").reason == "invalid_player"
+    assert parse_typed_query("recoveries between 0 and 86401 seconds").reason == "invalid_time_range"
+    assert parse_typed_query("x" * 513).reason == "query_too_long"
+
+
+def test_model_query_proposal_is_scope_bound_and_uses_existing_python_search() -> None:
+    proposal = {"matchId": "m1", "generationId": "g1", "query": {
+        "eventFamily": "recovery", "team": "my_team", "playerTrackId": 7}}
+    query = validate_query_proposal(proposal, match_id="m1", generation_id="g1")
+    assert validate_query_proposal(
+        {**proposal, "query": {**proposal["query"], "pitchRegion": "right_third"}},
+        match_id="m1", generation_id="g1",
+    ).pitchRegion == "right_third"
+    rows = [
+        {"id": "wanted", "type": "recovery", "team": "my_team", "fromTrackId": 7, "timestamp": 1.0},
+        {"id": "other", "type": "recovery", "team": "my_team", "fromTrackId": 8, "timestamp": 2.0},
+    ]
+    assert [hit.eventId for hit in execute_typed_query(rows, query, match_id="m1")] == ["wanted"]
+    for invalid in (
+        {**proposal, "generationId": "g0"},
+        {**proposal, "matchId": "m2"},
+        {**proposal, "sql": "SELECT * FROM events"},
+        {**proposal, "query": {"eventFamily": "recovery", "pitchRegion": "left"}},
+        {**proposal, "query": {"eventFamily": "recovery", "includeUnknown": True}},
+        {**proposal, "query": {"eventFamily": "recovery", "unanswerable": False}},
+        {**proposal, "query": {"eventFamily": "recovery", "period": 99}},
+    ):
+        with pytest.raises(ValueError):
+            validate_query_proposal(invalid, match_id="m1", generation_id="g1")
+
+
+def test_query_result_distinguishes_no_match_from_missing_event_coverage(tmp_path, monkeypatch) -> None:
+    from backend.app.storage import Storage
+    storage = Storage(tmp_path / "store")
+    source = tmp_path / "empty.json"
+    source.write_text("[]")
+    match = storage.create_match("empty", "tracking_json", source.name, source, MatchConfig())
+    monkeypatch.setattr(storage, "load_events", lambda *_: [])
+    assert storage.query_match_events(match.id, "recoveries")["coverageState"] == "no_match"
+    def missing(*_):
+        raise FileNotFoundError
+    monkeypatch.setattr(storage, "load_events", missing)
+    assert storage.query_match_events(match.id, "recoveries")["coverageState"] == "insufficient"
 
 
 def test_assistance_rejects_fabricated_evidence_and_falls_back_without_provider() -> None:
@@ -2210,6 +2390,16 @@ def test_repository_page_frames_bounds_payload_and_preserves_count() -> None:
     capped = adapter.page_frames(frames, limit=10_000)
     assert len(capped["frames"]) == DEFAULT_FRAME_PAGE_LIMIT
     assert capped["nextCursor"] == str(DEFAULT_FRAME_PAGE_LIMIT)
+
+
+def test_repository_page_frames_reports_source_frame_bound_for_sparse_samples() -> None:
+    from backend.app.schemas import FrameData
+    from backend.app.workbench.repository import RepositoryAdapter
+
+    frames = [FrameData(frameId=index, timestamp=index / 25) for index in (0, 5, 10, 15)]
+    page = RepositoryAdapter().page_frames(frames, limit=2)
+    assert page["frameCount"] == 4
+    assert page["lastFrameId"] == 15
 
 
 def test_llm_execution_is_delegated_to_provider_adapters() -> None:

@@ -1,5 +1,5 @@
 import { cleanup, render, screen } from '@testing-library/react';
-import { afterEach, expect, it } from 'vitest';
+import { afterEach, expect, it, vi } from 'vitest';
 
 import EvidenceInspector from './EvidenceInspector';
 import type { FrameData } from '../types';
@@ -48,6 +48,21 @@ it('shows coordinate space and definition version from the evidence page', () =>
   expect(screen.getByText('pitch')).toBeTruthy();
   expect(screen.getByText(/definition version/i)).toBeTruthy();
   expect(screen.getByText('1')).toBeTruthy();
+});
+
+it('shows the server provider request linked to a proposed event', () => {
+  render(<EvidenceInspector frame={frame} proposal={{ modelId: 'visual-model', modelVersion: 'v1',
+    evidenceIds: ['frame:1'], requestId: 'provider-request-1' }} />);
+  expect(screen.getByText(/Provider request: provider-request-1/)).toBeTruthy();
+});
+
+it('cannot accept an older model proposal without a provider request', () => {
+  const onProposalDecision = vi.fn();
+  render(<EvidenceInspector frame={frame} proposal={{ modelId: 'visual-model', modelVersion: 'v1',
+    evidenceIds: ['frame:1'] }} onProposalDecision={onProposalDecision} />);
+  expect(screen.getByRole('button', { name: /accept proposed event/i })).toHaveProperty('disabled', true);
+  expect(screen.getByRole('button', { name: /reject proposed event/i })).toHaveProperty('disabled', false);
+  expect(screen.getByText(/provider receipt unavailable/i)).toBeTruthy();
 });
 
 it('keeps detector score, calibrated probability and confidence interval as distinct quantities', () => {

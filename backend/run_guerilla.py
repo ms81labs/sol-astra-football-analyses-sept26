@@ -10,7 +10,6 @@ import argparse
 import pandas as pd
 import time
 from math import gcd, hypot
-from ultralytics import YOLO
 
 from backend.app.edge_share_repair import apply_source_conditioned_edge_share_repair as _shared_apply_source_conditioned_edge_share_repair
 from backend.app.edge_share_repair_profiles import (
@@ -22,6 +21,13 @@ from backend.app.analytics import MAX_OWNER_DISTANCE
 from backend.app.runtime_options import SUPPORTED_PRIMARY_ACQUISITION_MODE, validate_primary_acquisition_mode
 
 LOGGER = logging.getLogger(__name__)
+
+
+def YOLO(*args, **kwargs):
+    """Load the detector only when video processing actually starts."""
+    from ultralytics import YOLO as detector
+    return detector(*args, **kwargs)
+
 
 HEADLESS = os.environ.get("QT_QPA_PLATFORM") == "offscreen" or (
     sys.platform.startswith("linux")

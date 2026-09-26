@@ -31,3 +31,12 @@ it('looks up the current record by frame id inside a loaded window', () => {
   expect(props.currentRecord?.Frame_ID).toBe(241);
   expect(props.currentRecord?.Timestamp).toBe(48.2);
 });
+
+it('keeps source frame bounds separate from sampled frame count', () => {
+  const samples: FrameData[] = [0, 5, 10, 15].map((frame) => ({
+    Frame_ID: frame, Timestamp: frame / 25, Ball: null, My_Team: [], Enemies: [],
+  }));
+  const props = windowedTimelineProps(samples, 10, 4, 15);
+  expect(props.frameCount).toBe(16);
+  expect(props.currentRecord?.Frame_ID).toBe(10);
+});

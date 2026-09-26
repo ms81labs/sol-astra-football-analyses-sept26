@@ -675,6 +675,10 @@ def _git_archive_stream(repo_root: Path, source_commit: str) -> Iterator[BinaryI
     consumer_failed = False
     try:
         yield process.stdout
+        # Tar readers stop at end markers before git writes record padding.
+        # Drain the bounded commit archive so a successful read does not SIGPIPE git.
+        while process.stdout.read(1024 * 1024):
+            pass
     except BaseException:
         consumer_failed = True
         raise

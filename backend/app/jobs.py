@@ -25,6 +25,11 @@ def run_job(storage_root: Path, job_id: str) -> None:
     execute_job(storage_root, job_id)
 
 
+def require_processor_request(ledger: DurableJobLedger, job_id: str) -> None:
+    if ledger.request(job_id).outputSchema != "evidence_v1":
+        raise JobDispatchError("unsupported job output schema")
+
+
 class JobRunner:
     def __init__(
         self,
@@ -108,6 +113,7 @@ class JobRunner:
             raise
 
     def _dispatch(self, job_id: str) -> None:
+        require_processor_request(self.ledger, job_id)
         backend = self.settings.processing_backend
         if backend == "daytona":
             if self.run_jobs_inline:

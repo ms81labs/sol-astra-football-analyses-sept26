@@ -41,6 +41,7 @@ class RepositoryAdapter:
             "frames": page,
             "nextCursor": str(next_index) if next_index < len(ordered) else None,
             "frameCount": len(ordered),
+            "lastFrameId": _frame_id(ordered[-1]) if ordered else None,
             "intervalEndpoint": "half_open",
         }
 

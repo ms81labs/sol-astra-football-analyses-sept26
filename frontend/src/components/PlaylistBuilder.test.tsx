@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-libra
 import { afterEach, expect, it, vi } from 'vitest';
 
 import PlaylistBuilder from './PlaylistBuilder';
+import type { PlaylistClip } from '../utils/playlist';
 
 afterEach(() => {
   cleanup();
@@ -26,9 +27,10 @@ it('exports time-bounded clips with notes and refuses whole-match frequency clai
   });
   vi.stubGlobal('fetch', fetchMock);
 
-  render(<PlaylistBuilder />);
+  render(<PlaylistBuilder sourceFps={25} />);
   fireEvent.change(screen.getByLabelText(/clip start/i), { target: { value: '12' } });
   fireEvent.change(screen.getByLabelText(/clip end/i), { target: { value: '14' } });
+  fireEvent.change(screen.getByLabelText(/^title$/i), { target: { value: 'Second-half recovery' } });
   fireEvent.change(screen.getByLabelText(/notes/i), { target: { value: 'second-half turnover then shot' } });
   fireEvent.click(screen.getByRole('button', { name: /add clip/i }));
   await waitFor(() => {
@@ -38,10 +40,59 @@ it('exports time-bounded clips with notes and refuses whole-match frequency clai
   expect(exportCall?.[1]?.method).toBe('POST');
   expect(exportCall?.[1]?.body).toContain('"timestampStart":12');
   expect(exportCall?.[1]?.body).toContain('"timestampEnd":14');
+  expect(exportCall?.[1]?.body).toContain('"sourceFps":25');
   expect(await screen.findByText(/12s to 14s/)).toBeTruthy();
   expect(screen.getByText(/frame 350 exclusive/i)).toBeTruthy();
+  expect(screen.getByText(/Second-half recovery/)).toBeTruthy();
   expect(screen.getByText(/second-half turnover then shot/)).toBeTruthy();
   expect(screen.getByText(/do not establish a whole-match frequency/i)).toBeTruthy();
+});
+
+it('keeps selected evidence only when the saved clip contains its source interval', async () => {
+  vi.stubGlobal('fetch', vi.fn((input: RequestInfo, init?: RequestInit) => {
+    if (!String(input).includes('/api/playlists/export-interval')) throw new Error(`unexpected ${String(input)}`);
+    const body = JSON.parse(String(init?.body));
+    return Promise.resolve({ ok: true, json: async () => ({
+      sourceStartSeconds: body.timestampStart, sourceEndSeconds: body.timestampEnd,
+      sourceEndFrameExclusive: Math.round(body.timestampEnd * 25),
+    }) } as Response);
+  }));
+  const save = vi.fn(async (clip: PlaylistClip) => { expect(clip.end).toBeGreaterThan(clip.start); });
+  render(<PlaylistBuilder sourceFps={25}
+    sourceInterval={{ start: 74.4, end: 74.4, evidenceIds: ['event:1860'] }} onClipSaved={save} />);
+  fireEvent.change(screen.getByLabelText(/clip start/i), { target: { value: '74' } });
+  fireEvent.change(screen.getByLabelText(/clip end/i), { target: { value: '75' } });
+  fireEvent.click(screen.getByRole('button', { name: /add clip/i }));
+  await waitFor(() => expect(save).toHaveBeenCalledWith(expect.objectContaining({ evidenceIds: ['event:1860'] })));
+  fireEvent.change(screen.getByLabelText(/clip start/i), { target: { value: '80' } });
+  fireEvent.change(screen.getByLabelText(/clip end/i), { target: { value: '81' } });
+  fireEvent.click(screen.getByRole('button', { name: /add clip/i }));
+  await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
+  expect(save.mock.calls[1][0].evidenceIds).toBeUndefined();
+});
+
+it('offers exact saved video intervals as source-bound playable downloads', () => {
+  render(<PlaylistBuilder matchId="match-a" generationId="g1" videoAvailable storedClips={[
+    { generationId: 'g1', start: 1.1, end: 2.1, title: 'Pressing cue', notes: 'Key moment', sourceEndFrameExclusive: 11 },
+  ]} />);
+  expect(screen.getByText(/Pressing cue/)).toBeTruthy();
+  const link = screen.getByRole('link', { name: /download rendered clip/i });
+  expect(link.getAttribute('href')).toBe('/api/matches/match-a/edits/clip?generationId=g1&start=1.1&end=2.1');
+});
+
+it('edits only a saved clip title and notes while keeping its source interval', async () => {
+  const update = vi.fn(async () => {});
+  render(<PlaylistBuilder matchId="match-a" generationId="g1" storedClips={[
+    { correctionId: 'clip-1', generationId: 'g1', start: 1.1, end: 2.1,
+      title: 'Old title', notes: 'Old note', sourceEndFrameExclusive: 53 },
+  ]} onClipUpdated={update} />);
+  fireEvent.click(screen.getByRole('button', { name: /edit clip old title/i }));
+  expect((screen.getByLabelText(/clip start/i) as HTMLInputElement).value).toBe('1.1');
+  expect((screen.getByLabelText(/clip start/i) as HTMLInputElement).disabled).toBe(true);
+  fireEvent.change(screen.getByLabelText(/^title$/i), { target: { value: 'New title' } });
+  fireEvent.change(screen.getByLabelText(/notes/i), { target: { value: 'New note' } });
+  fireEvent.click(screen.getByRole('button', { name: /save clip changes/i }));
+  await waitFor(() => expect(update).toHaveBeenCalledWith('clip-1', 'New title', 'New note'));
 });
 
 it('assembles a deterministic match report that does not claim whole-match frequency', async () => {

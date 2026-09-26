@@ -44,10 +44,18 @@ const events: BackendEvent[] = [
 
 it('shows interval-limited observations instead of match totals without identity continuity', () => {
   render(<PlayerDetailPanel player={player} events={events} identityContinuous={false} />);
+  expect(screen.getByText('Track 7')).toBeTruthy();
+  expect(screen.getByText('Jersey candidate #7')).toBeTruthy();
   expect(screen.getByText(/interval-limited/i)).toBeTruthy();
   expect(screen.getByText(/totals withheld/i)).toBeTruthy();
   expect(screen.queryByText('12')).toBeNull();
   expect(screen.getByText('Pass from 7')).toBeTruthy();
+});
+
+it('labels a player without jersey evidence as an unknown track', () => {
+  render(<PlayerDetailPanel player={{ ...player, jerseyNumber: null }} events={events} />);
+  expect(screen.getByText('Track 7')).toBeTruthy();
+  expect(screen.getByText('Identity unknown')).toBeTruthy();
 });
 
 it('shows match totals only after identity continuity is validated', () => {

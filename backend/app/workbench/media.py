@@ -818,6 +818,7 @@ class FfmpegProbe:
         *,
         start_seconds: float,
         duration_seconds: float,
+        frame_exact: bool = False,
         cancel_event: threading.Event | None = None,
         runner=subprocess.run,
     ) -> None:
@@ -839,16 +840,26 @@ class FfmpegProbe:
                     raise ValueError("export interval is outside the source")
                 admission = self.last_execution_receipt
             command = [self.ffmpeg, "-hide_banner", "-nostdin", "-loglevel", "error",
-                       "-protocol_whitelist", "file,pipe", "-threads", str(self.threads),
-                       "-y", "-ss", f"{start_seconds:.3f}", "-i", str(source),
-                       "-t", f"{duration_seconds:.3f}", "-c", "copy", str(destination)]
+                       "-protocol_whitelist", "file,pipe", "-threads", str(self.threads), "-y"]
+            if frame_exact:
+                # Accurate seek drops frames with pts < -ss, so never round the start up
+                # past the first frame: floor to microseconds with a 1 us margin (far below
+                # any frame interval) and extend the duration by the same amount.
+                seek = max(0.0, math.floor((start_seconds - 1e-6) * 1e6) / 1e6)
+                command += ["-ss", f"{seek:.6f}", "-i", str(source),
+                            "-t", f"{duration_seconds + start_seconds - seek:.6f}",
+                            "-c:v", "libx264", "-c:a", "aac", "-fps_mode", "vfr"]
+            else:
+                command += ["-ss", f"{start_seconds:.3f}", "-i", str(source),
+                            "-t", f"{duration_seconds:.3f}", "-c", "copy"]
+            command.append(str(destination))
             _assert_safe_ffmpeg_argv(command, settings=self.settings)
             self.last_execution_receipt = _publish_media_output(source, destination, command,
                 policy=self.policy, cancel_event=cancel_event, runner=runner, deadline=deadline,
                 expected_source_sha256=identity.sourceSha256 if identity is not None else None)
             self.last_execution_receipt.update(operation="export", sourceProbe=admission,
-                selectedIntervalSeconds=duration_seconds, decodedWorkApplicable=False, streamCopy=True,
-                frameExact=False)
+                selectedIntervalSeconds=duration_seconds, decodedWorkApplicable=frame_exact, streamCopy=not frame_exact,
+                frameExact=frame_exact)
         except BaseException as error:
             self.last_execution_receipt = media_failure_receipt(
                 error, policy=self.policy, previous=self.last_execution_receipt)
@@ -871,6 +882,53 @@ def _assert_safe_ffmpeg_argv(command: list[str], *, settings=None) -> None:
     joined = shlex.join(command)
     if any(token in joined for token in ("`", "$(", ";", "|", "&&", "\n")):
         raise ValueError("refusing unsafe ffmpeg arguments")
+
+
+def verified_source_pts_index(
+    probe: "FfmpegProbe", source: Path, policy: MediaExecutionPolicy, *, time_base: Fraction,
+    expected: dict[int, float], timeout: float, cancelled=None,
+    mismatch_message: str = "source frame PTS does not match expected frame times",
+) -> list[int]:
+    """Presentation-ordered source PTS, verified to reproduce every expected frame time.
+
+    Demuxer packet timestamps are read first because they need no decode, so a
+    full-length match indexes in seconds. A decoded-frame index is used only when
+    packet timing does not reproduce the expected frames exactly and uniquely.
+    """
+    def index(entries: str) -> list[str]:
+        command = [probe.ffprobe, "-protocol_whitelist", "file,pipe", "-threads", str(policy.threads),
+            "-v", "error", "-select_streams", "v:0", "-show_entries", entries,
+            "-of", "csv=p=0", str(source)]
+        _assert_safe_ffmpeg_argv(command)
+        result = _run_bounded_media_process(command, timeout=timeout,
+            output_cap=policy.captured_output_bytes, file_cap=policy.max_file_bytes, policy=policy)
+        if cancelled is not None and cancelled():
+            raise ValueError("source frame index cancelled")
+        if result.returncode != 0:
+            raise ValueError("source frame index unavailable")
+        return [line.strip().rstrip(",") for line in result.stdout.decode().splitlines() if line.strip()]
+
+    def verified(ticks: list[int]) -> bool:
+        counts: dict[int, int] = {}
+        for tick in ticks:
+            counts[tick] = counts.get(tick, 0) + 1
+        return all(frame_id < len(ticks) and counts[ticks[frame_id]] == 1 and math.isclose(
+            float(ticks[frame_id] * time_base), seconds, rel_tol=0, abs_tol=1e-6)
+            for frame_id, seconds in expected.items())
+
+    packets = [row.split(",", 1) for row in index("packet=pts,flags")]
+    packet_ticks = [row[0] for row in packets if len(row) == 1 or "D" not in row[1]]
+    if len(packet_ticks) <= policy.max_frames and all(re.fullmatch(r"-?\d+", row) for row in packet_ticks):
+        ticks = sorted(int(row) for row in packet_ticks)
+        if verified(ticks):
+            return ticks
+    rows = index("frame=best_effort_timestamp")
+    if len(rows) > policy.max_frames or any(not re.fullmatch(r"-?\d+", row) for row in rows):
+        raise ValueError("source frame index has ambiguous timing")
+    ticks = [int(row) for row in rows]
+    if not verified(ticks):
+        raise ValueError(mismatch_message)
+    return ticks
 
 
 def _admit_local_decode_path(path: Path) -> None:

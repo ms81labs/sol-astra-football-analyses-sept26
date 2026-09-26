@@ -32,7 +32,10 @@ def test_typed_search_reports_unsupported_terms_and_can_include_unknowns() -> No
 
     assert query.unsupportedTerms == ["with", "xg"]
     assert query.interpreted["includeUnknown"] is True
-    assert [hit.eventId for hit in execute_typed_query(events, query, match_id="m1")] == ["unknown"]
+    assert query.unanswerable is True
+    assert execute_typed_query(events, query, match_id="m1") == []
+    supported = parse_typed_query("our turnovers", include_unknown=True)
+    assert [hit.eventId for hit in execute_typed_query(events, supported, match_id="m1")] == ["unknown"]
 
 
 def test_strict_typed_search_route_rejects_unsupported_terms() -> None:

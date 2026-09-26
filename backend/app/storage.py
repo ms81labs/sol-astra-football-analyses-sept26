@@ -15,7 +15,10 @@ from collections.abc import Iterable, Iterator
 from datetime import datetime, timezone
 from io import BytesIO
 from pathlib import Path
-from typing import BinaryIO, TextIO
+from typing import BinaryIO, TextIO, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .workbench.assistance import TypedQuery
 
 
 from .sqlite_connections import open_wal_connection
@@ -424,7 +427,7 @@ class Storage(_IdentityStorageMixin, _CalibrationStorageMixin, _RemoteResultStor
 
     def update_match_config(self, match_id: str, config: MatchConfig) -> MatchRecord:
         now = _utcnow().isoformat()
-        with self._connect() as connection:
+        with self.generations.guard(match_id, "publication", exclusive=True), self._connect() as connection:
             connection.execute(
                 """
                 UPDATE matches SET config_json = ?, updated_at = ?
@@ -789,7 +792,7 @@ class Storage(_IdentityStorageMixin, _CalibrationStorageMixin, _RemoteResultStor
     def list_corrections(self, match_id: str, *, state: str | None = None) -> list[dict]:
         return self._correction_storage.list_corrections(match_id, state=state)
 
-    def _active_playlist_payloads(self, match_id: str) -> list[dict]:
+    def _active_playlist_items(self, match_id: str) -> list[dict]:
         ref = self.current_generation(match_id)
         manifest, _ = self.generations.manifest(match_id, ref.generationId)
         included = set(manifest.includedCommandIds)
@@ -797,9 +800,14 @@ class Storage(_IdentityStorageMixin, _CalibrationStorageMixin, _RemoteResultStor
                        if item.get("commandId", item.get("correctionId")) in included
                        and item.get("applyState") == "applied"]
         undone = {item.get("undoOf") for item in corrections if item.get("undoOf")}
-        return [item["payload"] for item in corrections
-                if item.get("kind") == "playlist_item" and not item.get("undoOf")
-                and item.get("correctionId") not in undone and isinstance(item.get("payload"), dict)]
+        active = [item for item in corrections
+                  if item.get("kind") == "playlist_item" and not item.get("undoOf")
+                  and item.get("correctionId") not in undone and isinstance(item.get("payload"), dict)]
+        replaced = {item["payload"].get("replaces") for item in active}
+        return [item for item in active if item.get("correctionId") not in replaced]
+
+    def _active_playlist_payloads(self, match_id: str) -> list[dict]:
+        return [item["payload"] for item in self._active_playlist_items(match_id)]
 
     def _event_review_snapshot(self, match_id: str, payload: dict) -> list[dict]:
         from .workbench.events import event_matches_review_payload
@@ -818,6 +826,10 @@ class Storage(_IdentityStorageMixin, _CalibrationStorageMixin, _RemoteResultStor
                     "timestamp": event.timestamp,
                     "type": event.type,
                     "reviewStatus": event.reviewStatus,
+                    "proposalModelId": event.proposalModelId,
+                    "proposalModelVersion": event.proposalModelVersion,
+                    "proposalEvidenceIds": event.proposalEvidenceIds,
+                    "proposalRequestId": event.proposalRequestId,
                 }
             )
         return previous
@@ -869,20 +881,52 @@ class Storage(_IdentityStorageMixin, _CalibrationStorageMixin, _RemoteResultStor
             return
         self.save_events(match_id, restore_event_review(events, previous))
 
-    def query_match_events(self, match_id: str, query_text: str, *, include_unknown: bool = False) -> dict:
-        from .workbench.assistance import events_as_query_rows, execute_typed_query, parse_typed_query
+    @_generation_reader
+    def query_match_events(self, match_id: str, query_text: str | TypedQuery, *, include_unknown: bool = False) -> dict:
+        from .workbench.assistance import TypedQuery, events_as_query_rows, execute_typed_query, parse_typed_query
 
         try:
             events = self.load_events(match_id)
+            coverage_state = "available"
         except FileNotFoundError:
             events = []
-        query = parse_typed_query(query_text, include_unknown=include_unknown)
-        hits = execute_typed_query(events_as_query_rows(events, match_id=match_id), query, match_id=match_id)
+            coverage_state = "insufficient"
+        query = query_text if isinstance(query_text, TypedQuery) else parse_typed_query(query_text, include_unknown=include_unknown)
+        rows = events_as_query_rows(events, match_id=match_id)
+        unknown_location_count = 0
+        if query.pitchRegion and not query.unanswerable:
+            if self._stored_calibration_accepted(match_id):
+                try:
+                    frames = {frame.frameId: frame for frame in self.load_frames(match_id)}
+                except FileNotFoundError:
+                    frames = {}
+                for row in rows:
+                    frame = frames.get(row.get("frameId"))
+                    track_id = row.get("fromTrackId")
+                    if (frame is None or not frame.geometryAvailable or
+                            frame.coordinateSpace != "pitch_normalized_0_100" or track_id is None):
+                        continue
+                    players = (frame.myTeam if row.get("team") == "my_team" else
+                               frame.enemies if row.get("team") == "enemy" else
+                               [*frame.myTeam, *frame.enemies])
+                    actors = [player for player in players if player.id == track_id]
+                    if len(actors) == 1 and 0 <= actors[0].x <= 100 and 0 <= actors[0].y <= 100:
+                        row["pitchRegion"] = ("left_third" if actors[0].x < 100 / 3 else
+                                              "middle_third" if actors[0].x < 200 / 3 else "right_third")
+            candidates = execute_typed_query(rows, query.model_copy(update={"pitchRegion": None}), match_id=match_id)
+            by_id = {row["id"]: row for row in rows}
+            unknown_location_count = sum(by_id[hit.eventId].get("pitchRegion") is None for hit in candidates)
+        hits = execute_typed_query(rows, query, match_id=match_id)
+        if query.pitchRegion and unknown_location_count:
+            coverage_state = "partial" if hits else "insufficient"
         return {
             "query": query.model_dump(mode="json"),
             "interpreted": query.interpreted,
             "unsupportedTerms": query.unsupportedTerms,
             "results": [hit.model_dump(mode="json") for hit in hits],
+            "unknownLocationCount": unknown_location_count,
+            "coverageState": ("unsupported" if query.unanswerable else coverage_state if coverage_state == "partial" else "matched" if hits else
+                              "insufficient" if coverage_state == "insufficient" else "no_match"),
         }
 
     @_generation_reader

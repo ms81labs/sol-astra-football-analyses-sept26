@@ -10,7 +10,7 @@ import hashlib
 import json
 import sqlite3
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -67,6 +67,36 @@ class ProviderSpendPolicy:
             'inputBytePrice': text(money(self.input_byte_price)),
             'outputTokenPrice': text(money(self.output_token_price)), 'maximumCost': text(maximum),
         }
+
+
+@dataclass(frozen=True)
+class AstraSpendPolicy:
+    """Offline request bound; production settings do not configure this policy."""
+
+    task_types: tuple[str, ...]
+    max_output_tokens: int
+    input_price_per_million: str
+    output_price_per_million: str
+    policy_id: str = field(default="astra-offline-v1", init=False)
+    adapter_id: str = field(default="astra-responses-v1", init=False)
+    model_id: str = field(default="gpt-6-astra", init=False)
+
+    def __post_init__(self) -> None:
+        if not self.task_types or any(not isinstance(item, str) or not item for item in self.task_types) \
+                or type(self.max_output_tokens) is not int or not 0 < self.max_output_tokens <= 25_000 \
+                or money(self.input_price_per_million) <= 0 or money(self.output_price_per_million) <= 0:
+            raise ValueError("invalid offline Astra spend policy")
+
+    def bind_request(self, request: dict, *, task: str, model: str, authorised_limit: str) -> dict:
+        from .provider_adapters import bound_astra_request
+        if task not in self.task_types or model != self.model_id \
+                or request.get("max_output_tokens") != self.max_output_tokens:
+            raise ValueError("MODEL_TASK_BOUND_MISMATCH")
+        bound = bound_astra_request(request, input_price_per_million=self.input_price_per_million,
+            output_price_per_million=self.output_price_per_million, authorised_limit=authorised_limit,
+            task_type=task)
+        return {**bound, "policyId": self.policy_id, "adapterId": self.adapter_id,
+            "taskType": task, "billableComponents": ["text_tokens", "image_tokens", "output_tokens"]}
 
 
 @dataclass(frozen=True)
@@ -194,11 +224,10 @@ class ProviderBudgetLedger:
         return self.ledger.latest_attempt(ticket.request.requestId)
 
     def result(self, request_id: str) -> dict | None:
-        with self.ledger._connect() as connection:
-            row = connection.execute('SELECT response_json FROM provider_results WHERE request_id=?', (request_id,)).fetchone()
-        if row is None:
+        result = self.ledger.provider_result(request_id)
+        if result is None:
             return None
-        return {**json.loads(row['response_json']), 'costSummary': self.ledger.cost_for(request_id)}
+        return {**result, 'costSummary': self.ledger.cost_for(request_id)}
 
     def save_result(self, request_id: str, result: dict) -> None:
         payload = json.dumps(result, allow_nan=False, sort_keys=True)
